@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .backup import completed_snapshots, create_backup
+from .completion import SHELLS, render_completion
 from .console import (
     BOLD,
     CYAN,
@@ -445,6 +446,7 @@ def usage() -> None:
     print("  sync [tool]     Pull latest repo changes, then show status")
     print("  list            List managed tools")
     print("  reset           Delete all managed config files")
+    print("  completion      Print Bash or PowerShell completion script")
     print("  help            Show this help")
     print()
     print(f"{BOLD}Tools:{NC}")
@@ -488,6 +490,12 @@ def main(argv: "list[str] | None" = None) -> int:
         from .setup import run_setup
 
         return run_setup(args[1:])
+    if cmd == "completion":
+        if len(args) != 2 or args[1] not in SHELLS:
+            log_error("Usage: ai-config completion <bash|powershell>")
+            return 1
+        print(render_completion(args[1]), end="")
+        return 0
 
     if CONFIG_ERROR:
         log_error(CONFIG_ERROR)

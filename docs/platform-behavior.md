@@ -32,6 +32,14 @@ installs it under `~/.local/bin`, and adds that directory to the user PATH.
 When launched through Git Bash, MSYS2, or Cygwin, `install.sh` detects the
 Windows POSIX environment and delegates to the PowerShell installer.
 
+Antigravity's `trustedWorkspaces` setting is machine-local. Init excludes it
+from the data repository, apply preserves the live value, and status ignores
+differences in that field.
+
+Installers register generated completion scripts for Bash and PowerShell.
+Bash completes both `ai-config` and `ai-config.exe`; PowerShell loads its native
+argument completer from the current-user all-hosts profile.
+
 ## Codex TOML
 
 `[projects.*]` tables are machine-local and preserved during apply. Status

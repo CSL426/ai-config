@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 - 2026-07-18
 
 - Make the shell installer work from Git Bash, MSYS2, and Cygwin by delegating
   to the native PowerShell installer.
+- Keep Antigravity `trustedWorkspaces` local to each machine during init,
+  apply, and status.
+- Install Bash and PowerShell tab completion for commands, tools, and setup
+  options.
 
 ## 1.0.2 - 2026-07-17
 

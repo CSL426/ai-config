@@ -13,6 +13,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _powershell_literal(path: Path) -> str:
+    return "'" + str(path).replace("'", "''") + "'"
+
+
 def test_powershell_installer_places_standalone_binary(tmp_path: Path) -> None:
     powershell = shutil.which("powershell") or shutil.which("pwsh")
     if powershell is None:
@@ -29,6 +33,7 @@ def test_powershell_installer_places_standalone_binary(tmp_path: Path) -> None:
     env["AI_CONFIG_BINARY_PATH"] = str(standalone)
     env["AI_CONFIG_BIN_DIR"] = str(bin_dir)
     env["AI_CONFIG_SKIP_PATH_UPDATE"] = "1"
+    env["AI_CONFIG_SKIP_COMPLETION"] = "1"
     result = subprocess.run(
         [
             powershell,
@@ -48,3 +53,53 @@ def test_powershell_installer_places_standalone_binary(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
     assert destination.read_bytes() == b"standalone-binary"
     assert "Python" not in result.stdout
+
+
+def test_completion_profile_is_idempotent_and_unicode_safe(tmp_path: Path) -> None:
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+
+    standalone = tmp_path / "ai-config-source.exe"
+    standalone.write_bytes(b"standalone-binary")
+    profile = tmp_path / "使用者 設定" / "profile.ps1"
+    profile.parent.mkdir()
+    profile.write_text("# 使用者設定\n", encoding="utf-8-sig")
+    completion = tmp_path / "補全 scripts" / "completion.ps1"
+    completion.parent.mkdir()
+    completion.write_text(
+        "$global:AiConfigCompletionLoaded = 'loaded'\n",
+        encoding="ascii",
+    )
+
+    env = os.environ.copy()
+    env["AI_CONFIG_BINARY_PATH"] = str(standalone)
+    env["AI_CONFIG_BIN_DIR"] = str(tmp_path / "bin")
+    env["AI_CONFIG_SKIP_PATH_UPDATE"] = "1"
+    env["AI_CONFIG_SKIP_COMPLETION"] = "1"
+    installer = _powershell_literal(REPO_ROOT / "install.ps1")
+    profile_literal = _powershell_literal(profile)
+    completion_literal = _powershell_literal(completion)
+    command = (
+        f". {installer}; "
+        f"Update-CompletionProfile {profile_literal} {completion_literal}; "
+        f"Update-CompletionProfile {profile_literal} {completion_literal}; "
+        f". {profile_literal}; "
+        "if ($global:AiConfigCompletionLoaded -ne 'loaded') { exit 23 }"
+    )
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-Command", command],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    profile_bytes = profile.read_bytes()
+    assert profile_bytes.startswith(b"\xef\xbb\xbf")
+    profile_text = profile_bytes.decode("utf-8-sig")
+    assert "# 使用者設定" in profile_text
+    assert profile_text.count("# >>> ai-config completion >>>") == 1
+    assert str(completion) in profile_text
