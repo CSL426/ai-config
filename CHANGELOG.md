@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2 - 2026-07-17
+
+- Publish standalone releases with explicit GitHub repository context.
+- Add a manual recovery input for publishing an existing release tag.
+
 ## 1.0.1 - 2026-07-17
 
 - Make the standalone release test gate UTF-8-safe on Windows.
