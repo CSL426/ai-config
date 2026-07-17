@@ -1,6 +1,7 @@
 """First-run data repository setup and remote write verification."""
 
 import argparse
+import os
 import re
 import stat
 import subprocess
@@ -68,7 +69,13 @@ def _is_reparse_point(path: Path) -> bool:
 def _repository_root(data_dir: Path) -> Path:
     result = _run_git("rev-parse", "--show-toplevel", cwd=data_dir)
     root = Path(result.stdout.strip()).resolve()
-    if root != data_dir.resolve():
+    try:
+        same_directory = os.path.samefile(root, data_dir)
+    except (OSError, ValueError):
+        same_directory = os.path.normcase(os.path.abspath(root)) == os.path.normcase(
+            os.path.abspath(data_dir)
+        )
+    if not same_directory:
         raise SetupError(
             f"Data directory must be the Git repository root: {data_dir}"
         )

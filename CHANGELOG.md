@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 - 2026-07-17
+
+- Make the standalone release test gate UTF-8-safe on Windows.
+- Handle Windows repository-root path identity correctly.
+- Keep missing-setup guidance independent of the platform entrypoint.
+
 ## 1.0.0 - 2026-07-17
 
 - Ship standalone Linux, Windows, and macOS executables that do not require a

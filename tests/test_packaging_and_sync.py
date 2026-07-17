@@ -310,7 +310,7 @@ def test_missing_claude_directory_fails(tmp_path: Path) -> None:
     )
 
     assert result.returncode != 0
-    assert "ai-config.sh setup" in result.stderr
+    assert "setup" in result.stderr
 
 
 def test_sync_subcommand(tmp_path: Path) -> None:
