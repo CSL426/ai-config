@@ -1,90 +1,126 @@
 # ai-config
 
-Cross-AI CLI configuration manager and sync engine for Claude Code, Codex, and Antigravity.
+Cross-AI CLI configuration manager and sync engine for Claude Code, Codex, and
+Antigravity.
 
-`ai-config` separates code (sync and deployment engine) from data (your personal workflow configurations, skills, agents, and rules). It allows you to manage all your AI assistant profiles and preferences under version control.
+The public tool repository is the outer checkout at `~/ai-config`. Your private
+configuration repository lives inside it at `~/ai-config/data` and is ignored by
+the outer Git repository. Each repository keeps its own `.git` directory,
+history, remote, and commit lifecycle.
 
 ## Installation
 
-### Method 1: Using pipx (Recommended)
+### Recommended layout
 
-Install the tool globally using `pipx`:
-
-```bash
-pipx install git+https://github.com/<your-organization>/ai-config.git
-```
-
-To bind a configuration repository immediately, clone your private settings repository and apply the settings:
+Clone the tool repository, then let the installer clone the private data
+repository into `data/`:
 
 ```bash
-git clone <your-config-repo-url> ~/ai-config
-ai-config apply
+git clone <tool-repo-url> ~/ai-config
+AI_CONFIG_REPO_URL=<your-config-repo-url> ~/ai-config/install.sh
+ai-config status
 ```
 
-### Method 2: Bootstrap Installer
-
-Clone the tool repository and run the bootstrap script:
+Or clone both repositories explicitly:
 
 ```bash
-git clone https://github.com/<your-organization>/ai-config.git ~/ai-config-tool
-cd ~/ai-config-tool
-./install.sh
+git clone <tool-repo-url> ~/ai-config
+git clone <your-config-repo-url> ~/ai-config/data
+~/ai-config/install.sh
+ai-config status
 ```
 
-You can also pass `AI_CONFIG_REPO_URL` to automatically clone your private settings repository:
+On Windows PowerShell:
+
+```powershell
+git clone <tool-repo-url> "$HOME\ai-config"
+$env:AI_CONFIG_REPO_URL = '<your-config-repo-url>'
+& "$HOME\ai-config\install.ps1"
+ai-config status
+```
+
+The installers create an isolated virtual environment and install this checkout
+in editable mode. `AI_CONFIG_HOME` overrides the data clone destination, and
+`AI_CONFIG_VENV` overrides the virtual environment path.
+
+### pipx alternative
+
+The CLI can also be installed directly from Git. The data repository still uses
+the same default location:
 
 ```bash
-AI_CONFIG_REPO_URL="<your-config-repo-url>" ./install.sh
+pipx install git+<tool-repo-url>
+git clone <your-config-repo-url> ~/ai-config/data
+ai-config status
 ```
 
-## Features
+Set `AI_CONFIG_REPO` when the data repository lives elsewhere:
 
-- **Cross-Tool Configuration**: Manage Claude Code (`~/.claude/`), Codex (`~/.codex/`), and Antigravity (`~/.gemini/antigravity-cli/`) settings in one place.
-- **Skill Sharing**: Mirror shared skills across all assistants automatically.
-- **Safety Checks**: Automatic validation of symlink escapes and repository invariants.
-- **Backup & Rollback**: Automatic rolling backup directory structure before applying mutations.
+```bash
+export AI_CONFIG_REPO=<path-to-config-repo>
+```
 
-## CLI Usage
+## Repository layout
 
-After installation, run `ai-config` from any directory:
+```text
+~/ai-config/                 # public tool repository
+├── .git/
+├── ai_config/               # sync engine
+├── tests/
+├── install.sh
+├── install.ps1
+└── data/                    # private configuration repository, Git-ignored
+    ├── .git/
+    ├── claude/
+    ├── codex/
+    └── agy/
+```
+
+The data repository is the source of truth. `init` gathers live configuration
+into it; `apply` deploys its content to the corresponding tool home directories.
+
+## CLI usage
 
 ```bash
 ai-config <command> [tool]
 ```
 
-### Commands
-
-- `init [tool]` — Gather local configs from active AI home directories into the managed repository.
-- `apply [tool]` — Deploy configuration profiles from the repository to local AI home directories.
-- `status [tool]` — Preview differences between the repository and current local settings.
-- `sync [tool]` — Fetch remote repository updates and show status.
+- `init [tool]` — Gather local configs into the data repository.
+- `apply [tool]` — Deploy configuration from the data repository.
+- `status [tool]` — Preview repository-to-live differences.
+- `sync [tool]` — Pull data repository updates and show status.
 - `project [tool]` — Project local Claude settings to other targets.
 - `list` — List all managed tools.
-- `reset` — Safely purge managed configuration files from active homes.
+- `reset` — Remove managed configuration files after confirmation.
 
-## Configuration Repository Layout
+Supported tools are `claude`, `codex`, `agy`, and `all`.
 
-Your private settings repository (assumed to be located at `~/ai-config` or specified via `AI_CONFIG_REPO`) should follow this layout:
+## Data repository contract
 
-```
-~/ai-config/
-├── claude/                  # Claude Code config
+The default data repository at `~/ai-config/data`, or the path specified by
+`AI_CONFIG_REPO`, must contain this layout:
+
+```text
+data/
+├── claude/
 │   ├── rules/
 │   ├── agents/
-│   └── settings.json
-├── codex/                   # Codex CLI config
+│   ├── settings.json
+│   └── shared/
+├── codex/
 │   └── config.toml
-├── agy/                     # Antigravity CLI config
-│   └── settings.json
-└── claude/shared/           # Shared components (e.g. both/agy/codex skills)
+└── agy/
+    └── settings.json
 ```
 
-## Development and Testing
+Credential files such as `auth.json` are excluded from synchronization.
 
-Run pytest from the repository root:
+## Development and testing
 
 ```bash
 python -m pytest
+ruff check ai_config tests
+bash -n install.sh
 ```
 
 ## License

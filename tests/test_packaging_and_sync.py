@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -77,6 +78,33 @@ def test_ai_config_repo_env_var(tmp_path: Path) -> None:
         check=True,
     )
     assert "claude (0 files)" in result.stdout
+
+
+def test_default_data_repo_is_nested_beneath_tool_checkout(tmp_path: Path) -> None:
+    tool_root = tmp_path / "home" / "ai-config"
+    shutil.copytree(REPO_ROOT / "ai_config", tool_root / "ai_config")
+    data_repo = tool_root / "data"
+    (data_repo / "claude").mkdir(parents=True)
+
+    env = os.environ.copy()
+    env["HOME"] = str(tmp_path / "home")
+    env.pop("AI_CONFIG_REPO", None)
+    env["PYTHONPATH"] = str(tool_root)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from ai_config.paths import SCRIPT_DIR; print(SCRIPT_DIR)",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=env,
+        check=True,
+    )
+
+    assert Path(result.stdout.strip()) == data_repo.resolve()
 
 
 def test_missing_claude_directory_fails(tmp_path: Path) -> None:
