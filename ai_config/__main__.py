@@ -241,10 +241,13 @@ def status_tool(tool: str) -> None:
                 continue
 
             if tool == "codex" and rel_text == "config.toml":
+                repo_config = codex.filter_codex_config(
+                    ai_bytes.decode("utf-8", errors="replace")
+                )
                 filtered = codex.filter_codex_config(
                     home_bytes.decode("utf-8", errors="replace")
                 )
-                if ai_bytes.decode("utf-8", errors="replace") == filtered:
+                if repo_config == filtered:
                     continue
                 print(
                     f"  {YELLOW}~ {rel_text}{NC} "
