@@ -52,16 +52,23 @@ def check_shared_mirrors() -> None:
 
         checked += 1
         rel = skill_md.relative_to(shared_root)
-        src_path = Path(src_text.replace("~", str(HOME), 1) if src_text.startswith("~") else src_text)
+        rel_text = rel.as_posix()
+        src_path = Path(
+            src_text.replace("~", str(HOME), 1)
+            if src_text.startswith("~")
+            else src_text
+        )
 
         if not src_path.is_file():
-            log_warn(f"mirror source missing: {rel} ← {tilde(src_path)}")
+            log_warn(f"mirror source missing: {rel_text} ← {tilde(src_path)}")
             stale += 1
             continue
 
         cur_hash = hashlib.sha256(src_path.read_bytes()).hexdigest()
         if cur_hash.lower() != src_hash.lower():
-            log_warn(f"mirror stale: {rel} — source changed: {tilde(src_path)}")
+            log_warn(
+                f"mirror stale: {rel_text} — source changed: {tilde(src_path)}"
+            )
             print(f"    update the copy, then set {CYAN}mirror-hash: {cur_hash}{NC}")
             stale += 1
 

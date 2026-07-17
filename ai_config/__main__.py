@@ -224,11 +224,12 @@ def status_tool(tool: str) -> None:
             rel = ai_file.relative_to(stage_dir)
             if is_excluded(rel):
                 continue
+            rel_text = rel.as_posix()
             home_file = home_dir / rel
 
             if not home_file.is_file():
                 print(
-                    f"  {GREEN}+ {rel}{NC} (only in ai-config; "
+                    f"  {GREEN}+ {rel_text}{NC} (only in ai-config; "
                     f"repo modified {_format_mtime(_latest_mtime_ns(ai_file))})"
                 )
                 has_diff = True
@@ -239,24 +240,34 @@ def status_tool(tool: str) -> None:
             if ai_bytes == home_bytes:
                 continue
 
-            if tool == "codex" and str(rel) == "config.toml":
-                filtered = codex.filter_codex_config(home_bytes.decode("utf-8", errors="replace"))
+            if tool == "codex" and rel_text == "config.toml":
+                filtered = codex.filter_codex_config(
+                    home_bytes.decode("utf-8", errors="replace")
+                )
                 if ai_bytes.decode("utf-8", errors="replace") == filtered:
                     continue
-                print(f"  {YELLOW}~ {rel}{NC} (differs, general settings only)")
-                _print_diff(ai_file, filtered, str(rel))
+                print(
+                    f"  {YELLOW}~ {rel_text}{NC} "
+                    "(differs, general settings only)"
+                )
+                _print_diff(ai_file, filtered, rel_text)
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
             else:
-                print(f"  {YELLOW}~ {rel}{NC}")
-                _print_diff(ai_file, home_bytes.decode("utf-8", errors="replace"), str(rel))
+                print(f"  {YELLOW}~ {rel_text}{NC}")
+                _print_diff(
+                    ai_file,
+                    home_bytes.decode("utf-8", errors="replace"),
+                    rel_text,
+                )
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
 
         for relative in _planned_removals(tool, stage_dir, home_dir):
             live_path = home_dir / relative
             print(
-                f"  {RED}- {relative}{NC} (only in live; apply removes; "
+                f"  {RED}- {relative.as_posix()}{NC} "
+                "(only in live; apply removes; "
                 f"live modified {_format_mtime(_latest_mtime_ns(live_path))})"
             )
             has_diff = True
@@ -404,10 +415,10 @@ def usage() -> None:
     print(f"  {ENTRYPOINT} <command> [tool]")
     print()
     print(f"{BOLD}Commands:{NC}")
-    print("  init [tool]     Gather configs from tool home directories into ai-config/")
-    print("  apply [tool]    Deploy configs from ai-config/ to tool home directories")
+    print("  init [tool]     Gather configs from tool homes into the data repository")
+    print("  apply [tool]    Deploy data repository configs to tool home directories")
     print("  project [tool]  Project ~/.claude/ directly to other tool home dirs")
-    print("  status [tool]   Show diff between ai-config/ and current tool configs")
+    print("  status [tool]   Show diff between the data repository and live configs")
     print("  sync [tool]     Pull latest repo changes, then show status")
     print("  list            List managed tools")
     print("  reset           Delete all managed config files")
@@ -434,7 +445,7 @@ def main(argv: "list[str] | None" = None) -> int:
         log_error(
             f"Repository configuration directory not found at {SCRIPT_DIR}.\n"
             "To fix this, please either:\n"
-            "  1. Reinstall using editable mode: pipx install --editable <path-to-repo>\n"
+            "  1. Clone your data repository to ~/ai-config/data\n"
             "  2. Set the AI_CONFIG_REPO environment variable to your repository path:\n"
             "     Linux/macOS: export AI_CONFIG_REPO=<path-to-repo>\n"
             "     Windows: setx AI_CONFIG_REPO <path-to-repo>"

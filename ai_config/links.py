@@ -56,6 +56,10 @@ def _normalize_windows_path_text(path: "Path | str") -> str:
 
 def _path_identity(left: Path, right: Path) -> bool:
     if WINDOWS_MODE:
+        try:
+            return os.path.samefile(left, right)
+        except (OSError, ValueError):
+            pass
         return _normalize_windows_path_text(left) == _normalize_windows_path_text(
             right
         )

@@ -25,6 +25,19 @@ def is_reparse_point(path: Path) -> bool:
     return path.is_symlink() or bool(is_junction and is_junction())
 
 
+def _same_path(left: Path, right: Path) -> bool:
+    try:
+        return os.path.samefile(left, right)
+    except (OSError, ValueError):
+        return os.path.normcase(os.path.abspath(left)) == os.path.normcase(
+            os.path.abspath(right)
+        )
+
+
+def _is_within_existing_root(path: Path, root: Path) -> bool:
+    return any(_same_path(candidate, root) for candidate in (path, *path.parents))
+
+
 def assert_root_not_reparse(path: Path, label: str = "managed root") -> None:
     if is_reparse_point(path):
         raise RuntimeError(f"Refusing reparse point {label}: {path}")
@@ -59,10 +72,9 @@ def assert_internal_symlinks(path: Path) -> None:
             raise RuntimeError(f"Refusing absolute managed symlink: {child}")
         try:
             resolved = (child.parent / raw_target).resolve(strict=True)
-            common = Path(os.path.commonpath((root, resolved)))
         except (OSError, RuntimeError, ValueError) as exc:
             raise RuntimeError(f"Refusing broken managed symlink: {child}") from exc
-        if os.path.normcase(common) != os.path.normcase(root):
+        if not _is_within_existing_root(resolved, root):
             raise RuntimeError(f"Refusing managed symlink escaping root: {child}")
 
 
@@ -88,7 +100,7 @@ def codex_agents_shared_target(path: "Path | None" = None) -> "Path | None":
         target = agents.parent / target
     target = Path(os.path.abspath(target))
     expected = Path(os.path.abspath(CLAUDE_HOME / "CLAUDE.md"))
-    if os.path.normcase(target) != os.path.normcase(expected):
+    if not _same_path(target, expected):
         raise RuntimeError(f"Refusing Codex AGENTS link target mismatch: {agents}")
     assert_safe_write_target(expected)
     if not expected.is_file():
@@ -118,7 +130,7 @@ def _assert_expected_agy_link() -> None:
     target = Path(os.readlink(skills))
     if not target.is_absolute():
         target = skills.parent / target
-    if target.resolve() != AGY_CANONICAL_SKILLS.resolve():
+    if not _same_path(target.resolve(), AGY_CANONICAL_SKILLS.resolve()):
         raise RuntimeError(
             f"Refusing reparse point Antigravity skills target mismatch: {skills}"
         )

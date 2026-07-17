@@ -130,10 +130,11 @@ def mirror_skill(source_rel: str, source_hash: str) -> str:
 def test_status_reports_mirror_up_to_date(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     source_content = "the source\n"
-    write(home_dir / "source.md", source_content)
+    source = home_dir / "source.md"
+    write(source, source_content)
     write(
         repo_dir / "claude/shared/both/mirrored/SKILL.md",
-        mirror_skill("source.md", sha256(source_content)),
+        mirror_skill("source.md", hashlib.sha256(source.read_bytes()).hexdigest()),
     )
 
     result = run_ai_config(repo_dir, home_dir, "status", "codex")
@@ -145,7 +146,8 @@ def test_status_reports_mirror_up_to_date(tmp_path: Path) -> None:
 
 def test_status_warns_when_mirror_source_changed(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
-    write(home_dir / "source.md", "the source\n")
+    source = home_dir / "source.md"
+    write(source, "the source\n")
     write(
         repo_dir / "claude/shared/both/mirrored/SKILL.md",
         mirror_skill("source.md", sha256("an older version\n")),
@@ -157,7 +159,7 @@ def test_status_warns_when_mirror_source_changed(tmp_path: Path) -> None:
     assert "mirror stale" in result.stdout
     assert "both/mirrored/SKILL.md" in result.stdout
     # Suggests the hash to set after refreshing the copy
-    assert sha256("the source\n") in result.stdout
+    assert hashlib.sha256(source.read_bytes()).hexdigest() in result.stdout
 
 
 def test_status_warns_when_mirror_source_missing(tmp_path: Path) -> None:

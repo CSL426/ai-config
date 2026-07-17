@@ -29,7 +29,7 @@ def filter_codex_config(text: str) -> str:
     """Remove [projects.*] blocks; trim trailing blank lines."""
     out: list[str] = []
     skip = False
-    for line in text.split("\n"):
+    for line in text.splitlines():
         if _PROJECTS_HEADER.match(line):
             skip = True
             continue
@@ -47,7 +47,7 @@ def merge_codex_config(source_text: str, target_text: str) -> str:
     trust settings survive."""
     projects: list[str] = []
     in_projects = False
-    for line in target_text.split("\n"):
+    for line in target_text.splitlines():
         if _PROJECTS_HEADER.match(line):
             in_projects = True
             projects.append(line)
