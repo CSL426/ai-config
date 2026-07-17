@@ -1,0 +1,153 @@
+"""Path preflight checks for managed repository and live destinations."""
+
+import os
+import stat
+from collections.abc import Mapping
+from pathlib import Path
+
+from .paths import (
+    AGY_CANONICAL_SKILLS,
+    AGY_HOME,
+    CLAUDE_HOME,
+    CODEX_HOME,
+    WINDOWS_MODE,
+)
+
+
+def is_reparse_point(path: Path) -> bool:
+    try:
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except OSError:
+        attributes = 0
+    if attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or bool(is_junction and is_junction())
+
+
+def assert_root_not_reparse(path: Path, label: str = "managed root") -> None:
+    if is_reparse_point(path):
+        raise RuntimeError(f"Refusing reparse point {label}: {path}")
+
+
+def assert_no_symlinks(path: Path) -> None:
+    if is_reparse_point(path):
+        raise RuntimeError(f"Refusing reparse point in managed path: {path}")
+    if not path.exists() or not path.is_dir():
+        return
+    for child in path.rglob("*"):
+        if is_reparse_point(child):
+            raise RuntimeError(f"Refusing reparse point in managed path: {child}")
+
+
+def assert_internal_symlinks(path: Path) -> None:
+    if is_reparse_point(path):
+        raise RuntimeError(f"Refusing reparse point managed root: {path}")
+    if not path.exists() or not path.is_dir():
+        return
+    root = Path(os.path.abspath(path))
+    for child in path.rglob("*"):
+        if not is_reparse_point(child):
+            continue
+        if not child.is_symlink():
+            raise RuntimeError(f"Refusing non-symlink reparse point: {child}")
+        try:
+            raw_target = Path(os.readlink(child))
+        except OSError as exc:
+            raise RuntimeError(f"Cannot read managed symlink target: {child}") from exc
+        if raw_target.is_absolute():
+            raise RuntimeError(f"Refusing absolute managed symlink: {child}")
+        try:
+            resolved = (child.parent / raw_target).resolve(strict=True)
+            common = Path(os.path.commonpath((root, resolved)))
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise RuntimeError(f"Refusing broken managed symlink: {child}") from exc
+        if os.path.normcase(common) != os.path.normcase(root):
+            raise RuntimeError(f"Refusing managed symlink escaping root: {child}")
+
+
+def assert_safe_write_target(path: Path) -> None:
+    if is_reparse_point(path):
+        raise RuntimeError(f"Refusing reparse point file destination: {path}")
+    parent = path.parent
+    if is_reparse_point(parent):
+        raise RuntimeError(f"Refusing reparse point parent destination: {parent}")
+
+
+def codex_agents_shared_target(path: "Path | None" = None) -> "Path | None":
+    agents = path or CODEX_HOME / "AGENTS.md"
+    if not is_reparse_point(agents):
+        return None
+    if not agents.is_symlink():
+        raise RuntimeError(f"Refusing non-symlink Codex AGENTS reparse point: {agents}")
+    try:
+        target = Path(os.readlink(agents))
+    except OSError as exc:
+        raise RuntimeError(f"Cannot read Codex AGENTS link target: {agents}") from exc
+    if not target.is_absolute():
+        target = agents.parent / target
+    target = Path(os.path.abspath(target))
+    expected = Path(os.path.abspath(CLAUDE_HOME / "CLAUDE.md"))
+    if os.path.normcase(target) != os.path.normcase(expected):
+        raise RuntimeError(f"Refusing Codex AGENTS link target mismatch: {agents}")
+    assert_safe_write_target(expected)
+    if not expected.is_file():
+        raise RuntimeError(f"Refusing broken Codex AGENTS shared target: {expected}")
+    return expected
+
+
+def assert_managed_paths_safe(
+    root: Path, file_names: tuple[str, ...], directory_names: tuple[str, ...]
+) -> None:
+    _assert_tool_root(root)
+    for name in file_names:
+        assert_safe_write_target(root / name)
+    for name in directory_names:
+        assert_no_symlinks(root / name)
+
+
+def _assert_tool_root(path: Path) -> None:
+    assert_root_not_reparse(path, "tool home")
+
+
+def _assert_expected_agy_link() -> None:
+    skills = AGY_HOME / "skills"
+    if not is_reparse_point(skills):
+        assert_no_symlinks(skills)
+        return
+    target = Path(os.readlink(skills))
+    if not target.is_absolute():
+        target = skills.parent / target
+    if target.resolve() != AGY_CANONICAL_SKILLS.resolve():
+        raise RuntimeError(
+            f"Refusing reparse point Antigravity skills target mismatch: {skills}"
+        )
+
+
+def assert_tool_destinations_safe(
+    tools: list[str],
+    stages: "Mapping[str, Path] | None" = None,
+) -> None:
+    for tool in tools:
+        if tool == "claude":
+            assert_managed_paths_safe(
+                CLAUDE_HOME,
+                ("CLAUDE.md", "mcp.json", "settings.json", "statusline.sh"),
+                ("rules", "agents", "commands"),
+            )
+        elif tool == "codex":
+            assert_managed_paths_safe(
+                CODEX_HOME,
+                ("config.toml",),
+                ("rules", "skills"),
+            )
+            codex_agents_shared_target()
+        elif tool == "agy":
+            assert_root_not_reparse(AGY_HOME, "Antigravity CLI root")
+            for name in ("mcp_config.json", "settings.json"):
+                assert_safe_write_target(AGY_HOME / name)
+            if stages is None or (stages[tool] / "plugins").is_dir():
+                assert_internal_symlinks(AGY_HOME / "plugins")
+            assert_no_symlinks(AGY_CANONICAL_SKILLS)
+            if not WINDOWS_MODE:
+                _assert_expected_agy_link()
