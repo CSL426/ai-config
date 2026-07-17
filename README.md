@@ -10,60 +10,81 @@ history, remote, and commit lifecycle.
 
 ## Installation
 
-### Recommended layout
+### Standalone installer
 
-Clone the tool repository, then let the installer clone the private data
-repository into `data/`:
+The released CLI is a single executable with its Python runtime bundled. The
+target machine only needs Git; it does not need Python, pip, pipx, or a tool
+repository checkout.
 
-```bash
-git clone <tool-repo-url> ~/ai-config
-AI_CONFIG_REPO_URL=<your-config-repo-url> ~/ai-config/install.sh
-ai-config status
-```
-
-Or clone both repositories explicitly:
+Linux and macOS:
 
 ```bash
-git clone <tool-repo-url> ~/ai-config
-git clone <your-config-repo-url> ~/ai-config/data
-~/ai-config/install.sh
-ai-config status
+curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | bash
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
-git clone <tool-repo-url> "$HOME\ai-config"
-$env:AI_CONFIG_REPO_URL = '<your-config-repo-url>'
-& "$HOME\ai-config\install.ps1"
+$installer = Join-Path $env:TEMP 'install-ai-config.ps1'
+Invoke-WebRequest https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 -OutFile $installer
+& $installer
+```
+
+The installer starts first-run setup when it has an interactive terminal. Setup
+asks where the private data repository should live and, when needed, asks for
+its Git URL. It clones or opens that repository, checks the required layout,
+creates and verifies a unique temporary remote branch, then deletes it. The
+local path is saved only after the real push and cleanup both succeed and the
+remote refs are confirmed restored. If input is redirected, run
+`ai-config setup` after installation.
+
+Non-interactive setup uses the same verification:
+
+```bash
+ai-config setup \
+  --data-dir <path-to-config-repo> \
+  --repo-url <your-config-repo-url>
 ai-config status
 ```
 
-The installers create an isolated virtual environment and install this checkout
-in editable mode. `AI_CONFIG_HOME` overrides the data clone destination, and
-`AI_CONFIG_VENV` overrides the virtual environment path.
+The persisted path is stored in the platform user configuration directory:
 
-### pipx alternative
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/ai-config/config.json`
+- macOS: `~/Library/Application Support/ai-config/config.json`
+- Windows: `%APPDATA%\ai-config\config.json`
 
-The CLI can also be installed directly from Git. The data repository still uses
-the same default location:
+`AI_CONFIG_REPO` remains the highest-priority runtime override. Repository URLs
+containing embedded HTTP credentials are rejected; use SSH or the Git credential
+manager instead.
+
+### Installer automation
+
+The installer can immediately run non-interactive setup after downloading the
+binary:
 
 ```bash
-pipx install git+<tool-repo-url>
-git clone <your-config-repo-url> ~/ai-config/data
-ai-config status
+curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | \
+  AI_CONFIG_REPO_URL=<your-config-repo-url> \
+  AI_CONFIG_DATA_DIR=<path-to-config-repo> bash
 ```
 
-Set `AI_CONFIG_REPO` when the data repository lives elsewhere:
+Set `AI_CONFIG_VERSION` to install a specific release tag. `AI_CONFIG_BIN_DIR`
+overrides the binary destination.
+
+### Development install
+
+Contributors working from a source checkout may still use an editable Python
+installation:
 
 ```bash
-export AI_CONFIG_REPO=<path-to-config-repo>
+python -m venv .venv
+.venv/bin/pip install --editable .
 ```
 
 ## Repository layout
 
 ```text
-~/ai-config/                 # public tool repository
+~/ai-config/                 # optional source checkout for contributors
 ├── .git/
 ├── ai_config/               # sync engine
 ├── tests/
@@ -97,8 +118,8 @@ Supported tools are `claude`, `codex`, `agy`, and `all`.
 
 ## Data repository contract
 
-The default data repository at `~/ai-config/data`, or the path specified by
-`AI_CONFIG_REPO`, must contain this layout:
+The configured data repository, or the path overridden by `AI_CONFIG_REPO`,
+must contain this layout:
 
 ```text
 data/

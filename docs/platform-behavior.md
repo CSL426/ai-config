@@ -9,9 +9,9 @@ newlines. User-facing relative paths always use `/`.
 ## Linux and Unix
 
 Canonical shared surfaces use symlinks where supported. Managed directories
-reject unexpected symlinks before mutation. The shell installer locates Python
-3.11+, creates an isolated virtual environment, and installs the checkout in
-editable mode.
+reject unexpected symlinks before mutation. The shell installer downloads a
+checksum-verified standalone executable to `~/.local/bin`; Python is not
+required on the target machine.
 
 ## Windows
 
@@ -26,6 +26,9 @@ are normalized only when filesystem identity is unavailable.
 
 PowerShell 5.1 and PowerShell 7 are both supported. CI forces UTF-8 Python mode
 so subprocess output is decoded consistently.
+
+The PowerShell installer downloads and verifies the native x86-64 executable,
+installs it under `~/.local/bin`, and adds that directory to the user PATH.
 
 ## Codex TOML
 

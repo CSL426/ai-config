@@ -1,19 +1,31 @@
 import os
+import sys
 from pathlib import Path
+
+from .config import ConfigError, configured_data_repo, default_data_repo
 
 HOME = Path(os.environ.get("HOME", str(Path.home())))
 
-repo_env = os.environ.get("AI_CONFIG_REPO")
-if repo_env:
-    SCRIPT_DIR = Path(repo_env).expanduser().resolve()
+CONFIG_ERROR = None
+try:
+    configured_repo = configured_data_repo()
+except ConfigError as exc:
+    configured_repo = None
+    CONFIG_ERROR = str(exc)
+
+if configured_repo is not None:
+    SCRIPT_DIR = configured_repo
 else:
     parents_root = Path(__file__).resolve().parents[1]
     checkout_data_repo = (parents_root / "data").resolve()
-    default_home_repo = (HOME / "ai-config" / "data").resolve()
+    default_home_repo = default_data_repo().resolve()
     legacy_home_repo = (HOME / "ai-config").resolve()
-    if any((parents_root / d).is_dir() for d in ("claude", "codex", "agy")):
+    frozen = getattr(sys, "frozen", False)
+    if not frozen and any(
+        (parents_root / d).is_dir() for d in ("claude", "codex", "agy")
+    ):
         SCRIPT_DIR = parents_root
-    elif any(
+    elif not frozen and any(
         (checkout_data_repo / d).is_dir() for d in ("claude", "codex", "agy")
     ):
         SCRIPT_DIR = checkout_data_repo

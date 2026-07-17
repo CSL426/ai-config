@@ -24,12 +24,30 @@ own remote, index, history, and release lifecycle.
 The CLI resolves the data repository in this order:
 
 1. `AI_CONFIG_REPO`, expanded and resolved.
-2. The Python package parent when it directly contains managed data, for legacy
+2. The path saved by `ai-config setup` in the platform user configuration file.
+3. The Python package parent when it directly contains managed data, for legacy
    fixtures and old combined checkouts.
-3. `data/` beneath the tool checkout, for editable installs.
-4. `~/ai-config/data`, for installed packages.
-5. Legacy `~/ai-config` data layout when managed directories exist there.
-6. `~/ai-config/data` as the error-reporting default.
+4. `data/` beneath the tool checkout, for editable installs.
+5. `~/ai-config/data`, for installed packages.
+6. Legacy `~/ai-config` data layout when managed directories exist there.
+7. `~/ai-config/data` as the error-reporting default.
+
+Frozen standalone executables skip source-checkout detection because their
+package files are extracted into a temporary directory at runtime.
+
+## First-run setup
+
+`setup` accepts an existing data repository or clones a configured Git URL. It
+requires the selected directory to be the repository root and requires the
+managed `claude/` directory. Embedded HTTP credentials are never accepted.
+
+Before persisting the selected path, setup snapshots the remote refs, pushes a
+unique temporary branch, verifies its object ID, deletes it, and compares all
+remote refs again. This real create/delete cycle proves remote write access in a
+way that `git push --dry-run` cannot. A failed check does not write user
+configuration. If cleanup fails, setup reports the exact ref and manual removal
+command. If setup temporarily added or replaced a remote on an existing
+checkout, that remote change is rolled back when validation fails.
 
 All commands, including `sync`, operate on the resolved data repository.
 
