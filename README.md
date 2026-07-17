@@ -17,7 +17,7 @@ pipx install git+https://github.com/<your-organization>/ai-config.git
 To bind a configuration repository immediately, clone your private settings repository and apply the settings:
 
 ```bash
-git clone git@github.com:<your-organization>/myccskills.git ~/ai-config
+git clone <your-config-repo-url> ~/ai-config
 ai-config apply
 ```
 
@@ -34,7 +34,7 @@ cd ~/ai-config-tool
 You can also pass `AI_CONFIG_REPO_URL` to automatically clone your private settings repository:
 
 ```bash
-AI_CONFIG_REPO_URL="git@github.com:<your-organization>/myccskills.git" ./install.sh
+AI_CONFIG_REPO_URL="<your-config-repo-url>" ./install.sh
 ```
 
 ## Features

@@ -3,6 +3,16 @@
 import os
 import sys
 
+
+def _configure_utf8_output() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
+_configure_utf8_output()
+
 _COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
 RED = "\033[0;31m" if _COLOR else ""
 GREEN = "\033[0;32m" if _COLOR else ""
