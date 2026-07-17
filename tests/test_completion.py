@@ -3,10 +3,26 @@ import shlex
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from ai_config.completion import render_completion
+
+
+def _bash_executable() -> str:
+    if os.name == "nt":
+        program_files = Path(
+            os.environ.get("ProgramFiles", r"C:\Program Files")
+        )
+        git_bash = program_files / "Git/bin/bash.exe"
+        if git_bash.is_file():
+            return str(git_bash)
+        pytest.skip("Git Bash is unavailable")
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("Bash is unavailable")
+    return bash
 
 
 def _bash_candidates(words: list[str]) -> list[str]:
@@ -19,7 +35,7 @@ def _bash_candidates(words: list[str]) -> list[str]:
         + "if (( ${#COMPREPLY[@]} )); then printf '%s\\n' \"${COMPREPLY[@]}\"; fi\n"
     )
     result = subprocess.run(
-        ["bash", "-c", command],
+        [_bash_executable(), "-c", command],
         capture_output=True,
         text=True,
         check=False,
