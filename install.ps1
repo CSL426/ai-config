@@ -1,7 +1,7 @@
 # ai-config bootstrap installer (Windows)
 #
-#   全新機器:  git clone <tool-repo-url> $HOME\ai-config-tool; & $HOME\ai-config-tool\install.ps1
-#   已有 repo: & $HOME\ai-config-tool\install.ps1
+#   全新機器:  git clone <tool-repo-url> $HOME\ai-config; & $HOME\ai-config\install.ps1
+#   已有 repo: & $HOME\ai-config\install.ps1
 #
 # 全自動處理:定位 Python → 建獨立 venv → editable 安裝 → PATH shim。
 # 可用環境變數覆寫:AI_CONFIG_REPO_URL / AI_CONFIG_HOME / AI_CONFIG_VENV
@@ -10,7 +10,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoUrl = if ($env:AI_CONFIG_REPO_URL) { $env:AI_CONFIG_REPO_URL } else { $null }
-$Target = if ($env:AI_CONFIG_HOME) { $env:AI_CONFIG_HOME } else { Join-Path $HOME 'ai-config' }
 $Venv = if ($env:AI_CONFIG_VENV) { $env:AI_CONFIG_VENV } else { Join-Path $HOME '.venvs\ai-config' }
 $BinDir = Join-Path $HOME '.local\bin'
 
@@ -21,6 +20,7 @@ function Fail([string]$Message) { Write-Host "x $Message" -ForegroundColor Red; 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ((Test-Path (Join-Path $scriptDir 'pyproject.toml')) -and (Test-Path (Join-Path $scriptDir 'ai_config'))) {
     $ToolSource = $scriptDir
+    $Target = if ($env:AI_CONFIG_HOME) { $env:AI_CONFIG_HOME } else { Join-Path $ToolSource 'data' }
     Write-Step "Using this checkout: $ToolSource"
     
     if ($RepoUrl -and -not (Test-Path (Join-Path $Target '.git'))) {

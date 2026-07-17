@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # ai-config bootstrap installer (Linux / Unix)
 #
-#   全新機器:  git clone <tool-repo-url> ~/ai-config-tool && ~/ai-config-tool/install.sh
-#   已有 repo: ~/ai-config-tool/install.sh
+#   全新機器:  git clone <tool-repo-url> ~/ai-config && ~/ai-config/install.sh
+#   已有 repo: ~/ai-config/install.sh
 #
 # 全自動處理:定位系統 Python → 建獨立 venv → editable 安裝 → PATH shim。
 # 可用環境變數覆寫:AI_CONFIG_REPO_URL / AI_CONFIG_HOME / AI_CONFIG_VENV
 set -euo pipefail
 
 REPO_URL="${AI_CONFIG_REPO_URL:-}"
-TARGET="${AI_CONFIG_HOME:-$HOME/ai-config}"
 VENV="${AI_CONFIG_VENV:-$HOME/.venvs/ai-config}"
 BIN_DIR="$HOME/.local/bin"
 
@@ -21,6 +20,7 @@ fail() { printf '\033[0;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$script_dir/pyproject.toml" && -d "$script_dir/ai_config" ]]; then
     TOOL_SOURCE="$script_dir"
+    TARGET="${AI_CONFIG_HOME:-$TOOL_SOURCE/data}"
     step "Using this checkout: $TOOL_SOURCE"
     
     if [[ -n "$REPO_URL" && ! -d "$TARGET/.git" ]]; then

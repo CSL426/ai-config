@@ -8,11 +8,19 @@ if repo_env:
     SCRIPT_DIR = Path(repo_env).expanduser().resolve()
 else:
     parents_root = Path(__file__).resolve().parents[1]
-    default_home_repo = (HOME / "ai-config").resolve()
+    checkout_data_repo = (parents_root / "data").resolve()
+    default_home_repo = (HOME / "ai-config" / "data").resolve()
+    legacy_home_repo = (HOME / "ai-config").resolve()
     if any((parents_root / d).is_dir() for d in ("claude", "codex", "agy")):
         SCRIPT_DIR = parents_root
+    elif any(
+        (checkout_data_repo / d).is_dir() for d in ("claude", "codex", "agy")
+    ):
+        SCRIPT_DIR = checkout_data_repo
     elif any((default_home_repo / d).is_dir() for d in ("claude", "codex", "agy")):
         SCRIPT_DIR = default_home_repo
+    elif any((legacy_home_repo / d).is_dir() for d in ("claude", "codex", "agy")):
+        SCRIPT_DIR = legacy_home_repo
     else:
         SCRIPT_DIR = default_home_repo
 
