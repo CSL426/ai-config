@@ -15,6 +15,26 @@ fail() { printf '\033[0;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 platform="$(uname -s)"
 architecture="$(uname -m)"
+
+case "$platform" in
+    MINGW*|MSYS*|CYGWIN*)
+        command -v curl >/dev/null 2>&1 || fail "curl is required to download ai-config"
+        powershell_command="$(command -v powershell.exe || command -v pwsh.exe || true)"
+        [[ -n "$powershell_command" ]] || fail "PowerShell is required to install ai-config on Windows"
+        command -v cygpath >/dev/null 2>&1 || fail "cygpath is required to install ai-config from this shell"
+        temporary_dir="$(mktemp -d)"
+        trap 'rm -rf "$temporary_dir"' EXIT
+        powershell_installer="$temporary_dir/install-ai-config.ps1"
+        curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/$REPOSITORY/main/install.ps1" \
+            --output "$powershell_installer"
+        windows_installer="$(cygpath -w "$powershell_installer")"
+        step "Windows POSIX shell detected; delegating to PowerShell installer"
+        "$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$windows_installer"
+        exit
+        ;;
+esac
+
 case "$platform:$architecture" in
     Linux:x86_64|Linux:amd64) asset="ai-config-linux-x86_64" ;;
     Darwin:x86_64|Darwin:amd64) asset="ai-config-macos-x86_64" ;;

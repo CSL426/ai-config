@@ -29,6 +29,8 @@ so subprocess output is decoded consistently.
 
 The PowerShell installer downloads and verifies the native x86-64 executable,
 installs it under `~/.local/bin`, and adds that directory to the user PATH.
+When launched through Git Bash, MSYS2, or Cygwin, `install.sh` detects the
+Windows POSIX environment and delegates to the PowerShell installer.
 
 ## Codex TOML
 

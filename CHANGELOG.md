@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Make the shell installer work from Git Bash, MSYS2, and Cygwin by delegating
+  to the native PowerShell installer.
+
 ## 1.0.2 - 2026-07-17
 
 - Publish standalone releases with explicit GitHub repository context.

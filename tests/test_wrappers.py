@@ -57,3 +57,81 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     )
     assert run.returncode == 0, run.stderr + run.stdout
     assert "standalone help" in run.stdout
+
+
+@pytest.mark.parametrize(
+    "platform",
+    ["MINGW64_NT-10.0-26200", "MSYS_NT-10.0", "CYGWIN_NT-10.0"],
+)
+def test_installer_delegates_windows_posix_shell_to_powershell(
+    tmp_path: Path,
+    platform: str,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    calls = tmp_path / "powershell-calls.txt"
+    scripts = {
+        "uname": """#!/usr/bin/env bash
+if [[ "$1" == "-s" ]]; then
+    printf '%s\\n' "$AI_CONFIG_TEST_PLATFORM"
+else
+    printf 'x86_64\\n'
+fi
+""",
+        "curl": """#!/usr/bin/env bash
+while (( $# )); do
+    if [[ "$1" == "--output" ]]; then
+        printf 'fake PowerShell installer\\n' > "$2"
+        exit
+    fi
+    shift
+done
+exit 1
+""",
+        "cygpath": """#!/usr/bin/env bash
+printf 'C:\\\\Temp\\\\install-ai-config.ps1\\n'
+""",
+        "powershell.exe": """#!/usr/bin/env bash
+printf '%s\\n' "$@" > "$AI_CONFIG_POWERSHELL_CALLS"
+exit "${AI_CONFIG_POWERSHELL_EXIT_CODE:-0}"
+""",
+    }
+    for name, content in scripts.items():
+        script = fake_bin / name
+        script.write_text(content, encoding="utf-8")
+        script.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["AI_CONFIG_POWERSHELL_CALLS"] = str(calls)
+    env["AI_CONFIG_TEST_PLATFORM"] = platform
+
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "install.sh")],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Windows POSIX shell detected" in result.stdout
+    assert calls.read_text(encoding="utf-8").splitlines() == [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        r"C:\Temp\install-ai-config.ps1",
+    ]
+
+    env["AI_CONFIG_POWERSHELL_EXIT_CODE"] = "23"
+    failed = subprocess.run(
+        ["bash", str(REPO_ROOT / "install.sh")],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert failed.returncode == 23
