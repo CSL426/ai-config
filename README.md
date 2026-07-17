@@ -123,6 +123,12 @@ ruff check ai_config tests
 bash -n install.sh
 ```
 
+Additional documentation:
+
+- [Architecture](docs/architecture.md)
+- [Development](docs/development.md)
+- [Platform behavior](docs/platform-behavior.md)
+
 ## License
 
 MIT
