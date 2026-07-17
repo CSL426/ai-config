@@ -33,6 +33,7 @@ from .paths import (
     CLAUDE_HOME,
     CLAUDE_MANAGED_DIRS,
     CLAUDE_MANAGED_FILES,
+    CONFIG_ERROR,
     ENTRYPOINT,
     SCRIPT_DIR,
     claude_source_dir,
@@ -418,6 +419,7 @@ def usage() -> None:
     print(f"  {ENTRYPOINT} <command> [tool]")
     print()
     print(f"{BOLD}Commands:{NC}")
+    print("  setup           Configure data repository and verify push access")
     print("  init [tool]     Gather configs from tool homes into the data repository")
     print("  apply [tool]    Deploy data repository configs to tool home directories")
     print("  project [tool]  Project ~/.claude/ directly to other tool home dirs")
@@ -444,23 +446,42 @@ def resolve_tool(tool: str) -> str:
 
 
 def main(argv: "list[str] | None" = None) -> int:
-    if "PYTEST_CURRENT_TEST" not in os.environ and not (SCRIPT_DIR / "claude").is_dir():
-        log_error(
-            f"Repository configuration directory not found at {SCRIPT_DIR}.\n"
-            "To fix this, please either:\n"
-            "  1. Clone your data repository to ~/ai-config/data\n"
-            "  2. Set the AI_CONFIG_REPO environment variable to your repository path:\n"
-            "     Linux/macOS: export AI_CONFIG_REPO=<path-to-repo>\n"
-            "     Windows: setx AI_CONFIG_REPO <path-to-repo>"
-        )
-        return 1
-
     args = sys.argv[1:] if argv is None else argv
     if not args:
+        if (
+            "PYTEST_CURRENT_TEST" not in os.environ
+            and not (SCRIPT_DIR / "claude").is_dir()
+            and sys.stdin.isatty()
+        ):
+            from .setup import run_setup
+
+            return run_setup([])
         usage()
         return 0
 
     cmd = args[0]
+    if cmd in ("help", "--help", "-h"):
+        if len(args) > 1:
+            log_error(f"Unexpected arguments: {' '.join(args[1:])}")
+            return 1
+        usage()
+        return 0
+    if cmd == "setup":
+        from .setup import run_setup
+
+        return run_setup(args[1:])
+
+    if CONFIG_ERROR:
+        log_error(CONFIG_ERROR)
+        log_info(f"Run {ENTRYPOINT} setup to replace the invalid configuration")
+        return 1
+    if "PYTEST_CURRENT_TEST" not in os.environ and not (SCRIPT_DIR / "claude").is_dir():
+        log_error(
+            f"Repository configuration directory not found at {SCRIPT_DIR}.\n"
+            f"Run {ENTRYPOINT} setup to configure and verify your data repository."
+        )
+        return 1
+
     tool = "all"
     if len(args) > 1:
         tool = args[1]
@@ -506,8 +527,6 @@ def main(argv: "list[str] | None" = None) -> int:
     elif cmd == "reset":
         if not do_reset():
             return 1
-    elif cmd in ("help", "--help", "-h"):
-        usage()
     else:
         log_error(f"Unknown command: {cmd}")
         print()

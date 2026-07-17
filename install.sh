@@ -1,61 +1,87 @@
 #!/usr/bin/env bash
-# ai-config bootstrap installer (Linux / Unix)
-#
-#   全新機器:  git clone <tool-repo-url> ~/ai-config && ~/ai-config/install.sh
-#   已有 repo: ~/ai-config/install.sh
-#
-# 全自動處理:定位系統 Python → 建獨立 venv → editable 安裝 → PATH shim。
-# 可用環境變數覆寫:AI_CONFIG_REPO_URL / AI_CONFIG_HOME / AI_CONFIG_VENV
+# Install the standalone ai-config release. Python is not required.
 set -euo pipefail
 
-REPO_URL="${AI_CONFIG_REPO_URL:-}"
-VENV="${AI_CONFIG_VENV:-$HOME/.venvs/ai-config}"
-BIN_DIR="$HOME/.local/bin"
+REPOSITORY="${AI_CONFIG_TOOL_REPOSITORY:-CSL426/ai-config}"
+VERSION="${AI_CONFIG_VERSION:-latest}"
+BIN_DIR="${AI_CONFIG_BIN_DIR:-$HOME/.local/bin}"
+LOCAL_BINARY="${AI_CONFIG_BINARY_PATH:-}"
+DATA_REPO_URL="${AI_CONFIG_REPO_URL:-}"
+DATA_DIR="${AI_CONFIG_DATA_DIR:-${AI_CONFIG_HOME:-}}"
 
 step() { printf '\033[0;36m▸\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m⚠\033[0m %s\n' "$*"; }
 fail() { printf '\033[0;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Running from inside a checkout? Then that checkout is the target.
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$script_dir/pyproject.toml" && -d "$script_dir/ai_config" ]]; then
-    TOOL_SOURCE="$script_dir"
-    TARGET="${AI_CONFIG_HOME:-$TOOL_SOURCE/data}"
-    step "Using this checkout: $TOOL_SOURCE"
-    
-    if [[ -n "$REPO_URL" && ! -d "$TARGET/.git" ]]; then
-        command -v git >/dev/null 2>&1 || fail "git is required to clone data repository"
-        step "Cloning data repository: $REPO_URL → $TARGET"
-        git clone "$REPO_URL" "$TARGET"
-    fi
-else
-    fail "install.sh must be run from inside the ai-config tool repository checkout."
-fi
-
-# System Python ≥ 3.11
-PY=""
-for candidate in /usr/bin/python3 python3 python; do
-    if command -v "$candidate" >/dev/null 2>&1 \
-        && "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' 2>/dev/null
-    then
-        PY="$(command -v "$candidate")"
-        break
-    fi
-done
-[[ -n "$PY" ]] || fail "Python 3.11+ not found"
-step "Python: $PY"
-
-step "Creating venv: $VENV"
-"$PY" -m venv "$VENV"
-"$VENV/bin/pip" install --quiet --editable "$TOOL_SOURCE"
-
-mkdir -p "$BIN_DIR"
-ln -sf "$VENV/bin/ai-config" "$BIN_DIR/ai-config"
-step "Installed shim: $BIN_DIR/ai-config"
-
-case ":$PATH:" in
-    *":$BIN_DIR:"*) ;;
-    *) warn "$BIN_DIR is not in PATH — add to your shell profile: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+platform="$(uname -s)"
+architecture="$(uname -m)"
+case "$platform:$architecture" in
+    Linux:x86_64|Linux:amd64) asset="ai-config-linux-x86_64" ;;
+    Darwin:x86_64|Darwin:amd64) asset="ai-config-macos-x86_64" ;;
+    Darwin:arm64|Darwin:aarch64) asset="ai-config-macos-arm64" ;;
+    *) fail "Unsupported platform: $platform $architecture" ;;
 esac
 
-step "Done. Try: ai-config status"
+mkdir -p "$BIN_DIR"
+destination="$BIN_DIR/ai-config"
+
+install_binary() {
+    staged_binary="$destination.new.$$"
+    install -m 755 "$1" "$staged_binary"
+    mv -f "$staged_binary" "$destination"
+}
+
+if [[ -n "$LOCAL_BINARY" ]]; then
+    [[ -f "$LOCAL_BINARY" ]] || fail "Local binary not found: $LOCAL_BINARY"
+    step "Installing local standalone binary"
+    install_binary "$LOCAL_BINARY"
+else
+    command -v curl >/dev/null 2>&1 || fail "curl is required to download ai-config"
+    temporary_dir="$(mktemp -d)"
+    trap 'rm -rf "$temporary_dir"' EXIT
+    if [[ "$VERSION" == "latest" ]]; then
+        base_url="https://github.com/$REPOSITORY/releases/latest/download"
+    else
+        base_url="https://github.com/$REPOSITORY/releases/download/$VERSION"
+    fi
+    step "Downloading $asset"
+    curl --fail --location --silent --show-error \
+        "$base_url/$asset" --output "$temporary_dir/$asset"
+    curl --fail --location --silent --show-error \
+        "$base_url/$asset.sha256" --output "$temporary_dir/$asset.sha256"
+    expected="$(awk '{print $1}' "$temporary_dir/$asset.sha256")"
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$temporary_dir/$asset" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$temporary_dir/$asset" | awk '{print $1}')"
+    else
+        fail "sha256sum or shasum is required to verify the download"
+    fi
+    [[ "$actual" == "$expected" ]] || fail "Downloaded binary checksum mismatch"
+    install_binary "$temporary_dir/$asset"
+fi
+
+step "Installed: $destination"
+case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) warn "$BIN_DIR is not in PATH — add: export PATH=\"$BIN_DIR:\$PATH\"" ;;
+esac
+
+if [[ -n "$DATA_REPO_URL" || -n "$DATA_DIR" ]]; then
+    DATA_DIR="${DATA_DIR:-$HOME/ai-config/data}"
+    setup_args=(setup --data-dir "$DATA_DIR")
+    if [[ -n "$DATA_REPO_URL" ]]; then
+        setup_args+=(--repo-url "$DATA_REPO_URL")
+    fi
+    "$destination" "${setup_args[@]}"
+else
+    if [[ -t 0 ]]; then
+        step "Starting first-run setup"
+        "$destination"
+    elif (test -t 0 </dev/tty) 2>/dev/null; then
+        step "Starting first-run setup"
+        "$destination" </dev/tty
+    else
+        step "Next: ai-config setup"
+    fi
+fi

@@ -9,6 +9,24 @@ bash -n install.sh
 git diff --check
 ```
 
+## Standalone build
+
+PyInstaller builds one native executable containing the Python runtime and all
+CLI modules:
+
+```bash
+python -m pip install pyinstaller==6.21.0
+python -m PyInstaller --clean --noconfirm --onefile \
+  --name ai-config --hidden-import ai_config.__main__ \
+  scripts/standalone_entry.py
+dist/ai-config help
+```
+
+PyInstaller is not a cross-compiler. `.github/workflows/standalone-release.yml`
+builds Linux x86-64, Windows x86-64, macOS Intel, and macOS arm64 assets on
+native runners. A `v*` tag publishes the binaries and SHA-256 files as a GitHub
+Release; manual workflow runs retain them as CI artifacts without publishing.
+
 The full test suite uses temporary homes and configuration repositories. Tests
 must not depend on the developer's nested `data/` checkout.
 
