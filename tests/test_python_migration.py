@@ -368,12 +368,13 @@ def test_apply_preserves_source_mtime_for_generated_skill(tmp_path: Path) -> Non
     write(agent, "# Demo\n\nBody.\n")
     expected_mtime_ns = 1_700_000_000_123_456_789
     os.utime(agent, ns=(expected_mtime_ns, expected_mtime_ns))
+    source_mtime_ns = agent.stat().st_mtime_ns
 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
     projected = home_dir / ".codex/skills/demo/SKILL.md"
-    assert projected.stat().st_mtime_ns == expected_mtime_ns
+    assert projected.stat().st_mtime_ns == source_mtime_ns
 
 
 @pytest.mark.parametrize("relative", [False, True], ids=["absolute", "relative"])
