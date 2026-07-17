@@ -22,6 +22,9 @@ Linux and macOS:
 curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | bash
 ```
 
+The same command also works in Git Bash, MSYS2, and Cygwin on Windows. The
+shell installer delegates to the native PowerShell installer automatically.
+
 Windows PowerShell:
 
 ```powershell
