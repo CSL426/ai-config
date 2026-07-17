@@ -51,6 +51,23 @@ install_binary() {
     mv -f "$staged_binary" "$destination"
 }
 
+install_bash_completion() {
+    [[ "${AI_CONFIG_SKIP_COMPLETION:-}" == "1" ]] && return
+    completion_root="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}"
+    completion_root="${completion_root%%:*}"
+    completion_dir="$completion_root/completions"
+    completion_file="$completion_dir/ai-config.bash"
+    staged_completion="$completion_file.new.$$"
+    mkdir -p "$completion_dir"
+    if "$destination" completion bash > "$staged_completion"; then
+        mv -f "$staged_completion" "$completion_file"
+        step "Installed Bash completion: $completion_file"
+    else
+        rm -f "$staged_completion"
+        warn "Shell completion could not be installed"
+    fi
+}
+
 if [[ -n "$LOCAL_BINARY" ]]; then
     [[ -f "$LOCAL_BINARY" ]] || fail "Local binary not found: $LOCAL_BINARY"
     step "Installing local standalone binary"
@@ -82,6 +99,7 @@ else
 fi
 
 step "Installed: $destination"
+install_bash_completion
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *) warn "$BIN_DIR is not in PATH — add: export PATH=\"$BIN_DIR:\$PATH\"" ;;

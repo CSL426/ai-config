@@ -22,6 +22,7 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     env["HOME"] = str(home)
     env["AI_CONFIG_BINARY_PATH"] = str(standalone)
     env["AI_CONFIG_BIN_DIR"] = str(home / ".local" / "bin")
+    env["XDG_DATA_HOME"] = str(home / ".local" / "share")
     old_target = home / "old-venv" / "ai-config"
     old_target.parent.mkdir()
     old_target.write_text("old install\n", encoding="utf-8")
@@ -46,6 +47,8 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     assert not executable.is_symlink()
     assert old_target.read_text(encoding="utf-8") == "old install\n"
     assert os.access(executable, os.X_OK)
+    completion = home / ".local/share/bash-completion/completions/ai-config.bash"
+    assert completion.read_text(encoding="utf-8") == "standalone completion bash\n"
 
     run = subprocess.run(
         [str(executable), "help"],
@@ -57,6 +60,17 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     )
     assert run.returncode == 0, run.stderr + run.stdout
     assert "standalone help" in run.stdout
+
+    repeated = subprocess.run(
+        ["bash", str(REPO_ROOT / "install.sh")],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert repeated.returncode == 0, repeated.stderr + repeated.stdout
+    assert completion.read_text(encoding="utf-8") == "standalone completion bash\n"
 
 
 @pytest.mark.parametrize(

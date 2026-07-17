@@ -16,22 +16,25 @@ The released CLI is a single executable with its Python runtime bundled. The
 target machine only needs Git; it does not need Python, pip, pipx, or a tool
 repository checkout.
 
-Linux and macOS:
+Bash — Linux, macOS, Git Bash, MSYS2, or Cygwin:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | bash
 ```
 
-The same command also works in Git Bash, MSYS2, and Cygwin on Windows. The
-shell installer delegates to the native PowerShell installer automatically.
+On Windows, the shell installer delegates to the native PowerShell installer
+automatically.
 
 Windows PowerShell:
 
 ```powershell
-$installer = Join-Path $env:TEMP 'install-ai-config.ps1'
-Invoke-WebRequest https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 -OutFile $installer
-& $installer
+irm https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 | iex
 ```
+
+Installers register tab completion for commands, tools, and setup options.
+Restart the terminal after installation, then try `ai-config <Tab>` or
+`ai-config status <Tab>`. To print the generated scripts directly, run
+`ai-config completion bash` or `ai-config completion powershell`.
 
 The installer starts first-run setup when it has an interactive terminal. Setup
 asks where the private data repository should live and, when needed, asks for
@@ -116,6 +119,7 @@ ai-config <command> [tool]
 - `project [tool]` — Project local Claude settings to other targets.
 - `list` — List all managed tools.
 - `reset` — Remove managed configuration files after confirmation.
+- `completion bash|powershell` — Print a shell completion registration script.
 
 Supported tools are `claude`, `codex`, `agy`, and `all`.
 
