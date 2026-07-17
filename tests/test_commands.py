@@ -2,7 +2,11 @@
 reset, project, backup pruning, codex shared-home links, and apply
 idempotency. Written as the Phase 0 freeze for the Python CLI migration."""
 
+import json
+import os
 from pathlib import Path
+
+import pytest
 
 from test_apply_projection import IMPL, copy_runtime_files, run_ai_config, write
 
@@ -113,3 +117,101 @@ def test_status_is_clean_immediately_after_apply(tmp_path: Path) -> None:
     assert status_result.returncode == 0, status_result.stderr + status_result.stdout
     assert status_result.stdout.count("No differences found") == 3, status_result.stdout
     assert "only in ai-config" not in status_result.stdout
+
+
+def test_init_agy_excludes_trusted_workspaces(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(
+        home_dir / ".gemini/antigravity-cli/settings.json",
+        json.dumps(
+            {
+                "model": "live",
+                "trustedWorkspaces": [r"G:\我的雲端硬碟\Personal\Resume"],
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "init", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads((repo_dir / "agy/settings.json").read_text()) == {
+        "model": "live"
+    }
+
+
+def test_apply_agy_preserves_live_trusted_workspaces(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(
+        repo_dir / "agy/settings.json",
+        '{"model":"repo","trustedWorkspaces":["/repo/path"]}\n',
+    )
+    live_settings = home_dir / ".gemini/antigravity-cli/settings.json"
+    write(
+        live_settings,
+        '{"model":"live","trustedWorkspaces":["G:\\\\local"]}\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(live_settings.read_text()) == {
+        "model": "repo",
+        "trustedWorkspaces": [r"G:\local"],
+    }
+
+
+def test_apply_agy_fresh_copy_excludes_repo_trusted_workspaces(
+    tmp_path: Path,
+) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(
+        repo_dir / "agy/settings.json",
+        '{"model":"repo","trustedWorkspaces":["/repo/path"]}\n',
+    )
+    live_settings = home_dir / ".gemini/antigravity-cli/settings.json"
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(live_settings.read_text()) == {"model": "repo"}
+
+
+def test_status_agy_ignores_trusted_workspaces(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(
+        repo_dir / "agy/settings.json",
+        '{"model":"same","trustedWorkspaces":["/repo/path"]}\n',
+    )
+    write(
+        home_dir / ".gemini/antigravity-cli/settings.json",
+        '{"model":"same","trustedWorkspaces":["G:\\\\local"]}\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "status", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "No differences found" in result.stdout
+    assert "~ settings.json" not in result.stdout
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix symlink contract")
+def test_status_agy_rejects_repo_settings_symlink_before_read(
+    tmp_path: Path,
+) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    settings = repo_dir / "agy/settings.json"
+    settings.unlink()
+    external = tmp_path / "external-settings.json"
+    write(external, '{"model":"external"}\n')
+    settings.symlink_to(external)
+    write(
+        home_dir / ".gemini/antigravity-cli/settings.json",
+        '{"model":"live"}\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "status", "agy")
+
+    assert result.returncode == 1
+    assert "reparse point source file" in result.stderr + result.stdout
+    assert external.read_text() == '{"model":"external"}\n'

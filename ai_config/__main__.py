@@ -257,6 +257,24 @@ def status_tool(tool: str) -> None:
                 _print_diff(ai_file, filtered, rel_text)
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
+            elif tool == "agy" and rel_text == "settings.json":
+                repo_settings = agy.shared_agy_settings(
+                    ai_bytes.decode("utf-8-sig", errors="replace")
+                )
+                live_text = home_bytes.decode("utf-8-sig", errors="replace")
+                live_settings = agy.shared_agy_settings(live_text)
+                if repo_settings == live_settings:
+                    continue
+                filtered = agy.filter_agy_settings(
+                    live_text
+                )
+                print(
+                    f"  {YELLOW}~ {rel_text}{NC} "
+                    "(differs, shared settings only)"
+                )
+                _print_diff(ai_file, filtered, rel_text)
+                _print_mtime_hint(ai_file, home_file)
+                has_diff = True
             else:
                 print(f"  {YELLOW}~ {rel_text}{NC}")
                 _print_diff(
