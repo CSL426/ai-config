@@ -150,6 +150,26 @@ def test_status_parses_quoted_crlf_mirror_metadata(tmp_path: Path) -> None:
     assert "All 1 mirrored shared skills up to date" in result.stdout
 
 
+def test_status_codex_normalizes_crlf_on_both_sides(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    repo_config = repo_dir / "codex/config.toml"
+    repo_config.parent.mkdir(parents=True)
+    repo_config.write_bytes(b'model = "same"\r\n\r\n[features]\r\nsearch = true\r\n')
+    live_config = home_dir / ".codex/config.toml"
+    live_config.parent.mkdir(parents=True)
+    live_config.write_bytes(
+        b'model = "same"\r\n\r\n'
+        b'[projects."C:/local"]\r\ntrust_level = "trusted"\r\n\r\n'
+        b'[features]\r\nsearch = true\r\n'
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "status", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "No differences found" in result.stdout
+    assert "~ config.toml" not in result.stdout
+
+
 def test_apply_rejects_symlink_destination_before_backup(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     write(repo_dir / "claude/CLAUDE.md", "new instructions\n")
