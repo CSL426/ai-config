@@ -432,7 +432,7 @@ def do_sync(tool: str) -> int:
 
 
 def usage() -> None:
-    print(f"{BOLD}ai-config{NC} — Cross-AI tool configuration manager")
+    print(f"{BOLD}{ENTRYPOINT}{NC} — Cross-AI tool configuration manager")
     print()
     print(f"{BOLD}Usage:{NC}")
     print(f"  {ENTRYPOINT} <command> [tool]")
@@ -492,7 +492,7 @@ def main(argv: "list[str] | None" = None) -> int:
         return run_setup(args[1:])
     if cmd == "completion":
         if len(args) != 2 or args[1] not in SHELLS:
-            log_error("Usage: ai-config completion <bash|powershell>")
+            log_error(f"Usage: {ENTRYPOINT} completion <bash|powershell>")
             return 1
         print(render_completion(args[1]), end="")
         return 0
