@@ -8,6 +8,13 @@ from pathlib import Path
 from ..console import log_header, log_info, log_success, log_warn
 from ..fsops import copy_file_to_stage, first_existing_file, mirror_dir
 from ..links import ensure_agy_shared_links
+from ..localsettings import (
+    filter_settings,
+    merge_settings,
+    read_settings,
+    shared_settings,
+    write_settings,
+)
 from ..paths import (
     AGY_CANONICAL_SKILLS,
     AGY_HOME,
@@ -16,11 +23,7 @@ from ..paths import (
     WINDOWS_MODE,
     claude_source_dir,
 )
-from ..safety import (
-    assert_managed_paths_safe,
-    assert_safe_write_target,
-    is_reparse_point,
-)
+from ..safety import assert_managed_paths_safe
 from ..skills import (
     apply_managed_skills,
     project_agents_to_skills,
@@ -29,70 +32,26 @@ from ..skills import (
     sync_skills,
 )
 
-_MACHINE_LOCAL_SETTINGS = {"trustedWorkspaces"}
-
-
-def _parse_settings(text: str) -> dict[str, object]:
-    document = json.loads(text.lstrip("\ufeff"))
-    if not isinstance(document, dict):
-        raise ValueError("Antigravity settings.json must contain a JSON object")
-    return document
-
-
-def _format_settings(document: dict[str, object]) -> str:
-    return json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+_MACHINE_LOCAL_SETTINGS = frozenset({"trustedWorkspaces", "permissions"})
+_SETTINGS_LABEL = "Antigravity settings.json"
 
 
 def filter_agy_settings(text: str) -> str:
-    document = _parse_settings(text)
-    if not _MACHINE_LOCAL_SETTINGS.intersection(document):
-        return text.lstrip("\ufeff")
-    filtered = {
-        key: value
-        for key, value in document.items()
-        if key not in _MACHINE_LOCAL_SETTINGS
-    }
-    return _format_settings(filtered)
+    return filter_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
 
 
 def merge_agy_settings(source_text: str, target_text: str) -> str:
-    filtered_source = filter_agy_settings(source_text)
-    source = _parse_settings(filtered_source)
-    target = _parse_settings(target_text)
-    if not _MACHINE_LOCAL_SETTINGS.intersection(target):
-        return filtered_source
-    for key in _MACHINE_LOCAL_SETTINGS:
-        if key in target:
-            source[key] = target[key]
-    return _format_settings(source)
+    return merge_settings(
+        source_text, target_text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL
+    )
 
 
 def shared_agy_settings(text: str) -> dict[str, object]:
-    document = _parse_settings(text)
-    return {
-        key: value
-        for key, value in document.items()
-        if key not in _MACHINE_LOCAL_SETTINGS
-    }
+    return shared_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
 
 
-def _read_settings(path: Path) -> str:
-    if is_reparse_point(path):
-        raise RuntimeError(f"Refusing reparse point source file: {path}")
-    return path.read_text(encoding="utf-8-sig")
-
-
-def _write_settings(source: Path, destination: Path, content: str) -> None:
-    if is_reparse_point(source):
-        raise RuntimeError(f"Refusing reparse point source file: {source}")
-    assert_safe_write_target(destination)
-    source_stat = source.stat()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(content, encoding="utf-8", newline="\n")
-    os.utime(
-        destination,
-        ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
-    )
+_read_settings = read_settings
+_write_settings = write_settings
 
 
 def _replace_json_path(value: object, source: str, destination: str) -> object:
@@ -187,7 +146,7 @@ def init() -> bool:
             dst / "settings.json",
             filter_agy_settings(_read_settings(settings)),
         )
-        log_success("settings.json (filtered, no trustedWorkspaces)")
+        log_success("settings.json (filtered, machine-local settings excluded)")
 
     log_info("All other files are projected from claude/ during apply — nothing else to init")
     log_success("Antigravity CLI init complete")
@@ -208,14 +167,14 @@ def apply_internal(src: Path, dst: Path) -> None:
                 _read_settings(destination),
             )
             _write_settings(source, destination, merged)
-            log_success("settings.json (merged, preserved trustedWorkspaces)")
+            log_success("settings.json (merged, preserved machine-local settings)")
         else:
             _write_settings(
                 source,
                 destination,
                 filter_agy_settings(_read_settings(source)),
             )
-            log_success("settings.json (fresh copy, no trustedWorkspaces)")
+            log_success("settings.json (fresh copy, machine-local settings excluded)")
 
     skill_destination = AGY_CANONICAL_SKILLS if WINDOWS_MODE else dst / "skills"
     if (src / "skills").is_dir():

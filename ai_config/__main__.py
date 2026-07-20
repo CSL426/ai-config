@@ -258,6 +258,22 @@ def status_tool(tool: str) -> None:
                 _print_diff(ai_file, filtered, rel_text)
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
+            elif tool == "claude" and rel_text == "settings.json":
+                repo_settings = claude.shared_claude_settings(
+                    ai_bytes.decode("utf-8-sig", errors="replace")
+                )
+                live_text = home_bytes.decode("utf-8-sig", errors="replace")
+                live_settings = claude.shared_claude_settings(live_text)
+                if repo_settings == live_settings:
+                    continue
+                filtered = claude.filter_claude_settings(live_text)
+                print(
+                    f"  {YELLOW}~ {rel_text}{NC} "
+                    "(differs, shared settings only)"
+                )
+                _print_diff(ai_file, filtered, rel_text)
+                _print_mtime_hint(ai_file, home_file)
+                has_diff = True
             elif tool == "agy" and rel_text == "settings.json":
                 repo_settings = agy.shared_agy_settings(
                     ai_bytes.decode("utf-8-sig", errors="replace")
@@ -447,6 +463,7 @@ def usage() -> None:
     print("  list            List managed tools")
     print("  reset           Delete all managed config files")
     print("  completion      Print Bash or PowerShell completion script")
+    print("  update          Download and install the latest release")
     print("  help            Show this help")
     print()
     print(f"{BOLD}Tools:{NC}")
@@ -490,6 +507,13 @@ def main(argv: "list[str] | None" = None) -> int:
         from .setup import run_setup
 
         return run_setup(args[1:])
+    if cmd == "update":
+        if len(args) != 1:
+            log_error(f"Usage: {ENTRYPOINT} update")
+            return 1
+        from .update import run_update
+
+        return run_update()
     if cmd == "completion":
         if len(args) != 2 or args[1] not in SHELLS:
             log_error(f"Usage: {ENTRYPOINT} completion <bash|powershell>")
