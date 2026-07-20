@@ -50,7 +50,7 @@ def bash_completion() -> str:
             ;;
     esac
 }}
-complete -o default -F _ai_config_completion ai-config ai-config.exe
+complete -o default -F _ai_config_completion ai-config ai-config.exe acg
 """
 
 
@@ -60,7 +60,7 @@ def powershell_completion() -> str:
     tool_commands = ", ".join(f"'{value}'" for value in TOOL_COMMANDS)
     setup_options = ", ".join(f"'{value}'" for value in SETUP_OPTIONS)
     shells = ", ".join(f"'{value}'" for value in SHELLS)
-    return f"""Register-ArgumentCompleter -CommandName @('ai-config', 'ai-config.exe') -ScriptBlock {{
+    return f"""Register-ArgumentCompleter -CommandName @('ai-config', 'ai-config.exe', 'acg') -ScriptBlock {{
     param($wordToComplete, $commandAst, $cursorPosition)
     $commands = @({commands})
     $tools = @({tools})
