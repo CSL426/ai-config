@@ -55,6 +55,41 @@ def overlay_dir_to_stage(src: Path, dst: Path) -> None:
             shutil.copy2(item, target)
 
 
+def merge_missing_tree(source: Path, destination: Path, label: str) -> bool:
+    assert_no_symlinks(source)
+    assert_no_symlinks(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    copied = False
+    for item in sorted(source.rglob("*")):
+        relative = item.relative_to(source)
+        if any(part in EXCLUDED_FILES for part in relative.parts):
+            continue
+        target = destination / relative
+        conflicting_parent = next(
+            (
+                destination / parent
+                for parent in relative.parents
+                if parent != Path(".")
+                and (destination / parent).exists()
+                and not (destination / parent).is_dir()
+            ),
+            None,
+        )
+        if conflicting_parent is not None:
+            log_warn(f"Not migrating {label} path conflict: {conflicting_parent}")
+            continue
+        if item.is_dir():
+            if target.exists() and not target.is_dir():
+                log_warn(f"Not migrating {label} path conflict: {target}")
+                continue
+            target.mkdir(parents=True, exist_ok=True)
+        elif item.is_file() and not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+            copied = True
+    return copied
+
+
 def mirror_dir(
     src: Path,
     dst: Path,

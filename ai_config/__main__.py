@@ -34,10 +34,12 @@ from .paths import (
     CLAUDE_HOME,
     CLAUDE_MANAGED_DIRS,
     CLAUDE_MANAGED_FILES,
+    CODEX_CANONICAL_SKILLS,
     CONFIG_ERROR,
     ENTRYPOINT,
     SCRIPT_DIR,
     claude_source_dir,
+    codex_live_skills,
     set_claude_source_dir,
     tool_home,
 )
@@ -188,7 +190,9 @@ def _planned_removals(tool: str, stage_dir: Path, home_dir: Path) -> list[Path]:
 
     if tool in ("codex", "agy"):
         staged_skills = stage_dir / "skills"
-        live_skills = home_dir / "skills"
+        live_skills = (
+            codex_live_skills() if tool == "codex" else home_dir / "skills"
+        )
         if staged_skills.is_dir():
             for skill in staged_skills.iterdir():
                 if not skill.is_dir() or skill.name.startswith("."):
@@ -217,7 +221,9 @@ def status_tool(tool: str) -> None:
         if not dir_has_files(stage_dir):
             log_warn(f"No config in ai-config/{tool}/")
             return
-        if not home_dir.is_dir():
+        if not home_dir.is_dir() and not (
+            tool == "codex" and codex_live_skills().is_dir()
+        ):
             log_warn(f"Tool home directory not found: {home_dir}")
             return
 
@@ -227,7 +233,12 @@ def status_tool(tool: str) -> None:
             if is_excluded(rel):
                 continue
             rel_text = rel.as_posix()
-            home_file = home_dir / rel
+            if tool == "codex" and rel.parts[0] == "skills":
+                home_file = CODEX_CANONICAL_SKILLS.joinpath(*rel.parts[1:])
+                if not CODEX_CANONICAL_SKILLS.exists():
+                    home_file = codex_live_skills().joinpath(*rel.parts[1:])
+            else:
+                home_file = home_dir / rel
 
             if not home_file.is_file():
                 print(

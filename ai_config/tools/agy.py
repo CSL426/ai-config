@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..console import log_header, log_info, log_success, log_warn
 from ..fsops import copy_file_to_stage, first_existing_file, mirror_dir
-from ..links import ensure_agy_shared_links
+from ..links import ensure_agy_shared_links, prepare_agy_canonical_skills
 from ..localsettings import (
     filter_settings,
     merge_settings,
@@ -50,10 +50,6 @@ def shared_agy_settings(text: str) -> dict[str, object]:
     return shared_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
 
 
-_read_settings = read_settings
-_write_settings = write_settings
-
-
 def _replace_json_path(value: object, source: str, destination: str) -> object:
     if isinstance(value, str):
         return value.replace(source, destination)
@@ -78,10 +74,10 @@ def stage_projection(dst: Path) -> None:
 
     settings = src / "settings.json"
     if settings.is_file():
-        _write_settings(
+        write_settings(
             settings,
             dst / "settings.json",
-            filter_agy_settings(_read_settings(settings)),
+            filter_agy_settings(read_settings(settings)),
         )
 
     project_agents_to_skills(claude_src / "agents", dst / "skills")
@@ -141,10 +137,10 @@ def init() -> bool:
 
     if (src / "settings.json").is_file():
         settings = src / "settings.json"
-        _write_settings(
+        write_settings(
             settings,
             dst / "settings.json",
-            filter_agy_settings(_read_settings(settings)),
+            filter_agy_settings(read_settings(settings)),
         )
         log_success("settings.json (filtered, machine-local settings excluded)")
 
@@ -154,6 +150,8 @@ def init() -> bool:
 
 
 def apply_internal(src: Path, dst: Path) -> None:
+    prepare_agy_canonical_skills()
+
     if (src / "mcp_config.json").is_file():
         shutil.copy2(src / "mcp_config.json", dst / "mcp_config.json")
         log_success("mcp_config.json")
@@ -163,16 +161,16 @@ def apply_internal(src: Path, dst: Path) -> None:
         destination = dst / "settings.json"
         if destination.is_file():
             merged = merge_agy_settings(
-                _read_settings(source),
-                _read_settings(destination),
+                read_settings(source),
+                read_settings(destination),
             )
-            _write_settings(source, destination, merged)
+            write_settings(source, destination, merged)
             log_success("settings.json (merged, preserved machine-local settings)")
         else:
-            _write_settings(
+            write_settings(
                 source,
                 destination,
-                filter_agy_settings(_read_settings(source)),
+                filter_agy_settings(read_settings(source)),
             )
             log_success("settings.json (fresh copy, machine-local settings excluded)")
 

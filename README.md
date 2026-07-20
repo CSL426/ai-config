@@ -124,6 +124,11 @@ ai-config <command> [tool]
 
 Supported tools are `claude`, `codex`, `agy`, and `all`.
 
+Codex settings remain under `~/.codex`, while user Skills are deployed to the
+cross-surface `~/.agents/skills` directory used by Codex Desktop, CLI, and the
+IDE extension. Antigravity global Skills are deployed to
+`~/.gemini/config/skills`.
+
 ## Data repository contract
 
 The configured data repository, or the path overridden by `AI_CONFIG_REPO`,
@@ -137,7 +142,8 @@ data/
 │   ├── settings.json
 │   └── shared/
 ├── codex/
-│   └── config.toml
+│   ├── config.toml
+│   └── skills/
 └── agy/
     └── settings.json
 ```

@@ -33,7 +33,7 @@ def test_agent_without_frontmatter_gets_synthesized_frontmatter(tmp_path: Path) 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    skill = (home_dir / ".codex/skills/bare-agent/SKILL.md").read_text(encoding="utf-8")
+    skill = (home_dir / ".agents/skills/bare-agent/SKILL.md").read_text(encoding="utf-8")
     assert skill.startswith("---\n")
     expected_name = "name: 'Bare Agent'\n" if IMPL == "py" else "name: Bare Agent\n"
     assert expected_name in skill
@@ -52,7 +52,7 @@ def test_description_with_colon_is_rewritten_as_block_scalar(tmp_path: Path) -> 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    skill = (home_dir / ".codex/skills/colon-agent/SKILL.md").read_text(encoding="utf-8")
+    skill = (home_dir / ".agents/skills/colon-agent/SKILL.md").read_text(encoding="utf-8")
     assert "description: >-\n  Use when: things break\n" in skill
     assert "short-description: " in skill
 
@@ -74,7 +74,7 @@ def test_existing_metadata_block_is_preserved(tmp_path: Path) -> None:
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    skill = (home_dir / ".codex/skills/mirrored/SKILL.md").read_text(encoding="utf-8")
+    skill = (home_dir / ".agents/skills/mirrored/SKILL.md").read_text(encoding="utf-8")
     assert "mirror-of: ~/source.md\n" in skill
     assert "mirror-hash: abc\n" in skill
 
@@ -89,13 +89,13 @@ def test_removed_shared_skill_is_pruned_but_hand_installed_survives(tmp_path: Pa
 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
     assert result.returncode == 0, result.stderr + result.stdout
-    assert (home_dir / ".codex/skills/skill-a/SKILL.md").is_file()
-    manifest = (home_dir / ".codex/skills/.ai-config-managed").read_text(encoding="utf-8")
+    assert (home_dir / ".agents/skills/skill-a/SKILL.md").is_file()
+    manifest = (home_dir / ".agents/skills/.ai-config-managed").read_text(encoding="utf-8")
     assert "skill-a" in manifest
 
     # Hand-installed skill we never managed
     write(
-        home_dir / ".codex/skills/manual-skill/SKILL.md",
+        home_dir / ".agents/skills/manual-skill/SKILL.md",
         "---\nname: manual-skill\n---\nManual.\n",
     )
 
@@ -105,9 +105,9 @@ def test_removed_shared_skill_is_pruned_but_hand_installed_survives(tmp_path: Pa
 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
     assert result.returncode == 0, result.stderr + result.stdout
-    assert not (home_dir / ".codex/skills/skill-a").exists()
-    assert (home_dir / ".codex/skills/manual-skill/SKILL.md").is_file()
-    manifest = (home_dir / ".codex/skills/.ai-config-managed").read_text(encoding="utf-8")
+    assert not (home_dir / ".agents/skills/skill-a").exists()
+    assert (home_dir / ".agents/skills/manual-skill/SKILL.md").is_file()
+    manifest = (home_dir / ".agents/skills/.ai-config-managed").read_text(encoding="utf-8")
     assert "skill-a" not in manifest
     assert "manual-skill" not in manifest
 
@@ -274,5 +274,5 @@ def test_quoted_description_yields_valid_short_description(tmp_path: Path) -> No
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    skill = (home_dir / ".codex/skills/quoted-agent/SKILL.md").read_text(encoding="utf-8")
+    skill = (home_dir / ".agents/skills/quoted-agent/SKILL.md").read_text(encoding="utf-8")
     assert "  short-description: 'Anti-slop skill for pages'\n" in skill
