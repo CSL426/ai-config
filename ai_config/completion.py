@@ -10,6 +10,7 @@ COMMANDS = (
     "list",
     "reset",
     "completion",
+    "update",
     "help",
 )
 TOOLS = ("claude", "codex", "agy", "all")
