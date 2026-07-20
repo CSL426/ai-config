@@ -100,6 +100,10 @@ ai-config <command> [tool]
 - `sync [tool]` — Pull data repository updates and show status.
 - `project [tool]` — Project local Claude settings to other targets.
 - `list` — List all managed tools.
+- `package [skill]` — Zip a shared skill (`claude/shared/{both,agy,codex}`) for
+  manual upload to Claude Desktop (Settings > Customize > Skills). Claude
+  Desktop has no writable local skills directory, so this is a one-way export,
+  not a live sync.
 - `reset` — Remove managed configuration files after confirmation.
 - `completion bash|powershell` — Print a shell completion registration script.
 - `update` — Download and install the latest standalone release.

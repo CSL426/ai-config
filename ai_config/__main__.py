@@ -28,6 +28,7 @@ from .fsops import count_files, dir_has_files, is_excluded
 from .links import preflight_windows_links
 from .locking import apply_lock
 from .mirrors import check_shared_mirrors
+from .package import SkillNotFoundError, available_skills, package_skill
 from .paths import (
     ALL_TOOLS,
     BACKUP_BASE,
@@ -387,6 +388,32 @@ def do_reset() -> bool:
     return True
 
 
+def do_package(name: "str | None") -> bool:
+    log_header("Package skill for Claude Desktop")
+    skills = available_skills()
+    if not name:
+        if not skills:
+            log_warn(f"No shared skills found under {SCRIPT_DIR / 'claude' / 'shared'}")
+            return True
+        log_info("Available skills:")
+        for skill_name in skills:
+            print(f"  {skill_name}")
+        log_info(f"Run {ENTRYPOINT} package <skill-name> to build a ZIP")
+        return True
+
+    try:
+        zip_path = package_skill(name, Path.cwd())
+    except SkillNotFoundError:
+        log_error(f"Skill not found in shared sources: {name}")
+        if skills:
+            log_info("Available skills: " + ", ".join(skills))
+        return False
+
+    log_success(f"Packaged: {zip_path}")
+    log_info("Upload in Claude Desktop: Settings > Customize > Skills > + > Create skill")
+    return True
+
+
 def do_project(tool: str) -> bool:
     log_header("Project from ~/.claude/ → tool home dirs")
     log_info(f"Source: {CLAUDE_HOME} (live, bypassing repo)")
@@ -472,6 +499,7 @@ def usage() -> None:
     print("  status [tool]   Show diff between the data repository and live configs")
     print("  sync [tool]     Pull latest repo changes, then show status")
     print("  list            List managed tools")
+    print("  package [skill] Zip a shared skill for Claude Desktop upload")
     print("  reset           Delete all managed config files")
     print("  completion      Print Bash or PowerShell completion script")
     print("  update          Download and install the latest release")
@@ -542,6 +570,13 @@ def main(argv: "list[str] | None" = None) -> int:
             f"Run {ENTRYPOINT} setup to configure and verify your data repository."
         )
         return 1
+
+    if cmd == "package":
+        if len(args) > 2:
+            log_error(f"Unexpected arguments: {' '.join(args[2:])}")
+            return 1
+        skill_name = args[1] if len(args) > 1 else None
+        return 0 if do_package(skill_name) else 1
 
     tool = "all"
     if len(args) > 1:
