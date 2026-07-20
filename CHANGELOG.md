@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.5 - 2026-07-20
+
+- Add `ai-config package [skill]` to zip a shared skill
+  (`claude/shared/{both,agy,codex}`) for manual upload to Claude Desktop,
+  which has no writable local skills directory.
+- Migrate Codex Skills to the canonical cross-surface `~/.agents/skills`
+  directory shared by Codex Desktop, CLI, and the IDE extension; migrate
+  Antigravity global Skills to `~/.gemini/config/skills`.
+- Improve standalone installer update behavior.
+
 ## 1.0.4 - 2026-07-20
 
 - Add `acg` as a short alias entrypoint, with tab completion and
