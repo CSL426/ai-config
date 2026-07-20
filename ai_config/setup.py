@@ -10,7 +10,13 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .config import ConfigError, config_path, default_data_repo, save_data_repo
+from .config import (
+    ConfigError,
+    config_path,
+    configured_data_repo,
+    default_data_repo,
+    save_data_repo,
+)
 from .console import log_error, log_info, log_success
 
 
@@ -302,6 +308,13 @@ def _prompt(label: str, default: "str | None" = None) -> str:
     return value or (default or "")
 
 
+def _default_setup_data_repo() -> Path:
+    try:
+        return configured_data_repo() or default_data_repo()
+    except ConfigError:
+        return default_data_repo()
+
+
 def _has_usable_remote(data_dir: Path, remote_name: str) -> bool:
     if not data_dir.is_dir():
         return False
@@ -345,7 +358,7 @@ def run_setup(argv: "list[str] | None" = None) -> int:
     if not data_value and interactive:
         data_value = _prompt(
             "Data repository directory",
-            str(default_data_repo()),
+            str(_default_setup_data_repo()),
         )
     if not data_value:
         log_error("--data-dir is required in non-interactive mode.")

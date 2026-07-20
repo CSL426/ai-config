@@ -26,6 +26,7 @@ def test_powershell_installer_places_standalone_binary(tmp_path: Path) -> None:
     standalone.write_bytes(b"standalone-binary")
     bin_dir = tmp_path / "bin"
     destination = bin_dir / "ai-config.exe"
+    launcher = bin_dir / "ai-config"
     bin_dir.mkdir()
     destination.write_bytes(b"old-binary")
 
@@ -52,6 +53,9 @@ def test_powershell_installer_places_standalone_binary(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert destination.read_bytes() == b"standalone-binary"
+    assert launcher.read_bytes() == (
+        b'#!/usr/bin/env bash\nexec "$(dirname -- "$0")/ai-config.exe" "$@"\n'
+    )
     assert "Python" not in result.stdout
 
 

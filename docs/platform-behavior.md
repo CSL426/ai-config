@@ -28,9 +28,10 @@ PowerShell 5.1 and PowerShell 7 are both supported. CI forces UTF-8 Python mode
 so subprocess output is decoded consistently.
 
 The PowerShell installer downloads and verifies the native x86-64 executable,
-installs it under `~/.local/bin`, and adds that directory to the user PATH.
-When launched through Git Bash, MSYS2, or Cygwin, `install.sh` detects the
-Windows POSIX environment and delegates to the PowerShell installer.
+installs it under `~/.local/bin`, adds that directory to the user PATH, and
+writes an extensionless launcher for clean Git Bash command resolution. When
+launched through Git Bash, MSYS2, or Cygwin, `install.sh` detects the Windows
+POSIX environment and delegates to the PowerShell installer.
 
 Antigravity's `trustedWorkspaces` setting is machine-local. Init excludes it
 from the data repository, apply preserves the live value, and status ignores

@@ -44,14 +44,21 @@ esac
 
 mkdir -p "$BIN_DIR"
 destination="$BIN_DIR/ai-config"
+operation="Installation"
+binary_verb="Installed"
+if [[ -e "$destination" || -L "$destination" ]]; then
+    operation="Update"
+    binary_verb="Updated"
+fi
 
 install_binary() {
-    staged_binary="$destination.new.$$"
+    local staged_binary="$destination.new.$$"
     install -m 755 "$1" "$staged_binary"
     mv -f "$staged_binary" "$destination"
 }
 
 install_bash_completion() {
+    local completion_root completion_dir completion_file staged_completion
     [[ "${AI_CONFIG_SKIP_COMPLETION:-}" == "1" ]] && return
     completion_root="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}"
     completion_root="${completion_root%%:*}"
@@ -66,6 +73,10 @@ install_bash_completion() {
         rm -f "$staged_completion"
         warn "Shell completion could not be installed"
     fi
+}
+
+has_existing_configuration() {
+    "$destination" list >/dev/null 2>&1
 }
 
 if [[ -n "$LOCAL_BINARY" ]]; then
@@ -98,7 +109,7 @@ else
     install_binary "$temporary_dir/$asset"
 fi
 
-step "Installed: $destination"
+step "$binary_verb: $destination"
 install_bash_completion
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
@@ -112,14 +123,19 @@ if [[ -n "$DATA_REPO_URL" || -n "$DATA_DIR" ]]; then
         setup_args+=(--repo-url "$DATA_REPO_URL")
     fi
     "$destination" "${setup_args[@]}"
+    step "$operation complete"
+elif has_existing_configuration; then
+    step "$operation complete; existing data repository configuration preserved"
 else
     if [[ -t 0 ]]; then
         step "Starting first-run setup"
         "$destination"
+        step "$operation complete"
     elif (test -t 0 </dev/tty) 2>/dev/null; then
         step "Starting first-run setup"
         "$destination" </dev/tty
+        step "$operation complete"
     else
-        step "Next: ai-config setup"
+        step "$operation complete; next: ai-config setup"
     fi
 fi
