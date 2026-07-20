@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.4 - 2026-07-20
+
+- Add `acg` as a short alias entrypoint, with tab completion and
+  invoked-name-aware usage output.
+- Keep Claude and Antigravity permission allowlists local to each machine
+  during init, apply, and status.
+- Add `ai-config update` to download and install the latest standalone
+  release in place.
+
 ## 1.0.3 - 2026-07-18
 
 - Make the shell installer work from Git Bash, MSYS2, and Cygwin by delegating
