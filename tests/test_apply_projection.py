@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 IMPL = "py"
@@ -103,6 +105,9 @@ def test_apply_all_projects_claude_shared_content_without_sync(tmp_path: Path) -
     assert 'trust_level = "trusted"' in codex_config
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="Exercises the Unix symlink migration path only"
+)
 def test_apply_agy_migrates_expected_legacy_unix_link(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
