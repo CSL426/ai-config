@@ -8,8 +8,11 @@ from pathlib import Path
 from .paths import (
     AGY_CANONICAL_SKILLS,
     AGY_HOME,
+    AGY_LEGACY_SKILLS,
     CLAUDE_HOME,
+    CODEX_CANONICAL_SKILLS,
     CODEX_HOME,
+    CODEX_LEGACY_SKILLS,
     WINDOWS_MODE,
 )
 
@@ -130,9 +133,35 @@ def _assert_expected_agy_link() -> None:
     target = Path(os.readlink(skills))
     if not target.is_absolute():
         target = skills.parent / target
-    if not _same_path(target.resolve(), AGY_CANONICAL_SKILLS.resolve()):
+    if not any(
+        _same_path(target.resolve(), expected.resolve())
+        for expected in (AGY_CANONICAL_SKILLS, AGY_LEGACY_SKILLS)
+    ):
         raise RuntimeError(
             f"Refusing reparse point Antigravity skills target mismatch: {skills}"
+        )
+
+
+def _assert_expected_legacy_path(
+    legacy: Path,
+    canonical: Path,
+    tool_label: str,
+) -> None:
+    if not is_reparse_point(legacy):
+        assert_no_symlinks(legacy)
+        return
+    try:
+        target = Path(os.readlink(legacy))
+    except OSError as exc:
+        raise RuntimeError(
+            f"Cannot read legacy {tool_label} skills target: {legacy}"
+        ) from exc
+    if not target.is_absolute():
+        target = legacy.parent / target
+    if not _same_path(target.resolve(), canonical.resolve()):
+        raise RuntimeError(
+            f"Refusing reparse point legacy {tool_label} skills target mismatch: "
+            f"{legacy}"
         )
 
 
@@ -151,7 +180,13 @@ def assert_tool_destinations_safe(
             assert_managed_paths_safe(
                 CODEX_HOME,
                 ("config.toml",),
-                ("rules", "skills"),
+                ("rules",),
+            )
+            assert_no_symlinks(CODEX_CANONICAL_SKILLS)
+            _assert_expected_legacy_path(
+                CODEX_LEGACY_SKILLS,
+                CODEX_CANONICAL_SKILLS,
+                "Codex",
             )
             codex_agents_shared_target()
         elif tool == "agy":
@@ -161,5 +196,10 @@ def assert_tool_destinations_safe(
             if stages is None or (stages[tool] / "plugins").is_dir():
                 assert_internal_symlinks(AGY_HOME / "plugins")
             assert_no_symlinks(AGY_CANONICAL_SKILLS)
+            _assert_expected_legacy_path(
+                AGY_LEGACY_SKILLS,
+                AGY_CANONICAL_SKILLS,
+                "Antigravity",
+            )
             if not WINDOWS_MODE:
                 _assert_expected_agy_link()

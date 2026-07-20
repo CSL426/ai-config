@@ -12,10 +12,13 @@ from .fsops import mirror_dir
 from .paths import (
     AGY_BACKUP_PATHS,
     AGY_CANONICAL_SKILLS,
+    AGY_LEGACY_SKILLS,
     BACKUP_BASE,
     BACKUP_KEEP,
     CLAUDE_BACKUP_PATHS,
+    CODEX_CANONICAL_SKILLS,
     CODEX_BACKUP_PATHS,
+    CODEX_LEGACY_SKILLS,
     tool_home,
 )
 from .safety import assert_root_not_reparse, is_reparse_point
@@ -27,6 +30,10 @@ _BACKUP_PATHS = {
     "claude": CLAUDE_BACKUP_PATHS,
     "codex": CODEX_BACKUP_PATHS,
     "agy": AGY_BACKUP_PATHS,
+}
+_SKILLS_PATHS = {
+    "codex": (CODEX_CANONICAL_SKILLS, CODEX_LEGACY_SKILLS),
+    "agy": (AGY_CANONICAL_SKILLS, AGY_LEGACY_SKILLS),
 }
 
 
@@ -59,6 +66,11 @@ def prune_backups() -> None:
         log_info(f"Pruned old backups (kept newest {BACKUP_KEEP})")
 
 
+def _skills_source(tool: str) -> Path:
+    canonical, legacy = _SKILLS_PATHS[tool]
+    return canonical if canonical.is_dir() else legacy
+
+
 def _managed_sources(
     tools: Iterable[str],
     stages: Mapping[str, Path],
@@ -68,11 +80,11 @@ def _managed_sources(
         home = tool_home(tool)
         for relative_path in _BACKUP_PATHS[tool]:
             staged_path = stages[tool] / relative_path
-            reconciled_skills = tool in ("codex", "agy") and relative_path == "skills"
+            reconciled_skills = tool in _SKILLS_PATHS and relative_path == "skills"
             if not staged_path.exists() and not reconciled_skills:
                 continue
-            if tool == "agy" and relative_path == "skills":
-                source = AGY_CANONICAL_SKILLS
+            if reconciled_skills:
+                source = _skills_source(tool)
             else:
                 source = home / relative_path
             if source.exists():

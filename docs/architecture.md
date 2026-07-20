@@ -65,6 +65,12 @@ Shared skills are projected from `claude/shared/{both,codex,agy}`. Only the
 skill document and supported companion directories are managed. Credentials
 and unmanaged, hand-installed skills remain outside reconciliation.
 
+Tool homes and Skill destinations are separate when the upstream product uses
+a cross-surface Skill directory. Codex configuration remains in `~/.codex`,
+while staged `codex/skills` content deploys to `~/.agents/skills`. Antigravity
+CLI configuration remains in `~/.gemini/antigravity-cli`, while its canonical
+global Skills live in `~/.gemini/config/skills`.
+
 ## Safety boundaries
 
 Mutation follows stage, preflight, lock, backup, and apply. A failure before

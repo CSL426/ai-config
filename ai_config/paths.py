@@ -47,9 +47,14 @@ CLAUDE_HOME = HOME / ".claude"
 CODEX_HOME = HOME / ".codex"
 AGY_HOME = HOME / ".gemini" / "antigravity-cli"
 
-# agy: AGY_HOME/skills is a symlink into this canonical store so multiple agy
-# surfaces share one skills dir.
-AGY_CANONICAL_SKILLS = HOME / ".gemini" / "antigravity" / "skills"
+CODEX_CANONICAL_SKILLS = HOME / ".agents" / "skills"
+CODEX_LEGACY_SKILLS = CODEX_HOME / "skills"
+CODEX_SKILLS_MIGRATION_MARKER = ".ai-config-codex-skills-migrated"
+
+# Antigravity 2.0 stores global skills here. AGY_HOME/skills points to this
+# canonical store so the editor and CLI share one skills directory.
+AGY_CANONICAL_SKILLS = HOME / ".gemini" / "config" / "skills"
+AGY_LEGACY_SKILLS = HOME / ".gemini" / "antigravity" / "skills"
 
 # All managed tools (order matters for init/apply/status)
 ALL_TOOLS = ["claude", "codex", "agy"]
@@ -93,6 +98,14 @@ def set_claude_source_dir(path: Path) -> None:
 
 def tool_home(tool: str) -> Path:
     return TOOL_HOMES[tool]
+
+
+def codex_live_skills() -> Path:
+    if os.path.lexists(CODEX_CANONICAL_SKILLS):
+        return CODEX_CANONICAL_SKILLS
+    if os.path.lexists(CODEX_LEGACY_SKILLS):
+        return CODEX_LEGACY_SKILLS
+    return CODEX_CANONICAL_SKILLS
 
 
 def tilde(path: "Path | str") -> str:

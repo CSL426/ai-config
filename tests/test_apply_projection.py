@@ -81,7 +81,7 @@ def test_apply_all_projects_claude_shared_content_without_sync(tmp_path: Path) -
         '{"theme":"neon"}\n'
     )
     assert (
-        home_dir / ".codex/skills/shared-agent/SKILL.md"
+        home_dir / ".agents/skills/shared-agent/SKILL.md"
     ).read_text(encoding="utf-8").endswith("Shared agent body.\n")
     assert (
         home_dir / ".gemini/antigravity-cli/skills/shared-agent/SKILL.md"
@@ -92,7 +92,7 @@ def test_apply_all_projects_claude_shared_content_without_sync(tmp_path: Path) -
     ).read_text(encoding="utf-8") == "private codex rule\n"
     # Private skills pass through sanitize_skill_frontmatter, which synthesizes
     # description + metadata.short-description for strict parsers.
-    private_skill = (home_dir / ".codex/skills/private-skill/SKILL.md").read_text(encoding="utf-8")
+    private_skill = (home_dir / ".agents/skills/private-skill/SKILL.md").read_text(encoding="utf-8")
     assert "name: private-skill\n" in private_skill
     assert "short-description: " in private_skill
     assert private_skill.endswith("Private codex skill\n")
@@ -101,3 +101,30 @@ def test_apply_all_projects_claude_shared_content_without_sync(tmp_path: Path) -
     assert 'model = "gpt-5"' in codex_config
     assert '[projects."/tmp/demo"]' in codex_config
     assert 'trust_level = "trusted"' in codex_config
+
+
+def test_apply_agy_migrates_expected_legacy_unix_link(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "agy/settings.json", '{"theme":"neon"}\n')
+    write(
+        repo_dir / "claude/shared/both/demo/SKILL.md",
+        "---\nname: demo\ndescription: Demo\n---\nManaged.\n",
+    )
+    legacy = home_dir / ".gemini/antigravity/skills"
+    write(legacy / "hand-installed/SKILL.md", "hand installed\n")
+    cli_skills = home_dir / ".gemini/antigravity-cli/skills"
+    cli_skills.parent.mkdir(parents=True)
+    cli_skills.symlink_to(legacy, target_is_directory=True)
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    canonical = home_dir / ".gemini/config/skills"
+    assert cli_skills.is_symlink()
+    assert cli_skills.resolve() == canonical.resolve()
+    assert (canonical / "hand-installed/SKILL.md").is_file()
+    assert (canonical / "demo/SKILL.md").is_file()

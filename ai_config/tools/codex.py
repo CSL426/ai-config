@@ -6,12 +6,26 @@ import re
 import shutil
 from pathlib import Path
 
-from ..console import log_error, log_header, log_info, log_success
-from ..fsops import copy_file_to_stage, first_existing_file, overlay_dir_to_stage
-from ..paths import CODEX_HOME, SCRIPT_DIR, claude_source_dir
+from ..console import log_error, log_header, log_info, log_success, log_warn
+from ..fsops import (
+    copy_file_to_stage,
+    first_existing_file,
+    merge_missing_tree,
+    overlay_dir_to_stage,
+)
+from ..paths import (
+    CODEX_CANONICAL_SKILLS,
+    CODEX_HOME,
+    CODEX_LEGACY_SKILLS,
+    CODEX_SKILLS_MIGRATION_MARKER,
+    SCRIPT_DIR,
+    claude_source_dir,
+)
 from ..safety import (
     assert_managed_paths_safe,
+    assert_safe_write_target,
     codex_agents_shared_target,
+    is_reparse_point,
 )
 from ..skills import (
     apply_managed_skills,
@@ -124,7 +138,23 @@ def init() -> bool:
     return True
 
 
+def prepare_codex_canonical_skills() -> None:
+    canonical = CODEX_CANONICAL_SKILLS
+    legacy = CODEX_LEGACY_SKILLS
+    marker = canonical / CODEX_SKILLS_MIGRATION_MARKER
+    canonical.mkdir(parents=True, exist_ok=True)
+    if marker.is_file() or not legacy.is_dir() or is_reparse_point(legacy):
+        return
+    migrated = merge_missing_tree(legacy, canonical, "legacy Codex skills")
+    assert_safe_write_target(marker)
+    marker.write_text("migrated\n", encoding="utf-8", newline="\n")
+    if migrated:
+        log_warn(f"Migrated legacy Codex skills into: {canonical}")
+
+
 def apply_internal(src: Path, dst: Path) -> None:
+    prepare_codex_canonical_skills()
+
     if (src / "AGENTS.md").is_file():
         agents_destination = dst / "AGENTS.md"
         shared_target = codex_agents_shared_target(agents_destination)
@@ -164,6 +194,6 @@ def apply_internal(src: Path, dst: Path) -> None:
         log_success("rules/")
 
     if (src / "skills").is_dir():
-        apply_managed_skills(src / "skills", dst / "skills")
+        apply_managed_skills(src / "skills", CODEX_CANONICAL_SKILLS)
         log_success("skills/")
-    reconcile_managed_skills(src / "skills", dst / "skills")
+    reconcile_managed_skills(src / "skills", CODEX_CANONICAL_SKILLS)

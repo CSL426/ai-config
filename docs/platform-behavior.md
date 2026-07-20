@@ -36,6 +36,17 @@ Antigravity's `trustedWorkspaces` setting is machine-local. Init excludes it
 from the data repository, apply preserves the live value, and status ignores
 differences in that field.
 
+Antigravity 2.0 global skills use `~/.gemini/config/skills`. The legacy
+`~/.gemini/antigravity/skills` path is accepted only when it is an ordinary
+directory eligible for migration or a compatibility link targeting the current
+global skills directory. Foreign reparse targets remain rejected.
+
+Codex user Skills use `~/.agents/skills` across Desktop, CLI, and the IDE
+extension. Codex configuration, rules, authentication, and runtime state remain
+under `~/.codex`. On first apply, an ordinary legacy `~/.codex/skills`
+directory is backed up and merged into the current location once. A legacy
+reparse point is accepted only when it targets the current Skill directory.
+
 Installers register generated completion scripts for Bash and PowerShell.
 Bash completes both `ai-config` and `ai-config.exe`; PowerShell loads its native
 argument completer from the current-user all-hosts profile.

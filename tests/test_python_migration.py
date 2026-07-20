@@ -32,7 +32,7 @@ def test_incomplete_quote_uses_ps1_rewrite_and_name_fallback(tmp_path: Path) -> 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    normalized = (home_dir / ".codex/skills/demo/SKILL.md").read_text()
+    normalized = (home_dir / ".agents/skills/demo/SKILL.md").read_text()
     assert "description: >-\n  \"unfinished\n" in normalized
     assert "  short-description: 'demo'\n" in normalized
 
@@ -49,7 +49,7 @@ def test_short_description_stays_inside_existing_metadata(tmp_path: Path) -> Non
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    normalized = (home_dir / ".codex/skills/demo/SKILL.md").read_text()
+    normalized = (home_dir / ".agents/skills/demo/SKILL.md").read_text()
     assert (
         "metadata:\n  owner: team\n  short-description: 'Demo skill'\nlicense: MIT\n"
         in normalized
@@ -66,7 +66,7 @@ def test_frontmatter_uses_ps1_scalar_and_normalizes_newlines(tmp_path: Path) -> 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    skill = (home_dir / ".codex/skills/bare-agent/SKILL.md").read_bytes()
+    skill = (home_dir / ".agents/skills/bare-agent/SKILL.md").read_bytes()
     assert b"name: 'Bare Agent'\n" in skill
     assert b"\r" not in skill
 
@@ -120,7 +120,7 @@ def test_skill_supporting_scripts_and_agents_are_projected(tmp_path: Path) -> No
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    projected = home_dir / ".codex/skills/demo"
+    projected = home_dir / ".agents/skills/demo"
     assert (projected / "scripts/run.py").is_file()
     assert (projected / "agents/reviewer.md").is_file()
 
@@ -212,7 +212,7 @@ def test_manifest_traversal_cannot_prune_outside_skills(tmp_path: Path) -> None:
         repo_dir / "claude/shared/both/demo/SKILL.md",
         "---\nname: demo\ndescription: Demo.\n---\n",
     )
-    skills = home_dir / ".codex/skills"
+    skills = home_dir / ".agents/skills"
     write(skills / ".ai-config-managed", "../../outside\n")
     outside = home_dir / "outside/keep.txt"
     write(outside, "keep\n")
@@ -248,7 +248,7 @@ def test_large_skills_keep_single_frontmatter_and_remain_idempotent(
     assert status.returncode == 0, status.stderr + status.stdout
     assert "No differences found" in status.stdout
     for name in ("existing", "generated"):
-        content = (home_dir / f".codex/skills/{name}/SKILL.md").read_text()
+        content = (home_dir / f".agents/skills/{name}/SKILL.md").read_text()
         assert content.splitlines().count("---") == 2
         assert large_body in content
 
@@ -334,7 +334,7 @@ def test_status_previews_only_managed_skill_deletions(tmp_path: Path) -> None:
         )
     first = run_ai_config(repo_dir, home_dir, "apply", "codex")
     assert first.returncode == 0, first.stderr + first.stdout
-    skills = home_dir / ".codex/skills"
+    skills = home_dir / ".agents/skills"
     (repo_dir / "codex/skills/removed/SKILL.md").unlink()
     (repo_dir / "codex/skills/removed").rmdir()
     write(skills / "current/stale.md", "stale\n")
@@ -393,7 +393,7 @@ def test_apply_preserves_source_mtime_for_generated_skill(tmp_path: Path) -> Non
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    projected = home_dir / ".codex/skills/demo/SKILL.md"
+    projected = home_dir / ".agents/skills/demo/SKILL.md"
     assert projected.stat().st_mtime_ns == source_mtime_ns
 
 

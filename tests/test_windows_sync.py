@@ -111,6 +111,36 @@ def snapshot_tree(root: Path) -> dict[str, tuple[str, bytes | str | None]]:
     return snapshot
 
 
+def directory_fingerprint(path: Path) -> str:
+    records = []
+    for file_path in path.rglob("*"):
+        if not file_path.is_file():
+            continue
+        relative = file_path.relative_to(path).as_posix()
+        digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
+        records.append(f"{relative}\0{digest}")
+    records.sort(key=str.casefold)
+    return hashlib.sha256("\n".join(records).encode()).hexdigest()
+
+
+def write_skills_ownership(cli: Path, source: Path, kind: str) -> None:
+    entry = {
+        "version": 1,
+        "path": "skills",
+        "source": str(source.absolute()),
+        "kind": kind,
+    }
+    if kind == "directory":
+        entry["fingerprint"] = directory_fingerprint(cli / "skills")
+    elif kind == "junction":
+        entry["target"] = str(source.absolute())
+    else:
+        raise ValueError(f"Unsupported ownership kind: {kind}")
+    state = {"version": 1, "entries": [entry]}
+    write(cli / ".ai-config-skills-state.json", json.dumps(state))
+    write(cli / ".ai-config-skills-mirror", "skills\n")
+
+
 @requires_pwsh
 def test_no_arguments_and_help_show_windows_usage_commands_and_tools(tmp_path: Path) -> None:
     home_dir = tmp_path / "home"
@@ -310,7 +340,7 @@ def test_init_codex_collects_only_filtered_general_config(tmp_path: Path) -> Non
     )
     write(home_dir / ".codex/AGENTS.md", "live agents\n")
     write(home_dir / ".codex/rules/live.md", "live rule\n")
-    write(home_dir / ".codex/skills/live/SKILL.md", "live skill\n")
+    write(home_dir / ".agents/skills/live/SKILL.md", "live skill\n")
     write(repo_dir / "codex/AGENTS.md", "repo agents\n")
     write(repo_dir / "codex/rules/repo.md", "repo rule\n")
     write(repo_dir / "codex/skills/repo/SKILL.md", "repo skill\n")
@@ -625,7 +655,7 @@ def test_project_all_uses_live_claude_and_repo_tool_specific_and_shared_sources(
     assert 'model = "repo-codex"' in (home_dir / ".codex/config.toml").read_text()
     assert (home_dir / ".codex/rules/live.md").read_text() == "live rule\n"
     assert (home_dir / ".codex/rules/codex.md").read_text() == "codex rule\n"
-    codex_skills = home_dir / ".codex/skills"
+    codex_skills = home_dir / ".agents/skills"
     for name in ("reviewer", "live-skill", "codex-only", "shared-both", "shared-codex"):
         assert (codex_skills / name / "SKILL.md").is_file()
     assert not (codex_skills / "shared-agy").exists()
@@ -1025,9 +1055,9 @@ def test_apply_all_projects_repo_configuration_to_tool_homes(tmp_path: Path) -> 
     assert 'trust_level = "trusted"' in codex_config
 
     projected_skills = (
-        ".codex/skills/codex-only/SKILL.md",
-        ".codex/skills/reviewer/SKILL.md",
-        ".codex/skills/shared-skill/SKILL.md",
+        ".agents/skills/codex-only/SKILL.md",
+        ".agents/skills/reviewer/SKILL.md",
+        ".agents/skills/shared-skill/SKILL.md",
         ".gemini/antigravity-cli/skills/reviewer/SKILL.md",
         ".gemini/antigravity-cli/skills/shared-skill/SKILL.md",
     )
@@ -1069,7 +1099,7 @@ def test_apply_sanitizes_frontmatter_as_valid_yaml(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     edge_content = (
-        home_dir / ".codex/skills/yaml-edge/SKILL.md"
+        home_dir / ".agents/skills/yaml-edge/SKILL.md"
     ).read_text(encoding="utf-8")
     edge = load_frontmatter(edge_content)
     assert edge["name"] == "yaml-edge"
@@ -1081,7 +1111,7 @@ def test_apply_sanitizes_frontmatter_as_valid_yaml(tmp_path: Path) -> None:
     assert edge["license"] == "MIT"
 
     generated_content = (
-        home_dir / ".codex/skills/generated-edge/SKILL.md"
+        home_dir / ".agents/skills/generated-edge/SKILL.md"
     ).read_text(encoding="utf-8")
     generated = load_frontmatter(generated_content)
     assert generated["name"] == 'Generated: "quoted" # heading'
@@ -1113,7 +1143,7 @@ def test_quoted_description_produces_complete_short_description(tmp_path: Path) 
 
     assert result.returncode == 0, result.stderr + result.stdout
     content = (
-        home_dir / ".codex/skills/quoted/SKILL.md"
+        home_dir / ".agents/skills/quoted/SKILL.md"
     ).read_text(encoding="utf-8")
     frontmatter = load_frontmatter(content)
     assert frontmatter["description"] == "First. Second"
@@ -1145,7 +1175,7 @@ def test_later_skill_source_fully_replaces_earlier_source(tmp_path: Path) -> Non
     result = run_script(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    projected = home_dir / ".codex/skills/collision"
+    projected = home_dir / ".agents/skills/collision"
     skill = (projected / "SKILL.md").read_text(encoding="utf-8")
     assert "Later body." in skill
     assert "Earlier body." not in skill
@@ -1243,6 +1273,7 @@ def test_apply_backs_up_only_managed_paths_and_keeps_latest_five(
     write(home_dir / ".codex/AGENTS.md", "old agents\n")
     write(home_dir / ".codex/config.toml", 'model = "old"\n')
     write(home_dir / ".codex/sessions/session.json", "runtime\n")
+    write(home_dir / ".agents/skills/hand-installed/SKILL.md", "hand installed\n")
     write(
         home_dir / ".gemini/antigravity-cli/settings.json",
         '{"theme":"old"}\n',
@@ -1268,6 +1299,9 @@ def test_apply_backs_up_only_managed_paths_and_keeps_latest_five(
     assert (home_dir / ".claude/rules/old.md").read_text() == "old rule\n"
     assert (snapshot / "codex/AGENTS.md").read_text() == "old agents\n"
     assert (snapshot / "codex/config.toml").read_text() == 'model = "old"\n'
+    assert (
+        snapshot / "codex/skills/hand-installed/SKILL.md"
+    ).read_text() == "hand installed\n"
     assert (
         snapshot / "agy/settings.json"
     ).read_text() == '{"theme":"old"}\n'
@@ -1312,12 +1346,12 @@ def test_managed_skills_use_allowlist_and_prune_only_manifest_orphans(
     write(repo_dir / "codex/skills/current/agents/helper.md", "helper\n")
     write(repo_dir / "codex/skills/current/ignored.txt", "ignored\n")
     write(repo_dir / "codex/skills/current/assets/ignored.md", "ignored\n")
-    write(home_dir / ".codex/skills/hand-installed/SKILL.md", "hand installed\n")
+    write(home_dir / ".agents/skills/hand-installed/SKILL.md", "hand installed\n")
 
     first = run_script(repo_dir, home_dir, "apply", "codex")
 
     assert first.returncode == 0, first.stderr + first.stdout
-    skills = home_dir / ".codex/skills"
+    skills = home_dir / ".agents/skills"
     assert (skills / ".ai-config-managed").read_text().splitlines() == [
         "current",
         "removed-later",
@@ -1347,6 +1381,127 @@ def test_managed_skills_use_allowlist_and_prune_only_manifest_orphans(
 
 
 @requires_pwsh
+def test_codex_migrates_legacy_skills_once_after_backup(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "codex/config.toml", 'model = "test"\n')
+    write(
+        repo_dir / "codex/skills/managed/SKILL.md",
+        "---\nname: managed\ndescription: Managed\n---\nCurrent.\n",
+    )
+    legacy = home_dir / ".codex/skills"
+    write(legacy / "hand-installed/SKILL.md", "hand installed\n")
+    write(legacy / "hand-installed/auth.json", "legacy secret\n")
+
+    first = run_script(repo_dir, home_dir, "apply", "codex")
+
+    assert first.returncode == 0, first.stderr + first.stdout
+    canonical = home_dir / ".agents/skills"
+    assert (canonical / "hand-installed/SKILL.md").is_file()
+    assert not (canonical / "hand-installed/auth.json").exists()
+    assert (canonical / "managed/SKILL.md").is_file()
+    assert (canonical / ".ai-config-codex-skills-migrated").is_file()
+    snapshots = [
+        path
+        for path in (home_dir / ".ai-config-backup").iterdir()
+        if path.is_dir()
+    ]
+    assert len(snapshots) == 1
+    assert (
+        snapshots[0] / "codex/skills/hand-installed/SKILL.md"
+    ).read_text() == "hand installed\n"
+    assert not (
+        snapshots[0] / "codex/skills/hand-installed/auth.json"
+    ).exists()
+
+    shutil.rmtree(canonical / "hand-installed")
+    second = run_script(repo_dir, home_dir, "apply", "codex")
+
+    assert second.returncode == 0, second.stderr + second.stdout
+    assert not (canonical / "hand-installed").exists()
+    assert (legacy / "hand-installed/SKILL.md").is_file()
+
+
+@requires_pwsh
+def test_codex_accepts_expected_legacy_skills_symlink(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "codex/config.toml", 'model = "test"\n')
+    write(
+        repo_dir / "codex/skills/managed/SKILL.md",
+        "---\nname: managed\ndescription: Managed\n---\nCurrent.\n",
+    )
+    canonical = home_dir / ".agents/skills"
+    write(canonical / "hand-installed/SKILL.md", "hand installed\n")
+    legacy = home_dir / ".codex/skills"
+    legacy.parent.mkdir(parents=True)
+    legacy.symlink_to(canonical, target_is_directory=True)
+
+    result = run_script(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert legacy.is_symlink()
+    assert legacy.resolve() == canonical.resolve()
+    assert (canonical / "hand-installed/SKILL.md").is_file()
+    assert (canonical / "managed/SKILL.md").is_file()
+
+
+@requires_pwsh
+def test_codex_rejects_foreign_legacy_skills_symlink(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    external = tmp_path / "external"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    external.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "codex/config.toml", 'model = "managed"\n')
+    write(external / "keep.txt", "external\n")
+    legacy = home_dir / ".codex/skills"
+    legacy.parent.mkdir(parents=True)
+    legacy.symlink_to(external, target_is_directory=True)
+    before_home = snapshot_tree(home_dir)
+
+    result = run_script(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode != 0
+    assert "legacy Codex skills target mismatch" in result.stderr + result.stdout
+    assert snapshot_tree(home_dir) == before_home
+    assert (external / "keep.txt").read_text() == "external\n"
+
+
+@requires_pwsh
+def test_codex_status_reads_legacy_skills_before_migration(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "codex/config.toml", 'model = "test"\n')
+    write(
+        repo_dir / "codex/skills/managed/SKILL.md",
+        "---\nname: managed\ndescription: Managed\n---\nCurrent.\n",
+    )
+    first = run_script(repo_dir, home_dir, "apply", "codex")
+    assert first.returncode == 0, first.stderr + first.stdout
+    canonical = home_dir / ".agents/skills"
+    legacy = home_dir / ".codex/skills"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    canonical.rename(legacy)
+
+    status = run_script(repo_dir, home_dir, "status", "codex")
+
+    assert status.returncode == 0, status.stderr + status.stdout
+    assert "No differences found" in status.stdout
+
+
+@requires_pwsh
 def test_agy_skills_use_canonical_store_and_update_safe_fallback(
     tmp_path: Path,
 ) -> None:
@@ -1363,14 +1518,14 @@ def test_agy_skills_use_canonical_store_and_update_safe_fallback(
         "---\nname: demo\ndescription: Demo\n---\nVersion one.\n",
     )
     write(
-        home_dir / ".gemini/antigravity/skills/hand-installed/SKILL.md",
+        home_dir / ".gemini/config/skills/hand-installed/SKILL.md",
         "hand installed\n",
     )
 
     first = run_script(repo_dir, home_dir, "apply", "agy")
 
     assert first.returncode == 0, first.stderr + first.stdout
-    canonical = home_dir / ".gemini/antigravity/skills"
+    canonical = home_dir / ".gemini/config/skills"
     cli = home_dir / ".gemini/antigravity-cli"
     assert "Version one." in (canonical / "demo/SKILL.md").read_text()
     assert (canonical / "hand-installed/SKILL.md").read_text() == "hand installed\n"
@@ -1395,6 +1550,93 @@ def test_agy_skills_use_canonical_store_and_update_safe_fallback(
     assert second.returncode == 0, second.stderr + second.stdout
     assert "Version two." in (canonical / "demo/SKILL.md").read_text()
     assert "Version two." in (cli / "skills/demo/SKILL.md").read_text()
+
+
+@requires_pwsh
+def test_agy_accepts_expected_legacy_compatibility_symlink(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "agy/settings.json", '{"theme":"test"}\n')
+    write(
+        repo_dir / "claude/shared/both/demo/SKILL.md",
+        "---\nname: demo\ndescription: Demo\n---\nManaged.\n",
+    )
+    canonical = home_dir / ".gemini/config/skills"
+    write(canonical / "hand-installed/SKILL.md", "hand installed\n")
+    legacy = home_dir / ".gemini/antigravity/skills"
+    legacy.parent.mkdir(parents=True)
+    legacy.symlink_to(canonical, target_is_directory=True)
+
+    result = run_script(repo_dir, home_dir, "apply", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert legacy.is_symlink()
+    assert legacy.resolve() == canonical.resolve()
+    assert (canonical / "demo/SKILL.md").is_file()
+    assert (
+        home_dir / ".gemini/antigravity-cli/skills/demo/SKILL.md"
+    ).is_file()
+
+
+@requires_pwsh
+def test_agy_migrates_owned_legacy_copy_to_current_canonical(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "agy/settings.json", '{"theme":"test"}\n')
+    write(
+        repo_dir / "claude/shared/both/demo/SKILL.md",
+        "---\nname: demo\ndescription: Demo\n---\nManaged.\n",
+    )
+    legacy = home_dir / ".gemini/antigravity/skills"
+    write(legacy / "hand-installed/SKILL.md", "hand installed\n")
+    cli = home_dir / ".gemini/antigravity-cli"
+    shutil.copytree(legacy, cli / "skills")
+    write_skills_ownership(cli, legacy, "directory")
+
+    result = run_script(repo_dir, home_dir, "apply", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    canonical = home_dir / ".gemini/config/skills"
+    assert (canonical / "hand-installed/SKILL.md").is_file()
+    assert (canonical / "demo/SKILL.md").is_file()
+    assert (cli / "skills/hand-installed/SKILL.md").is_file()
+    assert (cli / "skills/demo/SKILL.md").is_file()
+    current_state = json.loads(
+        (cli / ".ai-config-skills-state.json").read_text(encoding="utf-8")
+    )
+    assert current_state["entries"][0]["source"] == str(canonical.absolute())
+
+
+@requires_pwsh
+def test_agy_rejects_foreign_legacy_skills_symlink(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    external = tmp_path / "external"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    external.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "agy/settings.json", '{"theme":"managed"}\n')
+    legacy = home_dir / ".gemini/antigravity/skills"
+    legacy.parent.mkdir(parents=True)
+    legacy.symlink_to(external, target_is_directory=True)
+    write(external / "keep.txt", "external\n")
+    before_home = snapshot_tree(home_dir)
+
+    result = run_script(repo_dir, home_dir, "apply", "agy")
+
+    assert result.returncode != 0
+    assert "legacy Antigravity skills target mismatch" in (
+        result.stderr + result.stdout
+    )
+    assert snapshot_tree(home_dir) == before_home
+    assert (external / "keep.txt").read_text() == "external\n"
 
 
 @requires_pwsh
@@ -1460,7 +1702,7 @@ def test_agy_skills_do_not_overwrite_unmarked_cli_conflict(tmp_path: Path) -> No
     assert (cli_skills / "local/SKILL.md").read_text() == "unmanaged local\n"
     assert not (cli_skills / "demo").exists()
     assert (
-        home_dir / ".gemini/antigravity/skills/demo/SKILL.md"
+        home_dir / ".gemini/config/skills/demo/SKILL.md"
     ).is_file()
 
 
@@ -1631,9 +1873,9 @@ def test_claude_skills_and_plugins_project_to_codex_and_agy(tmp_path: Path) -> N
     result = run_script(repo_dir, home_dir, "apply", "all")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert (home_dir / ".codex/skills/live-skill/SKILL.md").is_file()
+    assert (home_dir / ".agents/skills/live-skill/SKILL.md").is_file()
     assert (
-        home_dir / ".gemini/antigravity/skills/live-skill/SKILL.md"
+        home_dir / ".gemini/config/skills/live-skill/SKILL.md"
     ).is_file()
     assert (
         home_dir / ".gemini/antigravity-cli/skills/live-skill/SKILL.md"
@@ -1668,7 +1910,7 @@ def test_skill_manifest_rejects_traversal_and_only_prunes_safe_orphan(
         (absolute_owned / "keep.txt", "outside absolute\n"),
     ):
         write(path, content)
-    skills = home_dir / ".codex/skills"
+    skills = home_dir / ".agents/skills"
     write(skills / "legal-orphan/SKILL.md", "legal orphan\n")
     write(
         skills / ".ai-config-managed",
@@ -1734,7 +1976,7 @@ def test_apply_rejects_reparse_managed_skill_before_external_mutation(
     )
     write(external / "SKILL.md", "external skill\n")
     write(external / "stale.txt", "external stale\n")
-    skills = home_dir / ".codex/skills"
+    skills = home_dir / ".agents/skills"
     skills.mkdir(parents=True)
     (skills / "managed").symlink_to(external, target_is_directory=True)
     write(skills / ".ai-config-managed", "managed\n")
@@ -2002,6 +2244,48 @@ def test_parallel_apply_uses_distinct_completed_snapshots(tmp_path: Path) -> Non
         assert (home_dir / f".claude/rules/rule-{index}.md").read_text() == (
             f"rule {index}\n"
         )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows Junction contract")
+def test_python_migrates_owned_legacy_windows_junction(tmp_path: Path) -> None:
+    if not USE_PYTHON:
+        pytest.skip("Python implementation contract")
+    import _winapi
+
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "agy/settings.json", '{"theme":"test"}\n')
+    write(
+        repo_dir / "claude/shared/both/demo/SKILL.md",
+        "---\nname: demo\ndescription: Demo\n---\n",
+    )
+    legacy = home_dir / ".gemini/antigravity/skills"
+    write(legacy / "hand-installed/SKILL.md", "hand installed\n")
+    cli = home_dir / ".gemini/antigravity-cli"
+    cli.mkdir(parents=True)
+    _winapi.CreateJunction(str(legacy), str(cli / "skills"))
+    write_skills_ownership(cli, legacy, "junction")
+
+    result = run_script(
+        repo_dir,
+        home_dir,
+        "apply",
+        "agy",
+        force_copy_fallback=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    canonical = home_dir / ".gemini/config/skills"
+    assert os.path.samefile(cli / "skills", canonical)
+    assert (canonical / "hand-installed/SKILL.md").is_file()
+    assert (canonical / "demo/SKILL.md").is_file()
+    current_state = json.loads(
+        (cli / ".ai-config-skills-state.json").read_text(encoding="utf-8")
+    )
+    assert os.path.samefile(current_state["entries"][0]["source"], canonical)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows Junction contract")

@@ -9,10 +9,11 @@ import uuid
 from pathlib import Path
 
 from .console import log_success, log_warn
-from .fsops import mirror_dir
+from .fsops import merge_missing_tree, mirror_dir
 from .paths import (
     AGY_CANONICAL_SKILLS,
     AGY_HOME,
+    AGY_LEGACY_SKILLS,
     EXCLUDED_FILES,
     NATIVE_WINDOWS,
     WINDOWS_MODE,
@@ -216,12 +217,20 @@ def _assert_recorded_destinations_safe(
     for relative, record in state.items():
         source = canonical_root / relative
         destination = destination_root / relative
+        recorded_source = Path(str(record["source"]))
+        allowed_sources = [source]
+        if relative == "skills":
+            allowed_sources.append(AGY_LEGACY_SKILLS)
+        if not any(
+            _path_identity(recorded_source, allowed) for allowed in allowed_sources
+        ):
+            raise RuntimeError(f"Recorded fallback source mismatch: {destination}")
         if record["kind"] == "junction":
             if not _path_exists(destination) or not is_reparse_point(destination):
                 raise RuntimeError(
                     f"Recorded junction destination mismatch: {destination}"
                 )
-            _assert_reparse_target(destination, source)
+            _assert_reparse_target(destination, recorded_source)
         elif is_reparse_point(destination):
             raise RuntimeError(f"Reparse point ownership mismatch: {destination}")
 
@@ -274,6 +283,16 @@ def _copy_owned_path(source: Path, destination: Path) -> str:
     return "file"
 
 
+def prepare_agy_canonical_skills() -> None:
+    canonical = AGY_CANONICAL_SKILLS
+    legacy = AGY_LEGACY_SKILLS
+    if not legacy.is_dir() or is_reparse_point(legacy):
+        canonical.mkdir(parents=True, exist_ok=True)
+        return
+    if merge_missing_tree(legacy, canonical, "legacy Antigravity"):
+        log_warn(f"Migrated legacy Antigravity skills into: {canonical}")
+
+
 def _try_create_junction(source: Path, destination: Path) -> bool:
     if (
         not NATIVE_WINDOWS
@@ -304,6 +323,12 @@ def sync_agy_skills_surface() -> None:
     state = read_ownership_state(state_path)
     record = state.get("skills")
     destination_exists = _path_exists(destination)
+    record_source = (
+        Path(str(record["source"])) if record is not None else canonical
+    )
+    legacy_record = record is not None and _path_identity(
+        record_source, AGY_LEGACY_SKILLS
+    )
 
     if destination_exists and record is None:
         log_warn(f"Not replacing unmanaged Antigravity skills path: {destination}")
@@ -313,11 +338,15 @@ def sync_agy_skills_surface() -> None:
         write_ownership_state(state_path, [record])
         return
     if destination_exists and not ownership_record_matches(
-        record, canonical, destination
+        record, record_source, destination
     ):
         if record is not None:
             write_ownership_state(state_path, [record])
         return
+
+    if destination_exists and legacy_record:
+        _remove_owned_path(destination)
+        destination_exists = False
 
     if destination_exists and record and record["kind"] == "junction":
         kind = "junction"
@@ -335,16 +364,20 @@ def _ensure_agy_unix_link() -> None:
     target = AGY_CANONICAL_SKILLS
     target.mkdir(parents=True, exist_ok=True)
     if link.is_symlink():
-        if os.readlink(link) == str(target):
+        current_target = _reparse_target(link)
+        if _path_identity(current_target, target):
             return
-        log_warn(f"Not replacing existing symlink: {link} -> {os.readlink(link)}")
-        return
+        if _path_identity(current_target, AGY_LEGACY_SKILLS):
+            link.unlink()
+        else:
+            log_warn(f"Not replacing existing symlink: {link} -> {os.readlink(link)}")
+            return
     if link.exists():
         log_warn(f"Not replacing existing agy skills dir: {link} (expected symlink -> {target})")
         return
     AGY_HOME.mkdir(parents=True, exist_ok=True)
     link.symlink_to(target)
-    log_success("linked ~/.gemini/antigravity-cli/skills -> ~/.gemini/antigravity/skills")
+    log_success("linked ~/.gemini/antigravity-cli/skills -> ~/.gemini/config/skills")
 
 
 def ensure_agy_shared_links() -> None:
