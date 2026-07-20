@@ -195,6 +195,93 @@ def test_status_agy_ignores_trusted_workspaces(tmp_path: Path) -> None:
     assert "~ settings.json" not in result.stdout
 
 
+def test_init_agy_excludes_permissions(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(
+        home_dir / ".gemini/antigravity-cli/settings.json",
+        '{"model":"live","permissions":{"allow":["command(ls)"]}}\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "init", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads((repo_dir / "agy/settings.json").read_text()) == {
+        "model": "live"
+    }
+
+
+def test_init_claude_excludes_permissions(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(home_dir / ".claude/CLAUDE.md", "live instructions\n")
+    write(
+        home_dir / ".claude/settings.json",
+        '{"model":"live","permissions":{"allow":["Bash(rsync -a *)"]}}\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "init", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads((repo_dir / "claude/settings.json").read_text()) == {
+        "model": "live"
+    }
+
+
+def test_apply_claude_preserves_live_permissions(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(
+        repo_dir / "claude/settings.json",
+        '{"model":"repo","permissions":{"allow":["/repo/rule"]}}\n',
+    )
+    live_settings = home_dir / ".claude/settings.json"
+    write(
+        live_settings,
+        '{"model":"live","permissions":{"allow":["Bash(ls)"]}}\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(live_settings.read_text()) == {
+        "model": "repo",
+        "permissions": {"allow": ["Bash(ls)"]},
+    }
+
+
+def test_apply_claude_fresh_copy_excludes_repo_permissions(
+    tmp_path: Path,
+) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(
+        repo_dir / "claude/settings.json",
+        '{"model":"repo","permissions":{"allow":["/repo/rule"]}}\n',
+    )
+    live_settings = home_dir / ".claude/settings.json"
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(live_settings.read_text()) == {"model": "repo"}
+
+
+def test_status_claude_ignores_permissions(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(home_dir / ".claude/CLAUDE.md", "repo instructions\n")
+    write(
+        repo_dir / "claude/settings.json",
+        '{"model":"same","permissions":{"allow":["/repo/rule"]}}\n',
+    )
+    write(
+        home_dir / ".claude/settings.json",
+        '{"model":"same","permissions":{"allow":["Bash(ls)"]}}\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "status", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "No differences found" in result.stdout
+    assert "~ settings.json" not in result.stdout
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Unix symlink contract")
 def test_status_agy_rejects_repo_settings_symlink_before_read(
     tmp_path: Path,
