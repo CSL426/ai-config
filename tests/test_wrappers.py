@@ -14,7 +14,11 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     home.mkdir()
     standalone = tmp_path / "standalone-ai-config"
     standalone.write_text(
-        "#!/bin/sh\nprintf 'standalone %s\\n' \"$*\"\n",
+        "#!/bin/sh\n"
+        "if [ \"$1\" = list ]; then\n"
+        "    exit \"${AI_CONFIG_TEST_LIST_EXIT:-1}\"\n"
+        "fi\n"
+        "printf 'standalone %s\\n' \"$*\"\n",
         encoding="utf-8",
     )
     standalone.chmod(0o755)
@@ -41,6 +45,7 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     assert result.returncode == 0, result.stderr + result.stdout
     assert "Installing local standalone binary" in result.stdout
     assert "ai-config setup" in result.stdout
+    assert "Update complete" in result.stdout
 
     executable = home / ".local" / "bin" / "ai-config"
     assert executable.is_file()
@@ -61,6 +66,7 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     assert run.returncode == 0, run.stderr + run.stdout
     assert "standalone help" in run.stdout
 
+    env["AI_CONFIG_TEST_LIST_EXIT"] = "0"
     repeated = subprocess.run(
         ["bash", str(REPO_ROOT / "install.sh")],
         cwd=tmp_path,
@@ -70,6 +76,9 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
         check=False,
     )
     assert repeated.returncode == 0, repeated.stderr + repeated.stdout
+    assert "Update complete" in repeated.stdout
+    assert "existing data repository configuration preserved" in repeated.stdout
+    assert "Starting first-run setup" not in repeated.stdout
     assert completion.read_text(encoding="utf-8") == "standalone completion bash\n"
 
 

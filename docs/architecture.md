@@ -2,22 +2,28 @@
 
 ## Repository boundary
 
-The standard local layout contains two independent Git repositories:
+The tool and data repositories are independent Git checkouts. Their locations
+are not coupled:
 
 ```text
-~/ai-config/             public tool repository
+<tool-checkout>/         optional public contributor checkout
 ├── .git/
 ├── ai_config/
-└── data/                private data repository, ignored by the outer repo
-    ├── .git/
-    ├── claude/
-    ├── codex/
-    └── agy/
+├── tests/
+├── install.sh
+└── install.ps1
+
+<data-repo>/             private location selected during setup
+├── .git/
+├── claude/
+├── codex/
+└── agy/
 ```
 
-The outer repository owns executable code, installers, tests, and public
-documentation. The inner repository owns configuration data only. Each has its
-own remote, index, history, and release lifecycle.
+The tool repository owns executable code, installers, tests, and public
+documentation. The data repository owns configuration data only. Each has its
+own remote, index, history, and release lifecycle. A nested `data/` checkout is
+supported for contributor convenience but is not required.
 
 ## Data repository resolution
 

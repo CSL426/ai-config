@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from ai_config import setup as setup_cli
 from ai_config.cli import console_main
+from ai_config.config import save_data_repo
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -116,6 +118,33 @@ def test_setup_clones_verifies_push_and_persists_data_repo(tmp_path: Path) -> No
     )
     assert resolved.returncode == 0, resolved.stderr + resolved.stdout
     assert "claude (1 files)" in resolved.stdout
+
+
+def test_interactive_setup_defaults_to_configured_data_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_repo = tmp_path / "configured-data"
+    config = tmp_path / "config.json"
+    save_data_repo(data_repo, config)
+    prompt_defaults = []
+
+    monkeypatch.setenv("AI_CONFIG_CONFIG", str(config))
+    monkeypatch.delenv("AI_CONFIG_REPO", raising=False)
+    monkeypatch.setattr(setup_cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        setup_cli,
+        "_prompt",
+        lambda _label, default=None: prompt_defaults.append(default) or default or "",
+    )
+    monkeypatch.setattr(setup_cli, "_has_usable_remote", lambda *_args: True)
+    monkeypatch.setattr(
+        setup_cli,
+        "setup_repository",
+        lambda data_dir, **_kwargs: data_dir,
+    )
+
+    assert setup_cli.run_setup([]) == 0
+    assert prompt_defaults == [str(data_repo.resolve())]
 
 
 def test_setup_failure_does_not_save_config_or_keep_new_remote(tmp_path: Path) -> None:

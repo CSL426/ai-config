@@ -22,6 +22,26 @@ function Write-Utf8NoBom([string]$Path, [string]$Content) {
     [IO.File]::WriteAllText($Path, $Content, $Encoding)
 }
 
+function Install-GitBashLauncher([string]$Executable) {
+    $Launcher = Join-Path $BinDir 'ai-config'
+    $ExecutableName = Split-Path -Leaf $Executable
+    $Content = (
+        '#!/usr/bin/env bash' + "`n" +
+        'exec "$(dirname -- "$0")/' + $ExecutableName + '" "$@"' + "`n"
+    )
+    Write-Utf8NoBom $Launcher $Content
+}
+
+function Test-ExistingConfiguration([string]$Executable) {
+    try {
+        & $Executable list *> $null
+        return $LASTEXITCODE -eq 0
+    }
+    catch {
+        return $false
+    }
+}
+
 function Read-ProfileText([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
     $Bytes = [IO.File]::ReadAllBytes($Path)
@@ -102,6 +122,8 @@ if (-not [Environment]::Is64BitOperatingSystem) {
 }
 $Asset = 'ai-config-windows-x86_64.exe'
 $Destination = Join-Path $BinDir 'ai-config.exe'
+$Operation = if (Test-Path -LiteralPath $Destination -PathType Leaf) { 'Update' } else { 'Installation' }
+$BinaryVerb = if ($Operation -eq 'Update') { 'Updated' } else { 'Installed' }
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 
 if ($LocalBinary) {
@@ -136,7 +158,8 @@ else {
     }
 }
 
-Write-Step "Installed: $Destination"
+Install-GitBashLauncher $Destination
+Write-Step "${BinaryVerb}: $Destination"
 Install-Completions $Destination
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not $SkipPathUpdate -and ($UserPath -split ';') -notcontains $BinDir) {
@@ -151,14 +174,19 @@ if ($DataRepoUrl -or $DataDir) {
     if ($DataRepoUrl) { $SetupArgs += @('--repo-url', $DataRepoUrl) }
     & $Destination @SetupArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Write-Step "$Operation complete"
+}
+elseif (Test-ExistingConfiguration $Destination) {
+    Write-Step "$Operation complete; existing data repository configuration preserved."
 }
 else {
     if (-not [Console]::IsInputRedirected) {
         Write-Step 'Starting first-run setup'
         & $Destination
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Write-Step "$Operation complete"
     }
     else {
-        Write-Step 'Next: ai-config setup'
+        Write-Step "$Operation complete; next: ai-config setup"
     }
 }

@@ -3,10 +3,10 @@
 Cross-AI CLI configuration manager and sync engine for Claude Code, Codex, and
 Antigravity.
 
-The public tool repository is the outer checkout at `~/ai-config`. Your private
-configuration repository lives inside it at `~/ai-config/data` and is ignored by
-the outer Git repository. Each repository keeps its own `.git` directory,
-history, remote, and commit lifecycle.
+The public tool repository contains the CLI, installers, and tests. Your private
+configuration lives in a separate Git repository at the location selected during
+setup. A source checkout is optional, and neither repository must be nested
+inside the other.
 
 ## Installation
 
@@ -23,7 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | 
 ```
 
 On Windows, the shell installer delegates to the native PowerShell installer
-automatically.
+automatically. The native installer also places an extensionless `ai-config`
+launcher beside `ai-config.exe` so Git Bash resolves the clean command name.
 
 Windows PowerShell:
 
@@ -36,13 +37,13 @@ Restart the terminal after installation, then try `ai-config <Tab>` or
 `ai-config status <Tab>`. To print the generated scripts directly, run
 `ai-config completion bash` or `ai-config completion powershell`.
 
-The installer starts first-run setup when it has an interactive terminal. Setup
-asks where the private data repository should live and, when needed, asks for
-its Git URL. It clones or opens that repository, checks the required layout,
-creates and verifies a unique temporary remote branch, then deletes it. The
-local path is saved only after the real push and cleanup both succeed and the
-remote refs are confirmed restored. If input is redirected, run
-`ai-config setup` after installation.
+When no usable data repository is already configured, the installer starts
+first-run setup in an interactive terminal. Setup asks where the private data
+repository should live and, when needed, asks for its Git URL. It clones or
+opens that repository, checks the required layout, creates and verifies a unique
+temporary remote branch, then deletes it. The local path is saved only after the
+real push and cleanup both succeed and the remote refs are confirmed restored.
+If input is redirected, run `ai-config setup` after installation.
 
 Non-interactive setup uses the same verification:
 
@@ -87,25 +88,6 @@ python -m venv .venv
 .venv/bin/pip install --editable .
 ```
 
-## Repository layout
-
-```text
-~/ai-config/                 # optional source checkout for contributors
-├── .git/
-├── ai_config/               # sync engine
-├── tests/
-├── install.sh
-├── install.ps1
-└── data/                    # private configuration repository, Git-ignored
-    ├── .git/
-    ├── claude/
-    ├── codex/
-    └── agy/
-```
-
-The data repository is the source of truth. `init` gathers live configuration
-into it; `apply` deploys its content to the corresponding tool home directories.
-
 ## CLI usage
 
 ```bash
@@ -131,11 +113,13 @@ IDE extension. Antigravity global Skills are deployed to
 
 ## Data repository contract
 
-The configured data repository, or the path overridden by `AI_CONFIG_REPO`,
-must contain this layout:
+The data repository is the source of truth. `init` gathers live configuration
+into it; `apply` deploys its content to the corresponding tool home directories.
+The configured repository, or the path overridden by `AI_CONFIG_REPO`, must
+contain this layout:
 
 ```text
-data/
+<data-repo>/
 ├── claude/
 │   ├── rules/
 │   ├── agents/
