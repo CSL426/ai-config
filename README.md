@@ -120,6 +120,7 @@ ai-config <command> [tool]
 - `list` — List all managed tools.
 - `reset` — Remove managed configuration files after confirmation.
 - `completion bash|powershell` — Print a shell completion registration script.
+- `update` — Download and install the latest standalone release.
 
 Supported tools are `claude`, `codex`, `agy`, and `all`.
 
