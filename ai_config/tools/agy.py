@@ -35,6 +35,12 @@ from ..skills import (
 _MACHINE_LOCAL_SETTINGS = frozenset({"trustedWorkspaces", "permissions"})
 _SETTINGS_LABEL = "Antigravity settings.json"
 
+# Regenerable Claude plugin state: safe to skip when projecting plugins/ to
+# agy, since it's marketplace/install cache and per-plugin git checkouts, not
+# user configuration. ".git" pack files are also read-only, which breaks
+# shutil.copy2 on re-mirror.
+PLUGIN_REGENERABLE_DIRS = frozenset({"cache", ".git"})
+
 
 def filter_agy_settings(text: str) -> str:
     return filter_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
@@ -92,6 +98,7 @@ def stage_projection(dst: Path) -> None:
             claude_src / "plugins",
             dst / "plugins",
             allow_internal_symlinks=True,
+            exclude_dir_names=PLUGIN_REGENERABLE_DIRS,
         )
         registry = dst / "plugins" / "installed_plugins.json"
         if registry.is_file():
@@ -191,5 +198,6 @@ def apply_internal(src: Path, dst: Path) -> None:
             src / "plugins",
             dst / "plugins",
             allow_internal_symlinks=True,
+            exclude_dir_names=PLUGIN_REGENERABLE_DIRS,
         )
         log_success("plugins/")
