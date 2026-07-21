@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.6 - 2026-07-21
+
+- Fix `project`/`apply` hanging (or failing with a permission error) while
+  mirroring `~/.claude/plugins` to Antigravity CLI: skip the regenerable
+  `cache` directory and per-plugin `.git` checkouts under
+  `plugins/marketplaces` instead of mirroring them file by file.
+
 ## 1.0.5 - 2026-07-20
 
 - Add `ai-config package [skill]` to zip a shared skill
