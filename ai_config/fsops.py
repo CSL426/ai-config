@@ -97,11 +97,14 @@ def mirror_dir(
     dereference: bool = False,
     exclude_credentials: bool = True,
     allow_internal_symlinks: bool = False,
+    exclude_dir_names: "frozenset[str] | None" = None,
 ) -> None:
     """rsync -a --delete [--exclude creds] src/ dst/ — exact mirror.
 
     Excluded names are invisible on both sides (not copied, not deleted),
-    matching rsync --exclude semantics.
+    matching rsync --exclude semantics. `exclude_dir_names` additionally
+    skips any path with a directory component matching one of those names
+    (e.g. a regenerable cache directory), regardless of nesting depth.
     """
     assert_links = assert_internal_symlinks if allow_internal_symlinks else assert_no_symlinks
     assert_links(src)
@@ -109,7 +112,13 @@ def mirror_dir(
     dst.mkdir(parents=True, exist_ok=True)
 
     def excluded(p: Path) -> bool:
-        return exclude_credentials and is_excluded(p)
+        if exclude_credentials and is_excluded(p):
+            return True
+        if exclude_dir_names:
+            base = src if p.is_relative_to(src) else dst
+            if any(part in exclude_dir_names for part in p.relative_to(base).parts):
+                return True
+        return False
 
     src_rels = set()
     for item in sorted(src.rglob("*")):
