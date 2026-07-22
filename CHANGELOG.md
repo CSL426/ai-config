@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.7 - 2026-07-22
 
 - Add `acg pull [tool]` and guarded `acg push [tool]` commands for
   cross-machine configuration synchronization. Push refuses unsafe repository
