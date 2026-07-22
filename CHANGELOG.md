@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Add `acg pull [tool]` and guarded `acg push [tool]` commands for
+  cross-machine configuration synchronization. Push refuses unsafe repository
+  states and requires diff review plus explicit confirmation before committing.
+- Install the short `acg` command and its Bash completion alongside standalone
+  releases on every supported platform.
+- Check the installed standalone version before downloading an update.
+- Keep Codex `notify` runtime paths local during init, status, and apply.
+
 ## 1.0.6 - 2026-07-21
 
 - Fix `project`/`apply` hanging (or failing with a permission error) while

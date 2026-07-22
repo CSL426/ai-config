@@ -2,6 +2,7 @@
 
 import difflib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,7 @@ from .paths import (
     CODEX_CANONICAL_SKILLS,
     CONFIG_ERROR,
     ENTRYPOINT,
+    EXCLUDED_FILES,
     SCRIPT_DIR,
     claude_source_dir,
     codex_live_skills,
@@ -57,6 +59,7 @@ from .tools import agy, claude, codex
 
 _TOOLS = {"claude": claude, "codex": codex, "agy": agy}
 _HEADERS = {"claude": "Claude", "codex": "Codex", "agy": "Antigravity CLI"}
+_GIT_URL_CREDENTIALS = re.compile(r"(https?://)[^/@\s]+@")
 
 
 # ─── apply ────────────────────────────────────────────────────
@@ -459,6 +462,26 @@ def show_status(tool: str) -> None:
     check_plugin_drift()
 
 
+def _selected_tools(tool: str) -> list[str]:
+    return [selected for selected in ALL_TOOLS if tool in ("all", selected)]
+
+
+def _init_tools(tool: str) -> bool:
+    selected = _selected_tools(tool)
+    try:
+        if len(selected) > 1:
+            for selected_tool in selected:
+                if not _TOOLS[selected_tool].preflight_init():
+                    return False
+        ok = True
+        for selected_tool in selected:
+            ok = _TOOLS[selected_tool].init() and ok
+        return ok
+    except Exception as exc:
+        log_error(str(exc))
+        return False
+
+
 def do_sync(tool: str) -> int:
     log_header("Sync repository changes")
     try:
@@ -482,6 +505,205 @@ def do_sync(tool: str) -> int:
     return 0
 
 
+def _run_repo_git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(SCRIPT_DIR), *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def _git_failure(action: str, result: subprocess.CompletedProcess[str]) -> None:
+    detail = result.stderr.strip() or result.stdout.strip() or "unknown Git error"
+    detail = _GIT_URL_CREDENTIALS.sub(r"\1***@", detail)
+    log_error(f"{action} failed: {detail}")
+
+
+def _push_preflight() -> bool:
+    status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
+    if status.returncode != 0:
+        _git_failure("Reading repository status", status)
+        return False
+    if status.stdout.strip():
+        log_error("Data repository has uncommitted changes; push cancelled.")
+        print(status.stdout.rstrip())
+        return False
+
+    branch = _run_repo_git("symbolic-ref", "--quiet", "--short", "HEAD")
+    if branch.returncode != 0:
+        log_error("Data repository is in detached HEAD state; push cancelled.")
+        return False
+
+    fetch = _run_repo_git("fetch", "--quiet")
+    if fetch.returncode != 0:
+        _git_failure("Fetching repository updates", fetch)
+        return False
+
+    upstream = _run_repo_git(
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}",
+    )
+    if upstream.returncode != 0:
+        log_error("Current data repository branch has no upstream; push cancelled.")
+        return False
+
+    counts = _run_repo_git(
+        "rev-list",
+        "--left-right",
+        "--count",
+        "HEAD...@{upstream}",
+    )
+    if counts.returncode != 0:
+        _git_failure("Comparing the local branch with its upstream", counts)
+        return False
+    try:
+        ahead, behind = (int(value) for value in counts.stdout.split())
+    except ValueError:
+        log_error("Could not determine whether the data repository is synchronized.")
+        return False
+    if ahead or behind:
+        log_error(
+            "Data repository is not synchronized with its upstream "
+            f"(ahead {ahead}, behind {behind}); push cancelled."
+        )
+        if behind:
+            log_info(f"Run {ENTRYPOINT} pull before pushing local configuration")
+        return False
+    return True
+
+
+def _unstage_tools(tools: list[str]) -> None:
+    result = _run_repo_git("restore", "--staged", "--", *tools)
+    if result.returncode != 0:
+        _git_failure("Restoring unstaged repository changes", result)
+
+
+def _staged_credentials() -> list[str]:
+    result = _run_repo_git("diff", "--cached", "--name-only", "-z")
+    if result.returncode != 0:
+        _git_failure("Scanning staged paths", result)
+        return ["<scan failed>"]
+    return [
+        relative
+        for relative in result.stdout.split("\0")
+        if relative
+        and any(
+            part in EXCLUDED_FILES
+            for part in relative.replace("\\", "/").split("/")
+        )
+    ]
+
+
+def do_push(tool: str) -> int:
+    log_header("Push local configuration")
+    try:
+        if not _push_preflight():
+            return 1
+    except FileNotFoundError:
+        log_error("git command not found. Please install git.")
+        return 1
+    except Exception as exc:
+        log_error(f"Failed to prepare repository push: {exc}")
+        return 1
+
+    if not _init_tools(tool):
+        return 1
+
+    status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
+    if status.returncode != 0:
+        _git_failure("Reading collected configuration changes", status)
+        return 1
+    pending = status.stdout
+    if not pending.strip():
+        log_success("No local configuration changes to push")
+        return 0
+
+    print()
+    log_info("Configuration changes to commit:")
+    print(pending.rstrip())
+    diff = subprocess.run(
+        ["git", "-C", str(SCRIPT_DIR), "diff", "--no-ext-diff", "--"],
+        text=True,
+    )
+    if diff.returncode != 0:
+        log_error("Could not display repository changes; push cancelled.")
+        return 1
+
+    selected = _selected_tools(tool)
+    commit_scope = "AI tool" if tool == "all" else tool
+    commit_message = f"chore: sync {commit_scope} configuration"
+    print()
+    log_info(f"Commit message: {commit_message}")
+    try:
+        confirm = input("Commit and push these changes? [y/N] ")
+    except EOFError:
+        confirm = ""
+    if confirm not in ("y", "Y"):
+        log_info("Cancelled; collected changes remain unstaged")
+        return 0
+
+    current_status = _run_repo_git(
+        "status", "--porcelain=v1", "--untracked-files=all"
+    )
+    if current_status.returncode != 0:
+        _git_failure("Rechecking repository status", current_status)
+        return 1
+    if current_status.stdout != pending:
+        log_error("Data repository changed while awaiting confirmation; push cancelled.")
+        return 1
+
+    stage = _run_repo_git("add", "-A", "--", *selected)
+    if stage.returncode != 0:
+        _git_failure("Staging collected configuration", stage)
+        return 1
+
+    credentials = _staged_credentials()
+    if credentials:
+        _unstage_tools(selected)
+        log_error("Credential files would be committed; push cancelled:")
+        for path in credentials:
+            print(f"  {path}")
+        return 1
+
+    unstaged = _run_repo_git("diff", "--quiet")
+    untracked = _run_repo_git("ls-files", "--others", "--exclude-standard")
+    if (
+        unstaged.returncode not in (0, 1)
+        or untracked.returncode != 0
+        or unstaged.returncode == 1
+        or untracked.stdout.strip()
+    ):
+        _unstage_tools(selected)
+        log_error("Unexpected repository changes remain after staging; push cancelled.")
+        return 1
+
+    check = _run_repo_git("diff", "--cached", "--check")
+    if check.returncode != 0:
+        _unstage_tools(selected)
+        _git_failure("Validating staged configuration", check)
+        return 1
+
+    commit = _run_repo_git("commit", "-m", commit_message)
+    if commit.returncode != 0:
+        _git_failure("Committing configuration", commit)
+        return 1
+    commit_output = commit.stdout.strip()
+    if commit_output:
+        print(commit_output)
+
+    push = _run_repo_git("push")
+    if push.returncode != 0:
+        _git_failure("Pushing configuration", push)
+        head = _run_repo_git("rev-parse", "--short", "HEAD")
+        if head.returncode == 0:
+            log_warn(f"Local commit {head.stdout.strip()} was created but not pushed")
+        return 1
+    log_success("Local configuration committed and pushed")
+    return 0
+
+
 # ─── main ─────────────────────────────────────────────────────
 
 
@@ -497,7 +719,9 @@ def usage() -> None:
     print("  apply [tool]    Deploy data repository configs to tool home directories")
     print("  project [tool]  Project ~/.claude/ directly to other tool home dirs")
     print("  status [tool]   Show diff between the data repository and live configs")
-    print("  sync [tool]     Pull latest repo changes, then show status")
+    print("  pull [tool]     Pull latest repo changes, then show status")
+    print("  push [tool]     Gather, review, commit, and push local configuration")
+    print("  sync [tool]     Alias for pull")
     print("  list            List managed tools")
     print("  package [skill] Zip a shared skill for Claude Desktop upload")
     print("  reset           Delete all managed config files")
@@ -587,19 +811,7 @@ def main(argv: "list[str] | None" = None) -> int:
     tool = resolve_tool(tool)
 
     if cmd == "init":
-        ok = True
-        selected = [t for t in ALL_TOOLS if tool in ("all", t)]
-        try:
-            if len(selected) > 1:
-                for t in selected:
-                    if not _TOOLS[t].preflight_init():
-                        return 1
-            for t in selected:
-                ok = _TOOLS[t].init() and ok
-        except Exception as exc:
-            log_error(str(exc))
-            return 1
-        if not ok:
+        if not _init_tools(tool):
             return 1
         print()
         log_success(f"Init complete. Review with: {CYAN}{ENTRYPOINT} status{NC}")
@@ -612,8 +824,12 @@ def main(argv: "list[str] | None" = None) -> int:
     elif cmd == "project":
         if not do_project(tool):
             return 1
-    elif cmd == "sync":
+    elif cmd in ("pull", "sync"):
         code = do_sync(tool)
+        if code != 0:
+            return code
+    elif cmd == "push":
+        code = do_push(tool)
         if code != 0:
             return code
     elif cmd == "status":

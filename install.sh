@@ -57,18 +57,33 @@ install_binary() {
     mv -f "$staged_binary" "$destination"
 }
 
+install_acg_alias() {
+    local alias_path="$BIN_DIR/acg"
+    local staged_alias="$alias_path.new.$$"
+    if [[ -d "$alias_path" && ! -L "$alias_path" ]]; then
+        warn "Not replacing directory used by acg alias: $alias_path"
+        return
+    fi
+    ln -s "ai-config" "$staged_alias"
+    mv -f "$staged_alias" "$alias_path"
+}
+
 install_bash_completion() {
-    local completion_root completion_dir completion_file staged_completion
+    local completion_root completion_dir completion_file acg_completion_file
+    local staged_completion
     [[ "${AI_CONFIG_SKIP_COMPLETION:-}" == "1" ]] && return
     completion_root="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}"
     completion_root="${completion_root%%:*}"
     completion_dir="$completion_root/completions"
     completion_file="$completion_dir/ai-config.bash"
+    acg_completion_file="$completion_dir/acg.bash"
     staged_completion="$completion_file.new.$$"
     mkdir -p "$completion_dir"
     if "$destination" completion bash > "$staged_completion"; then
         mv -f "$staged_completion" "$completion_file"
+        install -m 644 "$completion_file" "$acg_completion_file"
         step "Installed Bash completion: $completion_file"
+        step "Reload completion in this shell: source \"$completion_file\""
     else
         rm -f "$staged_completion"
         warn "Shell completion could not be installed"
@@ -110,6 +125,7 @@ else
 fi
 
 step "$binary_verb: $destination"
+install_acg_alias
 install_bash_completion
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;

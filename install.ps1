@@ -22,14 +22,21 @@ function Write-Utf8NoBom([string]$Path, [string]$Content) {
     [IO.File]::WriteAllText($Path, $Content, $Encoding)
 }
 
-function Install-GitBashLauncher([string]$Executable) {
-    $Launcher = Join-Path $BinDir 'ai-config'
+function Install-GitBashLauncher([string]$Name, [string]$Executable) {
+    $Launcher = Join-Path $BinDir $Name
     $ExecutableName = Split-Path -Leaf $Executable
     $Content = (
         '#!/usr/bin/env bash' + "`n" +
         'exec "$(dirname -- "$0")/' + $ExecutableName + '" "$@"' + "`n"
     )
     Write-Utf8NoBom $Launcher $Content
+}
+
+function Install-CommandAlias([string]$Name, [string]$Executable) {
+    $AliasPath = Join-Path $BinDir "$Name.cmd"
+    $ExecutableName = Split-Path -Leaf $Executable
+    $Content = '@echo off' + "`r`n" + '"%~dp0' + $ExecutableName + '" %*' + "`r`n"
+    Write-Utf8NoBom $AliasPath $Content
 }
 
 function Test-ExistingConfiguration([string]$Executable) {
@@ -107,6 +114,7 @@ function Install-Completions([string]$Executable) {
     $BashText = ($BashCompletion -join "`n") + "`n"
     Write-Utf8NoBom (Join-Path $BashCompletionDir 'ai-config.bash') $BashText
     Write-Utf8NoBom (Join-Path $BashCompletionDir 'ai-config.exe.bash') $BashText
+    Write-Utf8NoBom (Join-Path $BashCompletionDir 'acg.bash') $BashText
 
     $CompletionDir = Join-Path $UserHome '.local\share\ai-config'
     New-Item -ItemType Directory -Force -Path $CompletionDir | Out-Null
@@ -158,7 +166,9 @@ else {
     }
 }
 
-Install-GitBashLauncher $Destination
+Install-GitBashLauncher 'ai-config' $Destination
+Install-GitBashLauncher 'acg' $Destination
+Install-CommandAlias 'acg' $Destination
 Write-Step "${BinaryVerb}: $Destination"
 Install-Completions $Destination
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')

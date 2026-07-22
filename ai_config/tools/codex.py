@@ -37,18 +37,58 @@ from ..skills import (
 
 _PROJECTS_HEADER = re.compile(r"^\[projects\.")
 _ANY_HEADER = re.compile(r"^\[")
+_TOP_LEVEL_ASSIGNMENT = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
+_MACHINE_LOCAL_TOP_LEVEL_KEYS = {"notify"}
+
+
+def _top_level_machine_local_statements(text: str) -> list[str]:
+    statements: list[str] = []
+    in_table = False
+    for line in text.splitlines():
+        if _ANY_HEADER.match(line):
+            in_table = True
+        match = None if in_table else _TOP_LEVEL_ASSIGNMENT.match(line)
+        if match and match.group(1) in _MACHINE_LOCAL_TOP_LEVEL_KEYS:
+            statements.append(line)
+    return statements
+
+
+def _insert_top_level_statements(text: str, statements: list[str]) -> str:
+    if not statements:
+        return text
+    lines = text.rstrip("\n").splitlines()
+    table_index = next(
+        (index for index, line in enumerate(lines) if _ANY_HEADER.match(line)),
+        len(lines),
+    )
+    root = lines[:table_index]
+    tables = lines[table_index:]
+    while root and root[-1] == "":
+        root.pop()
+    while tables and tables[0] == "":
+        tables.pop(0)
+    merged = root + statements
+    if tables:
+        merged += [""] + tables
+    return "\n".join(merged) + "\n"
 
 
 def filter_codex_config(text: str) -> str:
-    """Remove [projects.*] blocks; trim trailing blank lines."""
+    """Remove machine-local settings and [projects.*] blocks."""
     out: list[str] = []
     skip = False
+    in_table = False
     for line in text.splitlines():
         if _PROJECTS_HEADER.match(line):
             skip = True
+            in_table = True
             continue
         if _ANY_HEADER.match(line):
             skip = False
+            in_table = True
+        match = None if in_table else _TOP_LEVEL_ASSIGNMENT.match(line)
+        if match and match.group(1) in _MACHINE_LOCAL_TOP_LEVEL_KEYS:
+            continue
         if not skip:
             out.append(line)
     while out and out[-1] == "":
@@ -57,8 +97,8 @@ def filter_codex_config(text: str) -> str:
 
 
 def merge_codex_config(source_text: str, target_text: str) -> str:
-    """Replace general settings, keep the target's [projects.*] blocks so user
-    trust settings survive."""
+    """Replace shared settings while preserving machine-local target values."""
+    machine_local = _top_level_machine_local_statements(target_text)
     projects: list[str] = []
     in_projects = False
     for line in target_text.splitlines():
@@ -72,11 +112,11 @@ def merge_codex_config(source_text: str, target_text: str) -> str:
         if in_projects:
             projects.append(line)
 
-    result = source_text.rstrip("\n")
+    result = filter_codex_config(source_text).rstrip("\n")
     block = "\n".join(projects).rstrip("\n")
     if block:
         result += "\n" + block
-    return result + "\n"
+    return _insert_top_level_statements(result + "\n", machine_local)
 
 
 def stage_projection(dst: Path) -> None:
@@ -131,7 +171,7 @@ def init() -> bool:
             dst / "config.toml",
             ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
         )
-        log_success("config.toml (filtered, no [projects.*])")
+        log_success("config.toml (filtered, no machine-local settings)")
 
     log_info("Skipping shared files (projected from claude/ during apply)")
     log_success("Codex init complete")
@@ -185,8 +225,20 @@ def apply_internal(src: Path, dst: Path) -> None:
             )
             log_success("config.toml (merged, preserved [projects.*])")
         else:
-            shutil.copy2(src / "config.toml", dst / "config.toml")
-            log_success("config.toml (fresh copy)")
+            source_stat = (src / "config.toml").stat()
+            filtered = filter_codex_config(
+                (src / "config.toml").read_text(encoding="utf-8")
+            )
+            (dst / "config.toml").write_text(
+                filtered,
+                encoding="utf-8",
+                newline="\n",
+            )
+            os.utime(
+                dst / "config.toml",
+                ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
+            )
+            log_success("config.toml (fresh copy, filtered machine-local settings)")
 
     # rules/ merged overlay (rsync -aL, no deletion)
     if (src / "rules").is_dir():

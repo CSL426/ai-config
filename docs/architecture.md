@@ -55,7 +55,14 @@ configuration. If cleanup fails, setup reports the exact ref and manual removal
 command. If setup temporarily added or replaced a remote on an existing
 checkout, that remote change is rolled back when validation fails.
 
-All commands, including `sync`, operate on the resolved data repository.
+All commands, including `pull`, `push`, and the legacy `sync` alias, operate on
+the resolved data repository.
+
+Repository synchronization is directional. `pull` updates the repository and
+reports live drift without applying it. `push` requires a clean branch that
+matches its upstream, gathers only the selected tool configuration, displays the
+result, and requires confirmation before staging, committing, and performing a
+normal non-force push.
 
 ## Projection model
 
@@ -70,6 +77,11 @@ The data repository is authoritative:
 Shared skills are projected from `claude/shared/{both,codex,agy}`. Only the
 skill document and supported companion directories are managed. Credentials
 and unmanaged, hand-installed skills remain outside reconciliation.
+
+Machine-local settings are excluded symmetrically from gather and status, then
+preserved from the live target during apply. For Codex this includes the
+top-level `notify` command, whose executable path belongs to the installed
+runtime, and every `[projects.*]` trust table.
 
 Tool homes and Skill destinations are separate when the upstream product uses
 a cross-surface Skill directory. Codex configuration remains in `~/.codex`,

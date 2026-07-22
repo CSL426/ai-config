@@ -44,7 +44,7 @@ def _bash_candidates(words: list[str]) -> list[str]:
     return result.stdout.splitlines()
 
 
-@pytest.mark.parametrize("executable", ["ai-config", "ai-config.exe"])
+@pytest.mark.parametrize("executable", ["ai-config", "ai-config.exe", "acg"])
 def test_bash_completion_commands(executable: str) -> None:
     assert _bash_candidates([executable, "st"]) == ["status"]
 
@@ -63,6 +63,7 @@ def test_bash_completion_tools_setup_and_shells() -> None:
         ["ai-config", "setup", "--data-dir", "/tmp/config"]
     ) == []
     assert _bash_candidates(["ai-config", "completion", "p"]) == ["powershell"]
+    assert _bash_candidates(["acg", "pu"]) == ["pull", "push"]
 
 
 def test_completion_command_prints_script() -> None:

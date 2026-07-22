@@ -48,6 +48,7 @@ def test_pyproject_toml_script_entry() -> None:
 
     scripts = data.get("project", {}).get("scripts", {})
     assert scripts.get("ai-config") == "ai_config.cli:console_main"
+    assert scripts.get("acg") == "ai_config.cli:console_main"
 
 
 def test_console_main_usage_entrypoint(
@@ -72,7 +73,30 @@ def create_data_remote(tmp_path: Path) -> tuple[Path, Path]:
     subprocess.run(["git", "clone", str(remote), str(seed)], check=True)
     configure_git_identity(seed)
     commit_and_push_settings(seed, "{}", "initial")
+    branch = run_git(seed, "branch", "--show-current")
+    run_git(seed, "branch", "--set-upstream-to", f"origin/{branch}")
     return remote, seed
+
+
+def run_data_cli(
+    data_repo: Path,
+    home: Path,
+    *args: str,
+    input_text: "str | None" = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["AI_CONFIG_REPO"] = str(data_repo)
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    return subprocess.run(
+        [sys.executable, "-m", "ai_config", *args],
+        capture_output=True,
+        text=True,
+        input=input_text,
+        env=env,
+        check=False,
+    )
 
 
 def test_setup_clones_verifies_push_and_persists_data_repo(tmp_path: Path) -> None:
@@ -342,7 +366,8 @@ def test_missing_claude_directory_fails(tmp_path: Path) -> None:
     assert "setup" in result.stderr
 
 
-def test_sync_subcommand(tmp_path: Path) -> None:
+@pytest.mark.parametrize("command", ["pull", "sync"])
+def test_pull_and_sync_subcommands(tmp_path: Path, command: str) -> None:
     non_git_dir = tmp_path / "non-git"
     non_git_dir.mkdir()
     (non_git_dir / "claude").mkdir()
@@ -352,7 +377,7 @@ def test_sync_subcommand(tmp_path: Path) -> None:
     env["PYTHONPATH"] = str(REPO_ROOT)
 
     result = subprocess.run(
-        [sys.executable, "-m", "ai_config", "sync"],
+        [sys.executable, "-m", "ai_config", command],
         capture_output=True,
         text=True,
         env=env,
@@ -374,16 +399,172 @@ def test_sync_subcommand(tmp_path: Path) -> None:
     env["PYTHONPATH"] = str(REPO_ROOT)
 
     result = subprocess.run(
-        [sys.executable, "-m", "ai_config", "sync"],
+        [sys.executable, "-m", "ai_config", command],
         capture_output=True,
         text=True,
         env=env,
         check=False,
     )
 
-    assert result.returncode == 0, f"sync failed: {result.stderr}\nstdout: {result.stdout}"
+    assert result.returncode == 0, (
+        f"{command} failed: {result.stderr}\nstdout: {result.stdout}"
+    )
 
     clone_head_after = run_git(clone_dir, "rev-parse", "HEAD")
 
     assert clone_head_before != clone_head_after
     assert "Status:" in result.stdout
+
+
+def test_push_collects_commits_and_pushes_selected_tool(tmp_path: Path) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{"theme":"dark"}\n', encoding="utf-8")
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="y\n",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Configuration changes to commit" in result.stdout
+    assert "Local configuration committed and pushed" in result.stdout
+    assert run_git(remote, "show", "HEAD:claude/settings.json") == (
+        '{"theme":"dark"}'
+    )
+    assert run_git(data_repo, "status", "--porcelain=v1") == ""
+    assert run_git(data_repo, "log", "-1", "--pretty=%s") == (
+        "chore: sync claude configuration"
+    )
+
+
+@pytest.mark.parametrize("input_text", ["n\n", ""])
+def test_push_cancel_leaves_collected_changes_unstaged(
+    tmp_path: Path, input_text: str
+) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{"theme":"local"}\n', encoding="utf-8")
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text=input_text,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "collected changes remain unstaged" in result.stdout
+    assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
+    assert run_git(data_repo, "status", "--short") == "M claude/settings.json"
+    assert run_git(remote, "show", "HEAD:claude/settings.json") == "{}"
+
+
+def test_push_refuses_dirty_data_repository_before_init(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{"theme":"local"}\n', encoding="utf-8")
+    (data_repo / "notes.txt").write_text("uncommitted\n", encoding="utf-8")
+
+    result = run_data_cli(data_repo, home, "push", "claude", input_text="y\n")
+
+    assert result.returncode != 0
+    assert "uncommitted changes" in result.stderr
+    assert (data_repo / "claude/settings.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_push_refuses_branch_behind_upstream(tmp_path: Path) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", str(remote), str(other)], check=True)
+    configure_git_identity(other)
+    commit_and_push_settings(other, '{"theme":"remote"}', "remote update")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "push", "claude", input_text="y\n")
+
+    assert result.returncode != 0
+    assert "ahead 0, behind 1" in result.stderr
+    assert "pull before pushing" in result.stdout
+
+
+def test_push_refuses_branch_ahead_of_upstream(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    (data_repo / "local.txt").write_text("local commit\n", encoding="utf-8")
+    run_git(data_repo, "add", "local.txt")
+    run_git(data_repo, "commit", "-m", "local only")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "push", "claude", input_text="y\n")
+
+    assert result.returncode != 0
+    assert "ahead 1, behind 0" in result.stderr
+
+
+def test_push_refuses_detached_head(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    run_git(data_repo, "checkout", "--detach")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "push", "claude", input_text="y\n")
+
+    assert result.returncode != 0
+    assert "detached HEAD" in result.stderr
+
+
+def test_push_refuses_branch_without_upstream(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    run_git(data_repo, "branch", "--unset-upstream")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "push", "claude", input_text="y\n")
+
+    assert result.returncode != 0
+    assert "has no upstream" in result.stderr
+
+
+def test_push_credential_scan_rejects_staged_credential_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    _, data_repo = create_data_remote(tmp_path)
+    credential = data_repo / "claude/auth.json"
+    credential.write_text("not-a-real-token\n", encoding="utf-8")
+    run_git(data_repo, "add", "claude/auth.json")
+    monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+
+    assert main_cli._staged_credentials() == ["claude/auth.json"]
+
+
+def test_push_no_changes_does_not_create_commit(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    head_before = run_git(data_repo, "rev-parse", "HEAD")
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir()
+    settings.write_text("{}", encoding="utf-8")
+
+    result = run_data_cli(data_repo, home, "push", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "No local configuration changes to push" in result.stdout
+    assert run_git(data_repo, "rev-parse", "HEAD") == head_before
