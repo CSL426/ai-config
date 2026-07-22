@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from test_apply_projection import IMPL, copy_runtime_files, run_ai_config, write
+from test_apply_projection import copy_runtime_files, run_ai_config, write
 
 
 def make_full_repo(tmp_path: Path) -> tuple[Path, Path]:
@@ -38,9 +38,8 @@ def test_reset_confirmed_clears_files_but_keeps_dirs(tmp_path: Path) -> None:
     assert not (repo_dir / "agy/settings.json").exists()
     assert (repo_dir / "claude").is_dir()
     assert (repo_dir / "codex").is_dir()
-    # Repo runtime itself must survive reset
-    runtime_dir = "ai_config" if IMPL == "py" else "scripts"
-    assert (repo_dir / runtime_dir).is_dir()
+    # INVARIANT: The repository runtime itself must survive reset.
+    assert (repo_dir / "ai_config").is_dir()
 
 
 def test_reset_declined_keeps_everything(tmp_path: Path) -> None:

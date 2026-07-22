@@ -6,10 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from test_apply_projection import IMPL, copy_runtime_files, run_ai_config, write
-
-
-pytestmark = pytest.mark.skipif(IMPL != "py", reason="Python migration contract")
+from test_apply_projection import copy_runtime_files, run_ai_config, write
 
 
 def make_repo(tmp_path: Path) -> tuple[Path, Path]:

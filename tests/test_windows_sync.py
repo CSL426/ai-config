@@ -14,17 +14,6 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-IMPL = os.environ.get("AI_CONFIG_IMPL", "py")
-USE_PYTHON = IMPL == "py"
-PWSH = (
-    os.environ.get("PWSH")
-    or shutil.which("pwsh")
-    or shutil.which("powershell")
-)
-requires_pwsh = pytest.mark.skipif(
-    not USE_PYTHON and PWSH is None,
-    reason="PowerShell runtime is not available and Python implementation was not selected",
-)
 
 
 def write(path: Path, content: str) -> None:
@@ -50,7 +39,7 @@ def make_env(
     env["XDG_CONFIG_HOME"] = str(home_dir / ".config")
     env["XDG_DATA_HOME"] = str(home_dir / ".local/share")
     env["XDG_CACHE_HOME"] = str(home_dir.parent / ".runtime-cache")
-    if USE_PYTHON and force_copy_fallback:
+    if force_copy_fallback:
         env["AI_CONFIG_FORCE_COPY_FALLBACK"] = "1"
     return env
 
@@ -62,24 +51,9 @@ def run_script(
     input_text: str | None = None,
     force_copy_fallback: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    if USE_PYTHON:
-        command = [sys.executable, "-m", "ai_config", *args]
-    else:
-        script = repo_dir / "ai-config.ps1"
-        assert script.is_file(), "ai-config.ps1 must exist before invoking the Windows CLI"
-        assert PWSH is not None
-        command = [
-            PWSH,
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-File",
-            str(script),
-            *args,
-        ]
+    command = [sys.executable, "-m", "ai_config", *args]
     env = make_env(home_dir, force_copy_fallback=force_copy_fallback)
-    if USE_PYTHON:
-        env["AI_CONFIG_PLATFORM"] = "windows"
+    env["AI_CONFIG_PLATFORM"] = "windows"
     return subprocess.run(
         command,
         cwd=repo_dir,
@@ -92,10 +66,7 @@ def run_script(
 
 
 def copy_runtime_files(repo_dir: Path) -> None:
-    if USE_PYTHON:
-        shutil.copytree(REPO_ROOT / "ai_config", repo_dir / "ai_config")
-    else:
-        shutil.copy2(REPO_ROOT / "legacy/ai-config.ps1", repo_dir / "ai-config.ps1")
+    shutil.copytree(REPO_ROOT / "ai_config", repo_dir / "ai_config")
 
 
 def snapshot_tree(root: Path) -> dict[str, tuple[str, bytes | str | None]]:
@@ -141,7 +112,6 @@ def write_skills_ownership(cli: Path, source: Path, kind: str) -> None:
     write(cli / ".ai-config-skills-mirror", "skills\n")
 
 
-@requires_pwsh
 def test_no_arguments_and_help_show_windows_usage_commands_and_tools(tmp_path: Path) -> None:
     home_dir = tmp_path / "home"
     home_dir.mkdir()
@@ -157,7 +127,6 @@ def test_no_arguments_and_help_show_windows_usage_commands_and_tools(tmp_path: P
             assert tool in result.stdout
 
 
-@requires_pwsh
 def test_unknown_command_and_tool_fail(tmp_path: Path) -> None:
     home_dir = tmp_path / "home"
     home_dir.mkdir()
@@ -171,7 +140,6 @@ def test_unknown_command_and_tool_fail(tmp_path: Path) -> None:
     assert "Unknown tool" in unknown_tool.stderr + unknown_tool.stdout
 
 
-@requires_pwsh
 def test_antigravity_alias_applies_agy_configuration(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -187,7 +155,6 @@ def test_antigravity_alias_applies_agy_configuration(tmp_path: Path) -> None:
     assert settings.read_text(encoding="utf-8") == '{"theme":"neon"}\n'
 
 
-@requires_pwsh
 def test_init_claude_mirrors_only_managed_paths_and_preserves_credentials(
     tmp_path: Path,
 ) -> None:
@@ -240,7 +207,6 @@ def test_init_claude_mirrors_only_managed_paths_and_preserves_credentials(
     assert not (home_dir / ".ai-config-backup").exists()
 
 
-@requires_pwsh
 def test_init_claude_requires_live_directory_without_mutating_repo(
     tmp_path: Path,
 ) -> None:
@@ -259,7 +225,6 @@ def test_init_claude_requires_live_directory_without_mutating_repo(
     assert snapshot_tree(repo_dir) == before
 
 
-@requires_pwsh
 def test_init_claude_preflights_all_top_files_before_repo_mutation(
     tmp_path: Path,
 ) -> None:
@@ -289,7 +254,6 @@ def test_init_claude_preflights_all_top_files_before_repo_mutation(
     assert b"sensitive" not in (repo_dir / "claude/settings.json").read_bytes()
 
 
-@requires_pwsh
 def test_init_claude_preflights_nested_managed_reparse_before_repo_mutation(
     tmp_path: Path,
 ) -> None:
@@ -321,7 +285,6 @@ def test_init_claude_preflights_nested_managed_reparse_before_repo_mutation(
     assert not (repo_dir / "claude/rules/nested").exists()
 
 
-@requires_pwsh
 def test_init_codex_collects_only_filtered_general_config(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -360,7 +323,6 @@ def test_init_codex_collects_only_filtered_general_config(tmp_path: Path) -> Non
     assert not (repo_dir / "codex/skills/live").exists()
 
 
-@requires_pwsh
 def test_init_codex_requires_live_directory_without_mutating_repo(
     tmp_path: Path,
 ) -> None:
@@ -379,7 +341,6 @@ def test_init_codex_requires_live_directory_without_mutating_repo(
     assert snapshot_tree(repo_dir) == before
 
 
-@requires_pwsh
 def test_init_codex_rejects_reparse_config_without_mutating_repo(
     tmp_path: Path,
 ) -> None:
@@ -406,7 +367,6 @@ def test_init_codex_rejects_reparse_config_without_mutating_repo(
     assert b"sensitive-external" not in (repo_dir / "codex/config.toml").read_bytes()
 
 
-@requires_pwsh
 def test_init_agy_alias_warns_when_missing_and_collects_only_settings(
     tmp_path: Path,
 ) -> None:
@@ -441,7 +401,6 @@ def test_init_agy_alias_warns_when_missing_and_collects_only_settings(
     assert not (home_dir / ".ai-config-backup").exists()
 
 
-@requires_pwsh
 def test_init_agy_rejects_reparse_settings_without_mutating_repo(
     tmp_path: Path,
 ) -> None:
@@ -468,7 +427,6 @@ def test_init_agy_rejects_reparse_settings_without_mutating_repo(
     assert b"sensitive-external" not in (repo_dir / "agy/settings.json").read_bytes()
 
 
-@requires_pwsh
 def test_status_reports_missing_and_different_files_without_mutation(
     tmp_path: Path,
 ) -> None:
@@ -499,7 +457,6 @@ def test_status_reports_missing_and_different_files_without_mutation(
     assert set(Path(tempfile.gettempdir()).glob("ai-config-status-*")) == before_stages
 
 
-@requires_pwsh
 def test_status_codex_ignores_project_tables_and_reports_no_differences(
     tmp_path: Path,
 ) -> None:
@@ -533,7 +490,6 @@ def test_status_codex_ignores_project_tables_and_reports_no_differences(
     assert snapshot_tree(home_dir) == before_home
 
 
-@requires_pwsh
 def test_status_all_uses_each_projection_and_remains_read_only(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -563,7 +519,6 @@ def test_status_all_uses_each_projection_and_remains_read_only(tmp_path: Path) -
     assert not (home_dir / ".ai-config-backup").exists()
 
 
-@requires_pwsh
 def test_list_counts_only_known_nonhidden_files_and_completed_backups(
     tmp_path: Path,
 ) -> None:
@@ -608,7 +563,6 @@ def test_list_counts_only_known_nonhidden_files_and_completed_backups(
     assert "Backups: 2 completed snapshots" in result.stdout
 
 
-@requires_pwsh
 def test_project_all_uses_live_claude_and_repo_tool_specific_and_shared_sources(
     tmp_path: Path,
 ) -> None:
@@ -677,7 +631,6 @@ def test_project_all_uses_live_claude_and_repo_tool_specific_and_shared_sources(
     assert len(snapshots) == 1
 
 
-@requires_pwsh
 def test_project_supports_single_targets_and_antigravity_alias(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -698,7 +651,6 @@ def test_project_supports_single_targets_and_antigravity_alias(tmp_path: Path) -
     assert (home_dir / ".gemini/antigravity-cli/settings.json").is_file()
 
 
-@requires_pwsh
 def test_project_claude_warns_without_mutation(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -717,7 +669,6 @@ def test_project_claude_warns_without_mutation(tmp_path: Path) -> None:
     assert snapshot_tree(home_dir) == before_home
 
 
-@requires_pwsh
 def test_project_requires_live_claude_before_backup_or_destination_mutation(
     tmp_path: Path,
 ) -> None:
@@ -739,7 +690,6 @@ def test_project_requires_live_claude_before_backup_or_destination_mutation(
     assert snapshot_tree(home_dir) == before_home
 
 
-@requires_pwsh
 def test_project_preflights_live_claude_reparse_before_any_mutation(
     tmp_path: Path,
 ) -> None:
@@ -769,7 +719,6 @@ def test_project_preflights_live_claude_reparse_before_any_mutation(
     assert not (home_dir / ".ai-config-backup").exists()
 
 
-@requires_pwsh
 def test_reset_default_and_no_cancel_without_mutation(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -791,7 +740,6 @@ def test_reset_default_and_no_cancel_without_mutation(tmp_path: Path) -> None:
     assert snapshot_tree(repo_dir) == before
 
 
-@requires_pwsh
 def test_reset_yes_clears_files_and_links_but_preserves_directory_skeleton(
     tmp_path: Path,
 ) -> None:
@@ -848,7 +796,6 @@ def test_reset_yes_clears_files_and_links_but_preserves_directory_skeleton(
         assert (repo_dir / name).read_bytes() == content
 
 
-@requires_pwsh
 def test_reset_preflights_all_tool_roots_before_any_deletion(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -872,7 +819,6 @@ def test_reset_preflights_all_tool_roots_before_any_deletion(tmp_path: Path) -> 
     assert snapshot_tree(external) == before_external
 
 
-@requires_pwsh
 def test_status_reports_quoted_crlf_mirror_missing_and_mismatch_read_only(
     tmp_path: Path,
 ) -> None:
@@ -922,7 +868,6 @@ def test_status_reports_quoted_crlf_mirror_missing_and_mismatch_read_only(
     assert snapshot_tree(home_dir) == before_home
 
 
-@requires_pwsh
 def test_status_reports_all_mirrors_consistent_summary(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -951,7 +896,6 @@ def test_status_reports_all_mirrors_consistent_summary(tmp_path: Path) -> None:
     assert "All 1 mirrored shared skills up to date" in result.stdout
 
 
-@requires_pwsh
 def test_status_without_mirrors_omits_mirror_summary(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -992,7 +936,6 @@ def test_script_avoids_powershell_7_only_syntax() -> None:
         assert pattern.search(code) is None, f"PowerShell 7-only {name} found"
 
 
-@requires_pwsh
 def test_apply_all_projects_repo_configuration_to_tool_homes(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo with spaces 中文"
     home_dir = tmp_path / "home with spaces 中文"
@@ -1070,7 +1013,6 @@ def test_apply_all_projects_repo_configuration_to_tool_homes(tmp_path: Path) -> 
         assert "\n  short-description:" in skill
 
 
-@requires_pwsh
 def test_apply_sanitizes_frontmatter_as_valid_yaml(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1121,7 +1063,6 @@ def test_apply_sanitizes_frontmatter_as_valid_yaml(tmp_path: Path) -> None:
     )
 
 
-@requires_pwsh
 def test_quoted_description_produces_complete_short_description(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1150,7 +1091,6 @@ def test_quoted_description_produces_complete_short_description(tmp_path: Path) 
     assert frontmatter["metadata"]["short-description"] == "First"
 
 
-@requires_pwsh
 def test_later_skill_source_fully_replaces_earlier_source(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1182,7 +1122,6 @@ def test_later_skill_source_fully_replaces_earlier_source(tmp_path: Path) -> Non
     assert not (projected / "examples/obsolete.md").exists()
 
 
-@requires_pwsh
 def test_apply_claude_mirrors_managed_dirs_without_touching_credentials(
     tmp_path: Path,
 ) -> None:
@@ -1226,7 +1165,6 @@ def test_apply_claude_mirrors_managed_dirs_without_touching_credentials(
     assert not (home_dir / ".claude/commands/google_accounts.json").exists()
 
 
-@requires_pwsh
 def test_apply_empty_projection_fails_without_creating_live_or_backup(
     tmp_path: Path,
 ) -> None:
@@ -1244,7 +1182,6 @@ def test_apply_empty_projection_fails_without_creating_live_or_backup(
     assert not (home_dir / ".ai-config-backup").exists()
 
 
-@requires_pwsh
 def test_apply_backs_up_only_managed_paths_and_keeps_latest_five(
     tmp_path: Path,
 ) -> None:
@@ -1324,7 +1261,6 @@ def test_apply_backs_up_only_managed_paths_and_keeps_latest_five(
     assert len(snapshots) == 5
 
 
-@requires_pwsh
 def test_managed_skills_use_allowlist_and_prune_only_manifest_orphans(
     tmp_path: Path,
 ) -> None:
@@ -1380,7 +1316,6 @@ def test_managed_skills_use_allowlist_and_prune_only_manifest_orphans(
     assert (skills / "hand-installed/SKILL.md").read_text() == "hand installed\n"
 
 
-@requires_pwsh
 def test_codex_migrates_legacy_skills_once_after_backup(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1425,7 +1360,6 @@ def test_codex_migrates_legacy_skills_once_after_backup(tmp_path: Path) -> None:
     assert (legacy / "hand-installed/SKILL.md").is_file()
 
 
-@requires_pwsh
 def test_codex_accepts_expected_legacy_skills_symlink(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1452,7 +1386,6 @@ def test_codex_accepts_expected_legacy_skills_symlink(tmp_path: Path) -> None:
     assert (canonical / "managed/SKILL.md").is_file()
 
 
-@requires_pwsh
 def test_codex_rejects_foreign_legacy_skills_symlink(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1476,7 +1409,6 @@ def test_codex_rejects_foreign_legacy_skills_symlink(tmp_path: Path) -> None:
     assert (external / "keep.txt").read_text() == "external\n"
 
 
-@requires_pwsh
 def test_codex_status_reads_legacy_skills_before_migration(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1501,7 +1433,6 @@ def test_codex_status_reads_legacy_skills_before_migration(tmp_path: Path) -> No
     assert "No differences found" in status.stdout
 
 
-@requires_pwsh
 def test_agy_skills_use_canonical_store_and_update_safe_fallback(
     tmp_path: Path,
 ) -> None:
@@ -1552,7 +1483,6 @@ def test_agy_skills_use_canonical_store_and_update_safe_fallback(
     assert "Version two." in (cli / "skills/demo/SKILL.md").read_text()
 
 
-@requires_pwsh
 def test_agy_accepts_expected_legacy_compatibility_symlink(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1581,7 +1511,6 @@ def test_agy_accepts_expected_legacy_compatibility_symlink(tmp_path: Path) -> No
     ).is_file()
 
 
-@requires_pwsh
 def test_agy_migrates_owned_legacy_copy_to_current_canonical(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1613,7 +1542,6 @@ def test_agy_migrates_owned_legacy_copy_to_current_canonical(tmp_path: Path) -> 
     assert current_state["entries"][0]["source"] == str(canonical.absolute())
 
 
-@requires_pwsh
 def test_agy_rejects_foreign_legacy_skills_symlink(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1639,7 +1567,6 @@ def test_agy_rejects_foreign_legacy_skills_symlink(tmp_path: Path) -> None:
     assert (external / "keep.txt").read_text() == "external\n"
 
 
-@requires_pwsh
 def test_agy_fallback_preserves_tampered_managed_skills(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1672,7 +1599,6 @@ def test_agy_fallback_preserves_tampered_managed_skills(tmp_path: Path) -> None:
     assert (cli / "skills/demo/SKILL.md").read_text() == "manual skill\n"
 
 
-@requires_pwsh
 def test_agy_skills_do_not_overwrite_unmarked_cli_conflict(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1706,7 +1632,6 @@ def test_agy_skills_do_not_overwrite_unmarked_cli_conflict(tmp_path: Path) -> No
     ).is_file()
 
 
-@requires_pwsh
 def test_agy_fallback_rejects_reparse_target_mismatch(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -1737,7 +1662,6 @@ def test_agy_fallback_rejects_reparse_target_mismatch(tmp_path: Path) -> None:
     assert snapshot_tree(home_dir) == before_home
 
 
-@requires_pwsh
 def test_agy_fallback_rejects_reparse_cli_root_before_external_mutation(
     tmp_path: Path,
 ) -> None:
@@ -1781,7 +1705,6 @@ def test_agy_fallback_rejects_reparse_cli_root_before_external_mutation(
     assert snapshot_tree(home_dir) == before_home
 
 
-@requires_pwsh
 def test_agy_fallback_rejects_reparse_marker_before_external_mutation(
     tmp_path: Path,
 ) -> None:
@@ -1815,7 +1738,6 @@ def test_agy_fallback_rejects_reparse_marker_before_external_mutation(
     assert snapshot_tree(home_dir) == before_home
 
 
-@requires_pwsh
 def test_agy_fallback_preflights_reparse_state_before_any_mutation(
     tmp_path: Path,
 ) -> None:
@@ -1847,7 +1769,6 @@ def test_agy_fallback_preflights_reparse_state_before_any_mutation(
     assert external.read_bytes() == before_external
 
 
-@requires_pwsh
 def test_claude_skills_and_plugins_project_to_codex_and_agy(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home with spaces 中文"
@@ -1890,7 +1811,6 @@ def test_claude_skills_and_plugins_project_to_codex_and_agy(tmp_path: Path) -> N
     assert installed["installPath"] == str(target_plugins)
 
 
-@requires_pwsh
 def test_skill_manifest_rejects_traversal_and_only_prunes_safe_orphan(
     tmp_path: Path,
 ) -> None:
@@ -1930,7 +1850,6 @@ def test_skill_manifest_rejects_traversal_and_only_prunes_safe_orphan(
     assert not (skills / "legal-orphan").exists()
 
 
-@requires_pwsh
 def test_apply_rejects_reparse_managed_directory_before_external_mutation(
     tmp_path: Path,
 ) -> None:
@@ -1957,7 +1876,6 @@ def test_apply_rejects_reparse_managed_directory_before_external_mutation(
     assert (external / "stale.md").read_text() == "external stale\n"
 
 
-@requires_pwsh
 def test_apply_rejects_reparse_managed_skill_before_external_mutation(
     tmp_path: Path,
 ) -> None:
@@ -1989,7 +1907,6 @@ def test_apply_rejects_reparse_managed_skill_before_external_mutation(
     assert (external / "stale.txt").read_text() == "external stale\n"
 
 
-@requires_pwsh
 def test_apply_rejects_reparse_top_level_file_before_external_mutation(
     tmp_path: Path,
 ) -> None:
@@ -2012,7 +1929,6 @@ def test_apply_rejects_reparse_top_level_file_before_external_mutation(
     assert external.read_text() == "external instructions\n"
 
 
-@requires_pwsh
 def test_apply_rejects_repo_top_level_file_reparse_before_any_home_mutation(
     tmp_path: Path,
 ) -> None:
@@ -2040,7 +1956,6 @@ def test_apply_rejects_repo_top_level_file_reparse_before_any_home_mutation(
 
 
 @pytest.mark.parametrize("nested", [False, True], ids=["managed-root", "descendant"])
-@requires_pwsh
 def test_apply_preflights_repo_managed_directory_reparse_tree(
     tmp_path: Path,
     nested: bool,
@@ -2074,7 +1989,6 @@ def test_apply_preflights_repo_managed_directory_reparse_tree(
     assert not (home_dir / ".ai-config-backup").exists()
 
 
-@requires_pwsh
 def test_backup_prune_preserves_foreign_and_incomplete_directories(
     tmp_path: Path,
 ) -> None:
@@ -2109,7 +2023,6 @@ def test_backup_prune_preserves_foreign_and_incomplete_directories(
     assert len({path.name for path in completed}) == 5
 
 
-@requires_pwsh
 def test_apply_refuses_reparse_point_backup_root(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -2136,7 +2049,6 @@ def test_apply_refuses_reparse_point_backup_root(tmp_path: Path) -> None:
     assert (home_dir / ".claude/CLAUDE.md").read_text() == "old instructions\n"
 
 
-@requires_pwsh
 def test_failed_backup_cleans_only_its_own_temporary_directory(
     tmp_path: Path,
 ) -> None:
@@ -2150,26 +2062,13 @@ def test_failed_backup_cleans_only_its_own_temporary_directory(
     write(live_file, "old instructions\n")
     backup_root = home_dir / ".ai-config-backup"
     write(backup_root / ".tmp-foreign/keep.txt", "foreign temp\n")
-    script_path = (
-        repo_dir / "ai_config/backup.py" if USE_PYTHON else repo_dir / "ai-config.ps1"
-    )
+    script_path = repo_dir / "ai_config/backup.py"
     script = script_path.read_text(encoding="utf-8")
-    if USE_PYTHON:
-        anchor = "    temporary.mkdir()\n    try:\n"
-        injected = anchor.replace(
-            "    try:\n",
-            "    try:\n        raise RuntimeError('Injected backup failure')\n",
-        )
-    else:
-        anchor = (
-            "    New-Directory $temporarySnapshot\n"
-            "    try {\n"
-            "        foreach ($tool in $Tools) {\n"
-        )
-        injected = anchor.replace(
-            "    try {\n",
-            "    try {\n        throw 'Injected backup failure'\n",
-        )
+    anchor = "    temporary.mkdir()\n    try:\n"
+    injected = anchor.replace(
+        "    try:\n",
+        "    try:\n        raise RuntimeError('Injected backup failure')\n",
+    )
     assert script.count(anchor) == 1
     script_path.write_text(script.replace(anchor, injected, 1), encoding="utf-8")
 
@@ -2186,7 +2085,6 @@ def test_failed_backup_cleans_only_its_own_temporary_directory(
     assert leftovers == []
 
 
-@requires_pwsh
 def test_parallel_apply_uses_distinct_completed_snapshots(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -2198,23 +2096,9 @@ def test_parallel_apply_uses_distinct_completed_snapshots(tmp_path: Path) -> Non
         write(repo_dir / f"claude/rules/rule-{index}.md", f"rule {index}\n")
         write(home_dir / f".claude/rules/old-{index}.md", f"old {index}\n")
 
-    if USE_PYTHON:
-        command = [sys.executable, "-m", "ai_config", "apply", "claude"]
-    else:
-        assert PWSH is not None
-        command = [
-            PWSH,
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-File",
-            str(repo_dir / "ai-config.ps1"),
-            "apply",
-            "claude",
-        ]
+    command = [sys.executable, "-m", "ai_config", "apply", "claude"]
     env = make_env(home_dir)
-    if USE_PYTHON:
-        env["AI_CONFIG_PLATFORM"] = "windows"
+    env["AI_CONFIG_PLATFORM"] = "windows"
     processes = [
         subprocess.Popen(
             command,
@@ -2248,8 +2132,6 @@ def test_parallel_apply_uses_distinct_completed_snapshots(tmp_path: Path) -> Non
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows Junction contract")
 def test_python_migrates_owned_legacy_windows_junction(tmp_path: Path) -> None:
-    if not USE_PYTHON:
-        pytest.skip("Python implementation contract")
     import _winapi
 
     repo_dir = tmp_path / "repo"
@@ -2290,8 +2172,6 @@ def test_python_migrates_owned_legacy_windows_junction(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows Junction contract")
 def test_python_creates_native_windows_junctions(tmp_path: Path) -> None:
-    if not USE_PYTHON:
-        pytest.skip("Python implementation contract")
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
     repo_dir.mkdir()
