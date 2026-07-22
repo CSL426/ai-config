@@ -28,6 +28,14 @@ def _redact_git_output(value: str) -> str:
     return re.sub(r"(https?://)[^/@\s]+@", r"\1***@", value)
 
 
+def _git_error_detail(
+    result: subprocess.CompletedProcess[str],
+    fallback: str,
+) -> str:
+    detail = result.stderr.strip() or result.stdout.strip() or fallback
+    return _redact_git_output(detail)
+
+
 def _run_git(
     *args: str,
     cwd: "Path | None" = None,
@@ -42,12 +50,7 @@ def _run_git(
     except FileNotFoundError as exc:
         raise SetupError("Git is required but was not found in PATH.") from exc
     if check and result.returncode != 0:
-        detail = (
-            result.stderr.strip()
-            or result.stdout.strip()
-            or "unknown Git error"
-        )
-        detail = _redact_git_output(detail)
+        detail = _git_error_detail(result, "unknown Git error")
         raise SetupError(f"Git command failed: {detail}")
     return result
 
@@ -154,12 +157,7 @@ def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
         check=False,
     )
     if result.returncode != 0:
-        detail = (
-            result.stderr.strip()
-            or result.stdout.strip()
-            or "permission denied"
-        )
-        detail = _redact_git_output(detail)
+        detail = _git_error_detail(result, "permission denied")
         raise SetupError(f"Push permission verification failed: {detail}")
 
     verification_error = None
@@ -185,12 +183,7 @@ def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
             check=False,
         )
         if cleanup.returncode != 0:
-            detail = (
-                cleanup.stderr.strip()
-                or cleanup.stdout.strip()
-                or "unknown error"
-            )
-            detail = _redact_git_output(detail)
+            detail = _git_error_detail(cleanup, "unknown error")
             raise SetupError(
                 "Could not remove temporary verification ref "
                 f"{check_ref}: {detail}. "

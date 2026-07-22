@@ -96,6 +96,18 @@ def filter_codex_config(text: str) -> str:
     return "\n".join(out) + "\n"
 
 
+def _write_config(
+    target: Path,
+    content: str,
+    source_stat: os.stat_result,
+) -> None:
+    target.write_text(content, encoding="utf-8", newline="\n")
+    os.utime(
+        target,
+        ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
+    )
+
+
 def merge_codex_config(source_text: str, target_text: str) -> str:
     """Replace shared settings while preserving machine-local target values."""
     machine_local = _top_level_machine_local_statements(target_text)
@@ -162,15 +174,13 @@ def init() -> bool:
 
     if (src / "config.toml").is_file():
         dst.mkdir(parents=True, exist_ok=True)
-        source_stat = (src / "config.toml").stat()
+        source = src / "config.toml"
+        target = dst / "config.toml"
+        source_stat = source.stat()
         filtered = filter_codex_config(
-            (src / "config.toml").read_text(encoding="utf-8-sig")
+            source.read_text(encoding="utf-8-sig")
         )
-        (dst / "config.toml").write_text(filtered, encoding="utf-8", newline="\n")
-        os.utime(
-            dst / "config.toml",
-            ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
-        )
+        _write_config(target, filtered, source_stat)
         log_success("config.toml (filtered, no machine-local settings)")
 
     log_info("Skipping shared files (projected from claude/ during apply)")
@@ -212,32 +222,19 @@ def apply_internal(src: Path, dst: Path) -> None:
 
     if (src / "config.toml").is_file():
         dst.mkdir(parents=True, exist_ok=True)
-        if (dst / "config.toml").is_file():
-            source_stat = (src / "config.toml").stat()
+        source = src / "config.toml"
+        target = dst / "config.toml"
+        source_stat = source.stat()
+        if target.is_file():
             merged = merge_codex_config(
-                (src / "config.toml").read_text(encoding="utf-8"),
-                (dst / "config.toml").read_text(encoding="utf-8"),
+                source.read_text(encoding="utf-8"),
+                target.read_text(encoding="utf-8"),
             )
-            (dst / "config.toml").write_text(merged, encoding="utf-8", newline="\n")
-            os.utime(
-                dst / "config.toml",
-                ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
-            )
+            _write_config(target, merged, source_stat)
             log_success("config.toml (merged, preserved [projects.*])")
         else:
-            source_stat = (src / "config.toml").stat()
-            filtered = filter_codex_config(
-                (src / "config.toml").read_text(encoding="utf-8")
-            )
-            (dst / "config.toml").write_text(
-                filtered,
-                encoding="utf-8",
-                newline="\n",
-            )
-            os.utime(
-                dst / "config.toml",
-                ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
-            )
+            filtered = filter_codex_config(source.read_text(encoding="utf-8"))
+            _write_config(target, filtered, source_stat)
             log_success("config.toml (fresh copy, filtered machine-local settings)")
 
     # rules/ merged overlay (rsync -aL, no deletion)

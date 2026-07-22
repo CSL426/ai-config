@@ -8,7 +8,6 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-IMPL = "py"
 
 
 def write(path: Path, content: str) -> None:

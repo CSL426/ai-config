@@ -168,6 +168,7 @@ Codex top-level `notify` and `[projects.*]` tables are machine-local: `init` and
 python -m pytest
 ruff check ai_config tests
 bash -n install.sh
+git diff --check
 ```
 
 Additional documentation:

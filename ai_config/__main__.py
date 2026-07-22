@@ -463,7 +463,7 @@ def show_status(tool: str) -> None:
 
 
 def _selected_tools(tool: str) -> list[str]:
-    return [selected for selected in ALL_TOOLS if tool in ("all", selected)]
+    return [name for name in ALL_TOOLS if tool == "all" or tool == name]
 
 
 def _init_tools(tool: str) -> bool:
@@ -596,6 +596,94 @@ def _staged_credentials() -> list[str]:
     ]
 
 
+def _review_and_confirm_push(pending: str, commit_message: str) -> "bool | None":
+    print()
+    log_info("Configuration changes to commit:")
+    print(pending.rstrip())
+    diff = subprocess.run(
+        ["git", "-C", str(SCRIPT_DIR), "diff", "--no-ext-diff", "--"],
+        text=True,
+    )
+    if diff.returncode != 0:
+        log_error("Could not display repository changes; push cancelled.")
+        return False
+
+    print()
+    log_info(f"Commit message: {commit_message}")
+    try:
+        confirm = input("Commit and push these changes? [y/N] ")
+    except EOFError:
+        confirm = ""
+    if confirm not in ("y", "Y"):
+        log_info("Cancelled; collected changes remain unstaged")
+        return None
+
+    current_status = _run_repo_git(
+        "status", "--porcelain=v1", "--untracked-files=all"
+    )
+    if current_status.returncode != 0:
+        _git_failure("Rechecking repository status", current_status)
+        return False
+    if current_status.stdout != pending:
+        log_error("Data repository changed while awaiting confirmation; push cancelled.")
+        return False
+    return True
+
+
+def _stage_push_changes(selected: list[str]) -> bool:
+    stage = _run_repo_git("add", "-A", "--", *selected)
+    if stage.returncode != 0:
+        _git_failure("Staging collected configuration", stage)
+        return False
+
+    credentials = _staged_credentials()
+    if credentials:
+        _unstage_tools(selected)
+        log_error("Credential files would be committed; push cancelled:")
+        for path in credentials:
+            print(f"  {path}")
+        return False
+
+    unstaged = _run_repo_git("diff", "--quiet")
+    untracked = _run_repo_git("ls-files", "--others", "--exclude-standard")
+    if (
+        unstaged.returncode not in (0, 1)
+        or untracked.returncode != 0
+        or unstaged.returncode == 1
+        or untracked.stdout.strip()
+    ):
+        _unstage_tools(selected)
+        log_error("Unexpected repository changes remain after staging; push cancelled.")
+        return False
+
+    check = _run_repo_git("diff", "--cached", "--check")
+    if check.returncode != 0:
+        _unstage_tools(selected)
+        _git_failure("Validating staged configuration", check)
+        return False
+    return True
+
+
+def _commit_and_push(commit_message: str) -> int:
+    commit = _run_repo_git("commit", "-m", commit_message)
+    if commit.returncode != 0:
+        _git_failure("Committing configuration", commit)
+        return 1
+    commit_output = commit.stdout.strip()
+    if commit_output:
+        print(commit_output)
+
+    push = _run_repo_git("push")
+    if push.returncode != 0:
+        _git_failure("Pushing configuration", push)
+        head = _run_repo_git("rev-parse", "--short", "HEAD")
+        if head.returncode == 0:
+            log_warn(f"Local commit {head.stdout.strip()} was created but not pushed")
+        return 1
+    log_success("Local configuration committed and pushed")
+    return 0
+
+
 def do_push(tool: str) -> int:
     log_header("Push local configuration")
     try:
@@ -620,88 +708,18 @@ def do_push(tool: str) -> int:
         log_success("No local configuration changes to push")
         return 0
 
-    print()
-    log_info("Configuration changes to commit:")
-    print(pending.rstrip())
-    diff = subprocess.run(
-        ["git", "-C", str(SCRIPT_DIR), "diff", "--no-ext-diff", "--"],
-        text=True,
-    )
-    if diff.returncode != 0:
-        log_error("Could not display repository changes; push cancelled.")
+    commit_scope = "AI tool" if tool == "all" else tool
+    commit_message = f"chore: sync {commit_scope} configuration"
+    review = _review_and_confirm_push(pending, commit_message)
+    if review is None:
+        return 0
+    if not review:
         return 1
 
     selected = _selected_tools(tool)
-    commit_scope = "AI tool" if tool == "all" else tool
-    commit_message = f"chore: sync {commit_scope} configuration"
-    print()
-    log_info(f"Commit message: {commit_message}")
-    try:
-        confirm = input("Commit and push these changes? [y/N] ")
-    except EOFError:
-        confirm = ""
-    if confirm not in ("y", "Y"):
-        log_info("Cancelled; collected changes remain unstaged")
-        return 0
-
-    current_status = _run_repo_git(
-        "status", "--porcelain=v1", "--untracked-files=all"
-    )
-    if current_status.returncode != 0:
-        _git_failure("Rechecking repository status", current_status)
+    if not _stage_push_changes(selected):
         return 1
-    if current_status.stdout != pending:
-        log_error("Data repository changed while awaiting confirmation; push cancelled.")
-        return 1
-
-    stage = _run_repo_git("add", "-A", "--", *selected)
-    if stage.returncode != 0:
-        _git_failure("Staging collected configuration", stage)
-        return 1
-
-    credentials = _staged_credentials()
-    if credentials:
-        _unstage_tools(selected)
-        log_error("Credential files would be committed; push cancelled:")
-        for path in credentials:
-            print(f"  {path}")
-        return 1
-
-    unstaged = _run_repo_git("diff", "--quiet")
-    untracked = _run_repo_git("ls-files", "--others", "--exclude-standard")
-    if (
-        unstaged.returncode not in (0, 1)
-        or untracked.returncode != 0
-        or unstaged.returncode == 1
-        or untracked.stdout.strip()
-    ):
-        _unstage_tools(selected)
-        log_error("Unexpected repository changes remain after staging; push cancelled.")
-        return 1
-
-    check = _run_repo_git("diff", "--cached", "--check")
-    if check.returncode != 0:
-        _unstage_tools(selected)
-        _git_failure("Validating staged configuration", check)
-        return 1
-
-    commit = _run_repo_git("commit", "-m", commit_message)
-    if commit.returncode != 0:
-        _git_failure("Committing configuration", commit)
-        return 1
-    commit_output = commit.stdout.strip()
-    if commit_output:
-        print(commit_output)
-
-    push = _run_repo_git("push")
-    if push.returncode != 0:
-        _git_failure("Pushing configuration", push)
-        head = _run_repo_git("rev-parse", "--short", "HEAD")
-        if head.returncode == 0:
-            log_warn(f"Local commit {head.stdout.strip()} was created but not pushed")
-        return 1
-    log_success("Local configuration committed and pushed")
-    return 0
+    return _commit_and_push(commit_message)
 
 
 # ─── main ─────────────────────────────────────────────────────

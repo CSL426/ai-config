@@ -5,7 +5,7 @@ commands/ projection."""
 import hashlib
 from pathlib import Path
 
-from test_apply_projection import IMPL, copy_runtime_files, run_ai_config, write
+from test_apply_projection import copy_runtime_files, run_ai_config, write
 
 
 def sha256(text: str) -> str:
@@ -35,8 +35,7 @@ def test_agent_without_frontmatter_gets_synthesized_frontmatter(tmp_path: Path) 
     assert result.returncode == 0, result.stderr + result.stdout
     skill = (home_dir / ".agents/skills/bare-agent/SKILL.md").read_text(encoding="utf-8")
     assert skill.startswith("---\n")
-    expected_name = "name: 'Bare Agent'\n" if IMPL == "py" else "name: Bare Agent\n"
-    assert expected_name in skill
+    assert "name: 'Bare Agent'\n" in skill
     assert "description: >-\n" in skill
     assert "short-description: " in skill
     assert "Does things.\n" in skill
