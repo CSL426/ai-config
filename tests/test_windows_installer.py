@@ -27,6 +27,8 @@ def test_powershell_installer_places_standalone_binary(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     destination = bin_dir / "ai-config.exe"
     launcher = bin_dir / "ai-config"
+    acg_launcher = bin_dir / "acg"
+    acg_command = bin_dir / "acg.cmd"
     bin_dir.mkdir()
     destination.write_bytes(b"old-binary")
 
@@ -55,6 +57,12 @@ def test_powershell_installer_places_standalone_binary(tmp_path: Path) -> None:
     assert destination.read_bytes() == b"standalone-binary"
     assert launcher.read_bytes() == (
         b'#!/usr/bin/env bash\nexec "$(dirname -- "$0")/ai-config.exe" "$@"\n'
+    )
+    assert acg_launcher.read_bytes() == (
+        b'#!/usr/bin/env bash\nexec "$(dirname -- "$0")/ai-config.exe" "$@"\n'
+    )
+    assert acg_command.read_bytes() == (
+        b'@echo off\r\n"%~dp0ai-config.exe" %*\r\n'
     )
     assert "Python" not in result.stdout
 

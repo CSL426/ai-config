@@ -170,6 +170,84 @@ def test_status_codex_normalizes_crlf_on_both_sides(tmp_path: Path) -> None:
     assert "~ config.toml" not in result.stdout
 
 
+def test_init_codex_excludes_machine_local_notify(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    (repo_dir / "claude").mkdir()
+    write(
+        home_dir / ".codex/config.toml",
+        'model = "gpt-5"\n'
+        'notify = ["C:/runtime/codex-computer-use.exe", "turn-ended"]\n\n'
+        "[features]\nsearch = true\n",
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "init", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (repo_dir / "codex/config.toml").read_text() == (
+        'model = "gpt-5"\n\n[features]\nsearch = true\n'
+    )
+
+
+def test_status_codex_ignores_machine_local_notify(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(
+        repo_dir / "codex/config.toml",
+        'model = "gpt-5"\n\n[features]\nsearch = true\n',
+    )
+    write(
+        home_dir / ".codex/config.toml",
+        'model = "gpt-5"\n'
+        'notify = ["/opt/codex-computer-use", "turn-ended"]\n\n'
+        "[features]\nsearch = true\n",
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "status", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "No differences found" in result.stdout
+    assert "~ config.toml" not in result.stdout
+
+
+def test_apply_codex_preserves_live_notify_and_projects(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(
+        repo_dir / "codex/config.toml",
+        'model = "shared"\n'
+        'notify = ["C:/stale/runtime.exe", "turn-ended"]\n\n'
+        "[features]\nsearch = true\n",
+    )
+    write(
+        home_dir / ".codex/config.toml",
+        'model = "local"\n'
+        'notify = ["/opt/live/runtime", "turn-ended"]\n\n'
+        '[projects."/srv/work"]\ntrust_level = "trusted"\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    config = (home_dir / ".codex/config.toml").read_text()
+    assert 'model = "shared"' in config
+    assert 'notify = ["/opt/live/runtime", "turn-ended"]' in config
+    assert "C:/stale/runtime.exe" not in config
+    assert '[projects."/srv/work"]' in config
+    assert 'trust_level = "trusted"' in config
+
+
+def test_apply_codex_filters_repo_notify_from_fresh_copy(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(
+        repo_dir / "codex/config.toml",
+        'model = "shared"\n'
+        'notify = ["C:/stale/runtime.exe", "turn-ended"]\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (home_dir / ".codex/config.toml").read_text() == 'model = "shared"\n'
+
+
 def test_apply_rejects_symlink_destination_before_backup(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     write(repo_dir / "claude/CLAUDE.md", "new instructions\n")

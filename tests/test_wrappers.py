@@ -52,8 +52,16 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     assert not executable.is_symlink()
     assert old_target.read_text(encoding="utf-8") == "old install\n"
     assert os.access(executable, os.X_OK)
+    acg = home / ".local" / "bin" / "acg"
+    assert acg.is_symlink()
+    assert acg.readlink() == Path("ai-config")
     completion = home / ".local/share/bash-completion/completions/ai-config.bash"
+    acg_completion = home / ".local/share/bash-completion/completions/acg.bash"
     assert completion.read_text(encoding="utf-8") == "standalone completion bash\n"
+    assert acg_completion.read_text(encoding="utf-8") == (
+        "standalone completion bash\n"
+    )
+    assert "Reload completion in this shell" in result.stdout
 
     run = subprocess.run(
         [str(executable), "help"],
@@ -65,6 +73,17 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     )
     assert run.returncode == 0, run.stderr + run.stdout
     assert "standalone help" in run.stdout
+
+    acg_run = subprocess.run(
+        [str(acg), "status"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert acg_run.returncode == 0, acg_run.stderr + acg_run.stdout
+    assert "standalone status" in acg_run.stdout
 
     env["AI_CONFIG_TEST_LIST_EXIT"] = "0"
     repeated = subprocess.run(
@@ -80,6 +99,9 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     assert "existing data repository configuration preserved" in repeated.stdout
     assert "Starting first-run setup" not in repeated.stdout
     assert completion.read_text(encoding="utf-8") == "standalone completion bash\n"
+    assert acg_completion.read_text(encoding="utf-8") == (
+        "standalone completion bash\n"
+    )
 
 
 @pytest.mark.parametrize(

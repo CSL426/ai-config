@@ -44,6 +44,8 @@ def test_update_frozen_runs_hosted_installer(monkeypatch) -> None:
         return Completed()
 
     monkeypatch.setattr(update.subprocess, "run", fake_run)
+    monkeypatch.setattr(update, "_current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
     monkeypatch.setattr(update, "NATIVE_WINDOWS", False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
 
@@ -66,6 +68,8 @@ def test_update_frozen_honours_repository_override(monkeypatch) -> None:
         return Completed()
 
     monkeypatch.setattr(update.subprocess, "run", fake_run)
+    monkeypatch.setattr(update, "_current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
     monkeypatch.setattr(update, "NATIVE_WINDOWS", False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setenv("AI_CONFIG_TOOL_REPOSITORY", "someone/fork")
@@ -83,8 +87,39 @@ def test_update_frozen_native_windows_prints_manual_command(
         raise AssertionError("update must not spawn a process on Windows")
 
     monkeypatch.setattr(update.subprocess, "run", fail_run)
+    monkeypatch.setattr(update, "_current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
     monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
 
     assert update.run_update() == 1
     assert "install.ps1" in capsys.readouterr().out
+
+
+def test_update_frozen_skips_download_when_current(monkeypatch, capsys) -> None:
+    from ai_config import update
+
+    def fail_run(cmd, **kwargs):
+        raise AssertionError("current release must not download the installer")
+
+    monkeypatch.setattr(update.subprocess, "run", fail_run)
+    monkeypatch.setattr(update, "_current_version", lambda: "1.0.6")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    assert update.run_update() == 0
+    assert "already up to date" in capsys.readouterr().out
+
+
+def test_update_frozen_does_not_downgrade_newer_version(monkeypatch) -> None:
+    from ai_config import update
+
+    def fail_run(cmd, **kwargs):
+        raise AssertionError("newer release must not download the installer")
+
+    monkeypatch.setattr(update.subprocess, "run", fail_run)
+    monkeypatch.setattr(update, "_current_version", lambda: "1.1.0")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    assert update.run_update() == 0

@@ -13,6 +13,7 @@ def console_main() -> int:
     if name not in _ENTRYPOINT_NAMES:
         name = "ai-config"
     os.environ.setdefault("AI_CONFIG_ENTRYPOINT", name)
-    from ai_config.__main__ import main
+    from ai_config import __main__ as command
 
-    return main()
+    command.ENTRYPOINT = os.environ["AI_CONFIG_ENTRYPOINT"]
+    return command.main()

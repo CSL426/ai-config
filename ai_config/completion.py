@@ -6,6 +6,8 @@ COMMANDS = (
     "apply",
     "project",
     "status",
+    "pull",
+    "push",
     "sync",
     "list",
     "reset",
@@ -14,7 +16,7 @@ COMMANDS = (
     "help",
 )
 TOOLS = ("claude", "codex", "agy", "all")
-TOOL_COMMANDS = ("init", "apply", "project", "status", "sync")
+TOOL_COMMANDS = ("init", "apply", "project", "status", "pull", "push", "sync")
 SETUP_OPTIONS = ("--data-dir", "--repo-url", "--remote-name", "--replace-remote")
 SHELLS = ("bash", "powershell")
 

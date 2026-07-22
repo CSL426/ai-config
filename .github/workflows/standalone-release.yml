@@ -103,6 +103,7 @@ jobs:
         run: >-
           python -m PyInstaller --clean --noconfirm --onefile
           --name ai-config --hidden-import ai_config.__main__
+          --copy-metadata ai-config
           scripts/standalone_entry.py
 
       - name: Name asset and write checksum

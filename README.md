@@ -23,8 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | 
 ```
 
 On Windows, the shell installer delegates to the native PowerShell installer
-automatically. The native installer also places an extensionless `ai-config`
-launcher beside `ai-config.exe` so Git Bash resolves the clean command name.
+automatically. The native installer also installs `acg.cmd` for PowerShell and
+extensionless `ai-config`/`acg` launchers beside `ai-config.exe` for Git Bash.
 
 Windows PowerShell:
 
@@ -97,7 +97,11 @@ ai-config <command> [tool]
 - `init [tool]` — Gather local configs into the data repository.
 - `apply [tool]` — Deploy configuration from the data repository.
 - `status [tool]` — Preview repository-to-live differences.
-- `sync [tool]` — Pull data repository updates and show status.
+- `pull [tool]` — Pull data repository updates and show status without applying.
+- `push [tool]` — Gather local settings, show the repository diff, and ask before
+  committing and pushing. Push refuses dirty, detached, ahead, behind, or
+  upstream-less repositories.
+- `sync [tool]` — Alias for `pull`.
 - `project [tool]` — Project local Claude settings to other targets.
 - `list` — List all managed tools.
 - `package [skill]` — Zip a shared skill (`claude/shared/{both,agy,codex}`) for
@@ -106,9 +110,27 @@ ai-config <command> [tool]
   not a live sync.
 - `reset` — Remove managed configuration files after confirmation.
 - `completion bash|powershell` — Print a shell completion registration script.
-- `update` — Download and install the latest standalone release.
+- `update` — Compare the installed standalone version with the latest release,
+  then download only when an update is available.
 
 Supported tools are `claude`, `codex`, `agy`, and `all`.
+
+For a safe cross-machine workflow, pull and inspect before applying:
+
+```bash
+acg pull
+acg apply
+```
+
+To publish this machine's selected settings, start from a clean and synchronized
+data repository:
+
+```bash
+acg push codex
+```
+
+The push command never force-pushes. If the remote changes after preflight, the
+normal non-fast-forward rejection leaves the new commit local for manual review.
 
 Codex settings remain under `~/.codex`, while user Skills are deployed to the
 cross-surface `~/.agents/skills` directory used by Codex Desktop, CLI, and the
@@ -137,6 +159,8 @@ contain this layout:
 ```
 
 Credential files such as `auth.json` are excluded from synchronization.
+Codex top-level `notify` and `[projects.*]` tables are machine-local: `init` and
+`status` ignore them, while `apply` preserves the live machine's values.
 
 ## Development and testing
 
