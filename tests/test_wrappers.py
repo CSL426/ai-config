@@ -61,7 +61,8 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
     assert acg_completion.read_text(encoding="utf-8") == (
         "standalone completion bash\n"
     )
-    assert "Reload completion in this shell" in result.stdout
+    assert "Activate in this shell" in result.stdout
+    assert "hash -r && source" in result.stdout
 
     run = subprocess.run(
         [str(executable), "help"],

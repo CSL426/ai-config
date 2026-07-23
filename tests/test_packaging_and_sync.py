@@ -56,6 +56,14 @@ def test_pyproject_toml_script_entry() -> None:
     assert scripts.get("acg") == "ai_config.cli:console_main"
 
 
+def test_unix_installer_refreshes_command_cache_with_completion() -> None:
+    installer = (REPO_ROOT / "install.sh").read_text(encoding="utf-8")
+
+    assert 'Activate in this shell: hash -r && source \\"$completion_file\\"' in (
+        installer
+    )
+
+
 def test_console_main_usage_entrypoint(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -7,6 +7,7 @@ truth for install logic.
 
 import json
 import os
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from .paths import NATIVE_WINDOWS
 from .version import current_version
 
 _DEFAULT_REPOSITORY = "CSL426/ai-config"
+_DELEGATED_UPDATE = "AI_CONFIG_UPDATE_DELEGATED"
 _RELEASE_VERSION = re.compile(r"^v?(\d+(?:\.\d+){1,3})$")
 
 
@@ -63,8 +65,39 @@ def _is_up_to_date(current: str, latest: str) -> bool:
     )
 
 
+def _standalone_candidate() -> Path:
+    executable = "ai-config.exe" if NATIVE_WINDOWS else "ai-config"
+    default_bin = Path.home() / ".local" / "bin"
+    return Path(os.environ.get("AI_CONFIG_BIN_DIR", default_bin)) / executable
+
+
+def _delegate_source_update() -> "int | None":
+    if os.environ.get(_DELEGATED_UPDATE) == "1":
+        return None
+    candidate = _standalone_candidate()
+    if not candidate.is_file() or not os.access(candidate, os.X_OK):
+        return None
+    try:
+        if candidate.resolve() == Path(sys.argv[0]).resolve():
+            return None
+    except OSError:
+        return None
+
+    environment = os.environ.copy()
+    environment[_DELEGATED_UPDATE] = "1"
+    log_info(f"Delegating update to standalone release: {candidate}")
+    completed = subprocess.run(
+        [str(candidate), "update"],
+        env=environment,
+    )
+    return completed.returncode
+
+
 def run_update() -> int:
     if not getattr(sys, "frozen", False):
+        delegated = _delegate_source_update()
+        if delegated is not None:
+            return delegated
         log_error(
             "This ai-config runs from source, not a standalone release."
         )
