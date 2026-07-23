@@ -101,9 +101,10 @@ ai-config <command> [tool]
   status without applying. Pull refuses dirty, detached, upstream-less, ahead,
   diverged, or in-progress Git states instead of entering conflict resolution.
 - `push [tool]` — Gather local settings, show the repository diff, and ask before
-  committing and pushing. Push refuses dirty, detached, ahead, behind, or
-  upstream-less repositories, and cancels if the staged snapshot changes after
-  review.
+  committing and pushing. If a previous push left reviewed commits ahead of the
+  upstream, show and confirm those commits again without gathering or creating
+  another commit. Push refuses dirty, detached, behind, diverged, or
+  upstream-less repositories, and cancels if the reviewed state changes.
 - `sync [tool]` — Alias for `pull`.
 - `project [tool]` — Project local Claude settings to other targets.
 - `list` — List all managed tools.
@@ -116,7 +117,7 @@ ai-config <command> [tool]
 - `update` — Compare the installed standalone version with the latest release,
   then download only when an update is available.
 - `version` / `--version` / `-V` — Show the installed version without network
-  access.
+  access. Both command names show the shared `ai-config (acg)` product label.
 
 Supported tools are `claude`, `codex`, `agy`, and `all`.
 
@@ -127,8 +128,7 @@ acg pull
 acg apply
 ```
 
-To publish this machine's selected settings, start from a clean and synchronized
-data repository:
+To publish this machine's selected settings, start from a clean data repository:
 
 ```bash
 acg push codex
@@ -139,6 +139,12 @@ are included in the displayed diff. It never force-pushes. If the reviewed
 snapshot changes before commit, the push is cancelled and the collected changes
 are left unstaged. If the remote changes after preflight, the normal
 non-fast-forward rejection leaves the new commit local for manual review.
+
+Rerunning `push` safely resumes that ahead-only state: it scans every local
+commit for out-of-scope paths and credential content, shows the commit list and
+diff again, then asks before pushing the exact reviewed commit. It does not
+gather new live changes or create another commit during a retry. Merge commits
+and behind or diverged histories remain manual Git operations.
 
 The pull command never rebases or autostashes. It fetches first and updates the
 current branch only when `git merge --ff-only` is safe. Local commits or working

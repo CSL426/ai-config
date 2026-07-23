@@ -59,10 +59,14 @@ All commands, including `pull`, `push`, and the legacy `sync` alias, operate on
 the resolved data repository.
 
 Repository synchronization is directional. `pull` updates the repository and
-reports live drift without applying it. `push` requires a clean branch that
-matches its upstream, gathers only the selected tool configuration, displays the
+reports live drift without applying it. On a clean branch that matches its
+upstream, `push` gathers only the selected tool configuration, displays the
 result, and requires confirmation before staging, committing, and performing a
-normal non-force push.
+normal non-force push. On a clean ahead-only branch, `push` instead validates
+every local commit, displays the exact commit range and diff, and asks before
+retrying an explicit non-force push. It never gathers or creates another commit
+while retrying. Behind, diverged, merge-commit, credential, and out-of-scope
+states fail closed.
 
 ## Projection model
 

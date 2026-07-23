@@ -1,14 +1,15 @@
 """ai-config — Cross-AI tool configuration manager (Python implementation)."""
 
+from dataclasses import dataclass
+from datetime import datetime
 import difflib
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
-from pathlib import Path
 
 from .backup import completed_snapshots, create_backup
 from .completion import SHELLS, render_completion
@@ -72,6 +73,15 @@ _SECRET_PATTERN = re.compile(
     rb"sk-(?:proj-)?[A-Za-z0-9_-]{20,})",
     re.IGNORECASE,
 )
+
+
+@dataclass(frozen=True)
+class _PushSnapshot:
+    branch: str
+    head: str
+    upstream_remote: str
+    upstream_ref: str
+    upstream_commit: str
 
 
 # ─── apply ────────────────────────────────────────────────────
@@ -632,33 +642,33 @@ def _git_failure(action: str, result: subprocess.CompletedProcess[str]) -> None:
     log_error(f"{action} failed: {detail}")
 
 
-def _push_preflight() -> bool:
+def _push_preflight() -> "int | None":
     operation = _repository_operation()
     if operation is not None:
         if operation != "<invalid>":
             log_error(
                 f"Data repository has a {operation} in progress; push cancelled."
             )
-        return False
+        return None
 
     status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
     if status.returncode != 0:
         _git_failure("Reading repository status", status)
-        return False
+        return None
     if status.stdout.strip():
         log_error("Data repository has uncommitted changes; push cancelled.")
         print(status.stdout.rstrip())
-        return False
+        return None
 
     branch = _run_repo_git("symbolic-ref", "--quiet", "--short", "HEAD")
     if branch.returncode != 0:
         log_error("Data repository is in detached HEAD state; push cancelled.")
-        return False
+        return None
 
     fetch = _run_repo_git("fetch", "--quiet")
     if fetch.returncode != 0:
         _git_failure("Fetching repository updates", fetch)
-        return False
+        return None
 
     upstream = _run_repo_git(
         "rev-parse",
@@ -668,7 +678,7 @@ def _push_preflight() -> bool:
     )
     if upstream.returncode != 0:
         log_error("Current data repository branch has no upstream; push cancelled.")
-        return False
+        return None
 
     counts = _run_repo_git(
         "rev-list",
@@ -678,21 +688,23 @@ def _push_preflight() -> bool:
     )
     if counts.returncode != 0:
         _git_failure("Comparing the local branch with its upstream", counts)
-        return False
+        return None
     try:
         ahead, behind = (int(value) for value in counts.stdout.split())
     except ValueError:
         log_error("Could not determine whether the data repository is synchronized.")
-        return False
-    if ahead or behind:
+        return None
+    if behind:
         log_error(
             "Data repository is not synchronized with its upstream "
             f"(ahead {ahead}, behind {behind}); push cancelled."
         )
-        if behind:
+        if ahead:
+            log_info("Resolve the diverged branch manually before pushing")
+        else:
             log_info(f"Run {ENTRYPOINT} pull before pushing local configuration")
-        return False
-    return True
+        return None
+    return ahead
 
 
 def _unstage_tools(tools: list[str]) -> bool:
@@ -703,10 +715,16 @@ def _unstage_tools(tools: list[str]) -> bool:
     return True
 
 
-def _staged_credentials() -> list[str]:
-    paths = _staged_paths()
-    if paths is None:
-        return ["<scan failed>"]
+def _paths_outside(paths: list[str], selected: list[str]) -> list[str]:
+    prefixes = tuple(f"{tool}/" for tool in selected)
+    return [
+        path
+        for path in paths
+        if not path.replace("\\", "/").startswith(prefixes)
+    ]
+
+
+def _credential_paths(paths: list[str]) -> list[str]:
     return [
         relative
         for relative in paths
@@ -715,6 +733,13 @@ def _staged_credentials() -> list[str]:
             for part in relative.replace("\\", "/").split("/")
         )
     ]
+
+
+def _staged_credentials() -> list[str]:
+    paths = _staged_paths()
+    if paths is None:
+        return ["<scan failed>"]
+    return _credential_paths(paths)
 
 
 def _staged_paths(*, diff_filter: "str | None" = None) -> "list[str] | None":
@@ -732,12 +757,7 @@ def _staged_paths_outside(selected: list[str]) -> "list[str] | None":
     paths = _staged_paths()
     if paths is None:
         return None
-    prefixes = tuple(f"{tool}/" for tool in selected)
-    return [
-        path
-        for path in paths
-        if not path.replace("\\", "/").startswith(prefixes)
-    ]
+    return _paths_outside(paths, selected)
 
 
 def _staged_secret_paths() -> "list[str] | None":
@@ -789,6 +809,283 @@ def _staged_tree() -> "str | None":
         _git_failure("Reading the staged configuration tree", result)
         return None
     return result.stdout.strip()
+
+
+def _ahead_commits(snapshot: _PushSnapshot) -> "list[str] | None":
+    result = _run_repo_git(
+        "rev-list",
+        "--reverse",
+        f"{snapshot.upstream_commit}..{snapshot.head}",
+    )
+    if result.returncode != 0:
+        _git_failure("Reading local commits", result)
+        return None
+    return result.stdout.split()
+
+
+def _commit_paths(commit: str) -> "list[str] | None":
+    result = _run_repo_git(
+        "diff-tree",
+        "--no-commit-id",
+        "--name-only",
+        "-z",
+        "-r",
+        "-m",
+        commit,
+        "--",
+    )
+    if result.returncode != 0:
+        _git_failure(f"Scanning local commit {commit[:12]}", result)
+        return None
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def _tree_paths(commit: str) -> "set[str] | None":
+    result = _run_repo_git("ls-tree", "-r", "--name-only", "-z", commit)
+    if result.returncode != 0:
+        _git_failure(f"Reading local commit {commit[:12]}", result)
+        return None
+    return {path for path in result.stdout.split("\0") if path}
+
+
+def _ahead_changed_paths(commits: list[str]) -> "list[str] | None":
+    paths: set[str] = set()
+    for commit in commits:
+        commit_paths = _commit_paths(commit)
+        if commit_paths is None:
+            return None
+        paths.update(commit_paths)
+    return sorted(paths)
+
+
+def _ahead_secret_paths(commits: list[str]) -> "list[str] | None":
+    matches: set[str] = set()
+    for commit in commits:
+        changed = _commit_paths(commit)
+        present = _tree_paths(commit)
+        if changed is None or present is None:
+            return None
+        for path in set(changed).intersection(present):
+            result = subprocess.run(
+                ["git", "-C", str(SCRIPT_DIR), "show", f"{commit}:{path}"],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout).decode(
+                    "utf-8",
+                    errors="replace",
+                )
+                text_result = subprocess.CompletedProcess(
+                    result.args,
+                    result.returncode,
+                    "",
+                    detail,
+                )
+                _git_failure(f"Scanning local commit {commit[:12]}", text_result)
+                return None
+            if _SECRET_PATTERN.search(result.stdout):
+                matches.add(path)
+    return sorted(matches)
+
+
+def _ahead_diff(snapshot: _PushSnapshot) -> "str | None":
+    result = _run_repo_git(
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        f"{snapshot.upstream_commit}..{snapshot.head}",
+        "--",
+    )
+    if result.returncode != 0:
+        _git_failure("Reading local commit changes", result)
+        return None
+    return result.stdout
+
+
+def _push_snapshot() -> "_PushSnapshot | None":
+    branch = _run_repo_git("symbolic-ref", "--quiet", "--short", "HEAD")
+    head = _run_repo_git("rev-parse", "HEAD")
+    if branch.returncode != 0:
+        log_error("Data repository is in detached HEAD state; push cancelled.")
+        return None
+    branch_name = branch.stdout.strip()
+    upstream_remote = _run_repo_git(
+        "config",
+        "--get",
+        f"branch.{branch_name}.remote",
+    )
+    upstream_ref = _run_repo_git(
+        "config",
+        "--get",
+        f"branch.{branch_name}.merge",
+    )
+    upstream_commit = _run_repo_git("rev-parse", "@{upstream}")
+    for action, result in (
+        ("Reading the current data repository commit", head),
+        ("Reading the current upstream remote", upstream_remote),
+        ("Reading the current upstream branch", upstream_ref),
+        ("Reading the current upstream commit", upstream_commit),
+    ):
+        if result.returncode != 0:
+            _git_failure(action, result)
+            return None
+    return _PushSnapshot(
+        branch=branch_name,
+        head=head.stdout.strip(),
+        upstream_remote=upstream_remote.stdout.strip(),
+        upstream_ref=upstream_ref.stdout.strip(),
+        upstream_commit=upstream_commit.stdout.strip(),
+    )
+
+
+def _validate_ahead_push(
+    selected: list[str],
+    commits: list[str],
+    snapshot: _PushSnapshot,
+) -> bool:
+    merges = _run_repo_git(
+        "rev-list",
+        "--min-parents=2",
+        f"{snapshot.upstream_commit}..{snapshot.head}",
+    )
+    if merges.returncode != 0:
+        _git_failure("Checking local commit history", merges)
+        return False
+    if merges.stdout.strip():
+        log_error("Local commit range contains a merge commit; push cancelled.")
+        log_info("Review and publish this history manually with Git")
+        return False
+
+    paths = _ahead_changed_paths(commits)
+    if paths is None:
+        return False
+
+    outside = _paths_outside(paths, selected)
+    if outside:
+        log_error("Local commits contain paths outside the selected tools:")
+        for path in outside:
+            print(f"  {path}")
+        log_info(f"Run {ENTRYPOINT} push all if every listed path is intentional")
+        return False
+
+    credentials = _credential_paths(paths)
+    if credentials:
+        log_error("Local commits contain credential files; push cancelled:")
+        for path in credentials:
+            print(f"  {path}")
+        return False
+
+    secret_paths = _ahead_secret_paths(commits)
+    if secret_paths is None:
+        return False
+    if secret_paths:
+        log_error("Potential credential content exists in local commits:")
+        for path in secret_paths:
+            print(f"  {path}")
+        return False
+
+    check = _run_repo_git(
+        "diff",
+        "--check",
+        f"{snapshot.upstream_commit}..{snapshot.head}",
+        "--",
+    )
+    if check.returncode != 0:
+        _git_failure("Validating local commit changes", check)
+        return False
+    return True
+
+
+def _ahead_push_matches(
+    snapshot: _PushSnapshot,
+    selected: list[str],
+    commits: list[str],
+) -> bool:
+    operation = _repository_operation()
+    if operation is not None:
+        log_error("Data repository Git state changed after review; push cancelled.")
+        return False
+
+    status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
+    if status.returncode != 0:
+        _git_failure("Reading repository status", status)
+        return False
+    if status.stdout.strip():
+        log_error("Data repository changed after review; push cancelled.")
+        return False
+
+    fetch = _run_repo_git("fetch", "--quiet")
+    if fetch.returncode != 0:
+        _git_failure("Refreshing repository updates", fetch)
+        return False
+
+    current = _push_snapshot()
+    if current is None:
+        return False
+    if current != snapshot:
+        log_error("Local commits or upstream changed after review; push cancelled.")
+        return False
+    current_commits = _ahead_commits(snapshot)
+    if current_commits != commits:
+        log_error("Local commit range changed after review; push cancelled.")
+        return False
+    return _validate_ahead_push(selected, commits, snapshot)
+
+
+def _push_existing_commits(selected: list[str], ahead: int) -> int:
+    snapshot = _push_snapshot()
+    if snapshot is None:
+        return 1
+    commits = _ahead_commits(snapshot)
+    if commits is None:
+        return 1
+    if len(commits) != ahead:
+        log_error("Local commit count changed after preflight; push cancelled.")
+        return 1
+    if not _validate_ahead_push(selected, commits, snapshot):
+        return 1
+
+    committed_diff = _ahead_diff(snapshot)
+    commit_list = _run_repo_git(
+        "log",
+        "--reverse",
+        "--format=%h %s",
+        f"{snapshot.upstream_commit}..{snapshot.head}",
+    )
+    if committed_diff is None:
+        return 1
+    if commit_list.returncode != 0:
+        _git_failure("Reading local commit summary", commit_list)
+        return 1
+
+    print()
+    log_info(
+        f"Existing local {'commit' if ahead == 1 else 'commits'} to push:"
+    )
+    print(commit_list.stdout.rstrip())
+    print(committed_diff, end="" if committed_diff.endswith("\n") else "\n")
+
+    try:
+        confirm = input("Push these existing local commits? [y/N] ")
+    except EOFError:
+        confirm = ""
+    if confirm not in ("y", "Y"):
+        log_info("Cancelled; existing local commits were not pushed")
+        return 0
+    if not _ahead_push_matches(snapshot, selected, commits):
+        return 1
+
+    push = _run_repo_git(
+        "push",
+        snapshot.upstream_remote,
+        f"{snapshot.head}:{snapshot.upstream_ref}",
+    )
+    if push.returncode != 0:
+        _git_failure("Pushing existing local commits", push)
+        log_warn("Existing local commits remain available for review and retry")
+        return 1
+    log_success("Existing local commits pushed")
+    return 0
 
 
 def _validate_staged_push(selected: list[str]) -> bool:
@@ -957,7 +1254,8 @@ def _commit_and_push(
 def do_push(tool: str) -> int:
     log_header("Push local configuration")
     try:
-        if not _push_preflight():
+        ahead = _push_preflight()
+        if ahead is None:
             return 1
     except FileNotFoundError:
         log_error("git command not found. Please install git.")
@@ -965,6 +1263,10 @@ def do_push(tool: str) -> int:
     except Exception as exc:
         log_error(f"Failed to prepare repository push: {exc}")
         return 1
+
+    selected = _selected_tools(tool)
+    if ahead:
+        return _push_existing_commits(selected, ahead)
 
     if not _init_tools(tool):
         return 1
@@ -980,7 +1282,6 @@ def do_push(tool: str) -> int:
 
     commit_scope = "AI tool" if tool == "all" else tool
     commit_message = f"chore: sync {commit_scope} configuration"
-    selected = _selected_tools(tool)
     reviewed_diff = _stage_push_changes(selected)
     if reviewed_diff is None:
         return 1
@@ -1095,7 +1396,7 @@ def main(argv: "list[str] | None" = None) -> int:
         if installed_version is None:
             log_error("Could not determine the installed ai-config version")
             return 1
-        print(f"{ENTRYPOINT} {installed_version}")
+        print(f"ai-config (acg) {installed_version}")
         return 0
     if cmd == "completion":
         if len(args) != 2 or args[1] not in SHELLS:
