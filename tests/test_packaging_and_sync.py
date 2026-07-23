@@ -730,7 +730,7 @@ def test_push_cancel_leaves_collected_changes_unstaged(
     )
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert "collected changes remain unstaged" in result.stdout
+    assert "configuration changes remain unstaged" in result.stdout
     assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
     assert run_git(data_repo, "status", "--short") == "M claude/settings.json"
     assert run_git(remote, "show", "HEAD:claude/settings.json") == "{}"
@@ -781,11 +781,11 @@ def test_acg_alias_runs_push_command(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert "Commit and push these changes?" in result.stdout
-    assert "collected changes remain unstaged" in result.stdout
+    assert "configuration changes remain unstaged" in result.stdout
     assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
 
 
-def test_push_refuses_dirty_data_repository_before_init(tmp_path: Path) -> None:
+def test_push_refuses_dirty_path_outside_selected_tool(tmp_path: Path) -> None:
     _, data_repo = create_data_remote(tmp_path)
     home = tmp_path / "home"
     home.mkdir()
@@ -797,8 +797,158 @@ def test_push_refuses_dirty_data_repository_before_init(tmp_path: Path) -> None:
     result = run_data_cli(data_repo, home, "push", "claude", input_text="y\n")
 
     assert result.returncode != 0
-    assert "uncommitted changes" in result.stderr
+    assert "outside the selected tools" in result.stderr
+    assert "notes.txt" in result.stdout
     assert (data_repo / "claude/settings.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_push_reviews_and_publishes_existing_uncommitted_changes(
+    tmp_path: Path,
+) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    repo_settings = data_repo / "claude/settings.json"
+    repo_settings.write_text('{"theme":"collected"}\n', encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+    live_settings = home / ".claude/settings.json"
+    live_settings.parent.mkdir()
+    live_settings.write_text('{"theme":"live"}\n', encoding="utf-8")
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="y\n",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Reviewing existing uncommitted configuration changes" in result.stdout
+    assert '-{"theme":"collected"}' not in result.stdout
+    assert '+{"theme":"collected"}' in result.stdout
+    assert "Init Claude" not in result.stdout
+    assert run_git(remote, "show", "HEAD:claude/settings.json") == (
+        '{"theme":"collected"}'
+    )
+    assert run_git(data_repo, "status", "--short") == ""
+
+
+def test_push_cancel_preserves_existing_changes_unstaged(tmp_path: Path) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme":"collected"}\n', encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="n\n",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "configuration changes remain unstaged" in result.stdout
+    assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
+    assert run_git(data_repo, "diff", "--name-only") == "claude/settings.json"
+    assert run_git(remote, "show", "HEAD:claude/settings.json") == "{}"
+
+
+def test_push_refuses_pre_staged_changes_without_altering_index(
+    tmp_path: Path,
+) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme":"staged"}\n', encoding="utf-8")
+    run_git(data_repo, "add", "claude/settings.json")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="y\n",
+    )
+
+    assert result.returncode != 0
+    assert "pre-staged changes" in result.stderr
+    assert run_git(data_repo, "diff", "--cached", "--name-only") == (
+        "claude/settings.json"
+    )
+    assert run_git(remote, "show", "HEAD:claude/settings.json") == "{}"
+
+
+def test_push_refuses_uncommitted_credential_file(tmp_path: Path) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    credential = data_repo / "claude/auth.json"
+    credential.write_text("placeholder\n", encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="y\n",
+    )
+
+    assert result.returncode != 0
+    assert "credential files" in result.stderr
+    assert run_git(data_repo, "status", "--short") == "?? claude/auth.json"
+    remote_tree = run_git(remote, "ls-tree", "-r", "--name-only", "HEAD")
+    assert "claude/auth.json" not in remote_tree
+
+
+def test_push_refuses_dirty_repository_with_ahead_commit(tmp_path: Path) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    instructions = data_repo / "claude/CLAUDE.md"
+    instructions.write_text("local commit\n", encoding="utf-8")
+    run_git(data_repo, "add", "claude/CLAUDE.md")
+    run_git(data_repo, "commit", "-m", "local commit")
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme":"dirty"}\n', encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="y\n",
+    )
+
+    assert result.returncode != 0
+    assert "both uncommitted changes and unpublished" in result.stderr
+    assert run_git(remote, "show", "HEAD:claude/settings.json") == "{}"
+
+
+def test_push_refuses_dirty_repository_behind_upstream(tmp_path: Path) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme":"dirty"}\n', encoding="utf-8")
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", str(remote), str(other)], check=True)
+    configure_git_identity(other)
+    commit_and_push_settings(other, '{"theme":"remote"}', "remote update")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="y\n",
+    )
+
+    assert result.returncode != 0
+    assert "ahead 0, behind 1" in result.stderr
+    assert run_git(data_repo, "diff", "--name-only") == "claude/settings.json"
 
 
 def test_push_refuses_existing_git_operation(tmp_path: Path) -> None:
@@ -1181,7 +1331,11 @@ def test_push_unstages_selected_tools_when_confirmation_is_interrupted(
     from ai_config import __main__ as main_cli
 
     status = subprocess.CompletedProcess([], 0, " M claude/settings.json\n", "")
-    monkeypatch.setattr(main_cli, "_push_preflight", lambda: 0)
+    monkeypatch.setattr(
+        main_cli,
+        "_push_preflight",
+        lambda selected: main_cli._PushPreflight(ahead=0, has_changes=False),
+    )
     monkeypatch.setattr(main_cli, "_init_tools", lambda tool: True)
     monkeypatch.setattr(main_cli, "_run_repo_git", lambda *args: status)
     monkeypatch.setattr(main_cli, "_selected_tools", lambda tool: ["claude"])
@@ -1214,7 +1368,11 @@ def test_push_reports_failed_unstage_on_cancel(
     from ai_config import __main__ as main_cli
 
     status = subprocess.CompletedProcess([], 0, " M claude/settings.json\n", "")
-    monkeypatch.setattr(main_cli, "_push_preflight", lambda: 0)
+    monkeypatch.setattr(
+        main_cli,
+        "_push_preflight",
+        lambda selected: main_cli._PushPreflight(ahead=0, has_changes=False),
+    )
     monkeypatch.setattr(main_cli, "_init_tools", lambda tool: True)
     monkeypatch.setattr(main_cli, "_run_repo_git", lambda *args: status)
     monkeypatch.setattr(main_cli, "_selected_tools", lambda tool: ["claude"])
