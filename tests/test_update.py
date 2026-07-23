@@ -23,6 +23,55 @@ def test_update_from_source_explains_and_fails(tmp_path: Path) -> None:
     assert "git pull" in combined
 
 
+def test_update_from_source_delegates_to_standalone(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    from ai_config import update
+
+    standalone = tmp_path / "bin" / "ai-config"
+    standalone.parent.mkdir()
+    standalone.write_text("standalone\n", encoding="utf-8")
+    standalone.chmod(0o755)
+    calls = {}
+
+    class Completed:
+        returncode = 0
+
+    def fake_run(command, **kwargs):
+        calls["command"] = command
+        calls["environment"] = kwargs["env"]
+        return Completed()
+
+    monkeypatch.setattr(update, "_standalone_candidate", lambda: standalone)
+    monkeypatch.setattr(update.subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.delenv("AI_CONFIG_UPDATE_DELEGATED", raising=False)
+
+    assert update.run_update() == 0
+    assert calls["command"] == [str(standalone), "update"]
+    assert calls["environment"]["AI_CONFIG_UPDATE_DELEGATED"] == "1"
+    assert "Delegating update" in capsys.readouterr().out
+
+
+def test_delegated_source_update_does_not_recurse(
+    monkeypatch,
+    capsys,
+) -> None:
+    from ai_config import update
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("delegated source update must not recurse")
+
+    monkeypatch.setattr(update.subprocess, "run", fail_run)
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setenv("AI_CONFIG_UPDATE_DELEGATED", "1")
+
+    assert update.run_update() == 1
+    assert "runs from source" in capsys.readouterr().err
+
+
 def test_update_rejects_extra_arguments(tmp_path: Path) -> None:
     repo_dir, home_dir = make_full_repo(tmp_path)
 

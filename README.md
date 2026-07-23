@@ -34,8 +34,19 @@ irm https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 | iex
 
 Installers register tab completion for commands, tools, and setup options.
 Restart the terminal after installation, then try `ai-config <Tab>` or
-`ai-config status <Tab>`. To print the generated scripts directly, run
-`ai-config completion bash` or `ai-config completion powershell`.
+`ai-config status <Tab>`. To activate a new or updated install immediately in
+the current Bash process, run:
+
+```bash
+hash -r && source ~/.local/share/bash-completion/completions/ai-config.bash
+```
+
+With Bash's default Readline settings, press Tab twice to list ambiguous
+choices such as `pull` and `push`; a unique prefix such as `acg pus<Tab>`
+expands immediately.
+
+To print the generated scripts directly, run `ai-config completion bash` or
+`ai-config completion powershell`.
 
 When no usable data repository is already configured, the installer starts
 first-run setup in an interactive terminal. Setup asks where the private data
@@ -87,6 +98,10 @@ installation:
 python -m venv .venv
 .venv/bin/pip install --editable .
 ```
+
+If an old editable launcher shadows the standalone command, `update`
+automatically delegates to the installed standalone executable instead of
+requiring PATH or pyenv cleanup first.
 
 ## CLI usage
 

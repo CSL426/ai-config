@@ -83,7 +83,7 @@ install_bash_completion() {
         mv -f "$staged_completion" "$completion_file"
         install -m 644 "$completion_file" "$acg_completion_file"
         step "Installed Bash completion: $completion_file"
-        step "Reload completion in this shell: source \"$completion_file\""
+        step "Activate in this shell: hash -r && source \"$completion_file\""
     else
         rm -f "$staged_completion"
         warn "Shell completion could not be installed"
