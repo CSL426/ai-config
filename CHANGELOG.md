@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Add `version`, `--version`, and `-V` commands for offline installed-version
+  checks.
+- Harden `push` review by displaying staged new-file contents, rejecting
+  out-of-scope or credential-like staged changes, and cancelling when the
+  reviewed snapshot changes before commit.
+- Make `pull` fail closed and fast-forward-only so dirty, ahead, diverged, or
+  in-progress repositories never enter autostash or rebase conflicts.
+- Complete Bash and PowerShell command-name completion for `package`, version
+  and help flags, with clean `ai-config` and `acg` command names that do not
+  expose platform-specific `.exe` suffixes.
+
 ## 1.0.7 - 2026-07-22
 
 - Add `acg pull [tool]` and guarded `acg push [tool]` commands for

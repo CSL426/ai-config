@@ -52,6 +52,21 @@ def test_reset_declined_keeps_everything(tmp_path: Path) -> None:
     assert (repo_dir / "codex/config.toml").exists()
 
 
+@pytest.mark.parametrize("command", ["list", "reset"])
+def test_global_commands_reject_tool_argument(
+    tmp_path: Path,
+    command: str,
+) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+
+    result = run_ai_config(repo_dir, home_dir, command, "codex")
+
+    assert result.returncode == 1
+    assert "Unexpected arguments: codex" in result.stderr
+    assert (repo_dir / "claude/CLAUDE.md").exists()
+    assert (repo_dir / "codex/config.toml").exists()
+
+
 # ─── project ──────────────────────────────────────────────────
 
 

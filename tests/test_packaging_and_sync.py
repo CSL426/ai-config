@@ -15,6 +15,11 @@ from ai_config.config import save_data_repo
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def project_version() -> str:
+    with (REPO_ROOT / "pyproject.toml").open("rb") as file:
+        return tomllib.load(file)["project"]["version"]
+
+
 def run_git(repo: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", "-C", str(repo), *args],
@@ -66,6 +71,64 @@ def test_console_main_usage_entrypoint(
     assert "setup" in captured.out
 
 
+@pytest.mark.parametrize("command", ["version", "--version", "-V"])
+def test_version_commands_do_not_require_data_repository(
+    tmp_path: Path,
+    command: str,
+) -> None:
+    env = os.environ.copy()
+    env["AI_CONFIG_REPO"] = str(tmp_path / "missing-data-repo")
+    env["AI_CONFIG_ENTRYPOINT"] = "ai-config"
+    env["PYTHONPATH"] = str(REPO_ROOT)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ai_config", command],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.stdout.strip() == f"ai-config {project_version()}"
+
+
+@pytest.mark.parametrize("command", ["version", "--version", "-V"])
+@pytest.mark.parametrize(
+    ("executable", "display_name"),
+    [
+        ("ai-config.exe", "ai-config"),
+        ("acg", "acg"),
+        ("acg.exe", "acg"),
+    ],
+)
+def test_console_main_version_uses_invoked_alias(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    executable: str,
+    display_name: str,
+) -> None:
+    environment = os.environ.copy()
+    environment.pop("AI_CONFIG_ENTRYPOINT", None)
+    monkeypatch.setattr(os, "environ", environment)
+    monkeypatch.setattr(sys, "argv", [executable, command])
+
+    assert console_main() == 0
+    assert capsys.readouterr().out.strip() == f"{display_name} {project_version()}"
+
+
+def test_lowercase_v_is_not_a_version_alias(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "-v")
+
+    assert result.returncode == 1
+    assert "Unknown command: -v" in result.stderr
+
+
 def create_data_remote(tmp_path: Path) -> tuple[Path, Path]:
     remote = tmp_path / "remote.git"
     subprocess.run(["git", "init", "--bare", str(remote)], check=True)
@@ -91,6 +154,33 @@ def run_data_cli(
     env["PYTHONPATH"] = str(REPO_ROOT)
     return subprocess.run(
         [sys.executable, "-m", "ai_config", *args],
+        capture_output=True,
+        text=True,
+        input=input_text,
+        env=env,
+        check=False,
+    )
+
+
+def run_data_alias_cli(
+    data_repo: Path,
+    home: Path,
+    *args: str,
+    input_text: "str | None" = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["AI_CONFIG_REPO"] = str(data_repo)
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    launcher = (
+        "import sys\n"
+        "from ai_config.cli import console_main\n"
+        "sys.argv = ['acg', *sys.argv[1:]]\n"
+        "raise SystemExit(console_main())\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", launcher, *args],
         capture_output=True,
         text=True,
         input=input_text,
@@ -416,6 +506,154 @@ def test_pull_and_sync_subcommands(tmp_path: Path, command: str) -> None:
     assert "Status:" in result.stdout
 
 
+@pytest.mark.parametrize("command", ["pull", "sync"])
+def test_pull_refuses_dirty_conflicting_change_without_autostash(
+    tmp_path: Path,
+    command: str,
+) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", str(remote), str(other)], check=True)
+    configure_git_identity(other)
+    commit_and_push_settings(other, '{"theme":"remote"}', "remote change")
+    local_settings = data_repo / "claude/settings.json"
+    local_settings.write_text('{"theme":"local"}\n', encoding="utf-8")
+    head_before = run_git(data_repo, "rev-parse", "HEAD")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, command, "claude")
+
+    assert result.returncode != 0
+    assert "uncommitted changes" in result.stderr
+    assert run_git(data_repo, "rev-parse", "HEAD") == head_before
+    assert run_git(data_repo, "status", "--short") == "M claude/settings.json"
+    assert run_git(data_repo, "stash", "list") == ""
+    assert not (data_repo / ".git/rebase-merge").exists()
+    assert not (data_repo / ".git/rebase-apply").exists()
+    assert local_settings.read_text(encoding="utf-8") == '{"theme":"local"}\n'
+
+
+def test_pull_refuses_untracked_files(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    (data_repo / "notes.txt").write_text("local notes\n", encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode != 0
+    assert "uncommitted changes" in result.stderr
+    assert run_git(data_repo, "status", "--short") == "?? notes.txt"
+
+
+def test_pull_refuses_local_ahead_branch(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    (data_repo / "local.txt").write_text("local commit\n", encoding="utf-8")
+    run_git(data_repo, "add", "local.txt")
+    run_git(data_repo, "commit", "-m", "local change")
+    head_before = run_git(data_repo, "rev-parse", "HEAD")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode != 0
+    assert "ahead 1, behind 0" in result.stderr
+    assert "push to publish" in result.stdout
+    assert run_git(data_repo, "rev-parse", "HEAD") == head_before
+    assert run_git(data_repo, "status", "--short") == ""
+
+
+def test_pull_refuses_diverged_branch_without_starting_rebase(
+    tmp_path: Path,
+) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme":"local"}\n', encoding="utf-8")
+    run_git(data_repo, "add", "claude/settings.json")
+    run_git(data_repo, "commit", "-m", "local change")
+    head_before = run_git(data_repo, "rev-parse", "HEAD")
+
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", str(remote), str(other)], check=True)
+    configure_git_identity(other)
+    commit_and_push_settings(other, '{"theme":"remote"}', "remote change")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode != 0
+    assert "ahead 1, behind 1" in result.stderr
+    assert "diverged branch manually" in result.stdout
+    assert run_git(data_repo, "rev-parse", "HEAD") == head_before
+    assert run_git(data_repo, "status", "--short") == ""
+    assert not (data_repo / ".git/rebase-merge").exists()
+    assert not (data_repo / ".git/rebase-apply").exists()
+    assert settings.read_text(encoding="utf-8") == '{"theme":"local"}\n'
+
+
+def test_pull_refuses_existing_git_operation(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    (data_repo / ".git/rebase-merge").mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode != 0
+    assert "rebase in progress" in result.stderr
+
+
+def test_pull_refuses_detached_head(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    run_git(data_repo, "checkout", "--detach")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode != 0
+    assert "detached HEAD" in result.stderr
+
+
+def test_pull_refuses_branch_without_upstream(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    run_git(data_repo, "branch", "--unset-upstream")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode != 0
+    assert "has no upstream" in result.stderr
+
+
+def test_pull_reports_already_synchronized_repository(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "already up to date" in result.stdout
+
+
+@pytest.mark.parametrize("command", ["pull", "sync"])
+def test_acg_alias_runs_pull_commands(tmp_path: Path, command: str) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_alias_cli(data_repo, home, command, "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "already up to date" in result.stdout
+    assert "Run acg apply to deploy" in result.stdout
+
+
 def test_push_collects_commits_and_pushes_selected_tool(tmp_path: Path) -> None:
     remote, data_repo = create_data_remote(tmp_path)
     home = tmp_path / "home"
@@ -444,6 +682,34 @@ def test_push_collects_commits_and_pushes_selected_tool(tmp_path: Path) -> None:
     )
 
 
+def test_push_commits_new_file_after_review(tmp_path: Path) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    claude_home = home / ".claude"
+    claude_home.mkdir()
+    (claude_home / "settings.json").write_text("{}", encoding="utf-8")
+    (claude_home / "CLAUDE.md").write_text(
+        "new reviewed instructions\n",
+        encoding="utf-8",
+    )
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="y\n",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "+new reviewed instructions" in result.stdout
+    assert run_git(remote, "show", "HEAD:claude/CLAUDE.md") == (
+        "new reviewed instructions"
+    )
+    assert run_git(data_repo, "status", "--porcelain=v1") == ""
+
+
 @pytest.mark.parametrize("input_text", ["n\n", ""])
 def test_push_cancel_leaves_collected_changes_unstaged(
     tmp_path: Path, input_text: str
@@ -470,6 +736,55 @@ def test_push_cancel_leaves_collected_changes_unstaged(
     assert run_git(remote, "show", "HEAD:claude/settings.json") == "{}"
 
 
+def test_push_review_displays_new_file_content(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    claude_home = home / ".claude"
+    claude_home.mkdir()
+    (claude_home / "settings.json").write_text("{}", encoding="utf-8")
+    (claude_home / "CLAUDE.md").write_text(
+        "new instructions visible in review\n",
+        encoding="utf-8",
+    )
+
+    result = run_data_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="n\n",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "new file mode" in result.stdout
+    assert "+new instructions visible in review" in result.stdout
+    assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
+    assert run_git(data_repo, "status", "--short") == "?? claude/CLAUDE.md"
+
+
+def test_acg_alias_runs_push_command(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{"theme":"local"}\n', encoding="utf-8")
+
+    result = run_data_alias_cli(
+        data_repo,
+        home,
+        "push",
+        "claude",
+        input_text="n\n",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Commit and push these changes?" in result.stdout
+    assert "collected changes remain unstaged" in result.stdout
+    assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
+
+
 def test_push_refuses_dirty_data_repository_before_init(tmp_path: Path) -> None:
     _, data_repo = create_data_remote(tmp_path)
     home = tmp_path / "home"
@@ -484,6 +799,18 @@ def test_push_refuses_dirty_data_repository_before_init(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert "uncommitted changes" in result.stderr
     assert (data_repo / "claude/settings.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_push_refuses_existing_git_operation(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    (data_repo / ".git/rebase-merge").mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "push", "claude", input_text="y\n")
+
+    assert result.returncode != 0
+    assert "rebase in progress" in result.stderr
 
 
 def test_push_refuses_branch_behind_upstream(tmp_path: Path) -> None:
@@ -552,6 +879,206 @@ def test_push_credential_scan_rejects_staged_credential_name(
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
 
     assert main_cli._staged_credentials() == ["claude/auth.json"]
+
+
+def test_push_rejects_staged_path_outside_selected_tool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    _, data_repo = create_data_remote(tmp_path)
+    (data_repo / "notes.txt").write_text("concurrent staging\n", encoding="utf-8")
+    run_git(data_repo, "add", "notes.txt")
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme":"local"}\n', encoding="utf-8")
+    monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+
+    assert main_cli._stage_push_changes(["claude"]) is None
+    captured = capsys.readouterr()
+    assert "outside the selected tools" in captured.err
+    assert "notes.txt" in captured.out
+    assert run_git(data_repo, "diff", "--cached", "--name-only") == "notes.txt"
+    assert run_git(data_repo, "diff", "--name-only") == "claude/settings.json"
+
+
+def test_push_rejects_potential_credential_content(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    _, data_repo = create_data_remote(tmp_path)
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"github_token":"not-a-real-token"}\n', encoding="utf-8")
+    run_git(data_repo, "add", "claude/settings.json")
+    monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+
+    assert not main_cli._validate_staged_push(["claude"])
+    captured = capsys.readouterr()
+    assert "Potential credential content" in captured.err
+    assert "claude/settings.json" in captured.out
+    assert "not-a-real-token" not in captured.out + captured.err
+
+
+def test_push_scans_staged_blob_with_unicode_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    _, data_repo = create_data_remote(tmp_path)
+    instructions = data_repo / "claude/機密說明.md"
+    instructions.write_text(
+        "Never store secrets here.\ngithub_token = placeholder\n",
+        encoding="utf-8",
+    )
+    run_git(data_repo, "add", "claude/機密說明.md")
+    monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+
+    assert main_cli._staged_secret_paths() == ["claude/機密說明.md"]
+
+
+def test_push_rejects_root_file_named_like_selected_tool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", str(repo)], check=True)
+    (repo / "claude").write_text("not a tool directory\n", encoding="utf-8")
+    run_git(repo, "add", "claude")
+    monkeypatch.setattr(main_cli, "SCRIPT_DIR", repo)
+
+    assert main_cli._staged_paths_outside(["claude"]) == ["claude"]
+
+
+def test_push_rejects_restaged_content_changed_after_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    _, data_repo = create_data_remote(tmp_path)
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme":"reviewed"}\n', encoding="utf-8")
+    run_git(data_repo, "add", "claude/settings.json")
+    monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    reviewed_diff = main_cli._staged_diff()
+    assert reviewed_diff is not None
+
+    settings.write_text('{"theme":"changed"}\n', encoding="utf-8")
+    run_git(data_repo, "add", "claude/settings.json")
+
+    assert not main_cli._staged_push_matches(["claude"], reviewed_diff)
+    assert "changed after review" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires an executable POSIX Git hook")
+def test_push_rolls_back_commit_changed_by_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    remote, data_repo = create_data_remote(tmp_path)
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme":"reviewed"}\n', encoding="utf-8")
+    run_git(data_repo, "add", "claude/settings.json")
+    parent = run_git(data_repo, "rev-parse", "HEAD")
+    monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    reviewed_diff = main_cli._staged_diff()
+    assert reviewed_diff is not None
+
+    hook = data_repo / ".git/hooks/pre-commit"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"theme\":\"changed-by-hook\"}' "
+        "> claude/settings.json\n"
+        "git add claude/settings.json\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+    assert (
+        main_cli._commit_and_push(
+            "chore: sync claude configuration",
+            ["claude"],
+            reviewed_diff,
+        )
+        == 1
+    )
+    assert run_git(data_repo, "rev-parse", "HEAD") == parent
+    assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
+    assert run_git(data_repo, "diff", "--name-only") == "claude/settings.json"
+    assert run_git(remote, "show", "HEAD:claude/settings.json") == "{}"
+    captured = capsys.readouterr()
+    assert "differed from the reviewed snapshot" in captured.err
+    assert "rolled back and not pushed" in captured.out
+
+
+def test_push_unstages_selected_tools_when_confirmation_is_interrupted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    status = subprocess.CompletedProcess([], 0, " M claude/settings.json\n", "")
+    monkeypatch.setattr(main_cli, "_push_preflight", lambda: True)
+    monkeypatch.setattr(main_cli, "_init_tools", lambda tool: True)
+    monkeypatch.setattr(main_cli, "_run_repo_git", lambda *args: status)
+    monkeypatch.setattr(main_cli, "_selected_tools", lambda tool: ["claude"])
+    monkeypatch.setattr(
+        main_cli,
+        "_stage_push_changes",
+        lambda selected: "reviewed diff\n",
+    )
+
+    def interrupt_review(*args: object) -> bool:
+        raise KeyboardInterrupt
+
+    restored: list[list[str]] = []
+    monkeypatch.setattr(main_cli, "_review_and_confirm_push", interrupt_review)
+    monkeypatch.setattr(
+        main_cli,
+        "_unstage_tools",
+        lambda selected: restored.append(selected) is None,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        main_cli.do_push("claude")
+    assert restored == [["claude"]]
+
+
+def test_push_reports_failed_unstage_on_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    status = subprocess.CompletedProcess([], 0, " M claude/settings.json\n", "")
+    monkeypatch.setattr(main_cli, "_push_preflight", lambda: True)
+    monkeypatch.setattr(main_cli, "_init_tools", lambda tool: True)
+    monkeypatch.setattr(main_cli, "_run_repo_git", lambda *args: status)
+    monkeypatch.setattr(main_cli, "_selected_tools", lambda tool: ["claude"])
+    monkeypatch.setattr(
+        main_cli,
+        "_stage_push_changes",
+        lambda selected: "reviewed diff\n",
+    )
+    monkeypatch.setattr(
+        main_cli,
+        "_review_and_confirm_push",
+        lambda *args: False,
+    )
+    monkeypatch.setattr(main_cli, "_unstage_tools", lambda selected: False)
+
+    assert main_cli.do_push("claude") == 1
+    assert "failed to restore" in capsys.readouterr().err
 
 
 def test_push_no_changes_does_not_create_commit(tmp_path: Path) -> None:
