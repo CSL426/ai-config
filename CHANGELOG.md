@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Let `push` review, commit, and publish safe unstaged tool changes previously
+  collected by `init`, without gathering again or requiring manual Git.
+- Continue rejecting pre-staged, out-of-scope, credential, dirty-plus-ahead,
+  behind, and diverged repository states.
+
 ## 1.0.9 - 2026-07-23
 
 - Let `push` safely review and publish existing ahead-only commits left by a

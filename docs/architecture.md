@@ -68,6 +68,12 @@ retrying an explicit non-force push. It never gathers or creates another commit
 while retrying. Behind, diverged, merge-commit, credential, and out-of-scope
 states fail closed.
 
+An `init` followed by `push` is also supported. When the repository contains
+only unstaged changes within the selected tool directories, `push` preserves
+that collected snapshot, skips another gather, and proceeds through the same
+scope, credential, diff, and confirmation checks. Pre-staged changes and dirty
+plus ahead states remain manual Git operations.
+
 ## Projection model
 
 The data repository is authoritative:

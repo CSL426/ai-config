@@ -84,6 +84,12 @@ class _PushSnapshot:
     upstream_commit: str
 
 
+@dataclass(frozen=True)
+class _PushPreflight:
+    ahead: int
+    has_changes: bool
+
+
 # ─── apply ────────────────────────────────────────────────────
 
 
@@ -642,7 +648,7 @@ def _git_failure(action: str, result: subprocess.CompletedProcess[str]) -> None:
     log_error(f"{action} failed: {detail}")
 
 
-def _push_preflight() -> "int | None":
+def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
     operation = _repository_operation()
     if operation is not None:
         if operation != "<invalid>":
@@ -655,10 +661,38 @@ def _push_preflight() -> "int | None":
     if status.returncode != 0:
         _git_failure("Reading repository status", status)
         return None
-    if status.stdout.strip():
-        log_error("Data repository has uncommitted changes; push cancelled.")
-        print(status.stdout.rstrip())
-        return None
+    has_changes = bool(status.stdout.strip())
+    if has_changes:
+        staged = _staged_paths()
+        if staged is None:
+            return None
+        if staged:
+            log_error("Data repository has pre-staged changes; push cancelled:")
+            for path in staged:
+                print(f"  {path}")
+            log_info("Unstage them before retrying so push can review the full diff")
+            return None
+
+        working = _working_paths()
+        if working is None:
+            return None
+        outside = _paths_outside(working, selected)
+        if outside:
+            log_error("Uncommitted paths outside the selected tools; push cancelled:")
+            for path in outside:
+                print(f"  {path}")
+            if len(selected) < len(ALL_TOOLS):
+                log_info(
+                    f"Run {ENTRYPOINT} push all if every listed path is intentional"
+                )
+            return None
+
+        credentials = _credential_paths(working)
+        if credentials:
+            log_error("Uncommitted credential files detected; push cancelled:")
+            for path in credentials:
+                print(f"  {path}")
+            return None
 
     branch = _run_repo_git("symbolic-ref", "--quiet", "--short", "HEAD")
     if branch.returncode != 0:
@@ -704,7 +738,14 @@ def _push_preflight() -> "int | None":
         else:
             log_info(f"Run {ENTRYPOINT} pull before pushing local configuration")
         return None
-    return ahead
+    if ahead and has_changes:
+        log_error(
+            "Data repository has both uncommitted changes and unpublished "
+            "local commits; push cancelled."
+        )
+        log_info("Publish or resolve the existing commits before retrying")
+        return None
+    return _PushPreflight(ahead=ahead, has_changes=has_changes)
 
 
 def _unstage_tools(tools: list[str]) -> bool:
@@ -751,6 +792,27 @@ def _staged_paths(*, diff_filter: "str | None" = None) -> "list[str] | None":
         _git_failure("Scanning staged paths", result)
         return None
     return [relative for relative in result.stdout.split("\0") if relative]
+
+
+def _working_paths() -> "list[str] | None":
+    tracked = _run_repo_git("diff", "--name-only", "-z", "HEAD", "--")
+    untracked = _run_repo_git(
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+    )
+    for action, result in (
+        ("Scanning uncommitted paths", tracked),
+        ("Scanning untracked paths", untracked),
+    ):
+        if result.returncode != 0:
+            _git_failure(action, result)
+            return None
+    paths = set(tracked.stdout.split("\0"))
+    paths.update(untracked.stdout.split("\0"))
+    paths.discard("")
+    return sorted(paths)
 
 
 def _staged_paths_outside(selected: list[str]) -> "list[str] | None":
@@ -1253,9 +1315,10 @@ def _commit_and_push(
 
 def do_push(tool: str) -> int:
     log_header("Push local configuration")
+    selected = _selected_tools(tool)
     try:
-        ahead = _push_preflight()
-        if ahead is None:
+        preflight = _push_preflight(selected)
+        if preflight is None:
             return 1
     except FileNotFoundError:
         log_error("git command not found. Please install git.")
@@ -1264,11 +1327,12 @@ def do_push(tool: str) -> int:
         log_error(f"Failed to prepare repository push: {exc}")
         return 1
 
-    selected = _selected_tools(tool)
-    if ahead:
-        return _push_existing_commits(selected, ahead)
+    if preflight.ahead:
+        return _push_existing_commits(selected, preflight.ahead)
 
-    if not _init_tools(tool):
+    if preflight.has_changes:
+        log_info("Reviewing existing uncommitted configuration changes")
+    elif not _init_tools(tool):
         return 1
 
     status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
@@ -1303,7 +1367,7 @@ def do_push(tool: str) -> int:
 
     if not confirmed:
         if cleanup_succeeded:
-            log_info("Cancelled; collected changes remain unstaged")
+            log_info("Cancelled; configuration changes remain unstaged")
             return 0
         log_error("Cancellation failed to restore the staged configuration.")
         return 1

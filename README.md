@@ -103,8 +103,10 @@ ai-config <command> [tool]
 - `push [tool]` — Gather local settings, show the repository diff, and ask before
   committing and pushing. If a previous push left reviewed commits ahead of the
   upstream, show and confirm those commits again without gathering or creating
-  another commit. Push refuses dirty, detached, behind, diverged, or
-  upstream-less repositories, and cancels if the reviewed state changes.
+  another commit. If `init` already collected unstaged changes entirely within
+  the selected tools, review and publish those exact changes without gathering
+  again. Push refuses pre-staged, out-of-scope, detached, behind, diverged, or
+  upstream-less states, and cancels if the reviewed state changes.
 - `sync [tool]` — Alias for `pull`.
 - `project [tool]` — Project local Claude settings to other targets.
 - `list` — List all managed tools.
@@ -128,7 +130,7 @@ acg pull
 acg apply
 ```
 
-To publish this machine's selected settings, start from a clean data repository:
+To publish this machine's selected settings:
 
 ```bash
 acg push codex
@@ -139,6 +141,12 @@ are included in the displayed diff. It never force-pushes. If the reviewed
 snapshot changes before commit, the push is cancelled and the collected changes
 are left unstaged. If the remote changes after preflight, the normal
 non-fast-forward rejection leaves the new commit local for manual review.
+
+If `init` was run separately first, `push` accepts its existing unstaged changes
+when every changed path belongs to the selected tools. It skips gathering in
+that case, preserving the collected snapshot for review. Pre-staged changes,
+credential files, out-of-scope paths, or a mixture of dirty changes and
+unpublished commits remain blocked.
 
 Rerunning `push` safely resumes that ahead-only state: it scans every local
 commit for out-of-scope paths and credential content, shows the commit list and
