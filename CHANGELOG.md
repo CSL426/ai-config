@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Let `push` safely review and publish existing ahead-only commits left by a
+  failed push, without gathering new settings or creating another commit.
+- Scan every retried commit for selected-tool scope and credential content,
+  reject merge histories, and revalidate the exact local and upstream refs
+  after confirmation.
+- Show the same `ai-config (acg)` version label from both command names while
+  hiding platform-specific `.exe` suffixes.
+
 ## 1.0.8 - 2026-07-23
 
 - Add `version`, `--version`, and `-V` commands for offline installed-version
