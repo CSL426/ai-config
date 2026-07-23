@@ -686,7 +686,7 @@ def test_push_collects_commits_and_pushes_selected_tool(tmp_path: Path) -> None:
     )
     assert run_git(data_repo, "status", "--porcelain=v1") == ""
     assert run_git(data_repo, "log", "-1", "--pretty=%s") == (
-        "chore: sync claude configuration"
+        "chore: update claude settings"
     )
 
 
@@ -834,11 +834,43 @@ def test_push_reviews_and_publishes_existing_uncommitted_changes(
     assert "Reviewing existing uncommitted configuration changes" in result.stdout
     assert '-{"theme":"collected"}' not in result.stdout
     assert '+{"theme":"collected"}' in result.stdout
+    assert "Commit message: chore: update claude settings" in result.stdout
     assert "Init Claude" not in result.stdout
     assert run_git(remote, "show", "HEAD:claude/settings.json") == (
         '{"theme":"collected"}'
     )
     assert run_git(data_repo, "status", "--short") == ""
+
+
+def test_push_commit_message_uses_tools_and_changed_json_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import __main__ as main_cli
+
+    _, data_repo = create_data_remote(tmp_path)
+    claude_settings = data_repo / "claude/settings.json"
+    claude_settings.write_text('{"model":"claude-sonnet"}\n', encoding="utf-8")
+    agy_settings = data_repo / "agy/settings.json"
+    agy_settings.parent.mkdir()
+    agy_settings.write_text('{"model":"gemini-flash"}\n', encoding="utf-8")
+    run_git(data_repo, "add", "claude/settings.json", "agy/settings.json")
+    monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+
+    assert main_cli._proposed_push_commit_message(
+        ["agy/settings.json", "claude/settings.json"]
+    ) == "chore: update claude and agy model settings"
+
+
+def test_push_commit_message_identifies_shared_skill() -> None:
+    from ai_config import __main__ as main_cli
+
+    assert main_cli._proposed_push_commit_message(
+        [
+            "claude/shared/both/ci-check/SKILL.md",
+            "claude/shared/both/ci-check/scripts/check.py",
+        ]
+    ) == "chore: update ci-check shared skill"
 
 
 def test_push_cancel_preserves_existing_changes_unstaged(tmp_path: Path) -> None:

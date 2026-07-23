@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 import difflib
+import json
 import os
 from pathlib import Path
 import re
@@ -1233,6 +1234,89 @@ def _stage_push_changes(selected: list[str]) -> "str | None":
     return staged_diff
 
 
+def _joined_names(names: list[str]) -> str:
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+
+def _staged_json_keys(path: str) -> "set[str] | None":
+    current = _run_repo_git("show", f":{path}")
+    if current.returncode != 0:
+        return None
+    previous = _run_repo_git("show", f"HEAD:{path}")
+    try:
+        current_document = json.loads(current.stdout)
+        previous_document = (
+            json.loads(previous.stdout) if previous.returncode == 0 else {}
+        )
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(current_document, dict) or not isinstance(
+        previous_document,
+        dict,
+    ):
+        return None
+    keys = set(current_document).union(previous_document)
+    return {
+        key
+        for key in keys
+        if current_document.get(key) != previous_document.get(key)
+    }
+
+
+def _proposed_push_commit_message(paths: list[str]) -> str:
+    normalized = [path.replace("\\", "/") for path in paths]
+    settings_tools = [
+        tool
+        for tool in ALL_TOOLS
+        if f"{tool}/settings.json" in normalized
+    ]
+    if len(settings_tools) == len(normalized) and settings_tools:
+        changed_keys: set[str] = set()
+        for tool in settings_tools:
+            keys = _staged_json_keys(f"{tool}/settings.json")
+            if keys is None:
+                break
+            changed_keys.update(keys)
+        else:
+            names = _joined_names(settings_tools)
+            if changed_keys == {"model"}:
+                return f"chore: update {names} model settings"
+            return f"chore: update {names} settings"
+
+    shared_skills = {
+        parts[3]
+        for path in normalized
+        if len(parts := path.split("/")) >= 5
+        and parts[:2] == ["claude", "shared"]
+        and parts[2] in {"both", "codex", "agy"}
+    }
+    if len(shared_skills) == 1 and all(
+        len(parts := path.split("/")) >= 5
+        and parts[:3]
+        in (
+            ["claude", "shared", "both"],
+            ["claude", "shared", "codex"],
+            ["claude", "shared", "agy"],
+        )
+        and parts[3] in shared_skills
+        for path in normalized
+    ):
+        return f"chore: update {next(iter(shared_skills))} shared skill"
+
+    changed_tools = [
+        tool
+        for tool in ALL_TOOLS
+        if any(path.startswith(f"{tool}/") for path in normalized)
+    ]
+    if changed_tools:
+        return f"chore: update {_joined_names(changed_tools)} configuration"
+    return "chore: sync ai tool configuration"
+
+
 def _staged_push_matches(selected: list[str], reviewed_diff: str) -> bool:
     if not _validate_staged_push(selected):
         return False
@@ -1344,11 +1428,14 @@ def do_push(tool: str) -> int:
         log_success("No local configuration changes to push")
         return 0
 
-    commit_scope = "AI tool" if tool == "all" else tool
-    commit_message = f"chore: sync {commit_scope} configuration"
     reviewed_diff = _stage_push_changes(selected)
     if reviewed_diff is None:
         return 1
+    staged_paths = _staged_paths()
+    if staged_paths is None:
+        _unstage_tools(selected)
+        return 1
+    commit_message = _proposed_push_commit_message(staged_paths)
 
     confirmed = False
     ready_to_commit = False

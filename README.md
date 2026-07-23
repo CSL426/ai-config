@@ -156,6 +156,10 @@ are included in the displayed diff. It never force-pushes. If the reviewed
 snapshot changes before commit, the push is cancelled and the collected changes
 are left unstaged. If the remote changes after preflight, the normal
 non-fast-forward rejection leaves the new commit local for manual review.
+The proposed conventional commit message is derived locally from staged paths
+and supported structured diffs; for example, model-only changes to Claude and
+Agy settings produce `chore: update claude and agy model settings`. No AI or
+external service is used to compose it.
 
 If `init` was run separately first, `push` accepts its existing unstaged changes
 when every changed path belongs to the selected tools. It skips gathering in

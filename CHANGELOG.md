@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Derive `push` commit messages locally from staged tool paths and changed JSON
+  keys, including model-only multi-tool settings updates.
+- Delegate `update` from a shadowing source/editable launcher to the installed
+  standalone executable.
+- Make the Bash activation hint refresh both command hashing and completion in
+  the current shell.
+
 ## 1.0.10 - 2026-07-23
 
 - Let `push` review, commit, and publish safe unstaged tool changes previously
