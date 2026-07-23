@@ -113,8 +113,9 @@ function Install-Completions([string]$Executable) {
     New-Item -ItemType Directory -Force -Path $BashCompletionDir | Out-Null
     $BashText = ($BashCompletion -join "`n") + "`n"
     Write-Utf8NoBom (Join-Path $BashCompletionDir 'ai-config.bash') $BashText
-    Write-Utf8NoBom (Join-Path $BashCompletionDir 'ai-config.exe.bash') $BashText
     Write-Utf8NoBom (Join-Path $BashCompletionDir 'acg.bash') $BashText
+    $LegacyExeCompletion = Join-Path $BashCompletionDir 'ai-config.exe.bash'
+    Remove-Item -LiteralPath $LegacyExeCompletion -Force -ErrorAction SilentlyContinue
 
     $CompletionDir = Join-Path $UserHome '.local\share\ai-config'
     New-Item -ItemType Directory -Force -Path $CompletionDir | Out-Null

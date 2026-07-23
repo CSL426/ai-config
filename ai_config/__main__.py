@@ -60,6 +60,18 @@ from .tools import agy, claude, codex
 _TOOLS = {"claude": claude, "codex": codex, "agy": agy}
 _HEADERS = {"claude": "Claude", "codex": "Codex", "agy": "Antigravity CLI"}
 _GIT_URL_CREDENTIALS = re.compile(r"(https?://)[^/@\s]+@")
+_SECRET_PATTERN = re.compile(
+    rb"(?:[\"']?(?:password|secret|token|api[_-]?key|api[_-]?secret|"
+    rb"auth[_-]?token|access[_-]?token|private[_-]?key|database_url|"
+    rb"github_token|aws_(?:access_key_id|secret_access_key|session_token)|"
+    rb"stripe_(?:secret_key|api_key))[\"']?\s*[:=])|"
+    rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
+    rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
+    rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    rb"AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|"
+    rb"sk-(?:proj-)?[A-Za-z0-9_-]{20,})",
+    re.IGNORECASE,
+)
 
 
 # ─── apply ────────────────────────────────────────────────────
@@ -482,20 +494,121 @@ def _init_tools(tool: str) -> bool:
         return False
 
 
+def _repository_operation() -> "str | None":
+    git_dir = _run_repo_git("rev-parse", "--git-dir")
+    if git_dir.returncode != 0:
+        _git_failure("Reading repository metadata", git_dir)
+        return "<invalid>"
+
+    markers = (
+        ("rebase-merge", "rebase"),
+        ("rebase-apply", "rebase"),
+        ("MERGE_HEAD", "merge"),
+        ("CHERRY_PICK_HEAD", "cherry-pick"),
+        ("REVERT_HEAD", "revert"),
+        ("BISECT_LOG", "bisect"),
+        ("sequencer", "sequenced Git operation"),
+    )
+    git_dir_path = Path(git_dir.stdout.strip())
+    if not git_dir_path.is_absolute():
+        git_dir_path = SCRIPT_DIR / git_dir_path
+    for marker, operation in markers:
+        if (git_dir_path / marker).exists():
+            return operation
+    return None
+
+
+def _pull_preflight() -> "tuple[int, int] | None":
+    operation = _repository_operation()
+    if operation is not None:
+        if operation != "<invalid>":
+            log_error(
+                f"Data repository has a {operation} in progress; pull cancelled."
+            )
+        return None
+
+    status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
+    if status.returncode != 0:
+        _git_failure("Reading repository status", status)
+        return None
+    if status.stdout.strip():
+        log_error("Data repository has uncommitted changes; pull cancelled.")
+        print(status.stdout.rstrip())
+        return None
+
+    branch = _run_repo_git("symbolic-ref", "--quiet", "--short", "HEAD")
+    if branch.returncode != 0:
+        log_error("Data repository is in detached HEAD state; pull cancelled.")
+        return None
+
+    upstream = _run_repo_git(
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}",
+    )
+    if upstream.returncode != 0:
+        log_error("Current data repository branch has no upstream; pull cancelled.")
+        return None
+
+    fetch = _run_repo_git("fetch", "--quiet")
+    if fetch.returncode != 0:
+        _git_failure("Fetching repository updates", fetch)
+        return None
+
+    counts = _run_repo_git(
+        "rev-list",
+        "--left-right",
+        "--count",
+        "HEAD...@{upstream}",
+    )
+    if counts.returncode != 0:
+        _git_failure("Comparing the local branch with its upstream", counts)
+        return None
+    try:
+        ahead_text, behind_text = counts.stdout.split()
+        return int(ahead_text), int(behind_text)
+    except ValueError:
+        log_error("Could not determine whether the data repository is synchronized.")
+        return None
+
+
 def do_sync(tool: str) -> int:
     log_header("Sync repository changes")
     try:
-        result = subprocess.run(
-            ["git", "-C", str(SCRIPT_DIR), "pull", "--rebase", "--autostash"]
-        )
-        if result.returncode != 0:
-            return result.returncode
+        counts = _pull_preflight()
+        if counts is None:
+            return 1
     except FileNotFoundError:
         log_error("git command not found. Please install git.")
         return 1
     except Exception as exc:
-        log_error(f"Failed to execute git pull: {exc}")
+        log_error(f"Failed to synchronize repository: {exc}")
         return 1
+
+    ahead, behind = counts
+    if ahead:
+        log_error(
+            "Data repository is not safe to fast-forward "
+            f"(ahead {ahead}, behind {behind}); pull cancelled."
+        )
+        if behind:
+            log_info("Resolve the diverged branch manually before pulling")
+        else:
+            log_info(f"Run {ENTRYPOINT} push to publish the local commits")
+        return 1
+
+    if behind:
+        fast_forward = _run_repo_git("merge", "--ff-only", "@{upstream}")
+        if fast_forward.returncode != 0:
+            _git_failure("Fast-forwarding repository updates", fast_forward)
+            return 1
+        log_success(
+            f"Data repository fast-forwarded by {behind} "
+            f"{'commit' if behind == 1 else 'commits'}"
+        )
+    else:
+        log_success("Data repository is already up to date")
 
     print()
     show_status(tool)
@@ -520,6 +633,14 @@ def _git_failure(action: str, result: subprocess.CompletedProcess[str]) -> None:
 
 
 def _push_preflight() -> bool:
+    operation = _repository_operation()
+    if operation is not None:
+        if operation != "<invalid>":
+            log_error(
+                f"Data repository has a {operation} in progress; push cancelled."
+            )
+        return False
+
     status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
     if status.returncode != 0:
         _git_failure("Reading repository status", status)
@@ -574,73 +695,125 @@ def _push_preflight() -> bool:
     return True
 
 
-def _unstage_tools(tools: list[str]) -> None:
+def _unstage_tools(tools: list[str]) -> bool:
     result = _run_repo_git("restore", "--staged", "--", *tools)
     if result.returncode != 0:
         _git_failure("Restoring unstaged repository changes", result)
+        return False
+    return True
 
 
 def _staged_credentials() -> list[str]:
-    result = _run_repo_git("diff", "--cached", "--name-only", "-z")
-    if result.returncode != 0:
-        _git_failure("Scanning staged paths", result)
+    paths = _staged_paths()
+    if paths is None:
         return ["<scan failed>"]
     return [
         relative
-        for relative in result.stdout.split("\0")
-        if relative
-        and any(
+        for relative in paths
+        if any(
             part in EXCLUDED_FILES
             for part in relative.replace("\\", "/").split("/")
         )
     ]
 
 
-def _review_and_confirm_push(pending: str, commit_message: str) -> "bool | None":
-    print()
-    log_info("Configuration changes to commit:")
-    print(pending.rstrip())
-    diff = subprocess.run(
-        ["git", "-C", str(SCRIPT_DIR), "diff", "--no-ext-diff", "--"],
-        text=True,
-    )
-    if diff.returncode != 0:
-        log_error("Could not display repository changes; push cancelled.")
-        return False
+def _staged_paths(*, diff_filter: "str | None" = None) -> "list[str] | None":
+    args = ["diff", "--cached", "--name-only", "-z"]
+    if diff_filter is not None:
+        args.append(f"--diff-filter={diff_filter}")
+    result = _run_repo_git(*args)
+    if result.returncode != 0:
+        _git_failure("Scanning staged paths", result)
+        return None
+    return [relative for relative in result.stdout.split("\0") if relative]
 
-    print()
-    log_info(f"Commit message: {commit_message}")
-    try:
-        confirm = input("Commit and push these changes? [y/N] ")
-    except EOFError:
-        confirm = ""
-    if confirm not in ("y", "Y"):
-        log_info("Cancelled; collected changes remain unstaged")
+
+def _staged_paths_outside(selected: list[str]) -> "list[str] | None":
+    paths = _staged_paths()
+    if paths is None:
+        return None
+    prefixes = tuple(f"{tool}/" for tool in selected)
+    return [
+        path
+        for path in paths
+        if not path.replace("\\", "/").startswith(prefixes)
+    ]
+
+
+def _staged_secret_paths() -> "list[str] | None":
+    paths = _staged_paths(diff_filter="ACMRTUXB")
+    if paths is None:
         return None
 
-    current_status = _run_repo_git(
-        "status", "--porcelain=v1", "--untracked-files=all"
+    matches: list[str] = []
+    for path in paths:
+        result = subprocess.run(
+            ["git", "-C", str(SCRIPT_DIR), "show", f":{path}"],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).decode(
+                "utf-8",
+                errors="replace",
+            )
+            text_result = subprocess.CompletedProcess(
+                result.args,
+                result.returncode,
+                "",
+                detail,
+            )
+            _git_failure("Scanning staged content", text_result)
+            return None
+        if _SECRET_PATTERN.search(result.stdout):
+            matches.append(path)
+    return matches
+
+
+def _staged_diff() -> "str | None":
+    result = _run_repo_git(
+        "diff",
+        "--cached",
+        "--binary",
+        "--no-ext-diff",
+        "--",
     )
-    if current_status.returncode != 0:
-        _git_failure("Rechecking repository status", current_status)
-        return False
-    if current_status.stdout != pending:
-        log_error("Data repository changed while awaiting confirmation; push cancelled.")
-        return False
-    return True
+    if result.returncode != 0:
+        _git_failure("Reading staged configuration", result)
+        return None
+    return result.stdout
 
 
-def _stage_push_changes(selected: list[str]) -> bool:
-    stage = _run_repo_git("add", "-A", "--", *selected)
-    if stage.returncode != 0:
-        _git_failure("Staging collected configuration", stage)
+def _staged_tree() -> "str | None":
+    result = _run_repo_git("write-tree")
+    if result.returncode != 0:
+        _git_failure("Reading the staged configuration tree", result)
+        return None
+    return result.stdout.strip()
+
+
+def _validate_staged_push(selected: list[str]) -> bool:
+    outside = _staged_paths_outside(selected)
+    if outside is None:
+        return False
+    if outside:
+        log_error("Staged paths outside the selected tools; push cancelled:")
+        for path in outside:
+            print(f"  {path}")
         return False
 
     credentials = _staged_credentials()
     if credentials:
-        _unstage_tools(selected)
         log_error("Credential files would be committed; push cancelled:")
         for path in credentials:
+            print(f"  {path}")
+        return False
+
+    secret_paths = _staged_secret_paths()
+    if secret_paths is None:
+        return False
+    if secret_paths:
+        log_error("Potential credential content would be committed; push cancelled:")
+        for path in secret_paths:
             print(f"  {path}")
         return False
 
@@ -652,23 +825,120 @@ def _stage_push_changes(selected: list[str]) -> bool:
         or unstaged.returncode == 1
         or untracked.stdout.strip()
     ):
-        _unstage_tools(selected)
         log_error("Unexpected repository changes remain after staging; push cancelled.")
         return False
 
     check = _run_repo_git("diff", "--cached", "--check")
     if check.returncode != 0:
-        _unstage_tools(selected)
         _git_failure("Validating staged configuration", check)
         return False
     return True
 
 
-def _commit_and_push(commit_message: str) -> int:
+def _review_and_confirm_push(
+    pending: str,
+    staged_diff: str,
+    commit_message: str,
+) -> bool:
+    print()
+    log_info("Configuration changes to commit:")
+    print(pending.rstrip())
+    print(staged_diff, end="" if staged_diff.endswith("\n") else "\n")
+
+    print()
+    log_info(f"Commit message: {commit_message}")
+    try:
+        confirm = input("Commit and push these changes? [y/N] ")
+    except EOFError:
+        confirm = ""
+    if confirm not in ("y", "Y"):
+        return False
+    return True
+
+
+def _stage_push_changes(selected: list[str]) -> "str | None":
+    stage = _run_repo_git("add", "-A", "--", *selected)
+    if stage.returncode != 0:
+        _git_failure("Staging collected configuration", stage)
+        return None
+
+    if not _validate_staged_push(selected):
+        _unstage_tools(selected)
+        return None
+
+    staged_diff = _staged_diff()
+    if not staged_diff:
+        _unstage_tools(selected)
+        log_error("No staged configuration changes were found; push cancelled.")
+        return None
+    return staged_diff
+
+
+def _staged_push_matches(selected: list[str], reviewed_diff: str) -> bool:
+    if not _validate_staged_push(selected):
+        return False
+    current_diff = _staged_diff()
+    if current_diff is None:
+        return False
+    if current_diff != reviewed_diff:
+        log_error("Staged configuration changed after review; push cancelled.")
+        return False
+    return True
+
+
+def _commit_and_push(
+    commit_message: str,
+    selected: list[str],
+    reviewed_diff: str,
+) -> int:
+    expected_tree = _staged_tree()
+    current_diff = _staged_diff()
+    if expected_tree is None or current_diff is None:
+        _unstage_tools(selected)
+        return 1
+    if current_diff != reviewed_diff:
+        _unstage_tools(selected)
+        log_error("Staged configuration changed before commit; push cancelled.")
+        return 1
+
+    parent = _run_repo_git("rev-parse", "HEAD")
+    if parent.returncode != 0:
+        _git_failure("Reading the current data repository commit", parent)
+        _unstage_tools(selected)
+        return 1
+
     commit = _run_repo_git("commit", "-m", commit_message)
     if commit.returncode != 0:
         _git_failure("Committing configuration", commit)
         return 1
+
+    head = _run_repo_git("rev-parse", "HEAD")
+    committed_tree = _run_repo_git("rev-parse", "HEAD^{tree}")
+    if (
+        head.returncode != 0
+        or committed_tree.returncode != 0
+        or committed_tree.stdout.strip() != expected_tree
+    ):
+        log_error("Committed configuration differed from the reviewed snapshot.")
+        if head.returncode == 0:
+            rollback = _run_repo_git(
+                "update-ref",
+                "-m",
+                "reset: reject unreviewed ai-config push",
+                "HEAD",
+                parent.stdout.strip(),
+                head.stdout.strip(),
+            )
+            if rollback.returncode == 0:
+                _unstage_tools(selected)
+                log_warn("The unreviewed local commit was rolled back and not pushed")
+            else:
+                _git_failure("Rolling back the unreviewed local commit", rollback)
+                log_warn(
+                    f"Local commit {head.stdout.strip()} was created but not pushed"
+                )
+        return 1
+
     commit_output = commit.stdout.strip()
     if commit_output:
         print(commit_output)
@@ -710,16 +980,35 @@ def do_push(tool: str) -> int:
 
     commit_scope = "AI tool" if tool == "all" else tool
     commit_message = f"chore: sync {commit_scope} configuration"
-    review = _review_and_confirm_push(pending, commit_message)
-    if review is None:
-        return 0
-    if not review:
+    selected = _selected_tools(tool)
+    reviewed_diff = _stage_push_changes(selected)
+    if reviewed_diff is None:
         return 1
 
-    selected = _selected_tools(tool)
-    if not _stage_push_changes(selected):
+    confirmed = False
+    ready_to_commit = False
+    cleanup_succeeded = True
+    try:
+        confirmed = _review_and_confirm_push(
+            pending,
+            reviewed_diff,
+            commit_message,
+        )
+        if confirmed:
+            ready_to_commit = _staged_push_matches(selected, reviewed_diff)
+    finally:
+        if not ready_to_commit:
+            cleanup_succeeded = _unstage_tools(selected)
+
+    if not confirmed:
+        if cleanup_succeeded:
+            log_info("Cancelled; collected changes remain unstaged")
+            return 0
+        log_error("Cancellation failed to restore the staged configuration.")
         return 1
-    return _commit_and_push(commit_message)
+    if not ready_to_commit:
+        return 1
+    return _commit_and_push(commit_message, selected, reviewed_diff)
 
 
 # ─── main ─────────────────────────────────────────────────────
@@ -737,7 +1026,7 @@ def usage() -> None:
     print("  apply [tool]    Deploy data repository configs to tool home directories")
     print("  project [tool]  Project ~/.claude/ directly to other tool home dirs")
     print("  status [tool]   Show diff between the data repository and live configs")
-    print("  pull [tool]     Pull latest repo changes, then show status")
+    print("  pull [tool]     Safely fast-forward repo changes, then show status")
     print("  push [tool]     Gather, review, commit, and push local configuration")
     print("  sync [tool]     Alias for pull")
     print("  list            List managed tools")
@@ -745,6 +1034,7 @@ def usage() -> None:
     print("  reset           Delete all managed config files")
     print("  completion      Print Bash or PowerShell completion script")
     print("  update          Download and install the latest release")
+    print("  version         Show the installed version")
     print("  help            Show this help")
     print()
     print(f"{BOLD}Tools:{NC}")
@@ -795,6 +1085,18 @@ def main(argv: "list[str] | None" = None) -> int:
         from .update import run_update
 
         return run_update()
+    if cmd in ("version", "--version", "-V"):
+        if len(args) != 1:
+            log_error(f"Usage: {ENTRYPOINT} version")
+            return 1
+        from .version import current_version
+
+        installed_version = current_version()
+        if installed_version is None:
+            log_error("Could not determine the installed ai-config version")
+            return 1
+        print(f"{ENTRYPOINT} {installed_version}")
+        return 0
     if cmd == "completion":
         if len(args) != 2 or args[1] not in SHELLS:
             log_error(f"Usage: {ENTRYPOINT} completion <bash|powershell>")
@@ -819,6 +1121,10 @@ def main(argv: "list[str] | None" = None) -> int:
             return 1
         skill_name = args[1] if len(args) > 1 else None
         return 0 if do_package(skill_name) else 1
+
+    if cmd in ("list", "reset") and len(args) > 1:
+        log_error(f"Unexpected arguments: {' '.join(args[1:])}")
+        return 1
 
     tool = "all"
     if len(args) > 1:

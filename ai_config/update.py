@@ -10,11 +10,11 @@ import os
 import re
 import subprocess
 import sys
-from importlib.metadata import PackageNotFoundError, version
 from urllib.request import Request, urlopen
 
 from .console import log_error, log_info, log_success, log_warn
 from .paths import NATIVE_WINDOWS
+from .version import current_version
 
 _DEFAULT_REPOSITORY = "CSL426/ai-config"
 _RELEASE_VERSION = re.compile(r"^v?(\d+(?:\.\d+){1,3})$")
@@ -26,13 +26,6 @@ def _repository() -> str:
 
 def _installer_url(script: str) -> str:
     return f"https://raw.githubusercontent.com/{_repository()}/main/{script}"
-
-
-def _current_version() -> "str | None":
-    try:
-        return version("ai-config")
-    except PackageNotFoundError:
-        return None
 
 
 def _latest_release_version() -> str:
@@ -81,7 +74,7 @@ def run_update() -> int:
         )
         return 1
 
-    current = _current_version()
+    current = current_version()
     try:
         latest = _latest_release_version()
     except Exception as exc:

@@ -97,10 +97,13 @@ ai-config <command> [tool]
 - `init [tool]` — Gather local configs into the data repository.
 - `apply [tool]` — Deploy configuration from the data repository.
 - `status [tool]` — Preview repository-to-live differences.
-- `pull [tool]` — Pull data repository updates and show status without applying.
+- `pull [tool]` — Fetch and fast-forward a clean data repository, then show
+  status without applying. Pull refuses dirty, detached, upstream-less, ahead,
+  diverged, or in-progress Git states instead of entering conflict resolution.
 - `push [tool]` — Gather local settings, show the repository diff, and ask before
   committing and pushing. Push refuses dirty, detached, ahead, behind, or
-  upstream-less repositories.
+  upstream-less repositories, and cancels if the staged snapshot changes after
+  review.
 - `sync [tool]` — Alias for `pull`.
 - `project [tool]` — Project local Claude settings to other targets.
 - `list` — List all managed tools.
@@ -112,6 +115,8 @@ ai-config <command> [tool]
 - `completion bash|powershell` — Print a shell completion registration script.
 - `update` — Compare the installed standalone version with the latest release,
   then download only when an update is available.
+- `version` / `--version` / `-V` — Show the installed version without network
+  access.
 
 Supported tools are `claude`, `codex`, `agy`, and `all`.
 
@@ -129,8 +134,15 @@ data repository:
 acg push codex
 ```
 
-The push command never force-pushes. If the remote changes after preflight, the
-normal non-fast-forward rejection leaves the new commit local for manual review.
+The push command stages the selected tools before review, so new-file contents
+are included in the displayed diff. It never force-pushes. If the reviewed
+snapshot changes before commit, the push is cancelled and the collected changes
+are left unstaged. If the remote changes after preflight, the normal
+non-fast-forward rejection leaves the new commit local for manual review.
+
+The pull command never rebases or autostashes. It fetches first and updates the
+current branch only when `git merge --ff-only` is safe. Local commits or working
+tree changes must be handled before pulling.
 
 Codex settings remain under `~/.codex`, while user Skills are deployed to the
 cross-surface `~/.agents/skills` directory used by Codex Desktop, CLI, and the

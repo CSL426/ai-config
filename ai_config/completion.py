@@ -10,12 +10,26 @@ COMMANDS = (
     "push",
     "sync",
     "list",
+    "package",
     "reset",
     "completion",
     "update",
+    "version",
     "help",
+    "--version",
+    "--help",
+    "-V",
+    "-h",
 )
-TOOLS = ("claude", "codex", "agy", "all")
+TOOLS = (
+    "claude",
+    "codex",
+    "agy",
+    "all",
+    "antigravity",
+    "antigravity-cli",
+    "antigravity_cli",
+)
 TOOL_COMMANDS = ("init", "apply", "project", "status", "pull", "push", "sync")
 SETUP_OPTIONS = ("--data-dir", "--repo-url", "--remote-name", "--replace-remote")
 SHELLS = ("bash", "powershell")
@@ -53,7 +67,7 @@ def bash_completion() -> str:
             ;;
     esac
 }}
-complete -o default -F _ai_config_completion ai-config ai-config.exe acg
+complete -o default -F _ai_config_completion ai-config acg
 """
 
 
@@ -63,7 +77,7 @@ def powershell_completion() -> str:
     tool_commands = ", ".join(f"'{value}'" for value in TOOL_COMMANDS)
     setup_options = ", ".join(f"'{value}'" for value in SETUP_OPTIONS)
     shells = ", ".join(f"'{value}'" for value in SHELLS)
-    return f"""Register-ArgumentCompleter -CommandName @('ai-config', 'ai-config.exe', 'acg') -ScriptBlock {{
+    return f"""Register-ArgumentCompleter -CommandName @('ai-config', 'acg') -ScriptBlock {{
     param($wordToComplete, $commandAst, $cursorPosition)
     $commands = @({commands})
     $tools = @({tools})
@@ -81,7 +95,15 @@ def powershell_completion() -> str:
     else {{
         $command = $arguments[0]
         if ($toolCommands -contains $command) {{
-            $candidates = $tools
+            if (
+                $arguments.Count -eq 1 -or
+                ($arguments.Count -eq 2 -and $arguments[-1] -eq $wordToComplete)
+            ) {{
+                $candidates = $tools
+            }}
+            else {{
+                $candidates = @()
+            }}
         }}
         elseif ($command -eq 'setup') {{
             if ($arguments[-1] -eq $wordToComplete) {{
@@ -99,7 +121,15 @@ def powershell_completion() -> str:
             $candidates = $setupOptions
         }}
         elseif ($command -eq 'completion') {{
-            $candidates = $shells
+            if (
+                $arguments.Count -eq 1 -or
+                ($arguments.Count -eq 2 -and $arguments[-1] -eq $wordToComplete)
+            ) {{
+                $candidates = $shells
+            }}
+            else {{
+                $candidates = @()
+            }}
         }}
         else {{
             $candidates = @()
