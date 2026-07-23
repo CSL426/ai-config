@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.11 - 2026-07-23
 
 - Derive `push` commit messages locally from staged tool paths and changed JSON
   keys, including model-only multi-tool settings updates.
