@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.9 - 2026-07-23
 
 - Let `push` safely review and publish existing ahead-only commits left by a
   failed push, without gathering new settings or creating another commit.
