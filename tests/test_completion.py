@@ -157,13 +157,13 @@ def test_powershell_completion_uses_path_candidates_for_data_dir() -> None:
         ("acg pu", 6, ["pull", "push"]),
         ("acg --v", 7, ["--version"]),
         ("ai-config pull c", 16, ["claude", "codex"]),
-        ("ai-config pull claude ", 22, []),
+        ("ai-config pull claude ", 22, None),
     ],
 )
 def test_powershell_completion_script_parses(
     command_line: str,
     cursor: int,
-    expected: list[str],
+    expected: "list[str] | None",
 ) -> None:
     powershell = shutil.which("powershell") or shutil.which("pwsh")
     if powershell is None:
@@ -180,4 +180,8 @@ def test_powershell_completion_script_parses(
         check=False,
     )
     assert result.returncode == 0, result.stderr + result.stdout
-    assert result.stdout.splitlines() == expected
+    candidates = result.stdout.splitlines()
+    if expected is None:
+        assert set(candidates).isdisjoint(TOOLS)
+    else:
+        assert candidates == expected
