@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.8 - 2026-07-23
 
 - Add `version`, `--version`, and `-V` commands for offline installed-version
   checks.
