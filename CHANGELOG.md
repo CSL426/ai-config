@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.10 - 2026-07-23
 
 - Let `push` review, commit, and publish safe unstaged tool changes previously
   collected by `init`, without gathering again or requiring manual Git.
