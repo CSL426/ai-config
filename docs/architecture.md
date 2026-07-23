@@ -74,6 +74,11 @@ that collected snapshot, skips another gather, and proceeds through the same
 scope, credential, diff, and confirmation checks. Pre-staged changes and dirty
 plus ahead states remain manual Git operations.
 
+Commit messages are deterministic local metadata. The push workflow inspects
+staged paths and, for JSON settings, changed top-level keys to produce a
+specific conventional message before review, then falls back to a tool-scoped
+configuration message when no narrower description is available.
+
 ## Projection model
 
 The data repository is authoritative:
