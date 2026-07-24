@@ -39,6 +39,20 @@ function Install-CommandAlias([string]$Name, [string]$Executable) {
     Write-Utf8NoBom $AliasPath $Content
 }
 
+function Install-Binary([string]$Source, [string]$Destination) {
+    $Attempts = 50
+    for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+        try {
+            Copy-Item -LiteralPath $Source -Destination $Destination -Force
+            return
+        }
+        catch {
+            if ($Attempt -eq $Attempts) { throw }
+            Start-Sleep -Milliseconds 200
+        }
+    }
+}
+
 function Test-ExistingConfiguration([string]$Executable) {
     try {
         & $Executable list *> $null
@@ -140,7 +154,7 @@ if ($LocalBinary) {
         Fail "Local binary not found: $LocalBinary"
     }
     Write-Step 'Installing local standalone binary'
-    Copy-Item -LiteralPath $LocalBinary -Destination $Destination -Force
+    Install-Binary $LocalBinary $Destination
 }
 else {
     $BaseUrl = if ($Version -eq 'latest') {
@@ -160,7 +174,7 @@ else {
         $Expected = ((Get-Content -LiteralPath $Checksum -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
         $Actual = (Get-FileHash -LiteralPath $Download -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($Actual -ne $Expected) { Fail 'Downloaded binary checksum mismatch' }
-        Copy-Item -LiteralPath $Download -Destination $Destination -Force
+        Install-Binary $Download $Destination
     }
     finally {
         Remove-Item -LiteralPath $TemporaryDir -Recurse -Force -ErrorAction SilentlyContinue

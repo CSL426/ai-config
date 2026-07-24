@@ -93,6 +93,70 @@ def _delegate_source_update() -> "int | None":
     return completed.returncode
 
 
+def _powershell_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _windows_update_script(parent_pid: int) -> str:
+    installer_url = _powershell_literal(_installer_url("install.ps1"))
+    return "\n".join(
+        (
+            "$ErrorActionPreference = 'Stop'",
+            (
+                f"Wait-Process -Id {parent_pid} "
+                "-ErrorAction SilentlyContinue"
+            ),
+            (
+                "$installer = Join-Path ([IO.Path]::GetTempPath()) "
+                "('install-ai-config-' + "
+                "[guid]::NewGuid().ToString('N') + '.ps1')"
+            ),
+            "try {",
+            (
+                "  Invoke-WebRequest -UseBasicParsing "
+                f"-Uri {installer_url} -OutFile $installer"
+            ),
+            "  & $installer",
+            "  exit $LASTEXITCODE",
+            "}",
+            "finally {",
+            (
+                "  Remove-Item -LiteralPath $installer -Force "
+                "-ErrorAction SilentlyContinue"
+            ),
+            "}",
+        )
+    )
+
+
+def _launch_windows_update() -> int:
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        _windows_update_script(os.getpid()),
+    ]
+    try:
+        subprocess.Popen(
+            command,
+            creationflags=getattr(
+                subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                0,
+            ),
+        )
+    except OSError as exc:
+        log_error(f"Could not start the PowerShell updater: {exc}")
+        return 1
+    log_success(
+        "Update handed off to PowerShell; installation will continue "
+        "after this process exits"
+    )
+    return 0
+
+
 def run_update() -> int:
     if not getattr(sys, "frozen", False):
         delegated = _delegate_source_update()
@@ -122,15 +186,7 @@ def run_update() -> int:
             return 0
 
     if NATIVE_WINDOWS:
-        # Windows cannot replace a running executable from inside itself.
-        log_info("Run this in PowerShell to update:")
-        print(
-            "  powershell -NoProfile -ExecutionPolicy Bypass -Command "
-            f'"iwr {_installer_url("install.ps1")} -OutFile '
-            '$env:TEMP\\install-ai-config.ps1; '
-            '& $env:TEMP\\install-ai-config.ps1"'
-        )
-        return 1
+        return _launch_windows_update()
 
     url = _installer_url("install.sh")
     log_info(f"Fetching installer from {url}")

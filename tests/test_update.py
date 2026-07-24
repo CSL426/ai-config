@@ -1,5 +1,6 @@
 """Behaviour tests for the self-update command."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -127,22 +128,56 @@ def test_update_frozen_honours_repository_override(monkeypatch) -> None:
     assert "someone/fork" in " ".join(calls["cmd"])
 
 
-def test_update_frozen_native_windows_prints_manual_command(
+def test_update_frozen_native_windows_hands_off_to_powershell(
     monkeypatch, capsys
 ) -> None:
     from ai_config import update
 
-    def fail_run(cmd, **kwargs):
-        raise AssertionError("update must not spawn a process on Windows")
+    calls = {}
 
-    monkeypatch.setattr(update.subprocess, "run", fail_run)
+    def fake_popen(command, **kwargs):
+        calls["command"] = command
+        calls["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
+    monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    assert update.run_update() == 0
+    assert calls["command"][:5] == [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+    ]
+    script = calls["command"][5]
+    assert f"Wait-Process -Id {os.getpid()}" in script
+    assert "install.ps1" in script
+    assert "Invoke-WebRequest" in script
+    assert "Remove-Item" in script
+    assert "handed off to PowerShell" in capsys.readouterr().out
+
+
+def test_update_frozen_native_windows_reports_handoff_failure(
+    monkeypatch, capsys
+) -> None:
+    from ai_config import update
+
+    def fail_popen(*_args, **_kwargs):
+        raise OSError("PowerShell unavailable")
+
+    monkeypatch.setattr(update.subprocess, "Popen", fail_popen)
     monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
     monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
     monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
 
     assert update.run_update() == 1
-    assert "install.ps1" in capsys.readouterr().out
+    assert "PowerShell unavailable" in capsys.readouterr().err
 
 
 def test_update_frozen_skips_download_when_current(monkeypatch, capsys) -> None:

@@ -64,6 +64,14 @@ def test_unix_installer_refreshes_command_cache_with_completion() -> None:
     )
 
 
+def test_windows_installer_retries_binary_replacement() -> None:
+    installer = (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert "function Install-Binary" in installer
+    assert "Start-Sleep -Milliseconds 200" in installer
+    assert installer.count("Install-Binary ") == 2
+
+
 def test_console_main_usage_entrypoint(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

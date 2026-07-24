@@ -132,7 +132,8 @@ ai-config <command> [tool]
 - `reset` — Remove managed configuration files after confirmation.
 - `completion bash|powershell` — Print a shell completion registration script.
 - `update` — Compare the installed standalone version with the latest release,
-  then download only when an update is available.
+  then download only when an update is available. Native Windows updates hand
+  off to PowerShell so the running executable can exit before replacement.
 - `version` / `--version` / `-V` — Show the installed version without network
   access. Both command names show the shared `ai-config (acg)` product label.
 
