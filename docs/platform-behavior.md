@@ -33,6 +33,10 @@ writes an extensionless launcher for clean Git Bash command resolution. When
 launched through Git Bash, MSYS2, or Cygwin, `install.sh` detects the Windows
 POSIX environment and delegates to the PowerShell installer.
 
+Native `update` starts a PowerShell handoff process and exits so Windows can
+release the running executable. The installer retries replacement during the
+short handoff window, then refreshes launchers and completions normally.
+
 Antigravity's `trustedWorkspaces` setting is machine-local. Init excludes it
 from the data repository, apply preserves the live value, and status ignores
 differences in that field.

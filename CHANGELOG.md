@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.12 - 2026-07-24
+
+- Hand off native Windows updates to a background PowerShell installer and
+  retry executable replacement until the running binary releases its lock.
+
 ## 1.0.11 - 2026-07-23
 
 - Derive `push` commit messages locally from staged tool paths and changed JSON
