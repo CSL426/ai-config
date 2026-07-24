@@ -348,9 +348,13 @@ def sync_agy_skills_surface() -> None:
         _remove_owned_path(destination)
         destination_exists = False
 
-    if destination_exists and record and record["kind"] == "junction":
-        kind = "junction"
-    elif not destination_exists and _try_create_junction(canonical, destination):
+    is_existing_junction = (
+        destination_exists and record and record["kind"] == "junction"
+    )
+    if is_existing_junction or (
+        not destination_exists
+        and _try_create_junction(canonical, destination)
+    ):
         kind = "junction"
     else:
         kind = _copy_owned_path(canonical, destination)

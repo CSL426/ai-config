@@ -46,7 +46,9 @@ def _run_git(
         command.extend(("-C", str(cwd)))
     command.extend(args)
     try:
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=False
+        )
     except FileNotFoundError as exc:
         raise SetupError("Git is required but was not found in PATH.") from exc
     if check and result.returncode != 0:

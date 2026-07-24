@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_config.completion import COMMANDS, TOOLS, TOOL_COMMANDS, render_completion
+from ai_config.completion import COMMANDS, TOOL_COMMANDS, TOOLS, render_completion
 
 EXECUTABLES = ("ai-config", "acg")
 

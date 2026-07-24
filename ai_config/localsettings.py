@@ -15,7 +15,7 @@ from .safety import assert_safe_write_target, is_reparse_point
 def parse_settings(text: str, label: str) -> dict[str, object]:
     document = json.loads(text.lstrip("\ufeff"))
     if not isinstance(document, dict):
-        raise ValueError(f"{label} must contain a JSON object")
+        raise TypeError(f"{label} must contain a JSON object")
     return document
 
 
