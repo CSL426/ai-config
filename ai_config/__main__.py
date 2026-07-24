@@ -1,16 +1,16 @@
 """ai-config — Cross-AI tool configuration manager (Python implementation)."""
 
-from dataclasses import dataclass
-from datetime import datetime
 import difflib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
 from .backup import completed_snapshots, create_backup
 from .completion import SHELLS, render_completion
@@ -106,7 +106,7 @@ def apply_tools(tools: list[str]) -> bool:
                     home_dir = tool_home(tool)
                     home_dir.mkdir(parents=True, exist_ok=True)
                     _TOOLS[tool].apply_internal(stages[tool], home_dir)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level guard must not crash
         log_error(f"Failed to apply config: {exc}")
         if snapshot is not None:
             log_warn(
@@ -506,7 +506,7 @@ def _init_tools(tool: str) -> bool:
         for selected_tool in selected:
             ok = _TOOLS[selected_tool].init() and ok
         return ok
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level guard must not crash
         log_error(str(exc))
         return False
 
@@ -599,7 +599,7 @@ def do_sync(tool: str) -> int:
     except FileNotFoundError:
         log_error("git command not found. Please install git.")
         return 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level guard must not crash
         log_error(f"Failed to synchronize repository: {exc}")
         return 1
 
@@ -640,6 +640,7 @@ def _run_repo_git(*args: str) -> subprocess.CompletedProcess[str]:
         ["git", "-C", str(SCRIPT_DIR), *args],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -833,6 +834,7 @@ def _staged_secret_paths() -> "list[str] | None":
         result = subprocess.run(
             ["git", "-C", str(SCRIPT_DIR), "show", f":{path}"],
             capture_output=True,
+            check=False,
         )
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).decode(
@@ -932,6 +934,7 @@ def _ahead_secret_paths(commits: list[str]) -> "list[str] | None":
             result = subprocess.run(
                 ["git", "-C", str(SCRIPT_DIR), "show", f"{commit}:{path}"],
                 capture_output=True,
+                check=False,
             )
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout).decode(
@@ -1211,9 +1214,7 @@ def _review_and_confirm_push(
         confirm = input("Commit and push these changes? [y/N] ")
     except EOFError:
         confirm = ""
-    if confirm not in ("y", "Y"):
-        return False
-    return True
+    return confirm in ("y", "Y")
 
 
 def _stage_push_changes(selected: list[str]) -> "str | None":
@@ -1407,7 +1408,7 @@ def do_push(tool: str) -> int:
     except FileNotFoundError:
         log_error("git command not found. Please install git.")
         return 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level guard must not crash
         log_error(f"Failed to prepare repository push: {exc}")
         return 1
 

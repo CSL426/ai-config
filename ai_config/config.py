@@ -6,7 +6,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 CONFIG_ENV = "AI_CONFIG_CONFIG"
 DATA_REPO_ENV = "AI_CONFIG_REPO"
 

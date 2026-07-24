@@ -7,10 +7,10 @@ truth for install logic.
 
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 from .console import log_error, log_info, log_success, log_warn
@@ -89,6 +89,7 @@ def _delegate_source_update() -> "int | None":
     completed = subprocess.run(
         [str(candidate), "update"],
         env=environment,
+        check=False,
     )
     return completed.returncode
 
@@ -174,7 +175,7 @@ def run_update() -> int:
     current = current_version()
     try:
         latest = _latest_release_version()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level guard must not crash
         log_error(f"Could not check the latest release version: {exc}")
         return 1
     if current is None:
@@ -191,7 +192,8 @@ def run_update() -> int:
     url = _installer_url("install.sh")
     log_info(f"Fetching installer from {url}")
     completed = subprocess.run(
-        ["bash", "-c", f'curl -fsSL "{url}" | bash']
+        ["bash", "-c", f'curl -fsSL "{url}" | bash'],
+        check=False,
     )
     if completed.returncode != 0:
         log_error("Update failed; the current binary is unchanged")

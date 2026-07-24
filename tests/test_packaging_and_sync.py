@@ -439,8 +439,10 @@ def test_frozen_cli_ignores_extraction_directory_as_checkout(tmp_path: Path) -> 
         [
             sys.executable,
             "-c",
-            "import sys; sys.frozen = True; "
-            "from ai_config.paths import SCRIPT_DIR; print(SCRIPT_DIR)",
+            (
+                "import sys; sys.frozen = True; "
+                "from ai_config.paths import SCRIPT_DIR; print(SCRIPT_DIR)"
+            ),
         ],
         capture_output=True,
         text=True,

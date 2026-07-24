@@ -2,8 +2,9 @@
 
 import os
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import BinaryIO, Iterator
+from typing import BinaryIO
 
 from .paths import BACKUP_BASE
 from .safety import assert_root_not_reparse, assert_safe_write_target

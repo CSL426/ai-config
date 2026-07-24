@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from test_apply_projection import copy_runtime_files, run_ai_config, write
 
 
