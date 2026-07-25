@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.16 - 2026-07-26
+
+- Report live files in a managed directory the repository does not track yet.
+  `status` skipped the whole live tree when the repo side was missing, so
+  untracked content — an entire `~/.claude/skills` before it became managed —
+  was invisible and `status` claimed no differences.
+- Give a freshly replaced Windows executable up to 30 seconds to start, rather
+  than 5, and fix the "Updated complete" wording in that path.
+
 ## 1.0.15 - 2026-07-26
 
 - Stop the Windows update handoff from writing over the shell prompt. The

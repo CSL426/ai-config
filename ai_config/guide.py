@@ -78,8 +78,8 @@ removes the mirror on the next apply.
   unreviewed diff. It also aborts on detached HEAD or an in-progress
   merge/rebase, and rolls back if the staged tree changes mid-flight. On cancel,
   changes are left unstaged, not lost.
-- **`status` only walks files present in the repo.** Something that exists live
-  but not in the repo will not appear as a difference — run `init` to capture it.
+- **A `-` line means the file exists only live and `apply` would delete it.**
+  Run `init` first if that content is worth keeping.
 - **Skill sync requires 1.0.13+.** Older binaries silently skip `skills/`.
 - **Credentials are never copied.** `.credentials.json`, `auth.json`,
   `oauth_creds.json`, `google_accounts.json`, and `trustedFolders.json` are

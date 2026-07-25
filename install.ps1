@@ -58,13 +58,13 @@ function Wait-ExecutableReady([string]$Executable) {
     # first launch, and an antivirus scan or a lingering file lock can make that
     # fail for a moment. Retry until it runs, so the checks below don't misread a
     # transient DLL failure as a real answer.
-    for ($Attempt = 1; $Attempt -le 10; $Attempt++) {
+    for ($Attempt = 1; $Attempt -le 30; $Attempt++) {
         try {
             & $Executable version *> $null
             if ($LASTEXITCODE -eq 0) { return $true }
         }
         catch { }
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 1000
     }
     return $false
 }
@@ -203,7 +203,7 @@ Install-CommandAlias 'acg' $Destination
 Write-Step "${BinaryVerb}: $Destination"
 if (-not (Wait-ExecutableReady $Destination)) {
     Write-Warn 'The installed executable did not start yet; skipping completion and setup.'
-    Write-Step "${BinaryVerb} complete; verify with: ai-config version"
+    Write-Step "$Operation complete; verify with: ai-config version"
     exit 0
 }
 Install-Completions $Destination
