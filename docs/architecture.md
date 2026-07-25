@@ -89,9 +89,13 @@ The data repository is authoritative:
 - `status` stages the same projection but remains read-only.
 - `project` uses live Claude configuration as a temporary projection source.
 
-Shared skills are projected from `claude/shared/{both,codex,agy}`. Only the
-skill document and supported companion directories are managed. Credentials
-and unmanaged, hand-installed skills remain outside reconciliation.
+Claude Code skills are a managed directory: `claude/skills` mirrors verbatim to
+`~/.claude/skills` like `rules` and `commands`.
+
+Cross-tool skills are separate, projected from `claude/shared/{both,codex,agy}`
+with frontmatter normalized for stricter parsers. Only the skill document and
+supported companion directories are managed. Credentials and unmanaged,
+hand-installed skills remain outside reconciliation.
 
 Machine-local settings are excluded symmetrically from gather and status, then
 preserved from the live target during apply. For Codex this includes the

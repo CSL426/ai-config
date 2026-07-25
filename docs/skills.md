@@ -7,10 +7,15 @@ you put a skill decides which CLIs receive it.
 
 | Location in data repo | Reaches | Notes |
 |---|---|---|
-| `claude/shared/both/<skill>/` | Codex **and** Antigravity | Also keep a copy in `~/.claude/skills/<skill>/` if Claude Code should use it |
+| `claude/skills/<skill>/` | Claude Code | Version-controlled and synced across machines like `rules/` and `commands/` |
+| `claude/shared/both/<skill>/` | Codex **and** Antigravity | Add a `claude/skills/` copy too if Claude Code should have it |
 | `claude/shared/codex/<skill>/` | Codex only | |
 | `claude/shared/agy/<skill>/` | Antigravity only | |
-| `~/.claude/skills/<skill>/` | Claude Code only | **Not synced** — lives outside the data repo |
+
+A skill that every tool should have needs two copies: one in `claude/skills/`
+for Claude Code, one in `claude/shared/both/` for the others. They are separate
+mechanisms — `claude/skills/` mirrors verbatim, while `shared/` normalizes
+frontmatter for the stricter parsers.
 
 The `shared/` copy is authoritative. Deleting it there removes the mirrored copy
 on the next `apply` (managed-skill reconciliation), so don't hand-delete the
@@ -35,8 +40,10 @@ subdirectories are copied. Anything else in a skill directory stays local.
 ## Installing a skill
 
 ```bash
-# 1. author it (in ~/.claude/skills/<name>/ if Claude Code should use it too)
-# 2. place the portable copy
+# 1. author it in ~/.claude/skills/<name>/ and gather it into the repo
+ai-config init claude
+
+# 2. for Codex/Antigravity too, add the portable copy
 cp -r ~/.claude/skills/<name> ~/ai-config/data/claude/shared/both/<name>
 
 # 3. preview — read-only, safe anytime

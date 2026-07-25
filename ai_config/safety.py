@@ -174,7 +174,7 @@ def assert_tool_destinations_safe(
             assert_managed_paths_safe(
                 CLAUDE_HOME,
                 ("CLAUDE.md", "mcp.json", "settings.json", "statusline.sh"),
-                ("rules", "agents", "commands"),
+                ("rules", "agents", "commands", "skills"),
             )
         elif tool == "codex":
             assert_managed_paths_safe(
