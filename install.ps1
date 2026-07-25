@@ -53,6 +53,22 @@ function Install-Binary([string]$Source, [string]$Destination) {
     }
 }
 
+function Wait-ExecutableReady([string]$Executable) {
+    # A freshly replaced onefile build unpacks its Python runtime into %TEMP% on
+    # first launch, and an antivirus scan or a lingering file lock can make that
+    # fail for a moment. Retry until it runs, so the checks below don't misread a
+    # transient DLL failure as a real answer.
+    for ($Attempt = 1; $Attempt -le 10; $Attempt++) {
+        try {
+            & $Executable version *> $null
+            if ($LASTEXITCODE -eq 0) { return $true }
+        }
+        catch { }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
 function Test-ExistingConfiguration([string]$Executable) {
     try {
         & $Executable list *> $null
@@ -185,6 +201,11 @@ Install-GitBashLauncher 'ai-config' $Destination
 Install-GitBashLauncher 'acg' $Destination
 Install-CommandAlias 'acg' $Destination
 Write-Step "${BinaryVerb}: $Destination"
+if (-not (Wait-ExecutableReady $Destination)) {
+    Write-Warn 'The installed executable did not start yet; skipping completion and setup.'
+    Write-Step "${BinaryVerb} complete; verify with: ai-config version"
+    exit 0
+}
 Install-Completions $Destination
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not $SkipPathUpdate -and ($UserPath -split ';') -notcontains $BinDir) {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.15 - 2026-07-26
+
+- Stop the Windows update handoff from writing over the shell prompt. The
+  background PowerShell installer now logs to `%TEMP%\ai-config-update.log`
+  instead of inheriting the console, and `update` reports where to find it.
+- Wait for a freshly replaced Windows executable to start before generating
+  completions or probing for existing configuration. A onefile build unpacks its
+  Python runtime on first launch, and a transient failure there was reported as
+  a completion error and misread as "no configuration", which triggered an
+  unnecessary first-run setup.
+
 ## 1.0.14 - 2026-07-25
 
 - Add `skill`, which prints a built-in usage guide written for AI agents that
