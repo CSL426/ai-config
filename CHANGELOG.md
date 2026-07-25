@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.17 - 2026-07-26
+
+- Normalize line endings before comparing a shared skill's `mirror-hash`. The
+  check hashed raw bytes, so a Windows checkout storing the mirror source with
+  CRLF endings was reported as stale even though the content matched, and the
+  suggested hash would have recorded the CRLF form.
+- When a mirror does look stale, note that a freshly pulled machine should run
+  `apply` first, since the local source may be the outdated side.
+- Build the standalone release on tags only. A release commit lands on main and
+  is tagged at the same SHA, so the branch trigger built every release twice.
+
 ## 1.0.16 - 2026-07-26
 
 - Report live files in a managed directory the repository does not track yet.

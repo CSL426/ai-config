@@ -61,3 +61,9 @@ argument completer from the current-user all-hosts profile.
 `[projects.*]` tables are machine-local and preserved during apply. Status
 filters them from the live file and normalizes CRLF/LF before comparing the
 remaining general configuration.
+
+## Shared skill mirrors
+
+`metadata.mirror-hash` records the LF-normalized hash of the mirror source, so a
+Windows checkout storing that source with CRLF endings is not reported as drift.
+Recompute the value the same way when refreshing a mirror by hand.

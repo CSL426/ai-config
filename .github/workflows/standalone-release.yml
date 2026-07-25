@@ -1,19 +1,11 @@
 name: Standalone Release
 
 on:
+  # Tags only. A release commit lands on main and is tagged at the same SHA, so
+  # keeping a branch trigger here built every release twice.
   push:
-    branches:
-      - main
     tags:
       - "v*"
-    paths:
-      - "ai_config/**"
-      - "scripts/standalone_entry.py"
-      - "tests/**"
-      - "pyproject.toml"
-      - "install.sh"
-      - "install.ps1"
-      - ".github/workflows/standalone-release.yml"
   pull_request:
     paths:
       - "ai_config/**"

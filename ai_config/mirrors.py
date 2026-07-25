@@ -36,6 +36,13 @@ def _frontmatter_value(skill_md: Path, key: str) -> str:
     return ""
 
 
+def _content_hash(path: Path) -> str:
+    # INVARIANT: hash the LF form. A Windows checkout stores the same content
+    # with CRLF endings, and hashing raw bytes reported that as mirror drift.
+    data = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(data).hexdigest()
+
+
 def check_shared_mirrors() -> None:
     shared_root = SCRIPT_DIR / "claude" / "shared"
     if not shared_root.is_dir():
@@ -64,12 +71,16 @@ def check_shared_mirrors() -> None:
             stale += 1
             continue
 
-        cur_hash = hashlib.sha256(src_path.read_bytes()).hexdigest()
+        cur_hash = _content_hash(src_path)
         if cur_hash.lower() != src_hash.lower():
             log_warn(
                 f"mirror stale: {rel_text} — source changed: {tilde(src_path)}"
             )
             print(f"    update the copy, then set {CYAN}mirror-hash: {cur_hash}{NC}")
+            print(
+                "    if you just pulled another machine's config, run apply "
+                "first — the local source may be the outdated side"
+            )
             stale += 1
 
     if checked > 0 and stale == 0:
