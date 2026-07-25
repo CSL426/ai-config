@@ -1485,8 +1485,9 @@ def usage() -> None:
     print("  list            List managed tools")
     print("  package [skill] Zip a shared skill for Claude Desktop upload")
     print("  reset           Delete all managed config files")
+    print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
-    print("  update          Download and install the latest release")
+    print("  update [version] Install the latest release, or a specific version")
     print("  version         Show the installed version")
     print("  help            Show this help")
     print()
@@ -1532,12 +1533,12 @@ def main(argv: "list[str] | None" = None) -> int:
 
         return run_setup(args[1:])
     if cmd == "update":
-        if len(args) != 1:
-            log_error(f"Usage: {ENTRYPOINT} update")
+        if len(args) > 2:
+            log_error(f"Usage: {ENTRYPOINT} update [version]")
             return 1
         from .update import run_update
 
-        return run_update()
+        return run_update(args[1] if len(args) == 2 else None)
     if cmd in ("version", "--version", "-V"):
         if len(args) != 1:
             log_error(f"Usage: {ENTRYPOINT} version")
@@ -1555,6 +1556,14 @@ def main(argv: "list[str] | None" = None) -> int:
             log_error(f"Usage: {ENTRYPOINT} completion <bash|powershell>")
             return 1
         print(render_completion(args[1]), end="")
+        return 0
+    if cmd == "skill":
+        if len(args) != 1:
+            log_error(f"Usage: {ENTRYPOINT} skill")
+            return 1
+        from .guide import render_guide
+
+        print(render_guide(), end="")
         return 0
 
     if CONFIG_ERROR:

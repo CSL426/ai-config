@@ -71,7 +71,7 @@ def _standalone_candidate() -> Path:
     return Path(os.environ.get("AI_CONFIG_BIN_DIR", default_bin)) / executable
 
 
-def _delegate_source_update() -> "int | None":
+def _delegate_source_update(tag: "str | None" = None) -> "int | None":
     if os.environ.get(_DELEGATED_UPDATE) == "1":
         return None
     candidate = _standalone_candidate()
@@ -87,7 +87,7 @@ def _delegate_source_update() -> "int | None":
     environment[_DELEGATED_UPDATE] = "1"
     log_info(f"Delegating update to standalone release: {candidate}")
     completed = subprocess.run(
-        [str(candidate), "update"],
+        [str(candidate), "update", *([tag] if tag else [])],
         env=environment,
         check=False,
     )
@@ -98,11 +98,28 @@ def _powershell_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def _windows_update_script(parent_pid: int) -> str:
+_VERSION_PATTERN = re.compile(r"^v?\d+(\.\d+)*$")
+
+
+def normalize_version(requested: str) -> "str | None":
+    """Return the release tag for a requested version, or None if malformed."""
+    candidate = requested.strip()
+    if not _VERSION_PATTERN.match(candidate):
+        return None
+    return candidate if candidate.startswith("v") else f"v{candidate}"
+
+
+def _windows_update_script(parent_pid: int, tag: "str | None" = None) -> str:
     installer_url = _powershell_literal(_installer_url("install.ps1"))
+    pin = (
+        f"$env:AI_CONFIG_VERSION = {_powershell_literal(tag)}"
+        if tag
+        else "# no pinned version"
+    )
     return "\n".join(
         (
             "$ErrorActionPreference = 'Stop'",
+            pin,
             (
                 f"Wait-Process -Id {parent_pid} "
                 "-ErrorAction SilentlyContinue"
@@ -130,14 +147,14 @@ def _windows_update_script(parent_pid: int) -> str:
     )
 
 
-def _launch_windows_update() -> int:
+def _launch_windows_update(tag: "str | None" = None) -> int:
     command = [
         "powershell.exe",
         "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        _windows_update_script(os.getpid()),
+        _windows_update_script(os.getpid(), tag),
     ]
     try:
         subprocess.Popen(
@@ -158,9 +175,17 @@ def _launch_windows_update() -> int:
     return 0
 
 
-def run_update() -> int:
+def run_update(requested_version: "str | None" = None) -> int:
+    tag = None
+    if requested_version is not None:
+        tag = normalize_version(requested_version)
+        if tag is None:
+            log_error(f"Not a valid version: {requested_version}")
+            log_info("Expected a release version such as 1.0.13 or v1.0.13")
+            return 1
+
     if not getattr(sys, "frozen", False):
-        delegated = _delegate_source_update()
+        delegated = _delegate_source_update(tag)
         if delegated is not None:
             return delegated
         log_error(
@@ -173,27 +198,36 @@ def run_update() -> int:
         return 1
 
     current = current_version()
-    try:
-        latest = _latest_release_version()
-    except Exception as exc:  # noqa: BLE001 - top-level guard must not crash
-        log_error(f"Could not check the latest release version: {exc}")
-        return 1
-    if current is None:
-        log_warn("Current standalone version is unavailable; updating once")
+    if tag is not None:
+        # A pinned version is an explicit instruction, including a downgrade, so
+        # the latest-release comparison is skipped entirely.
+        log_info(f"Current version: {current or 'unknown'}; installing {tag}")
     else:
-        log_info(f"Current version: {current}; latest release: {latest}")
-        if _is_up_to_date(current, latest):
-            log_success("ai-config is already up to date")
-            return 0
+        try:
+            latest = _latest_release_version()
+        except Exception as exc:  # noqa: BLE001 - top-level guard must not crash
+            log_error(f"Could not check the latest release version: {exc}")
+            return 1
+        if current is None:
+            log_warn("Current standalone version is unavailable; updating once")
+        else:
+            log_info(f"Current version: {current}; latest release: {latest}")
+            if _is_up_to_date(current, latest):
+                log_success("ai-config is already up to date")
+                return 0
 
     if NATIVE_WINDOWS:
-        return _launch_windows_update()
+        return _launch_windows_update(tag)
 
     url = _installer_url("install.sh")
     log_info(f"Fetching installer from {url}")
+    environment = os.environ.copy()
+    if tag is not None:
+        environment["AI_CONFIG_VERSION"] = tag
     completed = subprocess.run(
         ["bash", "-c", f'curl -fsSL "{url}" | bash'],
         check=False,
+        env=environment,
     )
     if completed.returncode != 0:
         log_error("Update failed; the current binary is unchanged")

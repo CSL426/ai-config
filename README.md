@@ -130,10 +130,18 @@ ai-config <command> [tool]
   Desktop has no writable local skills directory, so this is a one-way export,
   not a live sync.
 - `reset` — Remove managed configuration files after confirmation.
+- `skill` — Print the built-in usage guide, written for an AI agent that finds
+  this CLI on a machine and needs to know how to drive it: the command table,
+  what syncs where, the approval rules, and the known gotchas. The text is
+  compiled into the binary, so it works before `setup` and needs no data
+  repository — useful on a machine that has nothing configured yet.
 - `completion bash|powershell` — Print a shell completion registration script.
-- `update` — Compare the installed standalone version with the latest release,
-  then download only when an update is available. Native Windows updates hand
-  off to PowerShell so the running executable can exit before replacement.
+- `update [version]` — Compare the installed standalone version with the latest
+  release, then download only when an update is available. Native Windows updates
+  hand off to PowerShell so the running executable can exit before replacement.
+  Pass a version (`1.0.13` or `v1.0.13`) to install that release specifically;
+  a pinned version skips the latest-release comparison, so it can also
+  downgrade. Malformed versions are rejected before anything is downloaded.
 - `version` / `--version` / `-V` — Show the installed version without network
   access. Both command names show the shared `ai-config (acg)` product label.
 

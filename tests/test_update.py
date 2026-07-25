@@ -81,6 +81,54 @@ def test_update_rejects_extra_arguments(tmp_path: Path) -> None:
     assert result.returncode == 1
 
 
+def test_update_frozen_installs_requested_version(monkeypatch) -> None:
+    from ai_config import update
+
+    calls = {}
+
+    class Completed:
+        returncode = 0
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["env"] = kwargs.get("env")
+        return Completed()
+
+    monkeypatch.setattr(update.subprocess, "run", fake_run)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.13")
+    monkeypatch.setattr(update, "NATIVE_WINDOWS", False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    assert update.run_update("1.0.11") == 0
+    assert calls["env"]["AI_CONFIG_VERSION"] == "v1.0.11"
+
+
+def test_update_frozen_pinned_version_skips_latest_lookup(monkeypatch) -> None:
+    from ai_config import update
+
+    class Completed:
+        returncode = 0
+
+    def boom() -> str:
+        raise AssertionError("must not query the latest release when pinned")
+
+    monkeypatch.setattr(update.subprocess, "run", lambda cmd, **k: Completed())
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.13")
+    monkeypatch.setattr(update, "_latest_release_version", boom)
+    monkeypatch.setattr(update, "NATIVE_WINDOWS", False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    assert update.run_update("v1.0.11") == 0
+
+
+def test_update_rejects_malformed_version(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+
+    result = run_ai_config(repo_dir, home_dir, "update", "not-a-version")
+
+    assert result.returncode == 1
+
+
 def test_update_frozen_runs_hosted_installer(monkeypatch) -> None:
     from ai_config import update
 
