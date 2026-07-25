@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.14 - 2026-07-25
+
+- Add `skill`, which prints a built-in usage guide written for AI agents that
+  discover the CLI on a machine. The text is compiled in, so it works before
+  `setup` and without a data repository.
+- Accept an optional version for `update` (`update 1.0.13` or `update v1.0.13`).
+  A pinned version skips the latest-release comparison, so it can downgrade, and
+  malformed versions are rejected before any download.
+
 ## 1.0.13 - 2026-07-25
 
 - Sync `~/.claude/skills` as a managed directory, so Claude Code skills are

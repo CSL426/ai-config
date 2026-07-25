@@ -12,6 +12,7 @@ COMMANDS = (
     "list",
     "package",
     "reset",
+    "skill",
     "completion",
     "update",
     "version",

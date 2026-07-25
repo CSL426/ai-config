@@ -87,6 +87,44 @@ def test_console_main_usage_entrypoint(
     assert "setup" in captured.out
 
 
+def test_skill_guide_does_not_require_data_repository(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env["AI_CONFIG_REPO"] = str(tmp_path / "missing-data-repo")
+    env["AI_CONFIG_ENTRYPOINT"] = "ai-config"
+    env["PYTHONPATH"] = str(REPO_ROOT)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ai_config", "skill"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.stdout.startswith("---\nname: acg\n")
+    assert "ai-config status" in result.stdout
+    assert "permissions" in result.stdout
+    assert "Never commit or push without explicit user approval" in result.stdout
+
+
+def test_skill_guide_rejects_extra_arguments(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env["AI_CONFIG_REPO"] = str(tmp_path / "missing-data-repo")
+    env["AI_CONFIG_ENTRYPOINT"] = "ai-config"
+    env["PYTHONPATH"] = str(REPO_ROOT)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ai_config", "skill", "extra"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 1
+
+
 @pytest.mark.parametrize("command", ["version", "--version", "-V"])
 def test_version_commands_do_not_require_data_repository(
     tmp_path: Path,
