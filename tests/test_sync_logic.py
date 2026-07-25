@@ -143,6 +143,25 @@ def test_status_reports_mirror_up_to_date(tmp_path: Path) -> None:
     assert "mirror stale" not in result.stdout
 
 
+def test_status_ignores_line_ending_only_mirror_difference(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    # The recorded hash is of the LF form; the live file is the CRLF form that a
+    # Windows checkout produces. Same content, so this must not read as drift.
+    source = home_dir / "source.md"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"line one\r\nline two\r\n")
+    write(
+        repo_dir / "claude/shared/both/mirrored/SKILL.md",
+        mirror_skill("source.md", sha256("line one\nline two\n")),
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "status", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "mirror stale" not in result.stdout
+    assert "All 1 mirrored shared skills up to date" in result.stdout
+
+
 def test_status_warns_when_mirror_source_changed(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     source = home_dir / "source.md"
