@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.13 - 2026-07-25
+
+- Sync `~/.claude/skills` as a managed directory, so Claude Code skills are
+  gathered by `init` and deployed by `apply` like `rules`, `agents`, and
+  `commands`. Cross-tool skills continue to use `claude/shared/{both,codex,agy}`.
+- Document skill authoring and installation in `docs/skills.md`.
+
 ## 1.0.12 - 2026-07-24
 
 - Hand off native Windows updates to a background PowerShell installer and
