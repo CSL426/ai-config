@@ -220,6 +220,7 @@ git diff --check
 Additional documentation:
 
 - [Architecture](docs/architecture.md)
+- [Skills](docs/skills.md)
 - [Development](docs/development.md)
 - [Platform behavior](docs/platform-behavior.md)
 
