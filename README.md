@@ -195,6 +195,8 @@ contain this layout:
 ├── claude/
 │   ├── rules/
 │   ├── agents/
+│   ├── commands/
+│   ├── skills/
 │   ├── settings.json
 │   └── shared/
 ├── codex/

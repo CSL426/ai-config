@@ -205,6 +205,38 @@ def test_commands_dir_is_applied_to_claude_home(tmp_path: Path) -> None:
     ).read_text(encoding="utf-8") == "---\ndescription: x\n---\nbody\n"
 
 
+# ─── skills/ projection ───────────────────────────────────────
+
+
+def test_skills_dir_is_applied_to_claude_home(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/CLAUDE.md", "instructions\n")
+    write(
+        repo_dir / "claude/skills/acg/SKILL.md",
+        "---\nname: acg\ndescription: sync\n---\nbody\n",
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (home_dir / ".claude/skills/acg/SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "---\nname: acg\ndescription: sync\n---\nbody\n"
+
+
+def test_skills_dir_is_gathered_by_init(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(home_dir / ".claude/CLAUDE.md", "instructions\n")
+    write(home_dir / ".claude/skills/acg/SKILL.md", "authored locally\n")
+
+    result = run_ai_config(repo_dir, home_dir, "init", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (repo_dir / "claude/skills/acg/SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "authored locally\n"
+
+
 # ─── plugin drift detection ───────────────────────────────────
 
 

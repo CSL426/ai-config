@@ -72,7 +72,7 @@ BACKUP_BASE = HOME / ".ai-config-backup"
 BACKUP_KEEP = 5
 
 CLAUDE_MANAGED_FILES = ["CLAUDE.md", "mcp.json", "settings.json", "statusline.sh"]
-CLAUDE_MANAGED_DIRS = ["rules", "agents", "commands"]
+CLAUDE_MANAGED_DIRS = ["rules", "agents", "commands", "skills"]
 
 CLAUDE_BACKUP_PATHS = CLAUDE_MANAGED_FILES + CLAUDE_MANAGED_DIRS
 CODEX_BACKUP_PATHS = ["AGENTS.md", "config.toml", "rules", "skills"]
