@@ -186,13 +186,19 @@ def _print_mtime_hint(repo_path: Path, live_path: Path) -> None:
 
 
 def _mirror_live_only_files(stage_dir: Path, live_dir: Path) -> list[Path]:
-    if not stage_dir.is_dir() or not live_dir.is_dir():
+    if not live_dir.is_dir():
         return []
-    staged = {
-        path.relative_to(stage_dir)
-        for path in stage_dir.rglob("*")
-        if path.is_file()
-    }
+    # A managed directory the repo does not track yet still has live content to
+    # report — treat a missing stage side as empty rather than skipping the tree.
+    staged = (
+        {
+            path.relative_to(stage_dir)
+            for path in stage_dir.rglob("*")
+            if path.is_file()
+        }
+        if stage_dir.is_dir()
+        else set()
+    )
     removals = []
     for path in live_dir.rglob("*"):
         if not path.is_file():

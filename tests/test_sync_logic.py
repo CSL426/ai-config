@@ -224,6 +224,21 @@ def test_skills_dir_is_applied_to_claude_home(tmp_path: Path) -> None:
     ) == "---\nname: acg\ndescription: sync\n---\nbody\n"
 
 
+def test_status_reports_live_only_managed_dir_absent_from_repo(
+    tmp_path: Path,
+) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/CLAUDE.md", "instructions\n")
+    # The repo tracks no skills at all, so the whole live tree is untracked.
+    write(home_dir / ".claude/skills/only-live/SKILL.md", "authored locally\n")
+
+    result = run_ai_config(repo_dir, home_dir, "status", "claude")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "skills/only-live/SKILL.md" in result.stdout
+    assert "No differences found" not in result.stdout
+
+
 def test_skills_dir_is_gathered_by_init(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     write(home_dir / ".claude/CLAUDE.md", "instructions\n")
