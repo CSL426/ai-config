@@ -81,6 +81,46 @@ def test_update_rejects_extra_arguments(tmp_path: Path) -> None:
     assert result.returncode == 1
 
 
+def test_windows_handoff_redirects_output_away_from_console(monkeypatch) -> None:
+    from ai_config import update
+
+    calls = {}
+
+    class Popen:
+        def __init__(self, cmd, **kwargs):
+            calls["kwargs"] = kwargs
+
+    monkeypatch.setattr(update.subprocess, "Popen", Popen)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.12")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.14")
+    monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    assert update.run_update() == 0
+    # Inheriting the console is what painted installer output over the prompt.
+    assert calls["kwargs"]["stdout"] is not None
+    assert calls["kwargs"]["stderr"] == update.subprocess.STDOUT
+    assert calls["kwargs"]["stdin"] == update.subprocess.DEVNULL
+
+
+def test_windows_handoff_forwards_pinned_version(monkeypatch) -> None:
+    from ai_config import update
+
+    calls = {}
+
+    class Popen:
+        def __init__(self, cmd, **kwargs):
+            calls["cmd"] = cmd
+
+    monkeypatch.setattr(update.subprocess, "Popen", Popen)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.14")
+    monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    assert update.run_update("1.0.12") == 0
+    assert "v1.0.12" in " ".join(calls["cmd"])
+
+
 def test_update_frozen_installs_requested_version(monkeypatch) -> None:
     from ai_config import update
 

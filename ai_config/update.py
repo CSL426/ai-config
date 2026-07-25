@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -147,6 +148,16 @@ def _windows_update_script(parent_pid: int, tag: "str | None" = None) -> str:
     )
 
 
+def _spawn_windows_updater(command: list, output) -> None:
+    subprocess.Popen(
+        command,
+        stdout=output,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
+
+
 def _launch_windows_update(tag: "str | None" = None) -> int:
     command = [
         "powershell.exe",
@@ -156,22 +167,20 @@ def _launch_windows_update(tag: "str | None" = None) -> int:
         "-Command",
         _windows_update_script(os.getpid(), tag),
     ]
+    # The handoff outlives this process, so its output must not go to the shared
+    # console: the shell has already redrawn its prompt by then, and installer
+    # lines would land on top of it looking like a crash. Log to a file instead.
+    log_path = Path(tempfile.gettempdir()) / "ai-config-update.log"
     try:
-        subprocess.Popen(
-            command,
-            creationflags=getattr(
-                subprocess,
-                "CREATE_NEW_PROCESS_GROUP",
-                0,
-            ),
-        )
+        # The child inherits the handle, so closing it here is safe and correct.
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            _spawn_windows_updater(command, log_file)
     except OSError as exc:
         log_error(f"Could not start the PowerShell updater: {exc}")
         return 1
-    log_success(
-        "Update handed off to PowerShell; installation will continue "
-        "after this process exits"
-    )
+    log_success("Update handed off to PowerShell; it continues in the background")
+    log_info(f"Progress is written to {log_path}")
+    log_info("Verify when it finishes with: ai-config version")
     return 0
 
 
