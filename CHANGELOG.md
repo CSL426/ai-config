@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.18 - 2026-07-26
+
+- Explain why a Windows update shows no progress bar: this process has to exit
+  before Windows will release the lock on the running executable, so the
+  installer can only run after the handoff. The message now says how long it
+  usually takes and how to confirm it finished.
+- Write a terminal line to the update log on success or failure, so reading the
+  log distinguishes "finished" from "still running".
+
 ## 1.0.17 - 2026-07-26
 
 - Normalize line endings before comparing a shared skill's `mirror-hash`. The

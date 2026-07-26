@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from .console import log_error, log_info, log_success, log_warn
-from .paths import NATIVE_WINDOWS
+from .paths import ENTRYPOINT, NATIVE_WINDOWS
 from .version import current_version
 
 _DEFAULT_REPOSITORY = "CSL426/ai-config"
@@ -136,7 +136,18 @@ def _windows_update_script(parent_pid: int, tag: "str | None" = None) -> str:
                 f"-Uri {installer_url} -OutFile $installer"
             ),
             "  & $installer",
+            # A terminal line lets a reader tell "finished" from "still running".
+            (
+                "  if ($LASTEXITCODE -eq 0) { "
+                "Write-Output 'ai-config update: finished successfully' } "
+                "else { Write-Output "
+                "\"ai-config update: FAILED (exit $LASTEXITCODE)\" }"
+            ),
             "  exit $LASTEXITCODE",
+            "}",
+            "catch {",
+            "  Write-Output \"ai-config update: FAILED ($($_.Exception.Message))\"",
+            "  exit 1",
             "}",
             "finally {",
             (
@@ -179,8 +190,12 @@ def _launch_windows_update(tag: "str | None" = None) -> int:
         log_error(f"Could not start the PowerShell updater: {exc}")
         return 1
     log_success("Update handed off to PowerShell; it continues in the background")
-    log_info(f"Progress is written to {log_path}")
-    log_info("Verify when it finishes with: ai-config version")
+    log_info(
+        "This process must exit first so Windows releases the lock on the "
+        "running executable, so there is no progress bar here"
+    )
+    log_info(f"It usually takes a few seconds. Progress: {log_path}")
+    log_info(f"Confirm it finished with: {ENTRYPOINT} version")
     return 0
 
 
