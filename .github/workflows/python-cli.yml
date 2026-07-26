@@ -1,7 +1,12 @@
 name: Python CLI
 
 on:
+  # Branches only. A release commit is tagged at the same SHA, and the tag build
+  # in standalone-release.yml runs the same test matrix, so leaving this
+  # unrestricted ran the suite twice per release.
   push:
+    branches:
+      - main
     paths:
       - "ai_config/**"
       - "tests/**"
