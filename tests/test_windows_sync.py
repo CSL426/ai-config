@@ -830,7 +830,9 @@ def test_status_reports_quoted_crlf_mirror_missing_and_mismatch_read_only(
     write(home_dir / ".claude/CLAUDE.md", "instructions\n")
     source = home_dir / "sources/source one.md"
     write(source, "current mirror source\n")
-    expected_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    expected_hash = hashlib.sha256(
+        source.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    ).hexdigest()
     stale_skill = repo_dir / "claude/shared/both/stale/SKILL.md"
     stale_skill.parent.mkdir(parents=True)
     stale_skill.write_bytes(
@@ -877,7 +879,9 @@ def test_status_reports_all_mirrors_consistent_summary(tmp_path: Path) -> None:
     write(home_dir / ".codex/config.toml", 'model = "same"\n')
     source = home_dir / "source.md"
     write(source, "matching source\n")
-    source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    source_hash = hashlib.sha256(
+        source.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    ).hexdigest()
     write(
         repo_dir / "claude/shared/agy/matching/SKILL.md",
         "---\n"

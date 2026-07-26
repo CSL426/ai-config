@@ -12,6 +12,12 @@ def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def mirror_hash(path: Path) -> str:
+    """The LF-normalized hash mirror checking uses, matching CRLF checkouts."""
+    data = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(data).hexdigest()
+
+
 def make_repo(tmp_path: Path) -> tuple[Path, Path]:
     repo_dir = tmp_path / "repo"
     home_dir = tmp_path / "home"
@@ -133,7 +139,7 @@ def test_status_reports_mirror_up_to_date(tmp_path: Path) -> None:
     write(source, source_content)
     write(
         repo_dir / "claude/shared/both/mirrored/SKILL.md",
-        mirror_skill("source.md", hashlib.sha256(source.read_bytes()).hexdigest()),
+        mirror_skill("source.md", mirror_hash(source)),
     )
 
     result = run_ai_config(repo_dir, home_dir, "status", "codex")
@@ -177,7 +183,7 @@ def test_status_warns_when_mirror_source_changed(tmp_path: Path) -> None:
     assert "mirror stale" in result.stdout
     assert "both/mirrored/SKILL.md" in result.stdout
     # Suggests the hash to set after refreshing the copy
-    assert hashlib.sha256(source.read_bytes()).hexdigest() in result.stdout
+    assert mirror_hash(source) in result.stdout
 
 
 def test_status_warns_when_mirror_source_missing(tmp_path: Path) -> None:
