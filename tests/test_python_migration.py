@@ -127,7 +127,13 @@ def test_status_parses_quoted_crlf_mirror_metadata(tmp_path: Path) -> None:
     write(home_dir / ".codex/config.toml", 'model = "gpt-5"\n')
     source = home_dir / "source one.md"
     write(source, "matching source\n")
-    source_hash = hashlib.sha256(source.read_bytes()).hexdigest().upper()
+    source_hash = (
+        hashlib.sha256(
+            source.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        )
+        .hexdigest()
+        .upper()
+    )
     skill = repo_dir / "claude/shared/both/demo/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_bytes(
