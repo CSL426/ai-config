@@ -103,6 +103,17 @@ def test_windows_handoff_redirects_output_away_from_console(monkeypatch) -> None
     assert calls["kwargs"]["stdin"] == update.subprocess.DEVNULL
 
 
+def test_windows_handoff_script_marks_completion() -> None:
+    from ai_config import update
+
+    script = update._windows_update_script(4321)
+
+    # Without a terminal line, a reader cannot tell "done" from "still running".
+    assert "finished successfully" in script
+    assert "FAILED" in script
+    assert script.count("{") == script.count("}")
+
+
 def test_windows_handoff_forwards_pinned_version(monkeypatch) -> None:
     from ai_config import update
 
