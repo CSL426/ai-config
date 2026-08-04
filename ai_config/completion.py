@@ -12,6 +12,7 @@ COMMANDS = (
     "list",
     "package",
     "reset",
+    "deploy",
     "skill",
     "completion",
     "update",

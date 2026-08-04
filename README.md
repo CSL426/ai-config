@@ -129,6 +129,12 @@ ai-config <command> [tool]
   manual upload to Claude Desktop (Settings > Customize > Skills). Claude
   Desktop has no writable local skills directory, so this is a one-way export,
   not a live sync.
+- `deploy [dir]` — Copy managed Claude configuration into a project's own
+  `.claude/` directory rather than the user home. Lists the available entries,
+  asks which to take (numbers, a range, or `a` for all), previews the
+  destinations, and names anything it would overwrite before writing. Project
+  settings take precedence over user-level configuration, so this pins a
+  project's setup for handoff or CI.
 - `reset` — Remove managed configuration files after confirmation.
 - `skill` — Print the built-in usage guide, written for an AI agent that finds
   this CLI on a machine and needs to know how to drive it: the command table,

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.19 - 2026-08-04
+
+- Add `deploy [dir]`, which copies managed Claude configuration into a project's
+  own `.claude/` instead of the user home directory. It lists what the data
+  repository holds and asks which entries to take — individual numbers, a range,
+  or `a` for all — then previews the destinations and names anything it would
+  overwrite before writing. Useful for handing a project to someone else or
+  pinning its configuration for CI.
+
 ## 1.0.18 - 2026-07-26
 
 - Explain why a Windows update shows no progress bar: this process has to exit
