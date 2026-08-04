@@ -33,6 +33,7 @@ project, status, pull, push, and sync.
 | `pull [tool]` | fast-forward the data repo, then show status |
 | `sync [tool]` | alias for pull |
 | `push [tool]` | gather, review, commit, and push (see guards below) |
+| `deploy [dir]` | copy managed Claude config into a project's `.claude/` (interactive) |
 | `list` | managed tools, file counts, backup snapshot count |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `setup` | configure the data repo remote and verify push access |
@@ -57,6 +58,10 @@ Claude Code. `claude/shared/{{both,codex,agy}}/` projects to the other CLIs with
 frontmatter normalized for their stricter parsers. A skill wanted everywhere
 needs a copy in both. The `shared/` copy is authoritative — deleting it there
 removes the mirror on the next apply.
+
+`apply` targets the user home directories. `deploy` targets one project's
+`.claude/` instead, for handing a project to someone else or pinning its setup
+for CI; project settings take precedence over the user-level ones.
 
 ## Rules for an agent driving this CLI
 

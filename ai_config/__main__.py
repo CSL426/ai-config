@@ -1491,6 +1491,7 @@ def usage() -> None:
     print("  list            List managed tools")
     print("  package [skill] Zip a shared skill for Claude Desktop upload")
     print("  reset           Delete all managed config files")
+    print("  deploy [dir]    Copy managed Claude config into a project's .claude/")
     print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
     print("  update [version] Install the latest release, or a specific version")
@@ -1582,6 +1583,14 @@ def main(argv: "list[str] | None" = None) -> int:
             f"Run {ENTRYPOINT} setup to configure and verify your data repository."
         )
         return 1
+
+    if cmd == "deploy":
+        if len(args) > 2:
+            log_error(f"Usage: {ENTRYPOINT} deploy [project-dir]")
+            return 1
+        from .deploy import run_deploy
+
+        return run_deploy(args[1] if len(args) == 2 else None)
 
     if cmd == "package":
         if len(args) > 2:
