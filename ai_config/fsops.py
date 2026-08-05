@@ -55,14 +55,22 @@ def overlay_dir_to_stage(src: Path, dst: Path) -> None:
             shutil.copy2(item, target)
 
 
-def merge_missing_tree(source: Path, destination: Path, label: str) -> bool:
+def merge_missing_tree(
+    source: Path,
+    destination: Path,
+    label: str,
+    exclude_dir_names: "frozenset[str] | None" = None,
+) -> bool:
     assert_no_symlinks(source)
     assert_no_symlinks(destination)
     destination.mkdir(parents=True, exist_ok=True)
+    excluded_dirs = exclude_dir_names or frozenset()
     copied = False
     for item in sorted(source.rglob("*")):
         relative = item.relative_to(source)
         if any(part in EXCLUDED_FILES for part in relative.parts):
+            continue
+        if any(part in excluded_dirs for part in relative.parts):
             continue
         target = destination / relative
         conflicting_parent = next(

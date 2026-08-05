@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.20 - 2026-08-05
+
+- Leave Codex's own `.system` skills behind when migrating legacy
+  `$CODEX_HOME/skills` to `~/.agents/skills`. Codex installs that tree itself and
+  refreshes it against a version marker, so migrating it moved vendor content out
+  of the directory Codex actually reads and stranded a copy that then went stale.
+  Existing strays under `~/.agents/skills/.system` can be deleted; Codex
+  reinstalls them in the right place on its next session.
+
 ## 1.0.19 - 2026-08-04
 
 - Add `deploy [dir]`, which copies managed Claude configuration into a project's

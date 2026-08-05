@@ -18,6 +18,7 @@ from ..paths import (
     CODEX_HOME,
     CODEX_LEGACY_SKILLS,
     CODEX_SKILLS_MIGRATION_MARKER,
+    CODEX_VENDOR_SKILL_DIRS,
     SCRIPT_DIR,
     claude_source_dir,
 )
@@ -195,7 +196,14 @@ def prepare_codex_canonical_skills() -> None:
     canonical.mkdir(parents=True, exist_ok=True)
     if marker.is_file() or not legacy.is_dir() or is_reparse_point(legacy):
         return
-    migrated = merge_missing_tree(legacy, canonical, "legacy Codex skills")
+    # Codex installs .system itself and version-checks it against a marker, so
+    # migrating that tree only strands a stale copy where Codex never reads.
+    migrated = merge_missing_tree(
+        legacy,
+        canonical,
+        "legacy Codex skills",
+        exclude_dir_names=CODEX_VENDOR_SKILL_DIRS,
+    )
     assert_safe_write_target(marker)
     marker.write_text("migrated\n", encoding="utf-8", newline="\n")
     if migrated:

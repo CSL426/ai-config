@@ -50,6 +50,9 @@ AGY_HOME = HOME / ".gemini" / "antigravity-cli"
 CODEX_CANONICAL_SKILLS = HOME / ".agents" / "skills"
 CODEX_LEGACY_SKILLS = CODEX_HOME / "skills"
 CODEX_SKILLS_MIGRATION_MARKER = ".ai-config-codex-skills-migrated"
+# Codex installs these itself under $CODEX_HOME/skills and refreshes them from a
+# version marker; they are vendor content, not user configuration.
+CODEX_VENDOR_SKILL_DIRS = frozenset({".system"})
 
 # Antigravity 2.0 stores global skills here. AGY_HOME/skills points to this
 # canonical store so the editor and CLI share one skills directory.
