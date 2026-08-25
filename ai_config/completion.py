@@ -34,6 +34,7 @@ TOOLS = (
 )
 TOOL_COMMANDS = ("init", "apply", "project", "status", "pull", "push", "sync")
 SETUP_OPTIONS = ("--data-dir", "--repo-url", "--remote-name", "--replace-remote")
+DEPLOY_OPTIONS = ("--profile", "--save-as")
 SHELLS = ("bash", "powershell")
 
 
@@ -42,6 +43,7 @@ def bash_completion() -> str:
     tools = " ".join(TOOLS)
     tool_commands = "|".join(TOOL_COMMANDS)
     setup_options = " ".join(SETUP_OPTIONS)
+    deploy_options = " ".join(DEPLOY_OPTIONS)
     shells = " ".join(SHELLS)
     return f"""_ai_config_completion() {{
     local current command
@@ -62,6 +64,11 @@ def bash_completion() -> str:
                 COMPREPLY=( $(compgen -W '{setup_options}' -- "$current") )
             fi
             ;;
+        deploy)
+            if [[ "$current" == -* ]]; then
+                COMPREPLY=( $(compgen -W '{deploy_options}' -- "$current") )
+            fi
+            ;;
         completion)
             if (( COMP_CWORD == 2 )); then
                 COMPREPLY=( $(compgen -W '{shells}' -- "$current") )
@@ -78,6 +85,7 @@ def powershell_completion() -> str:
     tools = ", ".join(f"'{value}'" for value in TOOLS)
     tool_commands = ", ".join(f"'{value}'" for value in TOOL_COMMANDS)
     setup_options = ", ".join(f"'{value}'" for value in SETUP_OPTIONS)
+    deploy_options = ", ".join(f"'{value}'" for value in DEPLOY_OPTIONS)
     shells = ", ".join(f"'{value}'" for value in SHELLS)
     return f"""Register-ArgumentCompleter -CommandName @('ai-config', 'acg') -ScriptBlock {{
     param($wordToComplete, $commandAst, $cursorPosition)
@@ -85,6 +93,7 @@ def powershell_completion() -> str:
     $tools = @({tools})
     $toolCommands = @({tool_commands})
     $setupOptions = @({setup_options})
+    $deployOptions = @({deploy_options})
     $shells = @({shells})
     $arguments = @(
         $commandAst.CommandElements |
@@ -121,6 +130,9 @@ def powershell_completion() -> str:
                 return
             }}
             $candidates = $setupOptions
+        }}
+        elseif ($command -eq 'deploy') {{
+            $candidates = $deployOptions
         }}
         elseif ($command -eq 'completion') {{
             if (

@@ -94,6 +94,33 @@ def _current_skill_names(staged_skills: Path) -> list[str]:
     return sorted(p.name for p in staged_skills.iterdir() if p.is_dir())
 
 
+def unmanaged_skills(dst_skills: Path) -> list[str]:
+    """Skill directories present on disk that we never deployed.
+
+    These are left alone by design (hand-installed skills must survive an
+    apply), but they are invisible otherwise: a stale copy of a skill that
+    also ships as a plugin shadows it silently. Surfacing them in `status`
+    makes that drift visible without changing what apply prunes.
+    """
+    if not dst_skills.is_dir():
+        return []
+    manifest = dst_skills / MANIFEST_NAME
+    if not manifest.is_file():
+        return []
+    managed = {
+        name
+        for name in manifest.read_text(encoding="utf-8").splitlines()
+        if name
+    }
+    return sorted(
+        entry.name
+        for entry in dst_skills.iterdir()
+        if entry.is_dir()
+        and not entry.name.startswith(".")
+        and entry.name not in managed
+    )
+
+
 def managed_skill_orphans(staged_skills: Path, dst_skills: Path) -> list[str]:
     if not dst_skills.is_dir():
         return []
