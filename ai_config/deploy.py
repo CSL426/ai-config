@@ -5,12 +5,43 @@ from pathlib import Path
 from .console import BOLD, CYAN, NC, log_error, log_header, log_info, log_success
 from .fsops import mirror_dir, safe_cp
 from .paths import CLAUDE_MANAGED_DIRS, CLAUDE_MANAGED_FILES, SCRIPT_DIR
+from .profiles import (
+    PROFILES_NAME,
+    load_profiles,
+    save_profile,
+    valid_profile_name,
+)
+
+# Directories deployed per child entry rather than whole, so a project can take
+# just the skills it needs. The name is the menu prefix: "skills/acg".
+EXPANDED_DIRS = ("skills",)
+
+
+def _skill_children(source: Path, name: str) -> list[str]:
+    directory = source / name
+    return sorted(
+        child.name
+        for child in directory.iterdir()
+        if child.is_dir() and not child.name.startswith(".")
+    )
 
 
 def _available_items(source: Path) -> list[tuple[str, bool]]:
-    """Managed entries that exist in the repo, as (name, is_dir) in menu order."""
+    """Managed entries that exist in the repo, as (name, is_dir) in menu order.
+
+    Entries in EXPANDED_DIRS contribute one row per child ("skills/acg")
+    instead of a single all-or-nothing row.
+    """
     items = [(name, False) for name in CLAUDE_MANAGED_FILES if (source / name).is_file()]
-    items += [(name, True) for name in CLAUDE_MANAGED_DIRS if (source / name).is_dir()]
+    for name in CLAUDE_MANAGED_DIRS:
+        if not (source / name).is_dir():
+            continue
+        if name in EXPANDED_DIRS:
+            items += [
+                (f"{name}/{child}", True) for child in _skill_children(source, name)
+            ]
+        else:
+            items.append((name, True))
     return items
 
 
@@ -50,7 +81,36 @@ def _parse_selection(raw: str, total: int) -> "list[int] | None":
     return sorted(chosen) or None
 
 
-def run_deploy(target: "str | None") -> int:
+def _resolve_profile(
+    items: list[tuple[str, bool]], wanted: list[str]
+) -> "list[int] | None":
+    """Map a profile's stored names onto current menu indices."""
+    by_name = {name: index for index, (name, _) in enumerate(items)}
+    missing = [name for name in wanted if name not in by_name]
+    if missing:
+        log_error(f"Profile refers to items no longer in the repo: {', '.join(missing)}")
+        return None
+    return sorted(by_name[name] for name in wanted)
+
+
+def _write_items(
+    source: Path, destination: Path, items: list[tuple[str, bool]], selection: list[int]
+) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for index in selection:
+        name, is_dir = items[index]
+        if is_dir:
+            mirror_dir(source / name, destination / name)
+        else:
+            safe_cp(source / name, destination / name)
+        log_success(f"{name}{'/' if is_dir else ''}")
+
+
+def run_deploy(
+    target: "str | None",
+    profile: "str | None" = None,
+    save_as: "str | None" = None,
+) -> int:
     source = SCRIPT_DIR / "claude"
     if not source.is_dir():
         log_error(f"No Claude configuration in the data repository: {source}")
@@ -67,7 +127,29 @@ def run_deploy(target: "str | None") -> int:
         log_error("The data repository has no managed Claude configuration to deploy")
         return 1
 
-    log_header(f"Deploy to {project / '.claude'}")
+    if save_as is not None and not valid_profile_name(save_as):
+        log_error(f"Invalid profile name: {save_as}")
+        return 1
+
+    destination = project / ".claude"
+
+    if profile is not None:
+        profiles = load_profiles(source)
+        if profile not in profiles:
+            known = ", ".join(sorted(profiles)) or "(none defined)"
+            log_error(f"Unknown profile: {profile}")
+            log_info(f"Available profiles: {known}")
+            return 1
+        selection = _resolve_profile(items, profiles[profile])
+        if selection is None:
+            return 1
+        log_header(f"Deploy profile '{profile}' to {destination}")
+        _write_items(source, destination, items, selection)
+        log_success(f"Deployed to {destination}")
+        log_info("Project settings take precedence over the user-level configuration")
+        return 0
+
+    log_header(f"Deploy to {destination}")
     for number, (name, is_dir) in enumerate(items, start=1):
         suffix = "/" if is_dir else ""
         detail = _describe(source, name, is_dir)
@@ -83,7 +165,6 @@ def run_deploy(target: "str | None") -> int:
         log_info("Nothing selected; deploy cancelled")
         return 0
 
-    destination = project / ".claude"
     print()
     for index in selection:
         name, is_dir = items[index]
@@ -105,14 +186,11 @@ def run_deploy(target: "str | None") -> int:
         log_info("Cancelled; nothing was written")
         return 0
 
-    destination.mkdir(parents=True, exist_ok=True)
-    for index in selection:
-        name, is_dir = items[index]
-        if is_dir:
-            mirror_dir(source / name, destination / name)
-        else:
-            safe_cp(source / name, destination / name)
-        log_success(f"{name}{'/' if is_dir else ''}")
+    _write_items(source, destination, items, selection)
+
+    if save_as is not None:
+        save_profile(source, save_as, [items[index][0] for index in selection])
+        log_success(f"Saved profile '{save_as}' to {PROFILES_NAME}")
 
     log_success(f"Deployed to {destination}")
     log_info("Project settings take precedence over the user-level configuration")

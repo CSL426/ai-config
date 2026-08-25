@@ -46,6 +46,7 @@ from .paths import (
     claude_source_dir,
     codex_live_skills,
     set_claude_source_dir,
+    tilde,
     tool_home,
 )
 from .plugins import check_plugin_drift
@@ -55,7 +56,7 @@ from .safety import (
     assert_tool_destinations_safe,
     is_reparse_point,
 )
-from .skills import managed_skill_orphans
+from .skills import managed_skill_orphans, unmanaged_skills
 from .staging import staged_projections
 from .tools import agy, claude, codex
 
@@ -487,12 +488,45 @@ def do_project(tool: str) -> bool:
     return ok
 
 
+def _skill_stores(tool: str) -> list[tuple[str, Path]]:
+    """Live skill directories to inspect, as (label, path) per selected tool."""
+    stores: list[tuple[str, Path]] = []
+    for selected_tool in ALL_TOOLS:
+        if tool not in ("all", selected_tool):
+            continue
+        if selected_tool == "claude":
+            stores.append(("claude", CLAUDE_HOME / "skills"))
+        elif selected_tool == "codex":
+            stores.append(("codex", codex_live_skills()))
+        else:
+            stores.append((selected_tool, tool_home(selected_tool) / "skills"))
+    return stores
+
+
+def check_unmanaged_skills(tool: str) -> None:
+    found = False
+    for label, store in _skill_stores(tool):
+        names = unmanaged_skills(store)
+        if not names:
+            continue
+        found = True
+        log_warn(f"{label}: {len(names)} skill(s) on disk that ai-config does not manage")
+        for name in names:
+            print(f"    {tilde(store / name)}")
+    if found:
+        log_info("These are left untouched by apply; remove any you no longer want")
+    else:
+        log_success("No unmanaged skill directories")
+
+
 def show_status(tool: str) -> None:
     for selected_tool in ALL_TOOLS:
         if tool in ("all", selected_tool):
             status_tool(selected_tool)
     log_header("Shared skill mirrors")
     check_shared_mirrors()
+    log_header("Unmanaged skills")
+    check_unmanaged_skills(tool)
     log_header("Plugin drift")
     check_plugin_drift()
 
@@ -1492,6 +1526,8 @@ def usage() -> None:
     print("  package [skill] Zip a shared skill for Claude Desktop upload")
     print("  reset           Delete all managed config files")
     print("  deploy [dir]    Copy managed Claude config into a project's .claude/")
+    print("                  --profile <name> reuse a saved selection")
+    print("                  --save-as <name> remember this selection")
     print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
     print("  update [version] Install the latest release, or a specific version")
@@ -1585,12 +1621,41 @@ def main(argv: "list[str] | None" = None) -> int:
         return 1
 
     if cmd == "deploy":
-        if len(args) > 2:
-            log_error(f"Usage: {ENTRYPOINT} deploy [project-dir]")
-            return 1
         from .deploy import run_deploy
 
-        return run_deploy(args[1] if len(args) == 2 else None)
+        deploy_usage = (
+            f"Usage: {ENTRYPOINT} deploy [project-dir] "
+            f"[--profile <name>] [--save-as <name>]"
+        )
+        rest, profile, save_as = args[1:], None, None
+        positional: list[str] = []
+        while rest:
+            token = rest.pop(0)
+            if token in ("--profile", "--save-as"):
+                if not rest:
+                    log_error(f"{token} requires a name\n{deploy_usage}")
+                    return 1
+                if token == "--profile":
+                    profile = rest.pop(0)
+                else:
+                    save_as = rest.pop(0)
+            elif token.startswith("--"):
+                log_error(f"Unknown option: {token}\n{deploy_usage}")
+                return 1
+            else:
+                positional.append(token)
+        if len(positional) > 1:
+            log_error(deploy_usage)
+            return 1
+        if profile is not None and save_as is not None:
+            log_error("--profile and --save-as cannot be combined")
+            return 1
+
+        return run_deploy(
+            positional[0] if positional else None,
+            profile=profile,
+            save_as=save_as,
+        )
 
     if cmd == "package":
         if len(args) > 2:

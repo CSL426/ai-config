@@ -426,8 +426,12 @@ def test_status_previews_only_managed_skill_deletions(tmp_path: Path) -> None:
     assert status.returncode == 0, status.stderr + status.stdout
     assert "skills/current/stale.md" in status.stdout
     assert "skills/removed" in status.stdout
-    assert "skills/hand-installed" not in status.stdout
     assert ".credentials.json" not in status.stdout
+    # A hand-installed skill is never previewed as a deletion; it is only
+    # reported, separately, under the unmanaged-skills heading.
+    deletions, _, unmanaged = status.stdout.partition("Unmanaged skills")
+    assert "hand-installed" not in deletions
+    assert "hand-installed" in unmanaged
 
 
 def test_init_all_preflights_every_tool_before_repo_mutation(tmp_path: Path) -> None:

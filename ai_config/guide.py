@@ -34,6 +34,8 @@ project, status, pull, push, and sync.
 | `sync [tool]` | alias for pull |
 | `push [tool]` | gather, review, commit, and push (see guards below) |
 | `deploy [dir]` | copy managed Claude config into a project's `.claude/` (interactive) |
+| `deploy --profile <name>` | replay a saved selection without prompting |
+| `deploy --save-as <name>` | deploy interactively, then remember the selection |
 | `list` | managed tools, file counts, backup snapshot count |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `setup` | configure the data repo remote and verify push access |
@@ -59,9 +61,21 @@ frontmatter normalized for their stricter parsers. A skill wanted everywhere
 needs a copy in both. The `shared/` copy is authoritative — deleting it there
 removes the mirror on the next apply.
 
+`status` also lists skill directories that exist in a tool's live skills
+directory but were never deployed by ai-config (hand-installed skills, or
+leftovers from an earlier migration). They are reported only: `apply` never
+prunes them, because deleting a skill the user installed themselves would be
+worse than leaving a stale one. Remove any you no longer want by hand.
+
 `apply` targets the user home directories. `deploy` targets one project's
 `.claude/` instead, for handing a project to someone else or pinning its setup
 for CI; project settings take precedence over the user-level ones.
+
+The `deploy` menu lists skills one per row (`skills/acg`), so a project can take
+only the skills it needs; the other managed directories stay whole. A selection
+worth repeating can be saved with `--save-as <name>` and replayed later with
+`--profile <name>`, which skips both prompts. Profiles live in
+`deploy-profiles.toml` in the data repository, so they sync between machines.
 
 ## Rules for an agent driving this CLI
 
