@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.24 - 2026-08-27
+
+- Stop re-migrating legacy Antigravity skills on every `apply`. The merge from
+  `~/.gemini/antigravity/skills` ran unconditionally, so a skill deleted on
+  purpose reappeared on the next `apply` as long as the legacy tree still held
+  a copy. A marker now records the completed migration, matching Codex. Once
+  the legacy directory is gone (or the marker is written) the merge is skipped.
+
 ## 1.0.23 - 2026-08-27
 
 - Accept a data repository the machine can read but not write to. `setup`
