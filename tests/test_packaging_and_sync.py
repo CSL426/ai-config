@@ -353,7 +353,7 @@ def test_setup_failure_does_not_save_config_or_keep_new_remote(tmp_path: Path) -
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission contract")
-def test_setup_rejects_remote_without_real_push_access(tmp_path: Path) -> None:
+def test_setup_configures_read_only_remote_with_a_warning(tmp_path: Path) -> None:
     remote, seed = create_data_remote(tmp_path)
     config = tmp_path / "config.json"
     protected_paths = [remote, *remote.rglob("*")]
@@ -383,8 +383,41 @@ def test_setup_rejects_remote_without_real_push_access(tmp_path: Path) -> None:
         for path in reversed(protected_paths):
             path.chmod(original_modes[path])
 
+    # A remote that can be read but not written is a supported setup: the
+    # machine keeps status, pull, and apply, and only push is unavailable.
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "Push permission verification failed" in output
+    assert "read-only" in output
+    assert config.exists()
+
+
+def test_setup_rejects_unreachable_remote(tmp_path: Path) -> None:
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    subprocess.run(["git", "init", str(seed)], capture_output=True, check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "remote", "add", "origin", str(tmp_path / "absent")],
+        capture_output=True,
+        check=True,
+    )
+    (seed / "claude").mkdir()
+    config = tmp_path / "config.json"
+    env = os.environ.copy()
+    env["AI_CONFIG_CONFIG"] = str(config)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ai_config", "setup", "--data-dir", str(seed)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    # Unreadable is fatal: without a fetch nothing can sync at all.
     assert result.returncode != 0
-    assert "Push permission verification failed" in result.stderr
+    assert "Read access verification failed" in result.stdout + result.stderr
     assert not config.exists()
 
 
