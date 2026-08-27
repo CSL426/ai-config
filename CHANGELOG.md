@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.21 - 2026-08-27
+
+- Build and publish `ai-config-linux-aarch64`, and select it from `install.sh`.
+  The installer previously refused arm64 Linux outright, because the release
+  workflow only built an x86_64 Linux asset, leaving those machines with no
+  supported install path. The new asset appears only in releases tagged after
+  this change; existing tags are not backfilled.
+- List skills individually in the `deploy` menu (`skills/acg`) so a project can
+  take only the skills it needs. The other managed directories are still taken
+  whole.
+- Add `deploy --save-as <name>` to remember a selection and `deploy --profile
+  <name>` to replay one without prompting, so a repeated setup can run
+  unattended. Profiles live in `claude/deploy-profiles.toml` in the data
+  repository and therefore sync between machines.
+- Report skill directories in `status` that exist in a tool's live skills
+  directory but were never deployed by ai-config — leftovers from the legacy
+  Codex migration, or hand-installed skills. They are reported only: `apply`
+  still never prunes them.
+
 ## 1.0.20 - 2026-08-05
 
 - Leave Codex's own `.system` skills behind when migrating legacy
