@@ -58,6 +58,7 @@ CODEX_VENDOR_SKILL_DIRS = frozenset({".system"})
 # canonical store so the editor and CLI share one skills directory.
 AGY_CANONICAL_SKILLS = HOME / ".gemini" / "config" / "skills"
 AGY_LEGACY_SKILLS = HOME / ".gemini" / "antigravity" / "skills"
+AGY_SKILLS_MIGRATION_MARKER = ".ai-config-agy-skills-migrated"
 
 # All managed tools (order matters for init/apply/status)
 ALL_TOOLS = ["claude", "codex", "agy"]
