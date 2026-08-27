@@ -221,6 +221,12 @@ def _planned_removals(tool: str, stage_dir: Path, home_dir: Path) -> list[Path]:
     else:
         exact_mirrors = []
     for name in exact_mirrors:
+        # agy mirrors plugins/ only when the repo has it, leaving the live tree
+        # alone otherwise, so reporting it as pending deletion would contradict
+        # apply. Claude instead deletes a managed directory the repo dropped,
+        # so there the live-only files really are going away.
+        if tool == "agy" and not (stage_dir / name).is_dir():
+            continue
         removals.extend(
             Path(name) / relative
             for relative in _mirror_live_only_files(
