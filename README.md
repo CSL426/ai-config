@@ -233,12 +233,25 @@ bash -n install.sh
 git diff --check
 ```
 
+### GUI (experimental)
+
+A desktop window for non-CLI users, covering status/apply/pull/push:
+
+```bash
+pip install "ai-config[gui]"        # pywebview
+cd gui && pnpm install && pnpm build # frontend → ai_config/gui_assets/
+acg gui
+```
+
+Roadmap and design notes: [docs/gui-plan.md](docs/gui-plan.md).
+
 Additional documentation:
 
 - [Architecture](docs/architecture.md)
 - [Skills](docs/skills.md)
 - [Development](docs/development.md)
 - [Platform behavior](docs/platform-behavior.md)
+- [GUI plan (draft)](docs/gui-plan.md)
 
 ## License
 

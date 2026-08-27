@@ -1,0 +1,411 @@
+/* Hallmark · component: app-shell · genre: modern-minimal · theme: custom
+ * (vibe: claude.ai 式暖紙感 · paper oklch(98% 0.005 95) · accent oklch(58% 0.115 35) terracotta
+ *  display: 襯線中文堆疊 · body: 系統中文堆疊,離線可用)
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4
+ */
+
+:root {
+  --color-paper: oklch(98% 0.005 95);
+  --color-paper-2: oklch(94.5% 0.009 95);
+  --color-paper-3: oklch(91% 0.011 95);
+  --color-card: oklch(100% 0 0);
+  --color-ink: oklch(30% 0.011 95);
+  --color-ink-soft: oklch(56% 0.014 95);
+  --color-accent: oklch(58% 0.115 35);
+  --color-accent-strong: oklch(49% 0.12 35);
+  --color-accent-soft: oklch(95% 0.018 35);
+  --color-success: oklch(58% 0.08 135);
+  --color-warn: oklch(63% 0.1 80);
+  --color-danger: oklch(54% 0.14 30);
+  --color-focus: oklch(58% 0.13 35);
+  --color-console-bg: oklch(96% 0.008 95);
+  --color-console-ink: oklch(42% 0.012 95);
+  --color-console-dim: oklch(72% 0.014 95);
+  --color-console-head: oklch(55% 0.08 65);
+
+  --font-display: "Noto Serif TC", "Songti TC", Georgia, serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Noto Sans Mono CJK TC",
+    monospace;
+
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+
+  --radius-sm: 0.5625rem;
+  --radius-md: 0.875rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow-x: clip;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  height: 100dvh;
+  padding: var(--space-lg);
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+/* ── 標頭 ─────────────────────────────── */
+
+.app-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.app-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.app-title h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.app-version {
+  color: var(--color-ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.app-repo {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 範圍選擇 ─────────────────────────── */
+
+.scope {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.scope-label {
+  color: var(--color-ink-soft);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.scope-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  background: var(--color-paper-2);
+  border-radius: var(--radius-md);
+  padding: var(--space-xs);
+}
+
+.scope-tab {
+  border: none;
+  background: transparent;
+  color: var(--color-ink-soft);
+  font: inherit;
+  font-size: 0.875rem;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.scope-tab:hover {
+  color: var(--color-ink);
+}
+
+.scope-tab.is-selected {
+  background: var(--color-card);
+  color: var(--color-ink);
+  font-weight: 600;
+  box-shadow: 0 0.0625rem 0.125rem oklch(30% 0.011 95 / 0.1);
+}
+
+.scope-tab:focus-visible {
+  outline: 0.125rem solid var(--color-focus);
+  outline-offset: 0.125rem;
+}
+
+.scope-tab:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── 動作卡片 ─────────────────────────── */
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: var(--space-sm);
+}
+
+.action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  text-align: left;
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  padding: var(--space-md);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.action:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.action:focus-visible {
+  outline: 0.125rem solid var(--color-focus);
+  outline-offset: 0.125rem;
+}
+
+.action:active {
+  transform: translateY(0.0625rem);
+}
+
+.action:disabled {
+  opacity: 0.5;
+  cursor: default;
+  border-color: var(--color-paper-3);
+  background: var(--color-card);
+  transform: none;
+}
+
+.action-icon {
+  color: var(--color-accent);
+  block-size: 1.375rem;
+  inline-size: auto;
+}
+
+.action.is-running {
+  border-color: var(--color-accent);
+}
+
+.action.is-running .action-name::after {
+  content: "";
+  display: inline-block;
+  inline-size: 0.75em;
+  block-size: 0.75em;
+  margin-inline-start: 0.5em;
+  border: 0.125rem solid var(--color-accent);
+  border-block-start-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -0.05em;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.action-name {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.action-desc {
+  color: var(--color-ink-soft);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* ── push 確認列 ──────────────────────── */
+
+.confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  border: 1px solid var(--color-warn);
+  border-radius: var(--radius-md);
+  background: oklch(96% 0.03 85);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.confirm[hidden] {
+  display: none;
+}
+
+.confirm-text {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.confirm-buttons {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.btn {
+  border: none;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.btn:focus-visible {
+  outline: 0.125rem solid var(--color-focus);
+  outline-offset: 0.125rem;
+}
+
+.btn:active {
+  transform: translateY(0.0625rem);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: oklch(98% 0.005 95);
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-ink-soft);
+}
+
+.btn-ghost:hover {
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+}
+
+/* ── 輸出面板 ─────────────────────────── */
+
+.output {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-md);
+  background: var(--color-console-bg);
+  overflow: hidden;
+}
+
+.output-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-block-end: 1px solid var(--color-paper-3);
+}
+
+.output-title {
+  color: var(--color-ink-soft);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.output-state {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.output-state.is-running {
+  color: var(--color-console-dim);
+}
+
+.output-state.is-ok {
+  color: var(--color-success);
+}
+
+.output-state.is-fail {
+  color: var(--color-danger);
+}
+
+.output-body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-md);
+  overflow: auto;
+  color: var(--color-console-ink);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.line-placeholder,
+.line-dim {
+  color: var(--color-console-dim);
+}
+
+.line-ok {
+  color: var(--color-success);
+}
+
+.line-warn {
+  color: var(--color-warn);
+}
+
+.line-err {
+  color: var(--color-danger);
+}
+
+.line-head {
+  color: var(--color-console-head);
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}

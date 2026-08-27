@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add an experimental `acg gui` command: a pywebview window aimed at
+  non-CLI users, covering status/apply/pull/push with a GUI-side push
+  confirmation. The frontend lives in `gui/` (Vite + TypeScript, built into
+  `ai_config/gui_assets/`); pywebview installs via the new `ai-config[gui]`
+  extra. See `docs/gui-plan.md` for the roadmap (setup wizard, packaging,
+  code signing are later phases).
+
 ## 1.0.25 - 2026-08-27
 
 - Stop reporting the live Antigravity `plugins/` tree as pending deletions.
