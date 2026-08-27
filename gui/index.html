@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>acg — AI 設定同步</title>
+    <script type="module" src="./src/main.ts"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <div class="app-title">
+          <h1>AI 設定同步</h1>
+          <span class="app-version" id="version">—</span>
+        </div>
+        <p class="app-repo" id="repo" title="">資料儲存庫位置讀取中…</p>
+      </header>
+
+      <section class="scope" aria-label="同步範圍">
+        <span class="scope-label">範圍</span>
+        <div class="scope-tabs" role="radiogroup" id="tool-tabs">
+          <button class="scope-tab is-selected" role="radio" aria-checked="true" data-tool="all">全部工具</button>
+          <button class="scope-tab" role="radio" aria-checked="false" data-tool="claude">Claude Code</button>
+          <button class="scope-tab" role="radio" aria-checked="false" data-tool="codex">Codex</button>
+          <button class="scope-tab" role="radio" aria-checked="false" data-tool="agy">Antigravity</button>
+        </div>
+      </section>
+
+      <section class="actions" aria-label="動作">
+        <button class="action" data-cmd="status">
+          <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"></circle><line x1="13.2" y1="13.2" x2="17" y2="17"></line></svg>
+          <span class="action-name">檢查狀態</span>
+          <span class="action-desc">看看這台電腦的設定和儲存庫差在哪裡</span>
+        </button>
+        <button class="action" data-cmd="apply">
+          <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="12"></line><polyline points="5.5,8 10,12.5 14.5,8"></polyline><line x1="4" y1="16.5" x2="16" y2="16.5"></line></svg>
+          <span class="action-name">套用設定</span>
+          <span class="action-desc">把儲存庫裡的設定部署到這台電腦</span>
+        </button>
+        <button class="action" data-cmd="pull">
+          <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5a3.5 3.5 0 0 1 .4-6.98 4.6 4.6 0 0 1 8.9 1.18 3 3 0 0 1-.55 5.8"></path><line x1="10" y1="10" x2="10" y2="17"></line><polyline points="7,14.5 10,17.5 13,14.5"></polyline></svg>
+          <span class="action-name">下載更新</span>
+          <span class="action-desc">取得其他電腦上傳的最新設定</span>
+        </button>
+        <button class="action" data-cmd="push">
+          <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5a3.5 3.5 0 0 1 .4-6.98 4.6 4.6 0 0 1 8.9 1.18 3 3 0 0 1-.55 5.8"></path><line x1="10" y1="17" x2="10" y2="10.5"></line><polyline points="7,13 10,10 13,13"></polyline></svg>
+          <span class="action-name">上傳變更</span>
+          <span class="action-desc">把這台電腦的修改存回儲存庫</span>
+        </button>
+      </section>
+
+      <div class="confirm" id="confirm" hidden>
+        <p class="confirm-text">確定要把這台電腦的變更上傳到儲存庫嗎?上傳後其他電腦就能下載這份設定。</p>
+        <div class="confirm-buttons">
+          <button class="btn btn-primary" id="confirm-yes">確定上傳</button>
+          <button class="btn btn-ghost" id="confirm-no">取消</button>
+        </div>
+      </div>
+
+      <section class="output" aria-label="執行結果">
+        <div class="output-head">
+          <span class="output-title" id="output-title">執行結果</span>
+          <span class="output-state" id="output-state"></span>
+        </div>
+        <pre class="output-body" id="output-body"><span class="line-placeholder">還沒有輸出 — 從上面選一個動作開始。</span></pre>
+      </section>
+    </div>
+  </body>
+</html>

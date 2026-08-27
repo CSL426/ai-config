@@ -16,6 +16,7 @@ trustedFolders.json
 # Local tool state
 /data/
 /.worktree/
+/.hallmark/
 .antigravitycli/
 .claude/
 .pytest_cache/
@@ -31,3 +32,7 @@ __pycache__/
 /build/
 /dist/
 /*.spec
+
+# GUI frontend
+/gui/node_modules/
+/ai_config/gui_assets/

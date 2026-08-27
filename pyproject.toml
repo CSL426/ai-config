@@ -8,9 +8,15 @@ version = "1.0.25"
 description = "Cross-AI tool configuration manager (Claude Code / Codex / Antigravity)"
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+gui = ["pywebview>=5.0"]
+
 [project.scripts]
 ai-config = "ai_config.cli:console_main"
 acg = "ai_config.cli:console_main"
 
 [tool.setuptools]
 packages = ["ai_config", "ai_config.tools"]
+
+[tool.setuptools.package-data]
+ai_config = ["gui_assets/**/*"]

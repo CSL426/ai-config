@@ -1561,6 +1561,7 @@ def usage() -> None:
     print("  deploy [dir]    Copy managed Claude config into a project's .claude/")
     print("                  --profile <name> reuse a saved selection")
     print("                  --save-as <name> remember this selection")
+    print("  gui             Launch the graphical interface (needs ai-config[gui])")
     print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
     print("  update [version] Install the latest release, or a specific version")
@@ -1652,6 +1653,14 @@ def main(argv: "list[str] | None" = None) -> int:
             f"Run {ENTRYPOINT} setup to configure and verify your data repository."
         )
         return 1
+
+    if cmd == "gui":
+        if len(args) != 1:
+            log_error(f"Usage: {ENTRYPOINT} gui")
+            return 1
+        from .gui import run_gui
+
+        return run_gui()
 
     if cmd == "deploy":
         from .deploy import run_deploy
