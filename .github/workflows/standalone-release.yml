@@ -69,6 +69,9 @@ jobs:
           - os: ubuntu-22.04
             source: dist/ai-config
             asset: ai-config-linux-x86_64
+          - os: ubuntu-22.04-arm
+            source: dist/ai-config
+            asset: ai-config-linux-aarch64
           - os: windows-latest
             source: dist/ai-config.exe
             asset: ai-config-windows-x86_64.exe

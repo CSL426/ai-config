@@ -37,6 +37,7 @@ esac
 
 case "$platform:$architecture" in
     Linux:x86_64|Linux:amd64) asset="ai-config-linux-x86_64" ;;
+    Linux:aarch64|Linux:arm64) asset="ai-config-linux-aarch64" ;;
     Darwin:x86_64|Darwin:amd64) asset="ai-config-macos-x86_64" ;;
     Darwin:arm64|Darwin:aarch64) asset="ai-config-macos-arm64" ;;
     *) fail "Unsupported platform: $platform $architecture" ;;
