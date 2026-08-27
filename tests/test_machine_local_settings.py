@@ -16,6 +16,7 @@ def test_filter_drops_every_machine_local_key() -> None:
     text = json.dumps(
         {
             "model": "opus",
+            "modelSettings": {"opus": {"effortLevel": "high"}},
             "theme": "dark",
             "permissions": {"allow": ["Bash"]},
             "statusLine": {"command": "bash /home/one/statusline.sh"},
@@ -25,7 +26,18 @@ def test_filter_drops_every_machine_local_key() -> None:
 
     filtered = json.loads(filter_claude_settings(text))
 
-    assert filtered == {"model": "opus", "theme": "dark"}
+    assert filtered == {"theme": "dark"}
+
+
+def test_merge_keeps_the_model_the_machine_is_using() -> None:
+    source = json.dumps({"theme": "dark"})
+    target = json.dumps({"theme": "light", "model": "claude-fable-5"})
+
+    merged = json.loads(merge_claude_settings(source, target))
+
+    # The model is switched in the UI; apply must not reset that choice.
+    assert merged["model"] == "claude-fable-5"
+    assert merged["theme"] == "dark"
 
 
 def test_merge_keeps_the_target_machine_values() -> None:

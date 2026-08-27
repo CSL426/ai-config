@@ -88,13 +88,15 @@ worth repeating can be saved with `--save-as <name>` and replayed later with
 
 ## Gotchas
 
-- **`permissions`, `statusLine`, and `env` are machine-local and never synced**
+- **`permissions`, `statusLine`, `env`, `model`, and `modelSettings` are
+  machine-local and never synced**
   (plus `trustedWorkspaces` on agy). Each machine keeps its own allowlist,
   status-line path, and environment, so a difference there is expected, not
   drift. `env` matters most: Claude Code sets those variables without a shell,
   so a value like `CODEX_HOME=~/.codex` is not expanded and only an absolute
   path works — which cannot be portable. A machine with no `env` block keeps
-  none.
+  none. `model` is switched freely in the UI, so syncing it would undo the
+  current choice on every apply.
 - **A remote that cannot be pushed to is still a valid setup.** `setup`
   requires read access and treats missing push access as a warning, leaving
   the machine able to run `status`, `pull`, and `apply`. `push` then refuses

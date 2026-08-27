@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.22 - 2026-08-27
+## 1.0.23 - 2026-08-27
 
 - Accept a data repository the machine can read but not write to. `setup`
   previously verified push access and aborted when it failed, so a machine with
@@ -8,7 +8,9 @@
   `pull`, and `apply` only ever read. Read access is now the requirement and a
   failed push is a warning; `push` checks up front and explains the situation
   rather than failing against the remote.
-- Treat `statusLine` and `env` as machine-local, alongside `permissions`. Both
+- Treat `statusLine`, `env`, `model`, and `modelSettings` as machine-local,
+  alongside `permissions`. `model` is switched freely in the UI, so syncing it
+  would undo the current choice on every apply. Both
   name absolute paths belonging to one machine, and a machine with no `env`
   block no longer inherits another's. Claude Code sets those variables without
   a shell, so `CODEX_HOME=~/.codex` is not expanded and only an absolute path
