@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.25 - 2026-08-27
+
+- Stop reporting the live Antigravity `plugins/` tree as pending deletions.
+  `status` listed every file there as "apply removes" when the repository had
+  no `plugins/` of its own, but `apply` mirrors that directory only when the
+  repository tracks it and otherwise leaves the live tree alone. Claude is
+  unchanged: it really does delete a managed directory the repository dropped.
+
 ## 1.0.24 - 2026-08-27
 
 - Stop re-migrating legacy Antigravity skills on every `apply`. The merge from
