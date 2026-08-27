@@ -131,3 +131,29 @@ def test_apply_agy_migrates_expected_legacy_unix_link(tmp_path: Path) -> None:
     assert cli_skills.resolve() == canonical.resolve()
     assert (canonical / "hand-installed/SKILL.md").is_file()
     assert (canonical / "demo/SKILL.md").is_file()
+
+
+def test_apply_agy_does_not_resurrect_deleted_legacy_skills(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "agy/settings.json", '{"theme":"neon"}\n')
+    legacy = home_dir / ".gemini/antigravity/skills"
+    write(legacy / "hand-installed/SKILL.md", "hand installed\n")
+
+    first = run_ai_config(repo_dir, home_dir, "apply", "agy")
+    assert first.returncode == 0, first.stderr + first.stdout
+    canonical = home_dir / ".gemini/config/skills"
+    assert (canonical / "hand-installed/SKILL.md").is_file()
+
+    # The user deletes a skill they no longer want; the legacy tree still has
+    # it, so without a marker the next apply would merge it straight back.
+    shutil.rmtree(canonical / "hand-installed")
+
+    second = run_ai_config(repo_dir, home_dir, "apply", "agy")
+
+    assert second.returncode == 0, second.stderr + second.stdout
+    assert not (canonical / "hand-installed").exists()
+    assert "Migrated legacy Antigravity" not in second.stdout

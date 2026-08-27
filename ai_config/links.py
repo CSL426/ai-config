@@ -14,6 +14,7 @@ from .paths import (
     AGY_CANONICAL_SKILLS,
     AGY_HOME,
     AGY_LEGACY_SKILLS,
+    AGY_SKILLS_MIGRATION_MARKER,
     EXCLUDED_FILES,
     NATIVE_WINDOWS,
     WINDOWS_MODE,
@@ -286,10 +287,16 @@ def _copy_owned_path(source: Path, destination: Path) -> str:
 def prepare_agy_canonical_skills() -> None:
     canonical = AGY_CANONICAL_SKILLS
     legacy = AGY_LEGACY_SKILLS
-    if not legacy.is_dir() or is_reparse_point(legacy):
-        canonical.mkdir(parents=True, exist_ok=True)
+    marker = canonical / AGY_SKILLS_MIGRATION_MARKER
+    canonical.mkdir(parents=True, exist_ok=True)
+    # Without the marker every apply re-merges the legacy tree, so skills the
+    # user deleted on purpose reappear on the next run.
+    if marker.is_file() or not legacy.is_dir() or is_reparse_point(legacy):
         return
-    if merge_missing_tree(legacy, canonical, "legacy Antigravity"):
+    migrated = merge_missing_tree(legacy, canonical, "legacy Antigravity")
+    assert_safe_write_target(marker)
+    marker.write_text("migrated\n", encoding="utf-8", newline="\n")
+    if migrated:
         log_warn(f"Migrated legacy Antigravity skills into: {canonical}")
 
 
