@@ -347,3 +347,20 @@ def test_quoted_description_yields_valid_short_description(tmp_path: Path) -> No
     assert result.returncode == 0, result.stderr + result.stdout
     skill = (home_dir / ".agents/skills/quoted-agent/SKILL.md").read_text(encoding="utf-8")
     assert "  short-description: 'Anti-slop skill for pages'\n" in skill
+
+
+def test_status_does_not_report_agy_plugins_apply_will_not_touch(
+    tmp_path: Path,
+) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "agy/settings.json", '{"theme":"neon"}\n')
+    live_plugin = home_dir / ".gemini/antigravity-cli/plugins/marketplaces/x/a.json"
+    write(live_plugin, "{}\n")
+
+    result = run_ai_config(repo_dir, home_dir, "status", "agy")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    # agy mirrors plugins/ only when the repo tracks it; with no repo copy the
+    # live tree is left alone, so status must not announce it as a deletion.
+    assert "apply removes" not in result.stdout
+    assert live_plugin.is_file()
