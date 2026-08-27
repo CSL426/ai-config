@@ -26,7 +26,12 @@ from ..safety import assert_managed_paths_safe
 # statusLine embeds an absolute script path, and env carries paths like
 # CODEX_HOME that name a specific home directory. Claude Code sets env vars
 # without a shell, so "~" is not expanded and a portable form does not exist.
-_MACHINE_LOCAL_SETTINGS = frozenset({"permissions", "statusLine", "env"})
+# model and modelSettings are switched freely in the UI, so syncing them would
+# undo the user's current choice on every apply; they are left to each machine
+# and kept out of the repository.
+_MACHINE_LOCAL_SETTINGS = frozenset(
+    {"permissions", "statusLine", "env", "model", "modelSettings"}
+)
 _SETTINGS_LABEL = "Claude settings.json"
 
 

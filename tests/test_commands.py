@@ -138,7 +138,7 @@ def test_init_agy_excludes_trusted_workspaces(tmp_path: Path) -> None:
         home_dir / ".gemini/antigravity-cli/settings.json",
         json.dumps(
             {
-                "model": "live",
+                "theme": "live",
                 "trustedWorkspaces": [r"G:\我的雲端硬碟\Personal\Resume"],
             },
             ensure_ascii=False,
@@ -149,7 +149,7 @@ def test_init_agy_excludes_trusted_workspaces(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert json.loads((repo_dir / "agy/settings.json").read_text()) == {
-        "model": "live"
+        "theme": "live"
     }
 
 
@@ -157,19 +157,19 @@ def test_apply_agy_preserves_live_trusted_workspaces(tmp_path: Path) -> None:
     repo_dir, home_dir = make_full_repo(tmp_path)
     write(
         repo_dir / "agy/settings.json",
-        '{"model":"repo","trustedWorkspaces":["/repo/path"]}\n',
+        '{"theme":"repo","trustedWorkspaces":["/repo/path"]}\n',
     )
     live_settings = home_dir / ".gemini/antigravity-cli/settings.json"
     write(
         live_settings,
-        '{"model":"live","trustedWorkspaces":["G:\\\\local"]}\n',
+        '{"theme":"live","trustedWorkspaces":["G:\\\\local"]}\n',
     )
 
     result = run_ai_config(repo_dir, home_dir, "apply", "agy")
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert json.loads(live_settings.read_text()) == {
-        "model": "repo",
+        "theme": "repo",
         "trustedWorkspaces": [r"G:\local"],
     }
 
@@ -180,25 +180,25 @@ def test_apply_agy_fresh_copy_excludes_repo_trusted_workspaces(
     repo_dir, home_dir = make_full_repo(tmp_path)
     write(
         repo_dir / "agy/settings.json",
-        '{"model":"repo","trustedWorkspaces":["/repo/path"]}\n',
+        '{"theme":"repo","trustedWorkspaces":["/repo/path"]}\n',
     )
     live_settings = home_dir / ".gemini/antigravity-cli/settings.json"
 
     result = run_ai_config(repo_dir, home_dir, "apply", "agy")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert json.loads(live_settings.read_text()) == {"model": "repo"}
+    assert json.loads(live_settings.read_text()) == {"theme": "repo"}
 
 
 def test_status_agy_ignores_trusted_workspaces(tmp_path: Path) -> None:
     repo_dir, home_dir = make_full_repo(tmp_path)
     write(
         repo_dir / "agy/settings.json",
-        '{"model":"same","trustedWorkspaces":["/repo/path"]}\n',
+        '{"theme":"same","trustedWorkspaces":["/repo/path"]}\n',
     )
     write(
         home_dir / ".gemini/antigravity-cli/settings.json",
-        '{"model":"same","trustedWorkspaces":["G:\\\\local"]}\n',
+        '{"theme":"same","trustedWorkspaces":["G:\\\\local"]}\n',
     )
 
     result = run_ai_config(repo_dir, home_dir, "status", "agy")
@@ -212,14 +212,14 @@ def test_init_agy_excludes_permissions(tmp_path: Path) -> None:
     repo_dir, home_dir = make_full_repo(tmp_path)
     write(
         home_dir / ".gemini/antigravity-cli/settings.json",
-        '{"model":"live","permissions":{"allow":["command(ls)"]}}\n',
+        '{"theme":"live","permissions":{"allow":["command(ls)"]}}\n',
     )
 
     result = run_ai_config(repo_dir, home_dir, "init", "agy")
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert json.loads((repo_dir / "agy/settings.json").read_text()) == {
-        "model": "live"
+        "theme": "live"
     }
 
 
@@ -228,14 +228,14 @@ def test_init_claude_excludes_permissions(tmp_path: Path) -> None:
     write(home_dir / ".claude/CLAUDE.md", "live instructions\n")
     write(
         home_dir / ".claude/settings.json",
-        '{"model":"live","permissions":{"allow":["Bash(rsync -a *)"]}}\n',
+        '{"theme":"live","permissions":{"allow":["Bash(rsync -a *)"]}}\n',
     )
 
     result = run_ai_config(repo_dir, home_dir, "init", "claude")
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert json.loads((repo_dir / "claude/settings.json").read_text()) == {
-        "model": "live"
+        "theme": "live"
     }
 
 
@@ -243,19 +243,19 @@ def test_apply_claude_preserves_live_permissions(tmp_path: Path) -> None:
     repo_dir, home_dir = make_full_repo(tmp_path)
     write(
         repo_dir / "claude/settings.json",
-        '{"model":"repo","permissions":{"allow":["/repo/rule"]}}\n',
+        '{"theme":"repo","permissions":{"allow":["/repo/rule"]}}\n',
     )
     live_settings = home_dir / ".claude/settings.json"
     write(
         live_settings,
-        '{"model":"live","permissions":{"allow":["Bash(ls)"]}}\n',
+        '{"theme":"live","permissions":{"allow":["Bash(ls)"]}}\n',
     )
 
     result = run_ai_config(repo_dir, home_dir, "apply", "claude")
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert json.loads(live_settings.read_text()) == {
-        "model": "repo",
+        "theme": "repo",
         "permissions": {"allow": ["Bash(ls)"]},
     }
 
@@ -266,14 +266,14 @@ def test_apply_claude_fresh_copy_excludes_repo_permissions(
     repo_dir, home_dir = make_full_repo(tmp_path)
     write(
         repo_dir / "claude/settings.json",
-        '{"model":"repo","permissions":{"allow":["/repo/rule"]}}\n',
+        '{"theme":"repo","permissions":{"allow":["/repo/rule"]}}\n',
     )
     live_settings = home_dir / ".claude/settings.json"
 
     result = run_ai_config(repo_dir, home_dir, "apply", "claude")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert json.loads(live_settings.read_text()) == {"model": "repo"}
+    assert json.loads(live_settings.read_text()) == {"theme": "repo"}
 
 
 def test_status_claude_ignores_permissions(tmp_path: Path) -> None:
@@ -281,11 +281,11 @@ def test_status_claude_ignores_permissions(tmp_path: Path) -> None:
     write(home_dir / ".claude/CLAUDE.md", "repo instructions\n")
     write(
         repo_dir / "claude/settings.json",
-        '{"model":"same","permissions":{"allow":["/repo/rule"]}}\n',
+        '{"theme":"same","permissions":{"allow":["/repo/rule"]}}\n',
     )
     write(
         home_dir / ".claude/settings.json",
-        '{"model":"same","permissions":{"allow":["Bash(ls)"]}}\n',
+        '{"theme":"same","permissions":{"allow":["Bash(ls)"]}}\n',
     )
 
     result = run_ai_config(repo_dir, home_dir, "status", "claude")
@@ -307,7 +307,7 @@ def test_status_agy_rejects_repo_settings_symlink_before_read(
     settings.symlink_to(external)
     write(
         home_dir / ".gemini/antigravity-cli/settings.json",
-        '{"model":"live"}\n',
+        '{"theme":"live"}\n',
     )
 
     result = run_ai_config(repo_dir, home_dir, "status", "agy")
