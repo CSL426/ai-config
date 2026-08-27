@@ -17,11 +17,20 @@ from .config import (
     default_data_repo,
     save_data_repo,
 )
-from .console import log_error, log_info, log_success
+from .console import log_error, log_info, log_success, log_warn
 
 
 class SetupError(RuntimeError):
     """Raised when repository setup cannot be completed safely."""
+
+
+class PushAccessError(SetupError):
+    """Raised when the remote is readable but refuses a write.
+
+    A subclass of SetupError so existing handlers still catch it, but setup
+    treats it as a warning: a machine that can only pull still runs status,
+    pull, and apply.
+    """
 
 
 def _redact_git_output(value: str) -> str:
@@ -141,6 +150,20 @@ def _remote_refs(data_dir: Path, remote_name: str) -> str:
     return "\n".join(sorted(output.splitlines()))
 
 
+def verify_read_access(data_dir: Path, remote_name: str = "origin") -> None:
+    """Fetching is the one hard requirement: without it nothing can sync."""
+    result = _run_git(
+        "ls-remote",
+        "--heads",
+        remote_name,
+        cwd=data_dir,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = _git_error_detail(result, "could not reach the remote")
+        raise SetupError(f"Read access verification failed: {detail}")
+
+
 def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
     local_head = _run_git(
         "rev-parse",
@@ -160,7 +183,7 @@ def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
     )
     if result.returncode != 0:
         detail = _git_error_detail(result, "permission denied")
-        raise SetupError(f"Push permission verification failed: {detail}")
+        raise PushAccessError(f"Push permission verification failed: {detail}")
 
     verification_error = None
     try:
@@ -248,6 +271,7 @@ def setup_repository(
     replace_remote: bool = False,
 ) -> Path:
     data_dir = data_dir.expanduser().absolute()
+    read_only = False
     repository = _clone_or_open(data_dir, repo_url, remote_name)
     previous_remote = _remote_url(repository, remote_name)
     remote_changed = repo_url is not None and previous_remote != repo_url
@@ -265,11 +289,20 @@ def setup_repository(
                 "claude/ directory: "
                 f"{repository}"
             )
-        log_info(
-            f"Verifying push access to remote {remote_name!r} "
-            "with a temporary ref"
-        )
-        verify_push_access(repository, remote_name)
+        log_info(f"Verifying access to remote {remote_name!r}")
+        verify_read_access(repository, remote_name)
+        log_success("Read access verified")
+        try:
+            verify_push_access(repository, remote_name)
+        except PushAccessError as exc:
+            read_only = True
+            log_warn(str(exc))
+            log_warn(
+                "No push access; configuring this machine as read-only. "
+                "status, pull, and apply work; push does not."
+            )
+        else:
+            log_success("Push access verified; temporary ref was removed")
         saved_path = save_data_repo(repository)
     except Exception:
         if remote_changed:
@@ -292,7 +325,8 @@ def setup_repository(
                 )
         raise
     log_success(f"Data repository configured: {repository}")
-    log_success("Push access verified; temporary ref was removed")
+    if read_only:
+        log_warn("This machine is read-only; acg push is not available here")
     log_info(f"Saved configuration: {saved_path}")
     return repository
 

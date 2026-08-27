@@ -22,7 +22,11 @@ from ..paths import (
 )
 from ..safety import assert_managed_paths_safe
 
-_MACHINE_LOCAL_SETTINGS = frozenset({"permissions"})
+# Values that are per-machine by nature: permission allowlists grow locally,
+# statusLine embeds an absolute script path, and env carries paths like
+# CODEX_HOME that name a specific home directory. Claude Code sets env vars
+# without a shell, so "~" is not expanded and a portable form does not exist.
+_MACHINE_LOCAL_SETTINGS = frozenset({"permissions", "statusLine", "env"})
 _SETTINGS_LABEL = "Claude settings.json"
 
 

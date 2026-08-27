@@ -88,9 +88,17 @@ worth repeating can be saved with `--save-as <name>` and replayed later with
 
 ## Gotchas
 
-- **`permissions` is machine-local and never synced** (plus `trustedWorkspaces`
-  on agy). Each machine keeps its own allowlist, so a difference there is
-  expected, not drift.
+- **`permissions`, `statusLine`, and `env` are machine-local and never synced**
+  (plus `trustedWorkspaces` on agy). Each machine keeps its own allowlist,
+  status-line path, and environment, so a difference there is expected, not
+  drift. `env` matters most: Claude Code sets those variables without a shell,
+  so a value like `CODEX_HOME=~/.codex` is not expanded and only an absolute
+  path works — which cannot be portable. A machine with no `env` block keeps
+  none.
+- **A remote that cannot be pushed to is still a valid setup.** `setup`
+  requires read access and treats missing push access as a warning, leaving
+  the machine able to run `status`, `pull`, and `apply`. `push` then refuses
+  up front instead of failing against the remote.
 - **Codex `[projects.*]` and top-level `notify` are preserved** on the target
   machine; apply updates only general settings.
 - **`push` refuses to run with pre-staged changes** so it cannot commit an

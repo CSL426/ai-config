@@ -684,6 +684,24 @@ def _run_repo_git(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _remote_is_read_only() -> bool:
+    """Whether the remote refuses writes, checked without changing it.
+
+    A dry-run push asks the server for a decision but sends no objects and
+    creates no ref, so this is safe to run before every push.
+    """
+    result = _run_repo_git(
+        "push", "--dry-run", "--porcelain", "origin", "HEAD:refs/heads/main"
+    )
+    if result.returncode == 0:
+        return False
+    detail = (result.stderr + result.stdout).lower()
+    return any(
+        marker in detail
+        for marker in ("denied", "permission", "403", "unauthorized", "read-only")
+    )
+
+
 def _git_failure(action: str, result: subprocess.CompletedProcess[str]) -> None:
     detail = result.stderr.strip() or result.stdout.strip() or "unknown Git error"
     detail = _GIT_URL_CREDENTIALS.sub(r"\1***@", detail)
@@ -1440,6 +1458,15 @@ def _commit_and_push(
 
 def do_push(tool: str) -> int:
     log_header("Push local configuration")
+    if _remote_is_read_only():
+        log_error(
+            "This machine has no push access to the data repository."
+        )
+        log_info(
+            "Configuration set up here is read-only: status, pull, and apply "
+            "work, but push needs a credential that can write to the remote."
+        )
+        return 1
     selected = _selected_tools(tool)
     try:
         preflight = _push_preflight(selected)
