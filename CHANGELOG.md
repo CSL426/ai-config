@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- GUI: add a skill-packaging section — check the shared skills to package,
+  build the Claude-Desktop-format ZIPs into ~/Downloads, and generate a
+  copy-paste installation message for desktop AI assistants that cannot
+  install files directly.
 - Add an experimental `acg gui` command: a pywebview window aimed at
   non-CLI users, covering status/apply/pull/push with a GUI-side push
   confirmation. The frontend lives in `gui/` (Vite + TypeScript, built into

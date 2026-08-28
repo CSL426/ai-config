@@ -6,6 +6,7 @@ These tests monkeypatch ai_config.__main__.main so no repo is needed.
 """
 
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -113,6 +114,49 @@ def test_run_is_serialized_by_lock(
     first.join(timeout=5)
     assert busy["code"] == 1
     assert "另一個動作" in busy["output"]
+
+
+def test_package_skills_rejects_bad_input(api: GuiApi) -> None:
+    assert api.package_skills("not-a-list")["code"] == 1
+    result = api.package_skills([])
+    assert result["code"] == 1
+    assert result["zips"] == []
+
+
+def test_package_skills_packages_each_and_reports(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import ai_config.gui as gui_mod
+    import ai_config.package as package_mod
+
+    def fake_package(name, out_dir):
+        if name == "missing":
+            raise package_mod.SkillNotFoundError(name)
+        return out_dir / f"{name}.zip"
+
+    monkeypatch.setattr(package_mod, "package_skill", fake_package)
+    monkeypatch.setattr(gui_mod, "_package_output_dir", lambda: tmp_path)
+
+    result = api.package_skills(["wiki888", "missing"])
+    assert result["code"] == 1
+    assert result["zips"] == [str(tmp_path / "wiki888.zip")]
+    assert "✓ 已打包" in result["output"]
+    assert "✗ 找不到技能:missing" in result["output"]
+
+    ok = api.package_skills(["wiki888"])
+    assert ok["code"] == 0
+    assert ok["zips"] == [str(tmp_path / "wiki888.zip")]
+
+
+def test_package_output_dir_falls_back_to_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from ai_config.gui import _package_output_dir
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    assert _package_output_dir() == tmp_path
+    (tmp_path / "Downloads").mkdir()
+    assert _package_output_dir() == tmp_path / "Downloads"
 
 
 def test_get_info_reports_version_and_tools(api: GuiApi) -> None:

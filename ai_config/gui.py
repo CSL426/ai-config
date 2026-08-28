@@ -39,6 +39,47 @@ class GuiApi:
             "tools": list(ALL_TOOLS),
         }
 
+    def list_skills(self) -> dict:
+        from .package import available_skills
+
+        return {"skills": available_skills()}
+
+    def package_skills(self, names: "list[str]") -> dict:
+        from .package import SkillNotFoundError, package_skill
+
+        if not isinstance(names, list) or not all(
+            isinstance(n, str) for n in names
+        ):
+            return {"code": 1, "output": "✗ 無效的技能清單", "zips": []}
+        if not names:
+            return {"code": 1, "output": "⚠ 還沒有勾選任何技能", "zips": []}
+        if not self._lock.acquire(blocking=False):
+            return {
+                "code": 1,
+                "output": "⚠ 另一個動作正在執行中,請稍候再試。",
+                "zips": [],
+            }
+        try:
+            out_dir = _package_output_dir()
+            zips: list[str] = []
+            lines: list[str] = []
+            code = 0
+            for name in names:
+                try:
+                    zip_path = package_skill(name, out_dir)
+                except SkillNotFoundError:
+                    lines.append(f"✗ 找不到技能:{name}")
+                    code = 1
+                except OSError as exc:
+                    lines.append(f"✗ 打包 {name} 失敗:{exc}")
+                    code = 1
+                else:
+                    zips.append(str(zip_path))
+                    lines.append(f"✓ 已打包:{zip_path}")
+            return {"code": code, "output": "\n".join(lines) + "\n", "zips": zips}
+        finally:
+            self._lock.release()
+
     def run(self, cmd: str, tool: str = "all") -> dict:
         if cmd not in _ALLOWED_COMMANDS:
             return {"code": 1, "output": f"✗ Command not allowed from GUI: {cmd}"}
@@ -71,6 +112,11 @@ class GuiApi:
         finally:
             sys.stdin = stdin_backup
         return {"code": code, "output": _ANSI_RE.sub("", buf.getvalue())}
+
+
+def _package_output_dir() -> Path:
+    downloads = Path.home() / "Downloads"
+    return downloads if downloads.is_dir() else Path.home()
 
 
 def run_gui() -> int:

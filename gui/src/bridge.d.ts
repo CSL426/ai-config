@@ -13,9 +13,21 @@ export interface RunResult {
   output: string;
 }
 
+export interface SkillList {
+  skills: string[];
+}
+
+export interface PackageResult {
+  code: number;
+  output: string;
+  zips: string[];
+}
+
 export interface AcgApi {
   get_info(): Promise<AcgInfo>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
+  list_skills(): Promise<SkillList>;
+  package_skills(names: string[]): Promise<PackageResult>;
 }
 
 declare global {
