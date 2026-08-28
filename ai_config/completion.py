@@ -13,6 +13,7 @@ COMMANDS = (
     "package",
     "reset",
     "deploy",
+    "share",
     "gui",
     "skill",
     "completion",

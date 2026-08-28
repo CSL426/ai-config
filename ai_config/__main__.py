@@ -1561,6 +1561,8 @@ def usage() -> None:
     print("  deploy [dir]    Copy managed Claude config into a project's .claude/")
     print("                  --profile <name> reuse a saved selection")
     print("                  --save-as <name> remember this selection")
+    print("  share <skill>   Copy a Claude skill (or plugin skill) into claude/shared/")
+    print("                  --to <both|codex|agy> pick the target tools (default both)")
     print("  gui             Launch the graphical interface (needs ai-config[gui])")
     print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
@@ -1653,6 +1655,31 @@ def main(argv: "list[str] | None" = None) -> int:
             f"Run {ENTRYPOINT} setup to configure and verify your data repository."
         )
         return 1
+
+    if cmd == "share":
+        share_usage = f"Usage: {ENTRYPOINT} share <skill> [--to both|codex|agy]"
+        rest, name, target = args[1:], None, "both"
+        while rest:
+            token = rest.pop(0)
+            if token == "--to":
+                if not rest:
+                    log_error(f"--to requires a target\n{share_usage}")
+                    return 1
+                target = rest.pop(0)
+            elif token.startswith("--"):
+                log_error(f"Unknown option: {token}\n{share_usage}")
+                return 1
+            elif name is None:
+                name = token
+            else:
+                log_error(share_usage)
+                return 1
+        if name is None:
+            log_error(share_usage)
+            return 1
+        from .share import run_share
+
+        return run_share(name, target)
 
     if cmd == "gui":
         if len(args) != 1:
