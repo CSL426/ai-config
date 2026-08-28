@@ -254,6 +254,110 @@ body {
   line-height: 1.5;
 }
 
+/* ── 技能打包 ─────────────────────────── */
+
+.package {
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+}
+
+.package-summary {
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--color-ink);
+  border-radius: var(--radius-md);
+}
+
+.package-summary:hover {
+  background: var(--color-accent-soft);
+}
+
+.package-summary:focus-visible {
+  outline: 0.125rem solid var(--color-focus);
+  outline-offset: -0.125rem;
+}
+
+.package-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border-block-start: 1px solid var(--color-paper-3);
+}
+
+.package-hint {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.package-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(13rem, 100%), 1fr));
+  gap: var(--space-xs) var(--space-md);
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.skill-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.875rem;
+  cursor: pointer;
+  padding: var(--space-xs) 0;
+}
+
+.skill-item input {
+  inline-size: 1rem;
+  block-size: 1rem;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.skill-item input:focus-visible {
+  outline: 0.125rem solid var(--color-focus);
+  outline-offset: 0.125rem;
+}
+
+.package-buttons {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.package-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: flex-start;
+}
+
+.package-result[hidden] {
+  display: none;
+}
+
+.package-message {
+  inline-size: 100%;
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-console-bg);
+  color: var(--color-console-ink);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  padding: var(--space-sm);
+  resize: vertical;
+}
+
+.package-message:focus-visible {
+  outline: 0.125rem solid var(--color-focus);
+  outline-offset: 0.125rem;
+}
+
 /* ── push 確認列 ──────────────────────── */
 
 .confirm {

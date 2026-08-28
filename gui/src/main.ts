@@ -143,6 +143,106 @@ confirmNo.addEventListener("click", () => {
   confirmBox.hidden = true;
 });
 
+// ── 技能打包 ───────────────────────────
+
+const skillList = $("#skill-list");
+const skillAll = $<HTMLButtonElement>("#skill-all");
+const skillNone = $<HTMLButtonElement>("#skill-none");
+const skillPackage = $<HTMLButtonElement>("#skill-package");
+const packageResult = $("#package-result");
+const packageMessage = $<HTMLTextAreaElement>("#package-message");
+const packageCopy = $<HTMLButtonElement>("#package-copy");
+
+function skillCheckboxes(): HTMLInputElement[] {
+  return Array.from(
+    skillList.querySelectorAll<HTMLInputElement>("input[type=checkbox]"),
+  );
+}
+
+function renderSkills(skills: string[]): void {
+  skillList.replaceChildren();
+  if (skills.length === 0) {
+    const p = document.createElement("p");
+    p.className = "package-hint";
+    p.textContent = "儲存庫裡沒有可打包的共用技能。";
+    skillList.append(p);
+    return;
+  }
+  for (const name of skills) {
+    const label = document.createElement("label");
+    label.className = "skill-item";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = name;
+    const text = document.createElement("span");
+    text.textContent = name;
+    label.append(box, text);
+    skillList.append(label);
+  }
+}
+
+function installMessage(zips: string[]): string {
+  const paths = zips.map((z) => `- ${z}`).join("\n");
+  return [
+    "請幫我安裝以下 AI 技能(skill),ZIP 檔在這些路徑:",
+    paths,
+    "",
+    "請解壓縮每個 ZIP,把裡面的技能資料夾放進你的技能目錄",
+    "(Claude 是 ~/.claude/skills/,Codex 是 ~/.codex/skills/),",
+    "完成後列出已安裝的技能名稱讓我確認。",
+  ].join("\n");
+}
+
+skillAll.addEventListener("click", () => {
+  for (const box of skillCheckboxes()) box.checked = true;
+});
+skillNone.addEventListener("click", () => {
+  for (const box of skillCheckboxes()) box.checked = false;
+});
+
+skillPackage.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running) return;
+  const selected = skillCheckboxes()
+    .filter((box) => box.checked)
+    .map((box) => box.value);
+  outputTitle.textContent = "打包技能";
+  const result = await bridge.package_skills(selected);
+  renderOutput(result.output);
+  outputState.textContent = result.code === 0 ? "完成" : "有問題";
+  outputState.className =
+    result.code === 0 ? "output-state is-ok" : "output-state is-fail";
+  if (result.zips.length > 0) {
+    packageMessage.value = installMessage(result.zips);
+    packageResult.hidden = false;
+  }
+});
+
+packageCopy.addEventListener("click", async () => {
+  packageMessage.select();
+  try {
+    await navigator.clipboard.writeText(packageMessage.value);
+    packageCopy.textContent = "已複製!";
+  } catch {
+    // pywebview 某些平臺不開放 clipboard API;退回選取讓使用者 Ctrl+C
+    packageCopy.textContent = "請按 Ctrl+C 複製";
+  }
+  setTimeout(() => {
+    packageCopy.textContent = "複製說明";
+  }, 2000);
+});
+
+async function loadSkills(): Promise<void> {
+  const bridge = api();
+  if (!bridge) return;
+  try {
+    const result = await bridge.list_skills();
+    renderSkills(result.skills);
+  } catch {
+    renderSkills([]);
+  }
+}
+
 async function loadInfo(): Promise<void> {
   const bridge = api();
   if (!bridge) return;
@@ -156,11 +256,14 @@ async function loadInfo(): Promise<void> {
   }
 }
 
-if (window.pywebview) {
+function boot(): void {
   void loadInfo();
+  void loadSkills();
+}
+
+if (window.pywebview) {
+  boot();
 } else {
-  window.addEventListener("pywebviewready", () => void loadInfo(), {
-    once: true,
-  });
+  window.addEventListener("pywebviewready", boot, { once: true });
   repoEl.textContent = "等待後端連線…";
 }

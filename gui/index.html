@@ -49,6 +49,24 @@
         </button>
       </section>
 
+      <details class="package" id="package">
+        <summary class="package-summary">打包技能給桌面版(Claude / Codex)</summary>
+        <div class="package-body">
+          <p class="package-hint">勾選要打包的技能,會做成 ZIP 檔並附上一段可以直接貼給桌面版 AI 的安裝說明。</p>
+          <div class="package-list" id="skill-list" role="group" aria-label="可打包的技能"></div>
+          <div class="package-buttons">
+            <button class="btn btn-ghost" id="skill-all">全選</button>
+            <button class="btn btn-ghost" id="skill-none">清除</button>
+            <button class="btn btn-primary" id="skill-package">打包選取的技能</button>
+          </div>
+          <div class="package-result" id="package-result" hidden>
+            <p class="package-hint">打包完成!複製下面這段話,貼給你的桌面版 AI(Claude Desktop 也可以直接在 設定 &gt; Customize &gt; Skills 上傳 ZIP):</p>
+            <textarea class="package-message" id="package-message" readonly rows="6"></textarea>
+            <button class="btn btn-primary" id="package-copy">複製說明</button>
+          </div>
+        </div>
+      </details>
+
       <div class="confirm" id="confirm" hidden>
         <p class="confirm-text">確定要把這台電腦的變更上傳到儲存庫嗎?上傳後其他電腦就能下載這份設定。</p>
         <div class="confirm-buttons">
