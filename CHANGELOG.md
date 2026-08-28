@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `acg share <skill> [--to both|codex|agy]`: copy a Claude-side skill —
+  from ~/.claude/skills/ or an installed plugin's marketplace copy — into
+  claude/shared/ so `apply` projects it to the other CLIs, replacing the
+  manual copy step.
 - GUI: add a skill-packaging section — check the shared skills to package,
   build the Claude-Desktop-format ZIPs into ~/Downloads, and generate a
   copy-paste installation message for desktop AI assistants that cannot
