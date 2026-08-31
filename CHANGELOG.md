@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.31 - 2026-08-31
+
+- 修正繁中 Windows(cp950)上 git 輸出的解碼錯誤:diff 內含 UTF-8 中文時
+  subprocess 讀取炸掉,push 誤判「沒有 staged 變更」。所有 git 包裝呼叫
+  明確指定 UTF-8 解碼(errors=replace)。
+
 ## 1.0.30 - 2026-08-31
 
 - push 的空白字元檢查(行尾空白、檔尾空行)降級為警告:同步內容含第三方

@@ -11,21 +11,21 @@
   --color-paper-3: oklch(91% 0.011 95);
   --color-card: oklch(100% 0 0);
   --color-ink: oklch(30% 0.011 95);
-  --color-ink-soft: oklch(56% 0.014 95);
-  --color-accent: oklch(58% 0.115 35);
+  --color-ink-soft: oklch(52% 0.014 95);
+  --color-accent: oklch(56% 0.115 35);
   --color-accent-strong: oklch(49% 0.12 35);
   --color-accent-soft: oklch(95% 0.018 35);
   --color-accent-ink: oklch(98% 0.005 95);
-  --color-success: oklch(58% 0.08 135);
+  --color-success: oklch(52% 0.08 135);
   --color-success-soft: oklch(94% 0.025 135);
-  --color-warn: oklch(63% 0.1 80);
+  --color-warn: oklch(52% 0.1 80);
   --color-warn-soft: oklch(96% 0.03 85);
   --color-danger: oklch(54% 0.14 30);
   --color-focus: oklch(58% 0.13 35);
   --color-console-bg: oklch(96% 0.008 95);
   --color-console-ink: oklch(42% 0.012 95);
-  --color-console-dim: oklch(72% 0.014 95);
-  --color-console-head: oklch(55% 0.08 65);
+  --color-console-dim: oklch(52% 0.014 95);
+  --color-console-head: oklch(54% 0.08 65);
   --shadow-selection: 0 0.0625rem 0.125rem oklch(30% 0.011 95 / 0.1);
 
   --font-display: "Noto Serif TC", "Songti TC", Georgia, serif;

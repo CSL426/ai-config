@@ -149,6 +149,8 @@ def _run_repo_git(
         ["git", "-C", str(repo_dir or SCRIPT_DIR), *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
