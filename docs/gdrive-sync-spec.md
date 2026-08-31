@@ -68,10 +68,14 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 
 - Scope 僅 `https://www.googleapis.com/auth/drive.appdata`,不得多要。
 - 流程:系統瀏覽器 + loopback redirect(`http://127.0.0.1:<隨機port>`)+ PKCE
-  (S256)。不使用 client secret。
-- Client ID 來源順序:環境變數 `AI_CONFIG_GDRIVE_CLIENT_ID` → build 時注入的常數
-  (release workflow 從 GitHub secret 注入;公開 repo 原始碼中該常數為空字串,
-  為空時報「此建置未包含 Google 登入,請設定環境變數」)。
+  (S256)。
+- **client secret 必須附上**(實測修正):Google 的 Desktop 類型 client 即使走
+  PKCE,token 交換仍強制要求 client_secret,否則回 400。官方文件明言桌面應用的
+  secret「並非機密」,gcloud/rclone 皆內嵌;PKCE 仍保留作為防攔截層。
+- Client ID/secret 來源順序:環境變數 `AI_CONFIG_GDRIVE_CLIENT_ID` /
+  `AI_CONFIG_GDRIVE_CLIENT_SECRET` → build 時注入的常數(release workflow 從
+  GitHub secret 注入;公開 repo 原始碼中兩個常數皆為空字串,client ID 為空時報
+  「此建置未包含 Google 登入,請設定環境變數」)。
 - Token 存於 `~/.config/ai-config/gdrive_token.json`,權限 0600。
   **絕不放進資料儲存庫**;同時把 `gdrive_token.json` 加進 `EXCLUDED_FILES`
   防呆。refresh 失敗(revoked/expired)→ 清楚提示重新登入,不得靜默重試迴圈。
