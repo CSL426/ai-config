@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.27 - 2026-08-31
 
 - 修正 Google Drive 登入:Google 的 Desktop 類型 client 在 token 交換時強制要求
   client_secret(即使走 PKCE),新增 `AI_CONFIG_GDRIVE_CLIENT_SECRET` 環境變數與
