@@ -1,4 +1,4 @@
-/* Hallmark · component: app-shell · genre: modern-minimal · theme: custom
+/* Hallmark · component: app-shell · genre: modern-minimal · theme: custom · audience: first-time third-party users · use: configure and sync AI settings · tone: friendly utilitarian
  * (vibe: claude.ai 式暖紙感 · paper oklch(98% 0.005 95) · accent oklch(58% 0.115 35) terracotta
  *  display: 襯線中文堆疊 · body: 系統中文堆疊,離線可用)
  * states: default · hover · focus · active · disabled · loading · error · success
@@ -15,14 +15,18 @@
   --color-accent: oklch(58% 0.115 35);
   --color-accent-strong: oklch(49% 0.12 35);
   --color-accent-soft: oklch(95% 0.018 35);
+  --color-accent-ink: oklch(98% 0.005 95);
   --color-success: oklch(58% 0.08 135);
+  --color-success-soft: oklch(94% 0.025 135);
   --color-warn: oklch(63% 0.1 80);
+  --color-warn-soft: oklch(96% 0.03 85);
   --color-danger: oklch(54% 0.14 30);
   --color-focus: oklch(58% 0.13 35);
   --color-console-bg: oklch(96% 0.008 95);
   --color-console-ink: oklch(42% 0.012 95);
   --color-console-dim: oklch(72% 0.014 95);
   --color-console-head: oklch(55% 0.08 65);
+  --shadow-selection: 0 0.0625rem 0.125rem oklch(30% 0.011 95 / 0.1);
 
   --font-display: "Noto Serif TC", "Songti TC", Georgia, serif;
   --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
@@ -84,6 +88,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .app-title h1 {
@@ -109,16 +114,47 @@ body {
 
 .update-btn:disabled {
   opacity: 0.6;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .app-repo {
+  flex: 1 1 18rem;
+  min-width: 0;
   margin: 0;
   color: var(--color-ink-soft);
   font-size: 0.8125rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.connection-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2rem;
+  padding-inline: var(--space-sm);
+  border-radius: 62.4375rem;
+  background: var(--color-paper-2);
+  color: var(--color-ink-soft);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.provider-badge[data-provider="gdrive"] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.connection-btn {
+  margin-inline-start: auto;
 }
 
 /* ── 範圍選擇 ─────────────────────────── */
@@ -139,9 +175,16 @@ body {
 .scope-tabs {
   display: flex;
   gap: var(--space-xs);
+  max-inline-size: 100%;
   background: var(--color-paper-2);
   border-radius: var(--radius-md);
   padding: var(--space-xs);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.scope-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .scope-tab {
@@ -151,8 +194,10 @@ body {
   font: inherit;
   font-size: 0.875rem;
   padding: var(--space-xs) var(--space-md);
+  min-block-size: 2.75rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  white-space: nowrap;
   transition: background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
 }
@@ -165,7 +210,7 @@ body {
   background: var(--color-card);
   color: var(--color-ink);
   font-weight: 600;
-  box-shadow: 0 0.0625rem 0.125rem oklch(30% 0.011 95 / 0.1);
+  box-shadow: var(--shadow-selection);
 }
 
 .scope-tab:focus-visible {
@@ -175,7 +220,7 @@ body {
 
 .scope-tab:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 /* ── 動作卡片 ─────────────────────────── */
@@ -220,7 +265,7 @@ body {
 
 .action:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
   border-color: var(--color-paper-3);
   background: var(--color-card);
   transform: none;
@@ -292,6 +337,7 @@ body {
 .setup-provider-selector {
   display: flex;
   gap: var(--space-md);
+  flex-wrap: wrap;
   margin-block: var(--space-xs);
 }
 
@@ -302,6 +348,7 @@ body {
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
+  min-block-size: 2.75rem;
 }
 
 .provider-option input[type="radio"] {
@@ -338,6 +385,7 @@ body {
   font-family: var(--font-mono);
   font-size: 0.875rem;
   padding: var(--space-sm);
+  min-block-size: 2.75rem;
 }
 
 .setup-field input:focus-visible {
@@ -419,7 +467,7 @@ body {
   font-size: 0.6875rem;
   font-weight: 600;
   color: var(--color-success);
-  background: oklch(94% 0.025 135);
+  background: var(--color-success-soft);
   border-radius: 62.4375rem;
   padding: 0.0625rem var(--space-sm);
 }
@@ -427,6 +475,7 @@ body {
 .package-buttons {
   display: flex;
   gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .package-result {
@@ -468,7 +517,8 @@ body {
   flex-wrap: wrap;
   border: 1px solid var(--color-warn);
   border-radius: var(--radius-md);
-  background: oklch(96% 0.03 85);
+  background: var(--color-warn-soft);
+  color: var(--color-ink);
   padding: var(--space-sm) var(--space-md);
 }
 
@@ -493,7 +543,9 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   padding: var(--space-xs) var(--space-md);
+  min-block-size: 2.75rem;
   cursor: pointer;
+  white-space: nowrap;
   transition: background var(--dur-fast) var(--ease-out),
     transform var(--dur-fast) var(--ease-out);
 }
@@ -507,9 +559,15 @@ body {
   transform: translateY(0.0625rem);
 }
 
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .btn-primary {
   background: var(--color-accent);
-  color: oklch(98% 0.005 95);
+  color: var(--color-accent-ink);
 }
 
 .btn-primary:hover {

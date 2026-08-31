@@ -14,7 +14,11 @@
           <span class="app-version" id="version">—</span>
           <button class="btn btn-ghost update-btn" id="update-check">檢查更新</button>
         </div>
-        <p class="app-repo" id="repo" title="">資料儲存庫位置讀取中…</p>
+        <div class="connection-summary">
+          <span class="provider-badge" id="provider">同步方式讀取中…</span>
+          <p class="app-repo" id="repo" title="">設定位置讀取中…</p>
+          <button class="btn btn-ghost connection-btn" id="config-info">查看連線資訊</button>
+        </div>
       </header>
 
       <section class="setup" id="setup" hidden aria-label="首次設定">
@@ -22,7 +26,7 @@
         <div class="setup-provider-selector" role="radiogroup" aria-label="同步類型">
           <label class="provider-option">
             <input type="radio" name="setup-provider" value="git" checked />
-            <span>Git 儲存庫</span>
+            <span>私人 Git 儲存庫</span>
           </label>
           <label class="provider-option">
             <input type="radio" name="setup-provider" value="gdrive" />
@@ -31,7 +35,7 @@
         </div>
 
         <div id="setup-git-panel" class="setup-panel">
-          <p class="package-hint">貼上你的 Git URL(例如 git@github.com:you/my-config.git),按一下就完成設定。</p>
+          <p class="package-hint">適合已有私人儲存庫，或想和其他人共用設定。貼上 Git URL 後即可連線。</p>
           <label class="setup-field">
             <span>儲存庫 Git URL</span>
             <input id="setup-url" type="text" placeholder="git@github.com:you/my-config.git" spellcheck="false" />
@@ -46,7 +50,7 @@
         </div>
 
         <div id="setup-gdrive-panel" class="setup-panel" hidden>
-          <p class="package-hint">設定會存在你 Google 帳號的隱藏應用程式空間,只有這臺程式能存取;適合自己的多臺電腦同步,無法分享給其他人。</p>
+          <p class="package-hint">適合自己的多臺電腦同步。設定會放在 Google Drive 的隱藏應用程式空間，不會出現在一般檔案列表，也無法分享給其他人。</p>
           <label class="setup-field">
             <span>本機目錄(可用預設)</span>
             <input id="setup-gdrive-dir" type="text" spellcheck="false" />
@@ -58,7 +62,7 @@
       </section>
 
       <section class="scope" aria-label="同步範圍">
-        <span class="scope-label">範圍</span>
+        <span class="scope-label">要管理哪些工具</span>
         <div class="scope-tabs" role="radiogroup" id="tool-tabs">
           <button class="scope-tab is-selected" role="radio" aria-checked="true" data-tool="all">全部工具</button>
           <button class="scope-tab" role="radio" aria-checked="false" data-tool="claude">Claude Code</button>
@@ -71,38 +75,38 @@
         <button class="action" data-cmd="status">
           <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"></circle><line x1="13.2" y1="13.2" x2="17" y2="17"></line></svg>
           <span class="action-name">檢查狀態</span>
-          <span class="action-desc">看看這台電腦的設定和儲存庫差在哪裡</span>
+          <span class="action-desc">先看看哪些設定會更新，不會修改任何內容</span>
         </button>
         <button class="action" data-cmd="apply">
           <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="12"></line><polyline points="5.5,8 10,12.5 14.5,8"></polyline><line x1="4" y1="16.5" x2="16" y2="16.5"></line></svg>
           <span class="action-name">套用設定</span>
-          <span class="action-desc">把儲存庫裡的設定部署到這台電腦</span>
+          <span class="action-desc">先備份，再把已保存的設定帶到這台電腦</span>
         </button>
         <button class="action" data-cmd="pull">
           <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5a3.5 3.5 0 0 1 .4-6.98 4.6 4.6 0 0 1 8.9 1.18 3 3 0 0 1-.55 5.8"></path><line x1="10" y1="10" x2="10" y2="17"></line><polyline points="7,14.5 10,17.5 13,14.5"></polyline></svg>
           <span class="action-name">下載更新</span>
-          <span class="action-desc">取得其他電腦上傳的最新設定</span>
+          <span class="action-desc">取得其他電腦保存的最新設定</span>
         </button>
         <button class="action" data-cmd="push">
           <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5a3.5 3.5 0 0 1 .4-6.98 4.6 4.6 0 0 1 8.9 1.18 3 3 0 0 1-.55 5.8"></path><line x1="10" y1="17" x2="10" y2="10.5"></line><polyline points="7,13 10,10 13,13"></polyline></svg>
           <span class="action-name">上傳變更</span>
-          <span class="action-desc">把這台電腦的修改存回儲存庫</span>
+          <span class="action-desc">先預覽，再把這台電腦的修改保存起來</span>
         </button>
       </section>
 
       <details class="package" id="package">
-        <summary class="package-summary">技能:分享給其他 CLI / 打包給桌面版</summary>
+        <summary class="package-summary">讓其他 AI 工具使用同一套技能</summary>
         <div class="package-body">
-          <p class="package-hint">勾選技能後:「分享」會複製進共享區,讓 Codex 和 Antigravity 也能用(之後按「套用設定」生效);「打包」做成 ZIP 並附上可貼給桌面版 AI 的安裝說明。</p>
+          <p class="package-hint">勾選技能後，可以分享給 Codex 與 Antigravity；也能準備成桌面版 AI 可安裝的檔案與說明。</p>
           <div class="package-list" id="skill-list" role="group" aria-label="技能清單"></div>
           <div class="package-buttons">
             <button class="btn btn-ghost" id="skill-all">全選</button>
             <button class="btn btn-ghost" id="skill-none">清除</button>
-            <button class="btn btn-primary" id="skill-share">分享給其他 CLI</button>
-            <button class="btn btn-primary" id="skill-package">打包 ZIP 給桌面版</button>
+            <button class="btn btn-primary" id="skill-share">分享給其他工具</button>
+            <button class="btn btn-primary" id="skill-package">準備桌面版檔案</button>
           </div>
           <div class="package-result" id="package-result" hidden>
-            <p class="package-hint">打包完成!複製下面這段話,貼給你的桌面版 AI(Claude Desktop 也可以直接在 設定 &gt; Customize &gt; Skills 上傳 ZIP):</p>
+            <p class="package-hint">檔案已準備好。複製下面這段話並貼給桌面版 AI；Claude Desktop 也可以在「設定 &gt; Customize &gt; Skills」直接上傳。</p>
             <textarea class="package-message" id="package-message" readonly rows="6"></textarea>
             <button class="btn btn-primary" id="package-copy">複製說明</button>
           </div>
@@ -110,7 +114,7 @@
       </details>
 
       <div class="confirm" id="confirm" hidden>
-        <p class="confirm-text">確定要把這台電腦的變更上傳到儲存庫嗎?上傳後其他電腦就能下載這份設定。</p>
+        <p class="confirm-text">確定要保存這台電腦的變更嗎？完成後，其他電腦就能下載這份設定。</p>
         <div class="confirm-buttons">
           <button class="btn btn-primary" id="confirm-yes">確定上傳</button>
           <button class="btn btn-ghost" id="confirm-no">取消</button>

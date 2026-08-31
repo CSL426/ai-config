@@ -106,6 +106,11 @@ def main(argv: "list[str] | None" = None) -> int:
         from .commands.update import run_update
 
         return run_update(args[1] if len(args) == 2 else None)
+    if cmd == "__update-check":
+        # 隱藏命令:被動更新檢查的背景行程進入點
+        from .commands.update import run_update_check_refresh
+
+        return run_update_check_refresh()
     if cmd in ("version", "--version", "-V"):
         if len(args) != 1:
             log_error(f"Usage: {ENTRYPOINT} version")
@@ -282,6 +287,10 @@ def main(argv: "list[str] | None" = None) -> int:
         print()
         usage()
         return 1
+
+    from .commands.update import maybe_notify_update
+
+    maybe_notify_update()
     return 0
 
 

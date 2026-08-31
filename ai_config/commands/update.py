@@ -256,3 +256,95 @@ def run_update(requested_version: "str | None" = None) -> int:
     if completed.returncode != 0:
         log_error("Update failed; the current binary is unchanged")
     return completed.returncode
+
+
+# ─── 被動更新提示 ─────────────────────────────────────────────
+# 一般指令執行時不打網路:只讀快取,過期就派一個分離的背景行程更新快取,
+# 下一次指令才會看到提示。AI_CONFIG_NO_UPDATE_CHECK=1 可完全關閉。
+
+_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
+
+
+def _update_check_cache_path() -> Path:
+    from ..config import config_path
+
+    return config_path().parent / "update-check.json"
+
+
+def _read_update_check_cache() -> "dict | None":
+    try:
+        data = json.loads(
+            _update_check_cache_path().read_text(encoding="utf-8")
+        )
+        return data if isinstance(data, dict) else None
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+
+
+def run_update_check_refresh() -> int:
+    """背景行程進入點(隱藏命令 __update-check):抓最新版號寫入快取。"""
+    import time
+
+    try:
+        latest = _latest_release_version()
+    except Exception:  # noqa: BLE001 — 背景檢查失敗必須完全安靜
+        return 0
+    path = _update_check_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"checked_at": int(time.time()), "latest": latest}),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+    return 0
+
+
+def _spawn_update_check() -> None:
+    if getattr(sys, "frozen", False):
+        command = [sys.executable, "__update-check"]
+    else:
+        command = [sys.executable, "-m", "ai_config", "__update-check"]
+    kwargs: dict = {
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "stdin": subprocess.DEVNULL,
+    }
+    if NATIVE_WINDOWS:
+        kwargs["creationflags"] = (
+            subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+        )
+    else:
+        kwargs["start_new_session"] = True
+    try:
+        subprocess.Popen(command, **kwargs)
+    except OSError:
+        pass
+
+
+def maybe_notify_update() -> None:
+    """讀快取提示新版;過期則派背景行程刷新。零網路呼叫、零阻塞。"""
+    import time
+
+    if (
+        os.environ.get("AI_CONFIG_NO_UPDATE_CHECK")
+        or "PYTEST_CURRENT_TEST" in os.environ
+        or not sys.stdout.isatty()
+    ):
+        return
+    cache = _read_update_check_cache()
+    current = current_version()
+    if (
+        cache
+        and current
+        and isinstance(cache.get("latest"), str)
+        and not _is_up_to_date(current, cache["latest"])
+    ):
+        log_info(
+            f"新版 v{cache['latest']} 可用(目前 v{current}),"
+            f"執行 {ENTRYPOINT} update 更新"
+        )
+    checked_at = cache.get("checked_at", 0) if cache else 0
+    if time.time() - checked_at >= _CHECK_INTERVAL_SECONDS:
+        _spawn_update_check()

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- push 的空白字元檢查(行尾空白、檔尾空行)降級為警告:同步內容含第三方
+  skill 文件,空白風格不再擋 push。
+
+- 新增被動更新提示:一般指令(status/apply/pull/push/init 等)結束時,若快取
+  得知有新版就提示「執行 acg update 更新」。檢查本身零延遲 — 只讀本機快取,
+  快取超過 24 小時才派分離的背景行程刷新;非 TTY(腳本)不提示,
+  `AI_CONFIG_NO_UPDATE_CHECK=1` 可完全關閉。
+
 ## 1.0.29 - 2026-08-31
 
 - 修正 gdrive 首次 push 的第二批 unborn HEAD 問題:取消/失敗時的還原

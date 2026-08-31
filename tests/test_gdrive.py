@@ -795,6 +795,10 @@ def test_allow_secrets_flag_bypasses_credential_content_check(
     (repo_dir / "claude/security.md").write_text(
         'example: api_key = "not-a-real-key"\n', encoding="utf-8"
     )
+    # 行尾空白:內容檔常見,只該警告不該擋 push
+    (repo_dir / "claude/notes.md").write_text(
+        "trailing space here \n", encoding="utf-8"
+    )
     subprocess.run(
         ["git", "-C", str(repo_dir), "add", "claude"],
         check=True,
