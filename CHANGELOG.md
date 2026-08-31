@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.29 - 2026-08-31
 
 - 修正 gdrive 首次 push 的第二批 unborn HEAD 問題:取消/失敗時的還原
   (`_unstage_tools`)在沒有首個 commit 的 repo 改用 `git reset -- <paths>`。
