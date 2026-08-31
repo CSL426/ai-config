@@ -22,6 +22,7 @@ from .sync import (
     _run_repo_git,
 )
 
+_ALLOW_SECRET_PATHS = False
 _SECRET_PATTERN = re.compile(
     rb"(?:[\"']?(?:password|secret|token|api[_-]?key|api[_-]?secret|"
     rb"auth[_-]?token|access[_-]?token|private[_-]?key|database_url|"
@@ -222,7 +223,12 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
 
 
 def _unstage_tools(tools: list[str]) -> bool:
-    result = _run_repo_git("restore", "--staged", "--", *tools)
+    head = _run_repo_git("rev-parse", "--verify", "--quiet", "HEAD")
+    if head.returncode == 0:
+        result = _run_repo_git("restore", "--staged", "--", *tools)
+    else:
+        # unborn HEAD 沒有 restore 的基準;reset 帶 pathspec 可把索引清回未追蹤
+        result = _run_repo_git("reset", "-q", "--", *tools)
     if result.returncode != 0:
         _git_failure("Restoring unstaged repository changes", result)
         return False
@@ -585,10 +591,19 @@ def _validate_ahead_push(
     if secret_paths is None:
         return False
     if secret_paths:
-        log_error("Potential credential content exists in local commits:")
-        for path in secret_paths:
-            print(f"  {path}")
-        return False
+        if _ALLOW_SECRET_PATHS:
+            log_warn("Credential-content check skipped (--allow-secrets):")
+            for path in secret_paths:
+                print(f"  {path}")
+        else:
+            log_error("Potential credential content exists in local commits:")
+            for path in secret_paths:
+                print(f"  {path}")
+            log_info(
+                "False positive (docs/examples)? Re-run with "
+                f"{ENTRYPOINT} push --allow-secrets after reviewing the list"
+            )
+            return False
 
     if snapshot.upstream_commit:
         check = _run_repo_git(
@@ -731,10 +746,21 @@ def _validate_staged_push(selected: list[str]) -> bool:
     if secret_paths is None:
         return False
     if secret_paths:
-        log_error("Potential credential content would be committed; push cancelled:")
-        for path in secret_paths:
-            print(f"  {path}")
-        return False
+        if _ALLOW_SECRET_PATHS:
+            log_warn("Credential-content check skipped (--allow-secrets):")
+            for path in secret_paths:
+                print(f"  {path}")
+        else:
+            log_error(
+                "Potential credential content would be committed; push cancelled:"
+            )
+            for path in secret_paths:
+                print(f"  {path}")
+            log_info(
+                "False positive (docs/examples)? Re-run with "
+                f"{ENTRYPOINT} push --allow-secrets after reviewing the list"
+            )
+            return False
 
     unstaged = _run_repo_git("diff", "--quiet")
     untracked = _run_repo_git("ls-files", "--others", "--exclude-standard")
@@ -981,7 +1007,11 @@ def _commit_and_push(
     return 0
 
 
-def do_push(tool: str) -> int:
+def do_push(tool: str, allow_secrets: bool = False) -> int:
+    # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
+    # 才會為 True(GUI 走不到,維持硬擋)。
+    global _ALLOW_SECRET_PATHS
+    _ALLOW_SECRET_PATHS = allow_secrets
     log_header("Push local configuration")
     provider = configured_remote_provider()
     if provider == "git" and _remote_is_read_only():

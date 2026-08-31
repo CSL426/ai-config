@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- 修正 gdrive 首次 push 的第二批 unborn HEAD 問題:取消/失敗時的還原
+  (`_unstage_tools`)在沒有首個 commit 的 repo 改用 `git reset -- <paths>`。
+- 新增 `acg push --allow-secrets`:憑證內容掃描誤判(教學文件、範例金鑰)
+  時,檢視清單後可明示放行;預設仍硬擋,GUI 的 push 不受影響。
+- 新增 `acg config`:唯讀狀態總覽 — 目前的 provider(git/gdrive)、資料庫
+  位置、Git remote(遮蔽帳密)、Google Drive 登入與 token 狀態、各工具
+  home 目錄。未完成 setup 也能執行。
+
 ## 1.0.28 - 2026-08-31
 
 - 修正 gdrive 首次 push:全新資料庫的 unborn HEAD 讓未提交掃描炸出

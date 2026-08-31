@@ -315,3 +315,23 @@ def test_status_agy_rejects_repo_settings_symlink_before_read(
     assert result.returncode == 1
     assert "reparse point source file" in result.stderr + result.stdout
     assert external.read_text() == '{"model":"external"}\n'
+
+
+# ─── config ───────────────────────────────────────────────────
+
+
+def test_config_shows_read_only_overview(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+
+    result = run_ai_config(repo_dir, home_dir, "config")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Remote provider" in result.stdout
+    assert "Google Drive" in result.stdout
+    assert "Tool homes" in result.stdout
+
+
+def test_config_rejects_extra_arguments(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+
+    assert run_ai_config(repo_dir, home_dir, "config", "extra").returncode == 1

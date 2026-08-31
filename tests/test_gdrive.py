@@ -744,6 +744,72 @@ def test_working_paths_scans_unborn_repository(
     ]
 
 
+def test_unstage_tools_works_on_unborn_repository(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import push as push_cmd
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "init", "-b", "main"],
+        check=True,
+        capture_output=True,
+    )
+    (repo_dir / "claude").mkdir()
+    (repo_dir / "claude/CLAUDE.md").write_text("hi\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "add", "claude"],
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
+    monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
+
+    assert push_cmd._unstage_tools(["claude"]) is True
+    staged = subprocess.run(
+        ["git", "-C", str(repo_dir), "diff", "--cached", "--name-only"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert staged.stdout.strip() == ""
+
+
+def test_allow_secrets_flag_bypasses_credential_content_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import push as push_cmd
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "init", "-b", "main"],
+        check=True,
+        capture_output=True,
+    )
+    (repo_dir / "claude").mkdir()
+    # 教學文件常見的假金鑰:會觸發 _SECRET_PATTERN,但不是真憑證
+    (repo_dir / "claude/security.md").write_text(
+        'example: api_key = "not-a-real-key"\n', encoding="utf-8"
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "add", "claude"],
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
+    monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
+
+    monkeypatch.setattr(push_cmd, "_ALLOW_SECRET_PATHS", False)
+    assert push_cmd._validate_staged_push(["claude"]) is False
+
+    monkeypatch.setattr(push_cmd, "_ALLOW_SECRET_PATHS", True)
+    assert push_cmd._validate_staged_push(["claude"]) is True
+
+
 def test_gdrive_can_create_first_commit_in_unborn_repository(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

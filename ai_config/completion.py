@@ -14,6 +14,7 @@ COMMANDS = (
     "reset",
     "deploy",
     "share",
+    "config",
     "gui",
     "skill",
     "completion",
