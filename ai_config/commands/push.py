@@ -462,6 +462,8 @@ def _ahead_diff(snapshot: _PushSnapshot) -> "str | None":
             input="",
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if empty_tree.returncode != 0:

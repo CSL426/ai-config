@@ -17,6 +17,8 @@ def _repo_git(*args: str) -> "str | None":
         ["git", "-C", str(SCRIPT_DIR), *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
