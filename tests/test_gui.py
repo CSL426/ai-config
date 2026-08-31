@@ -270,6 +270,25 @@ def test_get_info_reports_version_and_tools(api: GuiApi) -> None:
     assert info["tools"] == ["claude", "codex", "agy"]
     assert info["version"]
     assert info["repo"]
+    assert info["provider"] in {"git", "gdrive"}
+
+
+def test_config_info_invokes_read_only_command(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = {}
+
+    def fake_main(argv):
+        seen["argv"] = argv
+        print("configuration overview")
+        return 0
+
+    monkeypatch.setattr(cli, "main", fake_main)
+    result = api.config_info()
+
+    assert result["code"] == 0
+    assert result["output"] == "configuration overview\n"
+    assert seen["argv"] == ["config"]
 
 
 def test_setup_gdrive_builds_argv_and_validates(

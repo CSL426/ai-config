@@ -30,17 +30,29 @@ class GuiApi:
         self._lock = threading.Lock()
 
     def get_info(self) -> dict:
+        from ..config import configured_remote_provider
         from ..paths import CONFIG_ERROR, SCRIPT_DIR
         from ..version import current_version
 
         configured = CONFIG_ERROR is None and (SCRIPT_DIR / "claude").is_dir()
+        provider = configured_remote_provider() if CONFIG_ERROR is None else "git"
         return {
             "version": current_version() or "unknown",
             "repo": str(SCRIPT_DIR),
+            "provider": provider,
             "tools": list(ALL_TOOLS),
             "configured": configured,
             "config_error": CONFIG_ERROR or "",
         }
+
+    def config_info(self) -> dict:
+        """Return the same read-only overview as ``acg config``."""
+        if not self._lock.acquire(blocking=False):
+            return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
+        try:
+            return self._run_captured(["config"])
+        finally:
+            self._lock.release()
 
     def setup_repo(self, repo_url: str, data_dir: str = "") -> dict:
         from ..config import default_data_repo

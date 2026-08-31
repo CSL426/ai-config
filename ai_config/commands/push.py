@@ -612,14 +612,9 @@ def _validate_ahead_push(
             f"{snapshot.upstream_commit}..{snapshot.head}",
             "--",
         )
-        if check.returncode != 0:
-            _git_failure("Validating local commit changes", check)
-            return False
     else:
         check = _run_repo_git("diff-tree", "--check", "--root", snapshot.head)
-        if check.returncode != 0:
-            _git_failure("Validating local commit changes", check)
-            return False
+    _warn_whitespace_issues(check)
     return True
 
 
@@ -774,10 +769,20 @@ def _validate_staged_push(selected: list[str]) -> bool:
         return False
 
     check = _run_repo_git("diff", "--cached", "--check")
-    if check.returncode != 0:
-        _git_failure("Validating staged configuration", check)
-        return False
+    _warn_whitespace_issues(check)
     return True
+
+
+def _warn_whitespace_issues(check: subprocess.CompletedProcess) -> None:
+    # 同步的內容包含第三方 skill 文件,行尾空白/檔尾空行不該擋 push;
+    # 保留提示讓使用者知道,但不再視為致命錯誤。
+    if check.returncode == 0:
+        return
+    detail = check.stdout.strip() or check.stderr.strip()
+    if detail:
+        log_warn("Whitespace issues in the synced content (not blocking):")
+        for line in detail.splitlines()[:10]:
+            print(f"  {line}")
 
 
 def _review_and_confirm_push(

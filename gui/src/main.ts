@@ -17,6 +17,8 @@ const $ = <T extends HTMLElement>(sel: string): T => {
 
 const versionEl = $("#version");
 const repoEl = $("#repo");
+const providerEl = $("#provider");
+const configInfoBtn = $<HTMLButtonElement>("#config-info");
 const toolTabs = Array.from(
   document.querySelectorAll<HTMLButtonElement>("#tool-tabs .scope-tab"),
 );
@@ -32,6 +34,7 @@ const outputBody = $("#output-body");
 
 let selectedTool = "all";
 let running = false;
+let configured = false;
 
 function api(): AcgApi | null {
   return window.pywebview?.api ?? null;
@@ -39,11 +42,12 @@ function api(): AcgApi | null {
 
 function setBusy(busy: boolean, cmd?: AcgCommand): void {
   running = busy;
+  configInfoBtn.disabled = busy;
   for (const btn of actionButtons) {
-    btn.disabled = busy;
+    btn.disabled = busy || !configured;
     btn.classList.toggle("is-running", busy && btn.dataset.cmd === cmd);
   }
-  for (const tab of toolTabs) tab.disabled = busy;
+  for (const tab of toolTabs) tab.disabled = busy || !configured;
 }
 
 /** CLI 輸出依行首符號上色:✓ 綠、⚠ 黃、✗ 紅、═══ 標題。 */
@@ -192,12 +196,12 @@ function renderSkills(skills: SkillEntry[]): void {
 function installMessage(zips: string[]): string {
   const paths = zips.map((z) => `- ${z}`).join("\n");
   return [
-    "請幫我安裝以下 AI 技能(skill),ZIP 檔在這些路徑:",
+    "請幫我安裝以下 AI 技能，ZIP 檔在這些路徑：",
     paths,
     "",
-    "請解壓縮每個 ZIP,把裡面的技能資料夾放進你的技能目錄",
-    "(Claude 是 ~/.claude/skills/,Codex 是 ~/.codex/skills/),",
-    "完成後列出已安裝的技能名稱讓我確認。",
+    "請使用這個 AI 工具目前支援的技能安裝方式處理。",
+    "如果可以直接匯入 ZIP，就直接匯入；否則解壓縮到正確的技能目錄。",
+    "完成後請列出已安裝的技能名稱，讓我確認。",
   ].join("\n");
 }
 
@@ -320,6 +324,31 @@ async function loadSkills(): Promise<void> {
   }
 }
 
+configInfoBtn.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running) return;
+
+  setBusy(true);
+  outputTitle.textContent = "連線資訊";
+  outputState.textContent = "讀取中…";
+  outputState.className = "output-state is-running";
+  showPlaceholder("正在讀取同步方式與登入狀態…");
+  try {
+    const result = await bridge.config_info();
+    renderOutput(result.output || "(沒有輸出)");
+    outputState.textContent = result.code === 0 ? "唯讀" : "有問題";
+    outputState.className =
+      result.code === 0 ? "output-state is-ok" : "output-state is-fail";
+  } catch (err) {
+    showPlaceholder(`無法讀取連線資訊：${String(err)}`);
+    outputState.textContent = "有問題";
+    outputState.className = "output-state is-fail";
+  } finally {
+    setBusy(false);
+    outputBody.scrollTop = 0;
+  }
+});
+
 // ── 首次設定 ───────────────────────────
 
 const setupBox = $("#setup");
@@ -345,12 +374,12 @@ for (const radio of providerRadios) {
   });
 }
 
-function setConfigured(configured: boolean): void {
-  setupBox.hidden = configured;
-  for (const btn of actionButtons) btn.disabled = !configured;
-  for (const tab of toolTabs) tab.disabled = !configured;
-  skillShare.disabled = !configured;
-  skillPackage.disabled = !configured;
+function setConfigured(value: boolean): void {
+  configured = value;
+  setupBox.hidden = value;
+  setBusy(running);
+  skillShare.disabled = !value;
+  skillPackage.disabled = !value;
 }
 
 setupGo.addEventListener("click", async () => {
@@ -421,13 +450,18 @@ async function loadInfo(): Promise<void> {
   try {
     const info = await bridge.get_info();
     versionEl.textContent = `v${info.version}`;
-    repoEl.textContent = `資料儲存庫:${info.repo}`;
+    providerEl.textContent =
+      info.provider === "gdrive" ? "Google Drive" : "私人 Git 儲存庫";
+    providerEl.dataset.provider = info.provider;
+    repoEl.textContent = `本機設定位置：${info.repo}`;
     repoEl.title = info.repo;
     setConfigured(info.configured);
     if (!info.configured) {
       setupDir.value = info.repo;
       setupGdriveDir.value = info.repo;
-      repoEl.textContent = "尚未完成首次設定";
+      providerEl.textContent = "尚未選擇同步方式";
+      providerEl.dataset.provider = "none";
+      repoEl.textContent = "完成下方設定後即可開始同步";
       if (info.config_error) {
         showPlaceholder(`設定檔有問題:${info.config_error}`);
       }

@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
 from test_apply_projection import run_ai_config
 from test_commands import make_full_repo
 
@@ -306,3 +307,78 @@ def test_update_frozen_does_not_downgrade_newer_version(monkeypatch) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
 
     assert update.run_update() == 0
+
+
+# ─── 被動更新提示 ─────────────────────────────────────────────
+
+
+def test_update_check_refresh_writes_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.commands import update
+
+    monkeypatch.setenv("AI_CONFIG_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "9.9.9")
+
+    assert update.run_update_check_refresh() == 0
+    cache = update._read_update_check_cache()
+    assert cache is not None
+    assert cache["latest"] == "9.9.9"
+    assert cache["checked_at"] > 0
+
+
+def test_update_check_refresh_is_silent_on_network_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    from ai_config.commands import update
+
+    monkeypatch.setenv("AI_CONFIG_CONFIG", str(tmp_path / "config.json"))
+
+    def boom() -> str:
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(update, "_latest_release_version", boom)
+    assert update.run_update_check_refresh() == 0
+    assert capsys.readouterr().out == ""
+    assert update._read_update_check_cache() is None
+
+
+def test_maybe_notify_update_prints_hint_and_respects_optout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    import json as json_mod
+    import time
+
+    from ai_config.commands import update
+
+    monkeypatch.setenv("AI_CONFIG_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("AI_CONFIG_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.0")
+    spawned = []
+    monkeypatch.setattr(update, "_spawn_update_check", lambda: spawned.append(1))
+
+    (tmp_path / "config.json").parent.mkdir(parents=True, exist_ok=True)
+    update._update_check_cache_path().write_text(
+        json_mod.dumps({"checked_at": int(time.time()), "latest": "2.0.0"}),
+        encoding="utf-8",
+    )
+
+    update.maybe_notify_update()
+    out = capsys.readouterr().out
+    assert "2.0.0" in out
+    assert spawned == []  # 快取仍新鮮,不派背景行程
+
+    # 快取過期 → 派背景行程
+    update._update_check_cache_path().write_text(
+        json_mod.dumps({"checked_at": 0, "latest": "2.0.0"}), encoding="utf-8"
+    )
+    update.maybe_notify_update()
+    assert spawned == [1]
+
+    # 明確關閉 → 完全安靜
+    monkeypatch.setenv("AI_CONFIG_NO_UPDATE_CHECK", "1")
+    capsys.readouterr()
+    update.maybe_notify_update()
+    assert capsys.readouterr().out == ""

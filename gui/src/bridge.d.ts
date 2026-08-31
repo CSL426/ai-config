@@ -5,6 +5,7 @@ export type AcgCommand = "status" | "apply" | "pull" | "push";
 export interface AcgInfo {
   version: string;
   repo: string;
+  provider: "git" | "gdrive";
   tools: string[];
   configured: boolean;
   config_error: string;
@@ -41,6 +42,7 @@ export interface UpdateCheck {
 
 export interface AcgApi {
   get_info(): Promise<AcgInfo>;
+  config_info(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
   list_skills(): Promise<SkillList>;
   package_skills(names: string[]): Promise<PackageResult>;
