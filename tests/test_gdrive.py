@@ -713,6 +713,37 @@ def test_gdrive_preflight_counts_commits_when_remote_is_empty(
     assert not preflight.has_changes
 
 
+def test_working_paths_scans_unborn_repository(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import push as push_cmd
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "init", "-b", "main"],
+        check=True,
+        capture_output=True,
+    )
+    (repo_dir / "claude").mkdir()
+    (repo_dir / "claude/CLAUDE.md").write_text("hi\n", encoding="utf-8")
+    (repo_dir / "claude/settings.json").write_text("{}", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "add", "claude/CLAUDE.md"],
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
+    monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
+
+    # unborn HEAD:索引中與未追蹤的檔案都要被列出,而不是 fatal: bad revision
+    assert push_cmd._working_paths() == [
+        "claude/CLAUDE.md",
+        "claude/settings.json",
+    ]
+
+
 def test_gdrive_can_create_first_commit_in_unborn_repository(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

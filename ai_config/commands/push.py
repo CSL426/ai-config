@@ -268,21 +268,31 @@ def _staged_paths(*, diff_filter: "str | None" = None) -> "list[str] | None":
 
 
 def _working_paths() -> "list[str] | None":
-    tracked = _run_repo_git("diff", "--name-only", "-z", "HEAD", "--")
+    head = _run_repo_git("rev-parse", "--verify", "--quiet", "HEAD")
+    if head.returncode == 0:
+        tracked_runs = [_run_repo_git("diff", "--name-only", "-z", "HEAD", "--")]
+    else:
+        # 全新 repo 的 unborn HEAD 沒有比較基準(gdrive 首次 push 會遇到):
+        # 改以「索引 vs 空樹」(--cached)加「工作樹 vs 索引」涵蓋所有未提交內容。
+        tracked_runs = [
+            _run_repo_git("diff", "--cached", "--name-only", "-z", "--"),
+            _run_repo_git("diff", "--name-only", "-z", "--"),
+        ]
     untracked = _run_repo_git(
         "ls-files",
         "--others",
         "--exclude-standard",
         "-z",
     )
-    for action, result in (
-        ("Scanning uncommitted paths", tracked),
-        ("Scanning untracked paths", untracked),
-    ):
+    checks = [("Scanning uncommitted paths", run) for run in tracked_runs]
+    checks.append(("Scanning untracked paths", untracked))
+    for action, result in checks:
         if result.returncode != 0:
             _git_failure(action, result)
             return None
-    paths = set(tracked.stdout.split("\0"))
+    paths: set[str] = set()
+    for run in tracked_runs:
+        paths.update(run.stdout.split("\0"))
     paths.update(untracked.stdout.split("\0"))
     paths.discard("")
     return sorted(paths)
