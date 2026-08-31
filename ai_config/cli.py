@@ -15,4 +15,10 @@ def console_main() -> int:
     from ai_config import __main__ as command
 
     command.ENTRYPOINT = os.environ["AI_CONFIG_ENTRYPOINT"]
-    return command.main()
+    try:
+        return command.main()
+    except KeyboardInterrupt:
+        # PyInstaller 對未攔截例外會跳錯誤視窗;Ctrl+C 應該安靜退出。
+        print()
+        print("Cancelled.", file=sys.stderr)
+        return 130

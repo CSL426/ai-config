@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- 修正 Google Drive 登入:Google 的 Desktop 類型 client 在 token 交換時強制要求
+  client_secret(即使走 PKCE),新增 `AI_CONFIG_GDRIVE_CLIENT_SECRET` 環境變數與
+  release 注入;token 交換失敗時回報 Google 的完整錯誤內容。
+- Ctrl+C 改為安靜退出(exit 130),不再觸發 PyInstaller 的未攔截例外視窗。
+
 ## 1.0.26 - 2026-08-31
 
 - 新增 Google Drive 同步後端 (`remote_provider: "gdrive"`)：基於 OAuth PKCE 與 `appDataFolder` bundle 傳輸，與預設 Git provider 並列。支援 CLI (`acg setup --provider gdrive`) 與 GUI 介面 Google Drive 設定。

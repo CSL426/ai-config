@@ -29,6 +29,9 @@ from .config import config_path
 from .console import log_error, log_info, log_success
 
 GDRIVE_CLIENT_ID = ""  # 開放原始碼儲存庫中預設為空字串,正式建置由 GitHub secret 注入
+# Google 的 Desktop 類型 client 即使走 PKCE,token 交換仍要求 client_secret;
+# 官方文件明言桌面應用的 secret「並非機密」但必須附上(gcloud/rclone 同做法)。
+GDRIVE_CLIENT_SECRET = ""
 GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -54,6 +57,13 @@ def get_client_id(environ: "dict[str, str] | None" = None) -> str:
             "此建置未包含 Google 登入,請設定 AI_CONFIG_GDRIVE_CLIENT_ID 環境變數"
         )
     return client_id
+
+
+def get_client_secret(environ: "dict[str, str] | None" = None) -> str:
+    environment = os.environ if environ is None else environ
+    return (
+        environment.get("AI_CONFIG_GDRIVE_CLIENT_SECRET") or GDRIVE_CLIENT_SECRET
+    )
 
 
 def token_file_path(environ: "dict[str, str] | None" = None) -> Path:
@@ -222,6 +232,9 @@ def run_oauth_flow(
         "grant_type": "authorization_code",
         "redirect_uri": redirect_uri,
     }
+    client_secret = get_client_secret(environ)
+    if client_secret:
+        token_params["client_secret"] = client_secret
 
     req = urllib.request.Request(
         OAUTH_TOKEN_URL,
@@ -233,6 +246,17 @@ def run_oauth_flow(
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        hint = ""
+        if "client_secret" in detail:
+            hint = (
+                "\nGoogle 的桌面型 client 需要 client secret:請設定 "
+                "AI_CONFIG_GDRIVE_CLIENT_SECRET 環境變數(或使用內建它的正式建置)"
+            )
+        raise GDriveAuthError(
+            f"OAuth token exchange failed ({exc.code}): {detail}{hint}"
+        ) from exc
     except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
         raise GDriveAuthError(f"OAuth token exchange failed: {exc}") from exc
 
@@ -259,6 +283,9 @@ def refresh_access_token(
         "refresh_token": refresh_token,
         "grant_type": "refresh_token",
     }
+    client_secret = get_client_secret(environ)
+    if client_secret:
+        token_params["client_secret"] = client_secret
 
     req = urllib.request.Request(
         OAUTH_TOKEN_URL,

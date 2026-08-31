@@ -13,6 +13,7 @@ from ai_config.commands.setup import SetupError, setup_gdrive_repository
 from ai_config.config import ConfigError, configured_remote_provider, load_config
 from ai_config.gdrive import (
     GDRIVE_CLIENT_ID,
+    GDRIVE_CLIENT_SECRET,
     GDRIVE_SCOPE,
     GDriveAuthError,
     GDriveClient,
@@ -43,6 +44,40 @@ def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_token_file_in_excluded_files() -> None:
     assert "gdrive_token.json" in EXCLUDED_FILES
+
+
+def test_client_secret_constant_is_empty_in_source() -> None:
+    assert GDRIVE_CLIENT_SECRET == ""
+
+
+def test_refresh_includes_client_secret_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.gdrive import refresh_access_token
+
+    monkeypatch.setenv("AI_CONFIG_GDRIVE_CLIENT_ID", "dummy-id")
+    monkeypatch.setenv("AI_CONFIG_GDRIVE_CLIENT_SECRET", "dummy-secret")
+    seen: dict[str, bytes] = {}
+
+    class FakeResponse:
+        def read(self) -> bytes:
+            return (
+                b'{"access_token": "new_acc", "expires_in": 3600}'
+            )
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    def mock_urlopen(req: Any, timeout: float = 30) -> FakeResponse:
+        seen["body"] = req.data
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+    refresh_access_token("ref_1")
+    assert b"client_secret=dummy-secret" in seen["body"]
 
 
 def test_client_id_constant_is_empty_in_source() -> None:

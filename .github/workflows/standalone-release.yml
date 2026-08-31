@@ -98,15 +98,23 @@ jobs:
         shell: bash
         env:
           GDRIVE_CLIENT_ID: ${{ secrets.AI_CONFIG_GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.AI_CONFIG_GDRIVE_CLIENT_SECRET }}
         run: |
           if [ -n "$GDRIVE_CLIENT_ID" ]; then
             sed -i.bak 's/^GDRIVE_CLIENT_ID = ""/GDRIVE_CLIENT_ID = "'"$GDRIVE_CLIENT_ID"'"/' ai_config/gdrive.py
-            rm -f ai_config/gdrive.py.bak
             grep -q "$GDRIVE_CLIENT_ID" ai_config/gdrive.py
             echo "Client ID injected"
           else
             echo "No AI_CONFIG_GDRIVE_CLIENT_ID secret; building without an embedded client ID"
           fi
+          if [ -n "$GDRIVE_CLIENT_SECRET" ]; then
+            sed -i.bak 's/^GDRIVE_CLIENT_SECRET = ""/GDRIVE_CLIENT_SECRET = "'"$GDRIVE_CLIENT_SECRET"'"/' ai_config/gdrive.py
+            grep -q "$GDRIVE_CLIENT_SECRET" ai_config/gdrive.py
+            echo "Client secret injected"
+          else
+            echo "No AI_CONFIG_GDRIVE_CLIENT_SECRET secret; Google Desktop clients need it for the token exchange"
+          fi
+          rm -f ai_config/gdrive.py.bak
 
       - name: Install PyInstaller
         run: python -m pip install pyinstaller==6.21.0 .
