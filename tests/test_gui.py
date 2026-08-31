@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 import ai_config.__main__ as cli
-from ai_config.gui import GuiApi
+from ai_config.commands.gui import GuiApi
 
 
 @pytest.fixture
@@ -126,7 +126,7 @@ def test_package_skills_rejects_bad_input(api: GuiApi) -> None:
 def test_package_skills_packages_each_and_reports(
     api: GuiApi, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import ai_config.gui as gui_mod
+    import ai_config.commands.gui as gui_mod
     import ai_config.package as package_mod
 
     def fake_package(name, out_dir):
@@ -151,7 +151,7 @@ def test_package_skills_packages_each_and_reports(
 def test_package_output_dir_falls_back_to_home(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from ai_config.gui import _package_output_dir
+    from ai_config.commands.gui import _package_output_dir
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     assert _package_output_dir() == tmp_path
@@ -159,8 +159,137 @@ def test_package_output_dir_falls_back_to_home(
     assert _package_output_dir() == tmp_path / "Downloads"
 
 
+def test_share_skills_runs_share_per_name(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    def fake_main(argv):
+        calls.append(argv)
+        print(f"shared {argv[1]}")
+        return 0
+
+    monkeypatch.setattr(cli, "main", fake_main)
+    result = api.share_skills(["alpha", "beta"])
+    assert result["code"] == 0
+    assert calls == [["share", "alpha"], ["share", "beta"]]
+    assert "shared alpha" in result["output"]
+    assert "shared beta" in result["output"]
+
+
+def test_share_skills_rejects_bad_input(api: GuiApi) -> None:
+    assert api.share_skills("nope")["code"] == 1
+    assert api.share_skills([])["code"] == 1
+
+
+def test_list_skills_reports_shared_and_shareable(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_config.commands.share as share_mod
+    import ai_config.package as package_mod
+
+    monkeypatch.setattr(package_mod, "available_skills", lambda: ["wiki"])
+    monkeypatch.setattr(
+        share_mod, "shareable_skill_names", lambda: ["eli5", "wiki"]
+    )
+    result = api.list_skills()
+    assert result["skills"] == [
+        {"name": "eli5", "shared": False, "shareable": True},
+        {"name": "wiki", "shared": True, "shareable": True},
+    ]
+
+
+def test_check_update_reports_versions(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_config.commands.update as update_mod
+    import ai_config.version as version_mod
+
+    monkeypatch.setattr(version_mod, "current_version", lambda: "1.0.25")
+    monkeypatch.setattr(update_mod, "_latest_release_version", lambda: "1.0.26")
+    result = api.check_update()
+    assert result["code"] == 0
+    assert result["up_to_date"] is False
+    assert result["latest"] == "1.0.26"
+
+    monkeypatch.setattr(update_mod, "_latest_release_version", lambda: "1.0.25")
+    assert api.check_update()["up_to_date"] is True
+
+    def boom():
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(update_mod, "_latest_release_version", boom)
+    failed = api.check_update()
+    assert failed["code"] == 1
+    assert "offline" in failed["output"]
+
+
+def test_run_update_invokes_update_command(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = {}
+
+    def fake_main(argv):
+        seen["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(cli, "main", fake_main)
+    assert api.run_update()["code"] == 0
+    assert seen["argv"] == ["update"]
+
+
+def test_setup_repo_builds_argv_and_validates(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = {}
+
+    def fake_main(argv):
+        seen["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(cli, "main", fake_main)
+    assert api.setup_repo("", "")["code"] == 1
+    assert api.setup_repo(123, "")["code"] == 1
+
+    result = api.setup_repo(" git@host:me/cfg.git ", "/tmp/dir")
+    assert result["code"] == 0
+    assert seen["argv"] == [
+        "setup",
+        "--data-dir",
+        "/tmp/dir",
+        "--repo-url",
+        "git@host:me/cfg.git",
+    ]
+
+    api.setup_repo("git@host:me/cfg.git", "")
+    assert seen["argv"][2].endswith("data")  # default_data_repo fallback
+
+
 def test_get_info_reports_version_and_tools(api: GuiApi) -> None:
     info = api.get_info()
     assert info["tools"] == ["claude", "codex", "agy"]
     assert info["version"]
     assert info["repo"]
+
+
+def test_setup_gdrive_builds_argv_and_validates(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = {}
+
+    def fake_main(argv):
+        seen["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(cli, "main", fake_main)
+    assert api.setup_gdrive(123)["code"] == 1
+
+    result = api.setup_gdrive("/tmp/gdrive_dir")
+    assert result["code"] == 0
+    assert seen["argv"] == [
+        "setup",
+        "--provider",
+        "gdrive",
+        "--data-dir",
+        "/tmp/gdrive_dir",
+    ]

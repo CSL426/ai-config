@@ -1,6 +1,6 @@
 import "./style.css";
 
-import type { AcgApi, AcgCommand } from "./bridge";
+import type { AcgApi, AcgCommand, SkillEntry } from "./bridge";
 
 const COMMAND_LABELS: Record<AcgCommand, string> = {
   status: "檢查狀態",
@@ -148,7 +148,9 @@ confirmNo.addEventListener("click", () => {
 const skillList = $("#skill-list");
 const skillAll = $<HTMLButtonElement>("#skill-all");
 const skillNone = $<HTMLButtonElement>("#skill-none");
+const skillShare = $<HTMLButtonElement>("#skill-share");
 const skillPackage = $<HTMLButtonElement>("#skill-package");
+const updateBtn = $<HTMLButtonElement>("#update-check");
 const packageResult = $("#package-result");
 const packageMessage = $<HTMLTextAreaElement>("#package-message");
 const packageCopy = $<HTMLButtonElement>("#package-copy");
@@ -159,24 +161,30 @@ function skillCheckboxes(): HTMLInputElement[] {
   );
 }
 
-function renderSkills(skills: string[]): void {
+function renderSkills(skills: SkillEntry[]): void {
   skillList.replaceChildren();
   if (skills.length === 0) {
     const p = document.createElement("p");
     p.className = "package-hint";
-    p.textContent = "儲存庫裡沒有可打包的共用技能。";
+    p.textContent = "找不到可用的技能。";
     skillList.append(p);
     return;
   }
-  for (const name of skills) {
+  for (const skill of skills) {
     const label = document.createElement("label");
     label.className = "skill-item";
     const box = document.createElement("input");
     box.type = "checkbox";
-    box.value = name;
+    box.value = skill.name;
     const text = document.createElement("span");
-    text.textContent = name;
+    text.textContent = skill.name;
     label.append(box, text);
+    if (skill.shared) {
+      const tag = document.createElement("span");
+      tag.className = "skill-tag";
+      tag.textContent = "已共享";
+      label.append(tag);
+    }
     skillList.append(label);
   }
 }
@@ -200,14 +208,29 @@ skillNone.addEventListener("click", () => {
   for (const box of skillCheckboxes()) box.checked = false;
 });
 
+function selectedSkills(): string[] {
+  return skillCheckboxes()
+    .filter((box) => box.checked)
+    .map((box) => box.value);
+}
+
+skillShare.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running) return;
+  outputTitle.textContent = "分享技能";
+  const result = await bridge.share_skills(selectedSkills());
+  renderOutput(result.output);
+  outputState.textContent = result.code === 0 ? "完成" : "有問題";
+  outputState.className =
+    result.code === 0 ? "output-state is-ok" : "output-state is-fail";
+  void loadSkills();
+});
+
 skillPackage.addEventListener("click", async () => {
   const bridge = api();
   if (!bridge || running) return;
-  const selected = skillCheckboxes()
-    .filter((box) => box.checked)
-    .map((box) => box.value);
   outputTitle.textContent = "打包技能";
-  const result = await bridge.package_skills(selected);
+  const result = await bridge.package_skills(selectedSkills());
   renderOutput(result.output);
   outputState.textContent = result.code === 0 ? "完成" : "有問題";
   outputState.className =
@@ -232,6 +255,60 @@ packageCopy.addEventListener("click", async () => {
   }, 2000);
 });
 
+// ── 版本更新 ───────────────────────────
+
+let pendingUpdate: string | null = null;
+
+updateBtn.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running) return;
+
+  if (pendingUpdate) {
+    setBusy(true);
+    outputTitle.textContent = `更新到 v${pendingUpdate}`;
+    outputState.textContent = "執行中…";
+    outputState.className = "output-state is-running";
+    showPlaceholder("下載並安裝新版本,請稍候…");
+    try {
+      const result = await bridge.run_update();
+      renderOutput(result.output || "(沒有輸出)");
+      if (result.code === 0) {
+        outputState.textContent = "完成";
+        outputState.className = "output-state is-ok";
+        updateBtn.textContent = "已更新,重開視窗生效";
+        updateBtn.disabled = true;
+        pendingUpdate = null;
+      } else {
+        outputState.textContent = "有問題";
+        outputState.className = "output-state is-fail";
+      }
+    } finally {
+      setBusy(false);
+    }
+    return;
+  }
+
+  updateBtn.disabled = true;
+  updateBtn.textContent = "檢查中…";
+  const check = await bridge.check_update();
+  updateBtn.disabled = false;
+  if (check.code !== 0) {
+    renderOutput(check.output);
+    outputTitle.textContent = "檢查更新";
+    outputState.textContent = "有問題";
+    outputState.className = "output-state is-fail";
+    updateBtn.textContent = "檢查更新";
+  } else if (check.up_to_date) {
+    updateBtn.textContent = "已是最新版";
+    setTimeout(() => {
+      updateBtn.textContent = "檢查更新";
+    }, 3000);
+  } else {
+    pendingUpdate = check.latest;
+    updateBtn.textContent = `更新到 v${check.latest}`;
+  }
+});
+
 async function loadSkills(): Promise<void> {
   const bridge = api();
   if (!bridge) return;
@@ -243,6 +320,101 @@ async function loadSkills(): Promise<void> {
   }
 }
 
+// ── 首次設定 ───────────────────────────
+
+const setupBox = $("#setup");
+const setupUrl = $<HTMLInputElement>("#setup-url");
+const setupDir = $<HTMLInputElement>("#setup-dir");
+const setupGo = $<HTMLButtonElement>("#setup-go");
+const setupGdriveDir = $<HTMLInputElement>("#setup-gdrive-dir");
+const setupGdriveGo = $<HTMLButtonElement>("#setup-gdrive-go");
+const setupGitPanel = $("#setup-git-panel");
+const setupGdrivePanel = $("#setup-gdrive-panel");
+const providerRadios = Array.from(
+  document.querySelectorAll<HTMLInputElement>("input[name=setup-provider]"),
+);
+
+for (const radio of providerRadios) {
+  radio.addEventListener("change", () => {
+    const isGdrive = radio.value === "gdrive" && radio.checked;
+    setupGitPanel.hidden = isGdrive;
+    setupGdrivePanel.hidden = !isGdrive;
+    if (isGdrive) {
+      setupGdriveDir.value = setupDir.value;
+    }
+  });
+}
+
+function setConfigured(configured: boolean): void {
+  setupBox.hidden = configured;
+  for (const btn of actionButtons) btn.disabled = !configured;
+  for (const tab of toolTabs) tab.disabled = !configured;
+  skillShare.disabled = !configured;
+  skillPackage.disabled = !configured;
+}
+
+setupGo.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running) return;
+  setupGo.disabled = true;
+  setupGo.textContent = "設定中…";
+  outputTitle.textContent = "首次設定";
+  outputState.textContent = "執行中…";
+  outputState.className = "output-state is-running";
+  showPlaceholder("正在下載儲存庫並驗證存取權,請稍候…");
+  try {
+    const result = await bridge.setup_repo(setupUrl.value, setupDir.value);
+    renderOutput(result.output || "(沒有輸出)");
+    if (result.code === 0) {
+      outputState.textContent = "完成";
+      outputState.className = "output-state is-ok";
+      setupBox.replaceChildren();
+      const done = document.createElement("p");
+      done.className = "package-hint";
+      done.textContent =
+        "✓ 設定完成!請關閉並重新開啟這個視窗,就能開始同步。";
+      setupBox.append(done);
+    } else {
+      outputState.textContent = "有問題";
+      outputState.className = "output-state is-fail";
+    }
+  } finally {
+    setupGo.disabled = false;
+    setupGo.textContent = "連線並完成設定";
+  }
+});
+
+setupGdriveGo.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running) return;
+  setupGdriveGo.disabled = true;
+  setupGdriveGo.textContent = "驗證中…";
+  outputTitle.textContent = "首次設定 (Google Drive)";
+  outputState.textContent = "執行中…";
+  outputState.className = "output-state is-running";
+  showPlaceholder("已開啟瀏覽器,請完成登入…");
+  try {
+    const result = await bridge.setup_gdrive(setupGdriveDir.value);
+    renderOutput(result.output || "(沒有輸出)");
+    if (result.code === 0) {
+      outputState.textContent = "完成";
+      outputState.className = "output-state is-ok";
+      setupBox.replaceChildren();
+      const done = document.createElement("p");
+      done.className = "package-hint";
+      done.textContent =
+        "✓ Google Drive 設定完成!請關閉並重新開啟這個視窗,就能開始同步。";
+      setupBox.append(done);
+    } else {
+      outputState.textContent = "有問題";
+      outputState.className = "output-state is-fail";
+    }
+  } finally {
+    setupGdriveGo.disabled = false;
+    setupGdriveGo.textContent = "用 Google 帳號登入";
+  }
+});
+
 async function loadInfo(): Promise<void> {
   const bridge = api();
   if (!bridge) return;
@@ -251,6 +423,15 @@ async function loadInfo(): Promise<void> {
     versionEl.textContent = `v${info.version}`;
     repoEl.textContent = `資料儲存庫:${info.repo}`;
     repoEl.title = info.repo;
+    setConfigured(info.configured);
+    if (!info.configured) {
+      setupDir.value = info.repo;
+      setupGdriveDir.value = info.repo;
+      repoEl.textContent = "尚未完成首次設定";
+      if (info.config_error) {
+        showPlaceholder(`設定檔有問題:${info.config_error}`);
+      }
+    }
   } catch {
     repoEl.textContent = "無法讀取儲存庫資訊";
   }

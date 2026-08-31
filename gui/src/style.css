@@ -100,6 +100,18 @@ body {
   font-size: 0.8125rem;
 }
 
+.update-btn {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.125rem var(--space-sm);
+  border: 1px solid var(--color-paper-3);
+}
+
+.update-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .app-repo {
   margin: 0;
   color: var(--color-ink-soft);
@@ -254,6 +266,85 @@ body {
   line-height: 1.5;
 }
 
+/* ── 首次設定 ─────────────────────────── */
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  padding: var(--space-md);
+}
+
+.setup[hidden] {
+  display: none;
+}
+
+.setup-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.setup-provider-selector {
+  display: flex;
+  gap: var(--space-md);
+  margin-block: var(--space-xs);
+}
+
+.provider-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.provider-option input[type="radio"] {
+  accent-color: var(--color-accent);
+  inline-size: 1rem;
+  block-size: 1rem;
+  cursor: pointer;
+}
+
+.setup-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.setup-panel[hidden] {
+  display: none;
+}
+
+.setup-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-ink-soft);
+}
+
+.setup-field input {
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  padding: var(--space-sm);
+}
+
+.setup-field input:focus-visible {
+  outline: 0.125rem solid var(--color-focus);
+  outline-offset: 0.0625rem;
+}
+
 /* ── 技能打包 ─────────────────────────── */
 
 .package {
@@ -322,6 +413,15 @@ body {
 .skill-item input:focus-visible {
   outline: 0.125rem solid var(--color-focus);
   outline-offset: 0.125rem;
+}
+
+.skill-tag {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-success);
+  background: oklch(94% 0.025 135);
+  border-radius: 62.4375rem;
+  padding: 0.0625rem var(--space-sm);
 }
 
 .package-buttons {

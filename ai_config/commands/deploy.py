@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from .console import BOLD, CYAN, NC, log_error, log_header, log_info, log_success
-from .fsops import mirror_dir, safe_cp
-from .paths import CLAUDE_MANAGED_DIRS, CLAUDE_MANAGED_FILES, SCRIPT_DIR
-from .profiles import (
+from ..console import BOLD, CYAN, NC, log_error, log_header, log_info, log_success
+from ..fsops import mirror_dir, safe_cp
+from ..paths import CLAUDE_MANAGED_DIRS, CLAUDE_MANAGED_FILES, SCRIPT_DIR
+from ..profiles import (
     PROFILES_NAME,
     load_profiles,
     save_profile,

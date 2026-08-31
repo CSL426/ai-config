@@ -29,7 +29,7 @@ def test_update_from_source_delegates_to_standalone(
     monkeypatch,
     capsys,
 ) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     standalone = tmp_path / "bin" / "ai-config"
     standalone.parent.mkdir()
@@ -60,7 +60,7 @@ def test_delegated_source_update_does_not_recurse(
     monkeypatch,
     capsys,
 ) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     def fail_run(*_args, **_kwargs):
         raise AssertionError("delegated source update must not recurse")
@@ -82,7 +82,7 @@ def test_update_rejects_extra_arguments(tmp_path: Path) -> None:
 
 
 def test_windows_handoff_redirects_output_away_from_console(monkeypatch) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     calls = {}
 
@@ -104,7 +104,7 @@ def test_windows_handoff_redirects_output_away_from_console(monkeypatch) -> None
 
 
 def test_windows_handoff_script_marks_completion() -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     script = update._windows_update_script(4321)
 
@@ -115,7 +115,7 @@ def test_windows_handoff_script_marks_completion() -> None:
 
 
 def test_windows_handoff_forwards_pinned_version(monkeypatch) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     calls = {}
 
@@ -133,7 +133,7 @@ def test_windows_handoff_forwards_pinned_version(monkeypatch) -> None:
 
 
 def test_update_frozen_installs_requested_version(monkeypatch) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     calls = {}
 
@@ -155,7 +155,7 @@ def test_update_frozen_installs_requested_version(monkeypatch) -> None:
 
 
 def test_update_frozen_pinned_version_skips_latest_lookup(monkeypatch) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     class Completed:
         returncode = 0
@@ -181,7 +181,7 @@ def test_update_rejects_malformed_version(tmp_path: Path) -> None:
 
 
 def test_update_frozen_runs_hosted_installer(monkeypatch) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     calls = {}
 
@@ -205,7 +205,7 @@ def test_update_frozen_runs_hosted_installer(monkeypatch) -> None:
 
 
 def test_update_frozen_honours_repository_override(monkeypatch) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     calls = {}
 
@@ -230,7 +230,7 @@ def test_update_frozen_honours_repository_override(monkeypatch) -> None:
 def test_update_frozen_native_windows_hands_off_to_powershell(
     monkeypatch, capsys
 ) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     calls = {}
 
@@ -264,7 +264,7 @@ def test_update_frozen_native_windows_hands_off_to_powershell(
 def test_update_frozen_native_windows_reports_handoff_failure(
     monkeypatch, capsys
 ) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     def fail_popen(*_args, **_kwargs):
         raise OSError("PowerShell unavailable")
@@ -280,7 +280,7 @@ def test_update_frozen_native_windows_reports_handoff_failure(
 
 
 def test_update_frozen_skips_download_when_current(monkeypatch, capsys) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     def fail_run(cmd, **kwargs):
         raise AssertionError("current release must not download the installer")
@@ -295,7 +295,7 @@ def test_update_frozen_skips_download_when_current(monkeypatch, capsys) -> None:
 
 
 def test_update_frozen_does_not_downgrade_newer_version(monkeypatch) -> None:
-    from ai_config import update
+    from ai_config.commands import update
 
     def fail_run(cmd, **kwargs):
         raise AssertionError("newer release must not download the installer")

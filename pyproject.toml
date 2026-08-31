@@ -16,7 +16,7 @@ ai-config = "ai_config.cli:console_main"
 acg = "ai_config.cli:console_main"
 
 [tool.setuptools]
-packages = ["ai_config", "ai_config.tools"]
+packages = ["ai_config", "ai_config.commands", "ai_config.tools"]
 
 [tool.setuptools.package-data]
 ai_config = ["gui_assets/**/*"]

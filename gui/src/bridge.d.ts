@@ -6,6 +6,8 @@ export interface AcgInfo {
   version: string;
   repo: string;
   tools: string[];
+  configured: boolean;
+  config_error: string;
 }
 
 export interface RunResult {
@@ -13,8 +15,14 @@ export interface RunResult {
   output: string;
 }
 
+export interface SkillEntry {
+  name: string;
+  shared: boolean;
+  shareable: boolean;
+}
+
 export interface SkillList {
-  skills: string[];
+  skills: SkillEntry[];
 }
 
 export interface PackageResult {
@@ -23,11 +31,24 @@ export interface PackageResult {
   zips: string[];
 }
 
+export interface UpdateCheck {
+  code: number;
+  current: string;
+  latest: string;
+  up_to_date: boolean;
+  output: string;
+}
+
 export interface AcgApi {
   get_info(): Promise<AcgInfo>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
   list_skills(): Promise<SkillList>;
   package_skills(names: string[]): Promise<PackageResult>;
+  share_skills(names: string[]): Promise<RunResult>;
+  check_update(): Promise<UpdateCheck>;
+  run_update(): Promise<RunResult>;
+  setup_repo(repoUrl: string, dataDir?: string): Promise<RunResult>;
+  setup_gdrive(dataDir?: string): Promise<RunResult>;
 }
 
 declare global {

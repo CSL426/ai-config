@@ -14,9 +14,9 @@ import tempfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from .console import log_error, log_info, log_success, log_warn
-from .paths import ENTRYPOINT, NATIVE_WINDOWS
-from .version import current_version
+from ..console import log_error, log_info, log_success, log_warn
+from ..paths import ENTRYPOINT, NATIVE_WINDOWS
+from ..version import current_version
 
 _DEFAULT_REPOSITORY = "CSL426/ai-config"
 _DELEGATED_UPDATE = "AI_CONFIG_UPDATE_DELEGATED"

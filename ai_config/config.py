@@ -5,9 +5,11 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 CONFIG_ENV = "AI_CONFIG_CONFIG"
 DATA_REPO_ENV = "AI_CONFIG_REPO"
+REMOTE_PROVIDERS = frozenset({"git", "gdrive"})
 
 
 class ConfigError(RuntimeError):
@@ -50,7 +52,7 @@ def default_data_repo(environ: "dict[str, str] | None" = None) -> Path:
     return _home(environ) / "ai-config" / "data"
 
 
-def load_config(path: "Path | None" = None) -> dict[str, str]:
+def load_config(path: "Path | None" = None) -> dict[str, Any]:
     target = path or config_path()
     if not target.exists():
         return {}
@@ -67,6 +69,13 @@ def load_config(path: "Path | None" = None) -> dict[str, str]:
     data_repo = payload.get("data_repo")
     if data_repo is not None and not isinstance(data_repo, str):
         raise ConfigError(f"data_repo must be a string in {target}")
+    remote_provider = payload.get("remote_provider")
+    if remote_provider is not None and not isinstance(remote_provider, str):
+        raise ConfigError(f"remote_provider must be a string in {target}")
+    if remote_provider is not None and remote_provider not in REMOTE_PROVIDERS:
+        raise ConfigError(
+            f"remote_provider must be git or gdrive in {target}"
+        )
     return payload
 
 
@@ -80,11 +89,42 @@ def configured_data_repo() -> "Path | None":
     return Path(data_repo).expanduser().resolve()
 
 
-def save_data_repo(data_repo: Path, path: "Path | None" = None) -> Path:
+def configured_remote_provider() -> str:
+    override = os.environ.get("AI_CONFIG_PROVIDER")
+    if override:
+        if override not in REMOTE_PROVIDERS:
+            raise ConfigError("AI_CONFIG_PROVIDER must be git or gdrive")
+        return override
+    provider = load_config().get("remote_provider")
+    return provider if isinstance(provider, str) and provider else "git"
+
+
+def save_data_repo(
+    data_repo: Path,
+    path: "Path | None" = None,
+    remote_provider: "str | None" = None,
+) -> Path:
+    if remote_provider is not None and remote_provider not in REMOTE_PROVIDERS:
+        raise ConfigError("remote_provider must be git or gdrive")
     target = path or config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
+    current: dict[str, Any] = {}
+    if target.exists():
+        try:
+            loaded = json.loads(target.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                current = loaded
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            pass
+
+    current["data_repo"] = str(data_repo.resolve())
+    if remote_provider == "gdrive":
+        current["remote_provider"] = "gdrive"
+    elif remote_provider == "git" and "remote_provider" in current:
+        current["remote_provider"] = "git"
+
     payload = json.dumps(
-        {"data_repo": str(data_repo.resolve())},
+        current,
         ensure_ascii=False,
         indent=2,
         sort_keys=True,
