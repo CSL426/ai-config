@@ -40,6 +40,7 @@ def usage() -> None:
     print("  status [tool]   Show diff between the data repository and live configs")
     print("  pull [tool]     Safely fast-forward repo changes, then show status")
     print("  push [tool]     Gather, review, commit, and push local configuration")
+    print("                  --allow-secrets skip the credential-content check")
     print("  sync [tool]     Alias for pull")
     print("  list            List managed tools")
     print("  package [skill] Zip a shared skill for Claude Desktop upload")
@@ -49,6 +50,7 @@ def usage() -> None:
     print("                  --save-as <name> remember this selection")
     print("  share <skill>   Copy a Claude skill (or plugin skill) into claude/shared/")
     print("                  --to <both|codex|agy> pick the target tools (default both)")
+    print("  config          Show provider (git/gdrive), repo, and login state")
     print("  gui             Launch the graphical interface (needs ai-config[gui])")
     print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
@@ -130,6 +132,15 @@ def main(argv: "list[str] | None" = None) -> int:
 
         print(render_guide(), end="")
         return 0
+
+    # config 是唯讀總覽,未設定時也要能跑
+    if cmd == "config":
+        if len(args) != 1:
+            log_error(f"Usage: {ENTRYPOINT} config")
+            return 1
+        from .commands.info import run_config_info
+
+        return run_config_info()
 
     # gui 放在設定檢查之前:未設定時 GUI 內建首次設定表單
     if cmd == "gui":
@@ -224,11 +235,16 @@ def main(argv: "list[str] | None" = None) -> int:
         log_error(f"Unexpected arguments: {' '.join(args[1:])}")
         return 1
 
-    tool = "all"
-    if len(args) > 1:
-        tool = args[1]
-    if len(args) > 2:
-        log_error(f"Unexpected arguments: {' '.join(args[2:])}")
+    allow_secrets = False
+    positional: list[str] = []
+    for token in args[1:]:
+        if cmd == "push" and token == "--allow-secrets":
+            allow_secrets = True
+        else:
+            positional.append(token)
+    tool = positional[0] if positional else "all"
+    if len(positional) > 1:
+        log_error(f"Unexpected arguments: {' '.join(positional[1:])}")
         return 1
     tool = resolve_tool(tool)
 
@@ -251,7 +267,7 @@ def main(argv: "list[str] | None" = None) -> int:
         if code != 0:
             return code
     elif cmd == "push":
-        code = do_push(tool)
+        code = do_push(tool, allow_secrets=allow_secrets)
         if code != 0:
             return code
     elif cmd == "status":
