@@ -9,12 +9,25 @@ the manual copy step.
 import shutil
 from pathlib import Path
 
-from .console import log_error, log_header, log_info, log_success, log_warn
-from .paths import CLAUDE_HOME, ENTRYPOINT, SCRIPT_DIR, tilde
+from ..console import log_error, log_header, log_info, log_success, log_warn
+from ..paths import CLAUDE_HOME, ENTRYPOINT, SCRIPT_DIR, tilde
 
 SHARE_TARGETS = ("both", "codex", "agy")
 # 與 shared 同步機制一致:只搬這些項目
 _SYNCED_ITEMS = ("SKILL.md", "examples", "references", "scripts", "agents")
+
+
+def shareable_skill_names() -> "list[str]":
+    names = set()
+    direct = CLAUDE_HOME / "skills"
+    if direct.is_dir():
+        for skill_dir in direct.iterdir():
+            if (skill_dir / "SKILL.md").is_file():
+                names.add(skill_dir.name)
+    marketplaces = CLAUDE_HOME / "plugins" / "marketplaces"
+    for skill_md in marketplaces.glob("*/*/skills/*/SKILL.md"):
+        names.add(skill_md.parent.name)
+    return sorted(names)
 
 
 def find_skill_source(name: str) -> "Path | None":

@@ -37,13 +37,17 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
         ["bash", str(REPO_ROOT / "install.sh")],
         cwd=tmp_path,
         env=env,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert "Installing local standalone binary" in result.stdout
-    assert "ai-config setup" in result.stdout
+    assert (
+        "ai-config setup" in result.stdout
+        or "Starting first-run setup" in result.stdout
+    )
     assert "Update complete" in result.stdout
 
     executable = home / ".local" / "bin" / "ai-config"

@@ -12,9 +12,50 @@
         <div class="app-title">
           <h1>AI 設定同步</h1>
           <span class="app-version" id="version">—</span>
+          <button class="btn btn-ghost update-btn" id="update-check">檢查更新</button>
         </div>
         <p class="app-repo" id="repo" title="">資料儲存庫位置讀取中…</p>
       </header>
+
+      <section class="setup" id="setup" hidden aria-label="首次設定">
+        <h2 class="setup-title">首次設定</h2>
+        <div class="setup-provider-selector" role="radiogroup" aria-label="同步類型">
+          <label class="provider-option">
+            <input type="radio" name="setup-provider" value="git" checked />
+            <span>Git 儲存庫</span>
+          </label>
+          <label class="provider-option">
+            <input type="radio" name="setup-provider" value="gdrive" />
+            <span>Google Drive</span>
+          </label>
+        </div>
+
+        <div id="setup-git-panel" class="setup-panel">
+          <p class="package-hint">貼上你的 Git URL(例如 git@github.com:you/my-config.git),按一下就完成設定。</p>
+          <label class="setup-field">
+            <span>儲存庫 Git URL</span>
+            <input id="setup-url" type="text" placeholder="git@github.com:you/my-config.git" spellcheck="false" />
+          </label>
+          <label class="setup-field">
+            <span>本機目錄(可用預設)</span>
+            <input id="setup-dir" type="text" spellcheck="false" />
+          </label>
+          <div class="package-buttons">
+            <button class="btn btn-primary" id="setup-go">連線並完成設定</button>
+          </div>
+        </div>
+
+        <div id="setup-gdrive-panel" class="setup-panel" hidden>
+          <p class="package-hint">設定會存在你 Google 帳號的隱藏應用程式空間,只有這臺程式能存取;適合自己的多臺電腦同步,無法分享給其他人。</p>
+          <label class="setup-field">
+            <span>本機目錄(可用預設)</span>
+            <input id="setup-gdrive-dir" type="text" spellcheck="false" />
+          </label>
+          <div class="package-buttons">
+            <button class="btn btn-primary" id="setup-gdrive-go">用 Google 帳號登入</button>
+          </div>
+        </div>
+      </section>
 
       <section class="scope" aria-label="同步範圍">
         <span class="scope-label">範圍</span>
@@ -50,14 +91,15 @@
       </section>
 
       <details class="package" id="package">
-        <summary class="package-summary">打包技能給桌面版(Claude / Codex)</summary>
+        <summary class="package-summary">技能:分享給其他 CLI / 打包給桌面版</summary>
         <div class="package-body">
-          <p class="package-hint">勾選要打包的技能,會做成 ZIP 檔並附上一段可以直接貼給桌面版 AI 的安裝說明。</p>
-          <div class="package-list" id="skill-list" role="group" aria-label="可打包的技能"></div>
+          <p class="package-hint">勾選技能後:「分享」會複製進共享區,讓 Codex 和 Antigravity 也能用(之後按「套用設定」生效);「打包」做成 ZIP 並附上可貼給桌面版 AI 的安裝說明。</p>
+          <div class="package-list" id="skill-list" role="group" aria-label="技能清單"></div>
           <div class="package-buttons">
             <button class="btn btn-ghost" id="skill-all">全選</button>
             <button class="btn btn-ghost" id="skill-none">清除</button>
-            <button class="btn btn-primary" id="skill-package">打包選取的技能</button>
+            <button class="btn btn-primary" id="skill-share">分享給其他 CLI</button>
+            <button class="btn btn-primary" id="skill-package">打包 ZIP 給桌面版</button>
           </div>
           <div class="package-result" id="package-result" hidden>
             <p class="package-hint">打包完成!複製下面這段話,貼給你的桌面版 AI(Claude Desktop 也可以直接在 設定 &gt; Customize &gt; Skills 上傳 ZIP):</p>

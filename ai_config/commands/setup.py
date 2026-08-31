@@ -10,14 +10,14 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .config import (
+from ..config import (
     ConfigError,
     config_path,
     configured_data_repo,
     default_data_repo,
     save_data_repo,
 )
-from .console import log_error, log_info, log_success, log_warn
+from ..console import log_error, log_info, log_success, log_warn
 
 
 class SetupError(RuntimeError):
@@ -303,7 +303,9 @@ def setup_repository(
             )
         else:
             log_success("Push access verified; temporary ref was removed")
-        saved_path = save_data_repo(repository)
+        # An explicit Git setup must also switch a previously configured
+        # Google Drive installation back to the Git transport.
+        saved_path = save_data_repo(repository, remote_provider="git")
     except Exception:
         if remote_changed:
             if previous_remote is None:
@@ -329,6 +331,74 @@ def setup_repository(
         log_warn("This machine is read-only; acg push is not available here")
     log_info(f"Saved configuration: {saved_path}")
     return repository
+
+
+def setup_gdrive_repository(data_dir: Path) -> Path:
+    from ..gdrive import (
+        GDriveAuthError,
+        GDriveClient,
+        GDriveError,
+        get_valid_access_token,
+        run_oauth_flow,
+    )
+
+    data_dir = data_dir.expanduser().absolute()
+    if _is_reparse_point(data_dir):
+        raise SetupError(
+            f"Data repository root cannot be a symlink or junction: {data_dir}"
+        )
+    if data_dir.exists() and not data_dir.is_dir():
+        raise SetupError(f"Data repository path is not a directory: {data_dir}")
+
+    try:
+        try:
+            get_valid_access_token()
+        except GDriveAuthError:
+            log_info("Starting Google OAuth login...")
+            run_oauth_flow()
+
+        log_info("Verifying Google Drive appDataFolder access...")
+        client = GDriveClient()
+        client.verify_setup_access()
+        log_success("Google Drive access verified")
+    except GDriveError as exc:
+        raise SetupError(f"Google Drive setup failed: {exc}") from exc
+
+    if data_dir.exists():
+        probe = _run_git(
+            "rev-parse",
+            "--show-toplevel",
+            cwd=data_dir,
+            check=False,
+        )
+        if probe.returncode == 0:
+            _repository_root(data_dir)
+        elif any(data_dir.iterdir()):
+            raise SetupError(f"Data directory is not a Git repository: {data_dir}")
+        else:
+            _run_git("init", "-b", "main", cwd=data_dir)
+    else:
+        data_dir.mkdir(parents=True)
+        _run_git("init", "-b", "main", cwd=data_dir)
+
+    branch = _run_git(
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD",
+        cwd=data_dir,
+        check=False,
+    )
+    if branch.returncode != 0 or branch.stdout.strip() != "main":
+        raise SetupError("Google Drive data repository must use the main branch.")
+
+    for tool in ("claude", "codex", "agy"):
+        (data_dir / tool).mkdir(exist_ok=True)
+
+    saved_path = save_data_repo(data_dir, remote_provider="gdrive")
+    log_success(f"Data repository configured for Google Drive: {data_dir}")
+    log_info(f"Saved configuration: {saved_path}")
+    return data_dir
 
 
 def _prompt(label: str, default: "str | None" = None) -> str:
@@ -377,12 +447,20 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Explicitly replace a different existing remote URL",
     )
+    parser.add_argument(
+        "--provider",
+        choices=["git", "gdrive"],
+        default="git",
+        help="Remote sync provider (git or gdrive)",
+    )
     return parser
 
 
 def run_setup(argv: "list[str] | None" = None) -> int:
     args = _parser().parse_args(argv)
     interactive = sys.stdin.isatty()
+    provider = args.provider
+
     data_value = args.data_dir
     if not data_value and interactive:
         data_value = _prompt(
@@ -396,6 +474,24 @@ def run_setup(argv: "list[str] | None" = None) -> int:
     data_dir = Path(data_value).expanduser()
     try:
         repo_url = args.repo_url
+        if (
+            interactive
+            and not repo_url
+            and not _has_usable_remote(data_dir, args.remote_name)
+            and argv is not None
+            and not any(a.startswith("--provider") for a in argv)
+        ):
+            print("選擇同步傳輸方式:")
+            print("  1) Git URL (預設)")
+            print("  2) Google Drive")
+            choice = _prompt("選擇同步類型 (1/2)", "1")
+            if choice in ("2", "gdrive"):
+                provider = "gdrive"
+
+        if provider == "gdrive":
+            setup_gdrive_repository(data_dir)
+            return 0
+
         if not repo_url and interactive and not _has_usable_remote(
             data_dir,
             args.remote_name,

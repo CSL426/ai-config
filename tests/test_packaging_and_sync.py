@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_config import setup as setup_cli
 from ai_config.cli import console_main
+from ai_config.commands import setup as setup_cli
 from ai_config.config import save_data_repo
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -927,7 +927,8 @@ def test_push_commit_message_uses_tools_and_changed_json_keys(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     _, data_repo = create_data_remote(tmp_path)
     claude_settings = data_repo / "claude/settings.json"
@@ -937,6 +938,7 @@ def test_push_commit_message_uses_tools_and_changed_json_keys(
     agy_settings.write_text('{"model":"gemini-flash"}\n', encoding="utf-8")
     run_git(data_repo, "add", "claude/settings.json", "agy/settings.json")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
 
     assert main_cli._proposed_push_commit_message(
         ["agy/settings.json", "claude/settings.json"]
@@ -944,7 +946,7 @@ def test_push_commit_message_uses_tools_and_changed_json_keys(
 
 
 def test_push_commit_message_identifies_shared_skill() -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
 
     assert main_cli._proposed_push_commit_message(
         [
@@ -1241,7 +1243,8 @@ def test_ahead_push_rejects_upstream_change_after_review(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     remote, data_repo = create_data_remote(tmp_path)
     local_file = data_repo / "claude/local.md"
@@ -1249,6 +1252,7 @@ def test_ahead_push_rejects_upstream_change_after_review(
     run_git(data_repo, "add", "claude/local.md")
     run_git(data_repo, "commit", "-m", "local update")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
     snapshot = main_cli._push_snapshot()
     assert snapshot is not None
     commits = main_cli._ahead_commits(snapshot)
@@ -1294,13 +1298,15 @@ def test_push_refuses_branch_without_upstream(tmp_path: Path) -> None:
 def test_push_credential_scan_rejects_staged_credential_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     _, data_repo = create_data_remote(tmp_path)
     credential = data_repo / "claude/auth.json"
     credential.write_text("not-a-real-token\n", encoding="utf-8")
     run_git(data_repo, "add", "claude/auth.json")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
 
     assert main_cli._staged_credentials() == ["claude/auth.json"]
 
@@ -1310,7 +1316,8 @@ def test_push_rejects_staged_path_outside_selected_tool(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     _, data_repo = create_data_remote(tmp_path)
     (data_repo / "notes.txt").write_text("concurrent staging\n", encoding="utf-8")
@@ -1318,6 +1325,7 @@ def test_push_rejects_staged_path_outside_selected_tool(
     settings = data_repo / "claude/settings.json"
     settings.write_text('{"theme":"local"}\n', encoding="utf-8")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
 
     assert main_cli._stage_push_changes(["claude"]) is None
     captured = capsys.readouterr()
@@ -1332,13 +1340,15 @@ def test_push_rejects_potential_credential_content(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     _, data_repo = create_data_remote(tmp_path)
     settings = data_repo / "claude/settings.json"
     settings.write_text('{"github_token":"not-a-real-token"}\n', encoding="utf-8")
     run_git(data_repo, "add", "claude/settings.json")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
 
     assert not main_cli._validate_staged_push(["claude"])
     captured = capsys.readouterr()
@@ -1351,7 +1361,8 @@ def test_push_scans_staged_blob_with_unicode_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     _, data_repo = create_data_remote(tmp_path)
     instructions = data_repo / "claude/機密說明.md"
@@ -1361,6 +1372,7 @@ def test_push_scans_staged_blob_with_unicode_path(
     )
     run_git(data_repo, "add", "claude/機密說明.md")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
 
     assert main_cli._staged_secret_paths() == ["claude/機密說明.md"]
 
@@ -1369,13 +1381,15 @@ def test_push_rejects_root_file_named_like_selected_tool(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", str(repo)], check=True)
     (repo / "claude").write_text("not a tool directory\n", encoding="utf-8")
     run_git(repo, "add", "claude")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", repo)
 
     assert main_cli._staged_paths_outside(["claude"]) == ["claude"]
 
@@ -1385,13 +1399,15 @@ def test_push_rejects_restaged_content_changed_after_review(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     _, data_repo = create_data_remote(tmp_path)
     settings = data_repo / "claude/settings.json"
     settings.write_text('{"theme":"reviewed"}\n', encoding="utf-8")
     run_git(data_repo, "add", "claude/settings.json")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
     reviewed_diff = main_cli._staged_diff()
     assert reviewed_diff is not None
 
@@ -1408,7 +1424,8 @@ def test_push_rolls_back_commit_changed_by_hook(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
+    from ai_config.commands import sync as sync_cli
 
     remote, data_repo = create_data_remote(tmp_path)
     settings = data_repo / "claude/settings.json"
@@ -1416,6 +1433,7 @@ def test_push_rolls_back_commit_changed_by_hook(
     run_git(data_repo, "add", "claude/settings.json")
     parent = run_git(data_repo, "rev-parse", "HEAD")
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
+    monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
     reviewed_diff = main_cli._staged_diff()
     assert reviewed_diff is not None
 
@@ -1449,7 +1467,7 @@ def test_push_rolls_back_commit_changed_by_hook(
 def test_push_unstages_selected_tools_when_confirmation_is_interrupted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
 
     status = subprocess.CompletedProcess([], 0, " M claude/settings.json\n", "")
     monkeypatch.setattr(
@@ -1486,7 +1504,7 @@ def test_push_reports_failed_unstage_on_cancel(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from ai_config import __main__ as main_cli
+    from ai_config.commands import push as main_cli
 
     status = subprocess.CompletedProcess([], 0, " M claude/settings.json\n", "")
     monkeypatch.setattr(

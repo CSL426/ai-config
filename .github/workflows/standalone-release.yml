@@ -91,6 +91,23 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Google Drive 登入需要的 OAuth client ID(非機密,但不進版控):
+      # 從 repo secret 注入原始碼常數;沒設 secret 時照常建置,執行檔會提示
+      # 改用 AI_CONFIG_GDRIVE_CLIENT_ID 環境變數。
+      - name: Inject Google OAuth client ID
+        shell: bash
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.AI_CONFIG_GDRIVE_CLIENT_ID }}
+        run: |
+          if [ -n "$GDRIVE_CLIENT_ID" ]; then
+            sed -i.bak 's/^GDRIVE_CLIENT_ID = ""/GDRIVE_CLIENT_ID = "'"$GDRIVE_CLIENT_ID"'"/' ai_config/gdrive.py
+            rm -f ai_config/gdrive.py.bak
+            grep -q "$GDRIVE_CLIENT_ID" ai_config/gdrive.py
+            echo "Client ID injected"
+          else
+            echo "No AI_CONFIG_GDRIVE_CLIENT_ID secret; building without an embedded client ID"
+          fi
+
       - name: Install PyInstaller
         run: python -m pip install pyinstaller==6.21.0 .
 

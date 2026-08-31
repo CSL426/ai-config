@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- 新增 Google Drive 同步後端 (`remote_provider: "gdrive"`)：基於 OAuth PKCE 與 `appDataFolder` bundle 傳輸，與預設 Git provider 並列。支援 CLI (`acg setup --provider gdrive`) 與 GUI 介面 Google Drive 設定。
+
+- GUI: add a first-run setup form — when no data repository is configured,
+  the window opens with a paste-the-Git-URL form (local directory defaults
+  to ~/ai-config/data) instead of failing; sync actions unlock after setup
+  (reopen the window once configured).
+- Refactor: split the 1800-line `__main__.py` into a `commands/` subpackage —
+  apply (apply/init), status, maintenance (list/reset/package/project), sync
+  (pull + shared data-repo Git helpers), push, plus the existing share, gui,
+  setup, update, and deploy command modules — leaving `__main__.py` as the
+  CLI dispatcher. No behavior change.
+- GUI: add an update button (check the latest release, then update in place;
+  takes effect after reopening the window) and a skill-sharing button — the
+  skill list now shows every Claude-side and shared skill with a shared tag,
+  and checked skills can be copied into claude/shared/both for Codex and
+  Antigravity via the new share machinery.
 - Add `acg share <skill> [--to both|codex|agy]`: copy a Claude-side skill —
   from ~/.claude/skills/ or an installed plugin's marketplace copy — into
   claude/shared/ so `apply` projects it to the other CLIs, replacing the

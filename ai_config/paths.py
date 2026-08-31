@@ -67,8 +67,9 @@ ALL_TOOLS = ["claude", "codex", "agy"]
 EXCLUDED_FILES = {
     ".credentials.json",
     "auth.json",
-    "oauth_creds.json",
+    "gdrive_token.json",
     "google_accounts.json",
+    "oauth_creds.json",
     "trustedFolders.json",
 }
 
