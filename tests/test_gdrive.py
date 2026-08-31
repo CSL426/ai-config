@@ -30,6 +30,17 @@ from ai_config.gdrive import (
 from ai_config.paths import EXCLUDED_FILES
 
 
+@pytest.fixture(autouse=True)
+def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # CI runner 會設 XDG_CONFIG_HOME(Linux)/APPDATA(Windows),只 patch HOME
+    # 不夠:config 會寫進 runner 的真實目錄並汙染後續 subprocess 測試。
+    # AI_CONFIG_CONFIG 是 config_path() 的最高優先,直接鎖到本測試的 tmp。
+    monkeypatch.setenv(
+        "AI_CONFIG_CONFIG", str(tmp_path / "isolated" / "config.json")
+    )
+    monkeypatch.delenv("AI_CONFIG_REPO", raising=False)
+
+
 def test_token_file_in_excluded_files() -> None:
     assert "gdrive_token.json" in EXCLUDED_FILES
 
@@ -195,7 +206,7 @@ def test_setup_gdrive_verification_failure_does_not_save_config(
         setup_gdrive_repository(data_dir)
 
     assert "Google Drive setup failed" in str(exc_info.value)
-    assert not (tmp_path / ".config/ai-config/config.json").exists()
+    assert not (tmp_path / "isolated" / "config.json").exists()
 
 
 def init_git_repo(path: Path) -> str:
