@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.28 - 2026-08-31
+
+- 修正 gdrive 首次 push:全新資料庫的 unborn HEAD 讓未提交掃描炸出
+  `fatal: bad revision 'HEAD'`;改以「索引 vs 空樹」加「工作樹 vs 索引」
+  取得未提交清單,首次 `acg push` 可以順利建立第一個 commit 並上傳。
+
 ## 1.0.27 - 2026-08-31
 
 - 修正 Google Drive 登入:Google 的 Desktop 類型 client 在 token 交換時強制要求
