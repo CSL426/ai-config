@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.26 - 2026-08-31
 
 - 新增 Google Drive 同步後端 (`remote_provider: "gdrive"`)：基於 OAuth PKCE 與 `appDataFolder` bundle 傳輸，與預設 Git provider 並列。支援 CLI (`acg setup --provider gdrive`) 與 GUI 介面 Google Drive 設定。
 
