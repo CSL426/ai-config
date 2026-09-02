@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- 資料儲存庫的預設位置改為 `~/.acg/data`(隱藏目錄,符合 CLI 慣例)。
+  只影響全新 setup;已設定的機器 config 記的是絕對路徑,完全不受影響,
+  未設定 config 的機器也仍找得到舊預設 `~/ai-config/data`。
+- push 的審查顯示學 git:檔案清單最多列 20 筆(其餘顯示「… and N more」),
+  diff 改為 diffstat 摘要;完整 diff 只在 200 行內全印,太長改提示
+  `git -C <repo> diff --cached` 查看。審查一致性比對仍用完整 diff,安全性不變。
+
 ## 1.0.31 - 2026-08-31
 
 - 修正繁中 Windows(cp950)上 git 輸出的解碼錯誤:diff 內含 UTF-8 中文時

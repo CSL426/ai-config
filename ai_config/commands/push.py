@@ -13,7 +13,7 @@ from ..console import (
     log_success,
     log_warn,
 )
-from ..paths import ALL_TOOLS, ENTRYPOINT, EXCLUDED_FILES, SCRIPT_DIR
+from ..paths import ALL_TOOLS, ENTRYPOINT, EXCLUDED_FILES, SCRIPT_DIR, tilde
 from .apply import _init_tools, _selected_tools
 from .sync import (
     _git_failure,
@@ -72,8 +72,7 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
             return None
         if staged:
             log_error("Data repository has pre-staged changes; push cancelled:")
-            for path in staged:
-                print(f"  {path}")
+            _print_capped(staged)
             log_info("Unstage them before retrying so push can review the full diff")
             return None
 
@@ -83,8 +82,7 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
         outside = _paths_outside(working, selected)
         if outside:
             log_error("Uncommitted paths outside the selected tools; push cancelled:")
-            for path in outside:
-                print(f"  {path}")
+            _print_capped(outside)
             if len(selected) < len(ALL_TOOLS):
                 log_info(
                     f"Run {ENTRYPOINT} push all if every listed path is intentional"
@@ -693,7 +691,11 @@ def _push_existing_commits(selected: list[str], ahead: int) -> int:
         f"Existing local {'commit' if ahead == 1 else 'commits'} to push:"
     )
     print(commit_list.stdout.rstrip())
-    print(committed_diff, end="" if committed_diff.endswith("\n") else "\n")
+    _print_diff_for_review(
+        committed_diff,
+        ["diff", revision_range] if snapshot.upstream_commit else None,
+        f"git -C {tilde(SCRIPT_DIR)} diff {revision_range}",
+    )
 
     try:
         confirm = input("Push these existing local commits? [y/N] ")
@@ -787,6 +789,37 @@ def _warn_whitespace_issues(check: subprocess.CompletedProcess) -> None:
             print(f"  {line}")
 
 
+_DIFF_DISPLAY_LIMIT = 200
+_PATH_DISPLAY_LIMIT = 20
+
+
+def _print_capped(lines: "list[str]", limit: int = _PATH_DISPLAY_LIMIT) -> None:
+    for line in lines[:limit]:
+        print(f"  {line}")
+    if len(lines) > limit:
+        print(f"  … and {len(lines) - limit} more")
+
+
+def _print_diff_for_review(
+    full_diff: str,
+    stat_args: "list[str] | None",
+    review_command: str,
+) -> None:
+    # 學 git 的顯示習慣:先給 diffstat 摘要;完整 diff 只在夠短時全印,
+    # 太長改提示查看指令。審查一致性比對仍使用完整 diff,不受顯示影響。
+    if stat_args is not None:
+        stat = _run_repo_git(*stat_args, "--stat", "--stat-count=20")
+        if stat.returncode == 0 and stat.stdout.strip():
+            print(stat.stdout.rstrip())
+    lines = full_diff.count("\n")
+    if lines <= _DIFF_DISPLAY_LIMIT:
+        print(full_diff, end="" if full_diff.endswith("\n") else "\n")
+    else:
+        log_info(
+            f"Diff is {lines} lines; review the full diff with: {review_command}"
+        )
+
+
 def _review_and_confirm_push(
     pending: str,
     staged_diff: str,
@@ -794,8 +827,13 @@ def _review_and_confirm_push(
 ) -> bool:
     print()
     log_info("Configuration changes to commit:")
-    print(pending.rstrip())
-    print(staged_diff, end="" if staged_diff.endswith("\n") else "\n")
+    pending_lines = pending.rstrip().splitlines()
+    _print_capped(pending_lines)
+    _print_diff_for_review(
+        staged_diff,
+        ["diff", "--cached"],
+        f"git -C {tilde(SCRIPT_DIR)} diff --cached",
+    )
 
     print()
     log_info(f"Commit message: {commit_message}")
