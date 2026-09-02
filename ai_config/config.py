@@ -49,6 +49,13 @@ def config_path(environ: "dict[str, str] | None" = None) -> Path:
 
 
 def default_data_repo(environ: "dict[str, str] | None" = None) -> Path:
+    return _home(environ) / ".acg" / "data"
+
+
+def legacy_default_data_repo(
+    environ: "dict[str, str] | None" = None,
+) -> Path:
+    """1.0.31 以前的預設位置;未設定 config 的機器仍要找得到它。"""
     return _home(environ) / "ai-config" / "data"
 
 

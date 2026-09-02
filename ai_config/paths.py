@@ -2,7 +2,12 @@ import os
 import sys
 from pathlib import Path
 
-from .config import ConfigError, configured_data_repo, default_data_repo
+from .config import (
+    ConfigError,
+    configured_data_repo,
+    default_data_repo,
+    legacy_default_data_repo,
+)
 
 HOME = Path(os.environ.get("HOME", str(Path.home())))
 
@@ -19,6 +24,7 @@ else:
     parents_root = Path(__file__).resolve().parents[1]
     checkout_data_repo = (parents_root / "data").resolve()
     default_home_repo = default_data_repo().resolve()
+    previous_default_repo = legacy_default_data_repo().resolve()
     legacy_home_repo = (HOME / "ai-config").resolve()
     frozen = getattr(sys, "frozen", False)
     if not frozen and any(
@@ -31,6 +37,10 @@ else:
         SCRIPT_DIR = checkout_data_repo
     elif any((default_home_repo / d).is_dir() for d in ("claude", "codex", "agy")):
         SCRIPT_DIR = default_home_repo
+    elif any(
+        (previous_default_repo / d).is_dir() for d in ("claude", "codex", "agy")
+    ):
+        SCRIPT_DIR = previous_default_repo
     elif any((legacy_home_repo / d).is_dir() for d in ("claude", "codex", "agy")):
         SCRIPT_DIR = legacy_home_repo
     else:
