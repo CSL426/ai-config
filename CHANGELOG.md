@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- GUI:push 改為兩段式 — 先取得與 CLI 完全一致的審查內容(diff 與 commit
+  訊息)顯示給使用者,確認後才送出;不再預填同意。
+- 新增對外介紹簡報(docs/slides/intro.html,v1.0.33 內容含 Google Drive/
+  Git 雙同步與 GUI 導覽)與 GitHub Pages 自動部署 workflow。
+
 ## 1.0.33 - 2026-09-02
 
 - status(以及 pull 結尾的狀態顯示)聚合長清單:「只在 ai-config」的新檔與

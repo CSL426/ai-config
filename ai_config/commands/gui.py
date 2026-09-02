@@ -8,8 +8,10 @@ through pywebview's js_api bridge as methods on GuiApi.
 import contextlib
 import io
 import re
+import secrets
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from ..console import log_error
@@ -23,11 +25,31 @@ _ASSETS_DIR = Path(__file__).resolve().parent / "gui_assets"
 WINDOW_TITLE = "acg — AI 設定同步"
 
 
+class _PromptInput(io.TextIOBase):
+    """Answer CLI prompts while retaining the exact review shown beforehand."""
+
+    def __init__(
+        self,
+        output: io.StringIO,
+        answer: Callable[[str], str],
+    ) -> None:
+        self._output = output
+        self._answer = answer
+        self.reviews: list[str] = []
+
+    def readline(self, size: int = -1) -> str:
+        review = self._output.getvalue()
+        self.reviews.append(review)
+        response = f"{self._answer(review)}\n"
+        return response if size < 0 else response[:size]
+
+
 class GuiApi:
     """Methods exposed to the frontend via pywebview's js_api."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._push_preview: tuple[str, str, str] | None = None
 
     def get_info(self) -> dict:
         from ..config import configured_remote_provider
@@ -176,13 +198,102 @@ class GuiApi:
             return {"code": 1, "output": f"✗ Command not allowed from GUI: {cmd}"}
         if tool != "all" and tool not in ALL_TOOLS:
             return {"code": 1, "output": f"✗ Unknown tool: {tool}"}
+        if cmd == "push":
+            return {
+                "code": 1,
+                "output": "✗ 請先預覽上傳內容,再確認上傳。",
+            }
         if not self._lock.acquire(blocking=False):
             return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
         try:
-            # push 會用 input() 要求確認;GUI 已先跳過確認框,這裡預填同意。
-            return self._run_captured([cmd, tool], feed_stdin=(cmd == "push"))
+            return self._run_captured([cmd, tool])
         finally:
             self._lock.release()
+
+    def preview_push(self, tool: str = "all") -> dict:
+        """Prepare a non-destructive push review for the GUI confirmation step."""
+        if tool != "all" and tool not in ALL_TOOLS:
+            return {
+                "code": 1,
+                "output": f"✗ Unknown tool: {tool}",
+                "needs_confirmation": False,
+                "token": "",
+            }
+        if not self._lock.acquire(blocking=False):
+            return {
+                "code": 1,
+                "output": "⚠ 另一個動作正在執行中,請稍候再試。",
+                "needs_confirmation": False,
+                "token": "",
+            }
+        try:
+            self._push_preview = None
+            reviews: list[str] = []
+            result = self._run_captured(
+                ["push", tool],
+                answer_prompt=lambda _review: "n",
+                prompt_reviews=reviews,
+            )
+            if result["code"] != 0 or not reviews:
+                return {
+                    **result,
+                    "needs_confirmation": False,
+                    "token": "",
+                }
+
+            token = secrets.token_urlsafe(24)
+            review = reviews[0]
+            self._push_preview = (token, tool, review)
+            return {
+                "code": 0,
+                "output": review,
+                "needs_confirmation": True,
+                "token": token,
+            }
+        finally:
+            self._lock.release()
+
+    def confirm_push(self, tool: str, token: str) -> dict:
+        """Push only when the fresh CLI review matches the preview exactly."""
+        if (
+            not isinstance(token, str)
+            or not token
+            or self._push_preview is None
+        ):
+            return {"code": 1, "output": "✗ 上傳預覽已失效,請重新預覽。"}
+        expected_token, expected_tool, expected_review = self._push_preview
+        if tool != expected_tool or not secrets.compare_digest(token, expected_token):
+            return {"code": 1, "output": "✗ 上傳預覽已失效,請重新預覽。"}
+        if not self._lock.acquire(blocking=False):
+            return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
+
+        self._push_preview = None
+        review_matched = False
+        reviews: list[str] = []
+
+        def confirm_if_unchanged(review: str) -> str:
+            nonlocal review_matched
+            review_matched = secrets.compare_digest(review, expected_review)
+            return "y" if review_matched else "n"
+
+        try:
+            result = self._run_captured(
+                ["push", tool],
+                answer_prompt=confirm_if_unchanged,
+                prompt_reviews=reviews,
+            )
+        finally:
+            self._lock.release()
+
+        if not reviews or not review_matched:
+            return {
+                "code": 1,
+                "output": (
+                    result["output"]
+                    + "✗ 內容在預覽後已有變動,尚未上傳。請重新預覽。\n"
+                ),
+            }
+        return result
 
     def check_update(self) -> dict:
         from ..version import current_version
@@ -215,14 +326,21 @@ class GuiApi:
         finally:
             self._lock.release()
 
-    def _run_captured(self, argv: "list[str]", feed_stdin: bool = False) -> dict:
+    def _run_captured(
+        self,
+        argv: "list[str]",
+        answer_prompt: "Callable[[str], str] | None" = None,
+        prompt_reviews: "list[str] | None" = None,
+    ) -> dict:
         from .. import __main__ as cli
 
         buf = io.StringIO()
         stdin_backup = sys.stdin
+        prompt_input: _PromptInput | None = None
         try:
-            if feed_stdin:
-                sys.stdin = io.StringIO("y\n" * 8)
+            if answer_prompt is not None:
+                prompt_input = _PromptInput(buf, answer_prompt)
+                sys.stdin = prompt_input
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
                 try:
                     code = cli.main(argv)
@@ -233,6 +351,8 @@ class GuiApi:
                     code = 1
         finally:
             sys.stdin = stdin_backup
+            if prompt_reviews is not None and prompt_input is not None:
+                prompt_reviews.extend(prompt_input.reviews)
         return {"code": code, "output": _ANSI_RE.sub("", buf.getvalue())}
 
 

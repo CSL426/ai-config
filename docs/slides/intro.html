@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ai-config — 讓 AI 設定跟著你走</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* Hallmark · audience: first-time third-party users · use: understand setup and sync · tone: friendly technical · genre: atmospheric · macrostructure: deck (adapted, third-party user journey) · theme: Terminal · enrichment: E5 hand-built SVG ×4 + ELI5 diagrams + real GUI screenshot · nav: none (deck chrome) · footer: none · contrast: pass (40–41) · slop: pass (42–45) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · responsive: pass (49) · icons: pass (30) · mobile: pass (34, 49, 50–57) */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V3 */
+:root {
+  --color-paper:      oklch(13% 0.012 150);
+  --color-paper-2:    oklch(17% 0.014 150);
+  --color-paper-3:    oklch(21% 0.014 150);
+  --color-rule:       oklch(33% 0.02  150);
+  --color-neutral:    oklch(64% 0.02  150);
+  --color-muted:      oklch(78% 0.015 150);
+  --color-ink:        oklch(93% 0.01  150);
+  --color-accent:     oklch(80% 0.17  150);
+  --color-accent-dim: oklch(68% 0.13  150);
+  --color-warn:       oklch(78% 0.13  70);
+  --color-focus:      oklch(80% 0.17  150);
+
+  --font-display: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --text-sm:  0.8rem;
+  --text-base: clamp(0.95rem, 0.8rem + 0.5vw, 1.2rem);
+  --text-md:  clamp(1.1rem, 0.9rem + 0.8vw, 1.5rem);
+  --text-lg:  clamp(1.4rem, 1.1rem + 1.2vw, 2rem);
+  --text-xl:  clamp(1.8rem, 1.3rem + 2vw, 2.9rem);
+  --text-display: clamp(2.6rem, 1.8rem + 4.5vw, 5.25rem);
+
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 220ms;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { overflow-x: clip; height: 100%; }
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.6;
+}
+
+code, pre, .mono { font-family: var(--font-mono); }
+
+a { color: var(--color-accent); text-decoration-thickness: from-font; text-underline-offset: 0.2em; }
+a:focus-visible { outline: 0.125rem solid var(--color-focus); outline-offset: 0.2em; }
+
+/* ── deck engine ─────────────────────────────────────────── */
+.deck { position: fixed; inset: 0; }
+.slide {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; justify-content: safe center;
+  padding: clamp(1.5rem, 5vw, 5rem) clamp(1.25rem, 7vw, 7rem);
+  padding-bottom: clamp(4.5rem, 10vh, 6rem);
+  opacity: 0; visibility: hidden;
+  transition: opacity var(--dur-short) var(--ease-out), visibility 0s var(--dur-short);
+  overflow-y: auto;
+}
+.slide.is-active {
+  opacity: 1; visibility: visible;
+  transition: opacity var(--dur-short) var(--ease-out);
+}
+
+.deck-chrome {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: center;
+  padding: var(--space-xs) clamp(1.25rem, 4vw, 3rem)
+    max(var(--space-xs), env(safe-area-inset-bottom));
+  background: var(--color-paper);
+  border-top: 1px solid var(--color-rule);
+  font-family: var(--font-mono); font-size: var(--text-sm);
+  color: var(--color-neutral);
+  pointer-events: none;
+}
+.deck-chrome .counter { font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
+.deck-chrome .brand { display: none; }
+
+.slide-strip {
+  display: flex;
+  justify-self: center;
+  gap: 0.25rem;
+  width: min(100%, 44rem);
+  padding-inline: 0.25rem;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  scroll-snap-type: inline proximity;
+  pointer-events: auto;
+}
+.slide-strip::-webkit-scrollbar { display: none; }
+.slide-marker {
+  flex: 1 0 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: grid;
+  place-items: center;
+  scroll-snap-align: center;
+  border: 1px solid var(--color-rule);
+  border-block-width: 0.25rem;
+  border-radius: 0.125rem;
+  background: var(--color-paper-2);
+  color: var(--color-neutral);
+  font: 500 var(--text-sm) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.slide-marker.is-past {
+  border-color: var(--color-accent-dim);
+  color: var(--color-muted);
+}
+.slide-marker[aria-current="step"] {
+  border-color: var(--color-accent);
+  background: var(--color-paper-3);
+  color: var(--color-accent);
+  font-weight: 700;
+}
+.slide-marker:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 0.125rem solid var(--color-focus);
+  outline-offset: 0.125rem;
+}
+.slide-marker:active {
+  background: var(--color-paper);
+  color: var(--color-accent);
+}
+.slide-marker:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .slide-marker:hover {
+    background: var(--color-paper-3);
+    color: var(--color-ink);
+  }
+}
+
+@media (min-width: 40rem) {
+  .deck-chrome { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .deck-chrome .brand { display: inline; }
+}
+
+/* ── slide typography ────────────────────────────────────── */
+.slide h1 {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: var(--text-display);
+  letter-spacing: -0.025em; line-height: 1.08;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.slide h2 {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: var(--text-xl);
+  letter-spacing: -0.015em; line-height: 1.2;
+  margin-bottom: var(--space-xl);
+  max-width: 24em;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.accent { color: var(--color-accent); }
+.warn { color: var(--color-warn); }
+.dim { color: var(--color-neutral); }
+
+.lede { font-size: var(--text-md); color: var(--color-muted); max-width: 34em; }
+
+.kicker {
+  font-family: var(--font-body); font-size: var(--text-sm); font-weight: 700;
+  color: var(--color-accent-dim); letter-spacing: 0.12em;
+  margin-bottom: var(--space-md);
+}
+
+/* ── content patterns ────────────────────────────────────── */
+.cols { display: flex; gap: clamp(1.5rem, 4vw, 4rem); align-items: center; flex-wrap: wrap; }
+.cols > .txt { flex: 1 1 20rem; min-width: 0; }
+.cols > .fig { flex: 1.3 1 24rem; min-width: 0; }
+
+figure svg { display: block; width: 100%; height: auto; max-height: 62vh; }
+figure svg text { font-family: var(--font-body); }
+figcaption {
+  font-family: var(--font-body); font-size: var(--text-sm);
+  color: var(--color-neutral); margin-top: var(--space-sm);
+}
+
+.gui-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 58vh;
+  object-fit: contain;
+  border: 1px solid var(--color-rule);
+  border-radius: 0.375rem;
+}
+
+ul.plain { list-style: none; }
+ul.plain li {
+  padding-block: var(--space-sm);
+  border-bottom: 1px solid var(--color-rule);
+  max-width: 42em;
+}
+ul.plain li:last-child { border-bottom: none; }
+ul.plain b { font-weight: 700; color: var(--color-ink); }
+ul.plain .note { color: var(--color-neutral); }
+
+pre.term {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-rule);
+  border-radius: 0.375rem;
+  padding: var(--space-lg);
+  font-size: var(--text-base);
+  line-height: 1.75;
+  overflow-x: auto;
+  max-width: 46rem;
+}
+pre.term .p  { color: var(--color-accent); user-select: none; }
+pre.term .c  { color: var(--color-neutral); }
+pre.term .d  { color: var(--color-accent-dim); }
+.pre-label {
+  font-family: var(--font-mono); font-size: var(--text-sm);
+  color: var(--color-neutral); letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--color-rule);
+  display: inline-block; padding-bottom: 0.25rem; margin-bottom: var(--space-md);
+}
+
+/* ELI5 four-step flow (slide 7) */
+.everyday-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-lg);
+  max-width: 72rem;
+}
+.everyday-step {
+  min-width: 0;
+  padding: var(--space-md);
+  border-top: 1px solid var(--color-rule);
+}
+.everyday-icon {
+  display: block;
+  width: auto;
+  height: 3rem;
+  margin-bottom: var(--space-lg);
+  color: var(--color-accent);
+}
+.everyday-step .order {
+  display: block;
+  margin-bottom: var(--space-xs);
+  color: var(--color-neutral);
+  font: 500 var(--text-sm) / 1 var(--font-mono);
+}
+.everyday-step h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: 1.25;
+}
+.everyday-step code {
+  display: block;
+  margin-top: var(--space-sm);
+  color: var(--color-accent-dim);
+  font-size: var(--text-sm);
+}
+.everyday-step p {
+  margin-top: var(--space-md);
+  color: var(--color-muted);
+}
+
+/* Plain-language mobile fallback for the cross-tool share diagram. */
+.share-mobile {
+  display: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+.share-mobile-step {
+  min-width: 0;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule);
+}
+.share-mobile-step .order {
+  display: block;
+  color: var(--color-neutral);
+  font: 500 var(--text-sm) / 1 var(--font-mono);
+}
+.share-mobile-step b {
+  display: block;
+  margin-top: var(--space-sm);
+  line-height: 1.35;
+}
+.share-mobile-step code {
+  display: block;
+  margin-top: var(--space-xs);
+  color: var(--color-accent-dim);
+  font-size: var(--text-sm);
+}
+.share-mobile-step small {
+  display: block;
+  margin-top: var(--space-xs);
+  color: var(--color-neutral);
+  line-height: 1.4;
+}
+
+/* ELI5 hand-off: the user states the goal, the AI follows the safety guide. */
+.ai-handoff {
+  max-width: 48rem;
+}
+.ai-request {
+  padding-block: var(--space-lg);
+  border-block: 1px solid var(--color-rule);
+  color: var(--color-ink);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.ai-request::before {
+  content: "你說";
+  display: block;
+  margin-bottom: var(--space-sm);
+  color: var(--color-accent-dim);
+  font: 500 var(--text-sm) / 1 var(--font-body);
+  letter-spacing: 0.12em;
+}
+.ai-guide-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
+.ai-guide-step {
+  min-width: 0;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule);
+}
+.ai-guide-step .order {
+  display: block;
+  color: var(--color-neutral);
+  font: 500 var(--text-sm) / 1 var(--font-mono);
+}
+.ai-guide-step b {
+  display: block;
+  margin-top: var(--space-sm);
+  line-height: 1.35;
+}
+.ai-guide-step code,
+.ai-guide-step small {
+  display: block;
+  margin-top: var(--space-xs);
+  font-size: var(--text-sm);
+}
+.ai-guide-step code { color: var(--color-accent-dim); }
+.ai-guide-step small { color: var(--color-neutral); line-height: 1.4; }
+
+@media (max-width: 39.999rem) {
+  .share-diagram { display: none; }
+  .share-mobile { display: grid; }
+}
+
+@media (min-width: 22rem) {
+  .everyday-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 60rem) {
+  .everyday-flow { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .everyday-step + .everyday-step { border-inline-start: 1px solid var(--color-rule); }
+}
+
+/* title slide */
+.slide.title { justify-content: flex-end; padding-bottom: clamp(4rem, 12vh, 8rem); }
+.slide.title h1 { font-family: var(--font-mono); }
+.slide.title .repo { font-family: var(--font-mono); color: var(--color-neutral); margin-bottom: var(--space-lg); }
+.slide.title .sub { font-size: var(--text-lg); color: var(--color-muted); margin-top: var(--space-lg); max-width: 28em; }
+.slide.title .tools { color: var(--color-neutral); margin-top: var(--space-xl); font-size: var(--text-md); }
+.slide.title .hint { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-neutral); margin-top: var(--space-2xl); }
+.slide.title .hint kbd {
+  border: 1px solid var(--color-rule); border-radius: 0.25rem;
+  padding: 0.1em 0.45em; font-size: 0.9em;
+}
+
+/* closing slide */
+.slide.close .statement {
+  font-size: var(--text-xl); font-weight: 500; line-height: 1.35;
+  max-width: 22em;
+}
+.slide.close .meta { font-family: var(--font-mono); color: var(--color-neutral); margin-top: var(--space-2xl); line-height: 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 150ms !important; animation-duration: 150ms !important; }
+}
+
+@media print {
+  .deck { position: static; }
+  .slide { position: static; opacity: 1; visibility: visible; height: 100vh; page-break-after: always; overflow: hidden; }
+  .deck-chrome { display: none; }
+}
+</style>
+</head>
+<body>
+<main class="deck" id="deck">
+
+  <!-- 1 · 封面 -->
+  <section class="slide title is-active">
+    <p class="repo">給同時使用多套 AI 工具的人</p>
+    <h1>ai-config <span class="dim">(acg)</span></h1>
+    <p class="sub">把你習慣的操作規則、AI 技能與設定帶到每台裝置。換電腦或換工具，不必重新開始。</p>
+    <p class="tools">Claude Code · Codex · Antigravity</p>
+    <p class="hint"><kbd>←</kbd> <kbd>→</kbd> 翻頁</p>
+  </section>
+
+  <!-- 2 · 痛點:設定分岔 -->
+  <section class="slide">
+    <div class="cols">
+      <div class="txt">
+        <p class="kicker">痛點</p>
+        <h2>換一台電腦，<br>設定就變一套</h2>
+        <p class="lede">工作站、筆電、遠端主機各有一份設定。這台改了操作規則，那台新增了 AI 技能，另一台還停在上個月。每次換機器都得先猜：<b>「哪一台才是最新的？」</b></p>
+      </div>
+      <figure class="fig">
+        <svg viewBox="0 0 720 340" role="img" aria-label="工作站與其他裝置的設定內容不一致示意圖">
+          <g font-size="15">
+            <!-- Machine A -->
+            <rect x="20" y="40" width="280" height="240" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <text x="44" y="76" fill="var(--color-ink)" font-weight="700">工作站</text>
+            <text x="44" y="98" fill="var(--color-neutral)" font-size="13">主要使用的電腦</text>
+            <line x1="44" y1="114" x2="276" y2="114" stroke="var(--color-rule)"/>
+            <text x="44" y="146" fill="var(--color-muted)">回答方式 <tspan fill="var(--color-accent)">最新</tspan></text>
+            <text x="44" y="176" fill="var(--color-muted)">我的規則 <tspan fill="var(--color-accent)">完整</tspan></text>
+            <text x="44" y="206" fill="var(--color-muted)">常用技能 <tspan fill="var(--color-accent)">12 個</tspan></text>
+            <text x="44" y="236" fill="var(--color-muted)">使用偏好 <tspan fill="var(--color-accent)">已調整</tspan></text>
+            <!-- Machine B -->
+            <rect x="420" y="40" width="280" height="240" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <text x="444" y="76" fill="var(--color-ink)" font-weight="700">其他裝置</text>
+            <text x="444" y="98" fill="var(--color-neutral)" font-size="13">筆電／遠端主機／新電腦</text>
+            <line x1="444" y1="114" x2="676" y2="114" stroke="var(--color-rule)"/>
+            <text x="444" y="146" fill="var(--color-muted)">回答方式 <tspan fill="var(--color-warn)">舊的</tspan></text>
+            <text x="444" y="176" fill="var(--color-muted)">我的規則 <tspan fill="var(--color-warn)">少一份</tspan></text>
+            <text x="444" y="206" fill="var(--color-muted)">常用技能 <tspan fill="var(--color-warn)">7 個</tspan></text>
+            <text x="444" y="236" fill="var(--color-neutral)">使用偏好 <tspan fill="var(--color-warn)">未設定</tspan></text>
+            <!-- broken link -->
+            <line x1="300" y1="160" x2="420" y2="160" stroke="var(--color-rule)" stroke-dasharray="6 7"/>
+            <text x="360" y="146" fill="var(--color-warn)" text-anchor="middle" font-size="20" font-weight="700">≠</text>
+            <text x="360" y="196" fill="var(--color-neutral)" text-anchor="middle" font-size="13">上次手動複製</text>
+          </g>
+        </svg>
+        <figcaption>圖 1 — 手動複製一次之後就開始分岔；裝置越多，越難知道哪份最新。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 3 · 痛點:手動同步撐不住 -->
+  <section class="slide">
+    <p class="kicker">痛點</p>
+    <h2>靠手動複製，遲早會亂</h2>
+    <ul class="plain">
+      <li><b>誰新誰舊，全靠記憶</b> — 用隨身碟、通訊軟體或直接複製，蓋錯方向就很難救回來。</li>
+      <li><b>登入資料可能一起被帶走</b> — 設定和憑證放在附近，整包複製時容易把不該分享的內容也帶上。</li>
+      <li><b>同一件事要設定好幾次</b> — Claude Code、Codex、Antigravity 各記各的，換工具就要重做。</li>
+      <li><b>換新電腦又要從頭設定</b> — 重裝、重抄、重新回想上次到底改了什麼。</li>
+    </ul>
+  </section>
+
+  <!-- 4 · 核心想法 -->
+  <section class="slide">
+    <div class="cols">
+      <div class="txt">
+        <p class="kicker">核心想法</p>
+        <h2>像一個有記憶的<br><span class="dim">私人置物櫃</span></h2>
+        <p class="lede">設定放進你選的私人位置，工作站、筆電、遠端環境與新電腦都能拿到同一份。它還記得之前放過什麼，改錯也找得回來。</p>
+      </div>
+      <figure class="fig">
+        <svg viewBox="0 0 720 420" role="img" aria-label="私人設定庫像一個有記憶的置物櫃，工作站、筆電、遠端環境與新電腦都能拿到同一份設定">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="var(--color-accent-dim)"/>
+            </marker>
+          </defs>
+          <g fill="none" stroke="var(--color-rule)" stroke-width="2">
+            <line x1="166" y1="94" x2="250" y2="172" marker-start="url(#arr)" marker-end="url(#arr)"/>
+            <line x1="166" y1="306" x2="250" y2="252" marker-start="url(#arr)" marker-end="url(#arr)"/>
+            <line x1="554" y1="94" x2="470" y2="172" marker-start="url(#arr)" marker-end="url(#arr)"/>
+            <line x1="554" y1="306" x2="470" y2="252" marker-start="url(#arr)" marker-end="url(#arr)"/>
+          </g>
+
+          <!-- 工作站 -->
+          <g transform="translate(38 42)" fill="none" stroke="var(--color-muted)" stroke-width="2">
+            <rect x="0" y="0" width="128" height="78" rx="6" fill="var(--color-paper-2)"/>
+            <rect x="14" y="13" width="100" height="48" rx="2"/>
+            <line x1="64" y1="61" x2="64" y2="70"/>
+            <line x1="46" y1="70" x2="82" y2="70"/>
+          </g>
+          <text x="102" y="145" fill="var(--color-ink)" text-anchor="middle" font-weight="700">工作站</text>
+
+          <!-- 筆電 -->
+          <g transform="translate(38 266)" fill="none" stroke="var(--color-muted)" stroke-width="2">
+            <rect x="12" y="0" width="104" height="64" rx="5" fill="var(--color-paper-2)"/>
+            <path d="M0 68 H128 L116 78 H12 Z"/>
+          </g>
+          <text x="102" y="370" fill="var(--color-ink)" text-anchor="middle" font-weight="700">筆電</text>
+
+          <!-- 遠端環境 -->
+          <g transform="translate(554 42)" fill="var(--color-paper-2)" stroke="var(--color-muted)" stroke-width="2">
+            <rect x="0" y="0" width="128" height="24" rx="4"/>
+            <rect x="0" y="30" width="128" height="24" rx="4"/>
+            <rect x="0" y="60" width="128" height="24" rx="4"/>
+            <circle cx="112" cy="12" r="3" fill="var(--color-accent)" stroke="none"/>
+            <circle cx="112" cy="42" r="3" fill="var(--color-accent)" stroke="none"/>
+            <circle cx="112" cy="72" r="3" fill="var(--color-accent)" stroke="none"/>
+          </g>
+          <text x="618" y="151" fill="var(--color-ink)" text-anchor="middle" font-weight="700">遠端環境</text>
+
+          <!-- 新電腦 -->
+          <g transform="translate(554 266)" fill="none" stroke="var(--color-muted)" stroke-width="2">
+            <rect x="0" y="0" width="128" height="78" rx="6" fill="var(--color-paper-2)"/>
+            <line x1="64" y1="18" x2="64" y2="58" stroke="var(--color-accent)" stroke-width="3"/>
+            <line x1="44" y1="38" x2="84" y2="38" stroke="var(--color-accent)" stroke-width="3"/>
+          </g>
+          <text x="618" y="370" fill="var(--color-ink)" text-anchor="middle" font-weight="700">新電腦</text>
+
+          <!-- 有記憶的私人置物櫃 -->
+          <path d="M250 134 H332 L354 156 H470 V292 H250 Z" fill="var(--color-paper-3)" stroke="var(--color-accent-dim)" stroke-width="2"/>
+          <rect x="286" y="180" width="148" height="78" rx="4" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+          <line x1="310" y1="204" x2="410" y2="204" stroke="var(--color-accent-dim)" stroke-width="3"/>
+          <line x1="310" y1="222" x2="392" y2="222" stroke="var(--color-muted)" stroke-width="2"/>
+          <line x1="310" y1="240" x2="374" y2="240" stroke="var(--color-neutral)" stroke-width="2"/>
+          <text x="360" y="118" fill="var(--color-accent)" text-anchor="middle" font-size="17" font-weight="700">你的私人設定</text>
+          <text x="360" y="320" fill="var(--color-muted)" text-anchor="middle" font-size="14">大家拿同一份 · 每一版都記得</text>
+        </svg>
+        <figcaption>ELI5 · 像一個有版本紀錄的私人置物櫃，任何裝置都能取用同一份設定。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 5 · 同步方式 -->
+  <section class="slide">
+    <div class="cols">
+      <div class="txt">
+        <p class="kicker">同步方式</p>
+        <h2>Google Drive 或 Git，<br>你自己選</h2>
+        <p class="lede">只在自己的裝置間同步，可以直接登入 Google Drive；已有私人儲存庫或想和別人共用，就選 Git。第一次開啟 GUI 時會帶你完成選擇。</p>
+      </div>
+      <figure class="fig">
+        <svg viewBox="0 0 720 460" role="img" aria-label="使用者選擇 Google Drive 或私人 Git 保存設定，再同步到選定的 AI 工具">
+          <defs>
+            <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="var(--color-accent-dim)"/>
+            </marker>
+          </defs>
+          <g font-size="14">
+            <!-- 同步方式 -->
+            <rect x="20" y="150" width="180" height="130" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <text x="110" y="183" fill="var(--color-ink)" text-anchor="middle" font-weight="700">設定放哪裡</text>
+            <text x="110" y="214" fill="var(--color-muted)" text-anchor="middle" font-size="12">Google Drive</text>
+            <text x="110" y="235" fill="var(--color-neutral)" text-anchor="middle" font-size="11">自己的多台裝置</text>
+            <text x="110" y="261" fill="var(--color-muted)" text-anchor="middle" font-size="12">私人 Git 儲存庫</text>
+
+            <!-- 私人設定 -->
+            <rect x="270" y="120" width="190" height="190" rx="6" fill="var(--color-paper-3)" stroke="var(--color-accent-dim)"/>
+            <text x="365" y="152" fill="var(--color-accent)" text-anchor="middle" font-weight="700">你的私人設定</text>
+            <text x="365" y="181" fill="var(--color-muted)" text-anchor="middle" font-size="12">回答與操作規則</text>
+            <text x="365" y="207" fill="var(--color-muted)" text-anchor="middle" font-size="12">常用 AI 技能</text>
+            <text x="365" y="233" fill="var(--color-muted)" text-anchor="middle" font-size="12">可共用的工具設定</text>
+            <line x1="292" y1="253" x2="438" y2="253" stroke="var(--color-rule)"/>
+            <text x="365" y="282" fill="var(--color-warn)" text-anchor="middle" font-size="12">登入資料不會放進來</text>
+
+            <!-- 選定的 AI 工具 -->
+            <rect x="530" y="40" width="170" height="76" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <text x="615" y="72" fill="var(--color-ink)" text-anchor="middle">Claude Code</text>
+            <text x="615" y="96" fill="var(--color-neutral)" text-anchor="middle" font-size="12">需要時才更新</text>
+
+            <rect x="530" y="140" width="170" height="96" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <text x="615" y="170" fill="var(--color-ink)" text-anchor="middle">Codex</text>
+            <text x="615" y="194" fill="var(--color-neutral)" text-anchor="middle" font-size="12">只更新你選的內容</text>
+
+            <rect x="530" y="260" width="170" height="96" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <text x="615" y="294" fill="var(--color-ink)" text-anchor="middle">Antigravity</text>
+            <text x="615" y="320" fill="var(--color-neutral)" text-anchor="middle" font-size="12">保留這台的私人偏好</text>
+
+            <!-- 保存與同步 -->
+            <line x1="200" y1="215" x2="265" y2="215" stroke="var(--color-accent-dim)" marker-end="url(#arr2)"/>
+            <text x="232" y="200" fill="var(--color-neutral)" text-anchor="middle" font-size="12">保存</text>
+
+            <line x1="460" y1="170" x2="525" y2="90" stroke="var(--color-accent-dim)" marker-end="url(#arr2)"/>
+            <line x1="460" y1="200" x2="525" y2="188" stroke="var(--color-accent-dim)" marker-end="url(#arr2)"/>
+            <line x1="460" y1="240" x2="525" y2="300" stroke="var(--color-accent-dim)" marker-end="url(#arr2)"/>
+            <text x="492" y="152" fill="var(--color-accent)" text-anchor="middle" font-size="13">同步</text>
+
+            <line x1="525" y1="330" x2="462" y2="270" stroke="var(--color-rule)" stroke-dasharray="5 6" marker-end="url(#arr2)"/>
+            <text x="500" y="352" fill="var(--color-neutral)" text-anchor="middle" font-size="12">保存這台的修改</text>
+
+            <text x="270" y="400" fill="var(--color-neutral)" font-size="13">套用前先檢查並備份，再更新這台裝置</text>
+            <line x1="270" y1="412" x2="640" y2="412" stroke="var(--color-rule)"/>
+          </g>
+        </svg>
+        <figcaption>同步方式可以不同，後續操作相同；登入資料仍然只留在本機。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 6 · 會同步與不會同步的內容 -->
+  <section class="slide">
+    <p class="kicker">哪些內容會同步</p>
+    <h2>帶走工作習慣，不搬走登入資料</h2>
+    <div class="cols">
+      <div class="txt">
+        <p class="pre-label">會跟著你走</p>
+        <ul class="plain">
+          <li><b>回答與操作規則</b> — 讓每套工具維持你熟悉的工作方式。</li>
+          <li><b>常用 AI 技能</b> — 不必在每台裝置重新安裝與整理。</li>
+          <li><b>可共用的工具設定</b> — 一次準備，需要時套用。</li>
+        </ul>
+      </div>
+      <div class="txt">
+        <p class="pre-label">只留在這台</p>
+        <ul class="plain">
+          <li><b>帳號與登入憑證</b> — 不會被收集、比較或上傳。</li>
+          <li><b>這台裝置的權限</b> — 不把某台的授權帶到另一台。</li>
+          <li><b>模型、顯示與專案偏好</b> — 每台裝置保留自己的選擇。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · 日常指令流 -->
+  <section class="slide">
+    <p class="kicker">平常使用</p>
+    <h2>你只需要知道四件事</h2>
+    <div class="everyday-flow" aria-label="同步設定的四個日常步驟">
+      <article class="everyday-step">
+        <svg class="everyday-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M18 47h31a11 11 0 0 0 1-22 18 18 0 0 0-34-2 12 12 0 0 0 2 24Z" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <path d="M32 22v20m-8-8 8 8 8-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="order">01</span>
+        <h3>下載最新設定</h3>
+        <code>acg pull</code>
+        <p>拿回其他裝置的更新。</p>
+      </article>
+      <article class="everyday-step">
+        <svg class="everyday-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="28" cy="28" r="17" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <path d="m40 40 13 13M20 24h16M20 32h10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        <span class="order">02</span>
+        <h3>看看哪裡不同</h3>
+        <code>acg status</code>
+        <p>只查看，不會修改。</p>
+      </article>
+      <article class="everyday-step">
+        <svg class="everyday-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <rect x="9" y="11" width="46" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <path d="M22 54h20M32 20v18m-8-8 8 8 8-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="order">03</span>
+        <h3>套用到這台</h3>
+        <code>acg apply</code>
+        <p>先備份，再更新。</p>
+      </article>
+      <article class="everyday-step">
+        <svg class="everyday-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M18 47h31a11 11 0 0 0 1-22 18 18 0 0 0-34-2 12 12 0 0 0 2 24Z" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <path d="M32 43V23m-8 8 8-8 8 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="order">04</span>
+        <h3>保存我的修改</h3>
+        <code>acg push</code>
+        <p>先預覽，確認才送出。</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- 8 · 安全邊界 -->
+  <section class="slide">
+    <p class="kicker">安全感</p>
+    <h2>不確定，就停下來問你</h2>
+    <ul class="plain">
+      <li><b>你先看，我才上傳</b> — 大量項目會先收成摘要；確認後才保存並送出。</li>
+      <li><b>狀況不清楚就停止</b> — 不擅自合併，也不偷偷替你改寫紀錄。</li>
+      <li><b>更新前先留備份</b> — 萬一失敗，會清楚告訴你備份放在哪裡。</li>
+      <li><b>登入資料不參與同步</b> — 帳號、密碼與授權資料不會進入同步內容。</li>
+      <li><b>每台裝置保留自己的偏好</b> — 模型、顯示方式與專案選擇不會被其他裝置蓋掉。</li>
+    </ul>
+  </section>
+
+  <!-- 9 · share skills across tools -->
+  <section class="slide">
+    <div class="cols">
+      <div class="txt">
+        <p class="kicker">分享技能</p>
+        <h2>Claude 已經會的，<br>其他工具也能接著用</h2>
+        <p class="lede">如果你已經在 Claude 使用某個技能，不必再替其他工具手動安裝。請 AI 幫你分享，或使用 <code>acg share</code>；完成後，Codex 與 Antigravity 也能使用。</p>
+      </div>
+      <figure class="fig">
+        <svg class="share-diagram" viewBox="0 0 720 420" role="img" aria-label="先用 acg share 把 Claude 的技能放進共用區，再用 acg apply 交給 Codex 與 Antigravity">
+          <defs>
+            <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="var(--color-accent-dim)"/>
+            </marker>
+          </defs>
+          <g font-size="14">
+            <!-- Claude-side source -->
+            <rect x="20" y="130" width="190" height="120" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <path d="M76 158 H122 L134 170 H164 V216 H76 Z" fill="var(--color-paper-3)" stroke="var(--color-muted)"/>
+            <text x="115" y="276" fill="var(--color-ink)" text-anchor="middle" font-weight="700">Claude 裡已有的技能</text>
+            <text x="115" y="298" fill="var(--color-neutral)" text-anchor="middle" font-size="12">自己安裝的 · 外掛附帶的</text>
+
+            <!-- share into the repository -->
+            <line x1="210" y1="190" x2="275" y2="190" stroke="var(--color-accent-dim)" marker-end="url(#arr3)"/>
+            <text class="mono" x="242" y="172" fill="var(--color-accent)" text-anchor="middle" font-size="12">acg share</text>
+            <rect x="280" y="130" width="180" height="120" rx="6" fill="var(--color-paper-3)" stroke="var(--color-accent-dim)"/>
+            <path d="M318 158 H364 L376 170 H422 V216 H318 Z" fill="var(--color-paper-2)" stroke="var(--color-accent-dim)"/>
+            <text x="370" y="276" fill="var(--color-accent)" text-anchor="middle" font-weight="700">共用技能區</text>
+            <text x="370" y="298" fill="var(--color-neutral)" text-anchor="middle" font-size="12">先收好，再交給其他工具</text>
+
+            <!-- apply to the chosen tools -->
+            <line x1="460" y1="170" x2="525" y2="130" stroke="var(--color-accent-dim)" marker-end="url(#arr3)"/>
+            <line x1="460" y1="210" x2="525" y2="260" stroke="var(--color-accent-dim)" marker-end="url(#arr3)"/>
+            <text class="mono" x="498" y="196" fill="var(--color-accent)" text-anchor="middle" font-size="12">acg apply</text>
+
+            <rect x="530" y="78" width="170" height="88" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <text x="615" y="116" fill="var(--color-ink)" text-anchor="middle" font-weight="700">Codex</text>
+            <text x="615" y="140" fill="var(--color-neutral)" text-anchor="middle" font-size="12">桌面版 · 編輯器 · 指令版</text>
+
+            <rect x="530" y="226" width="170" height="88" rx="6" fill="var(--color-paper-2)" stroke="var(--color-rule)"/>
+            <text x="615" y="264" fill="var(--color-ink)" text-anchor="middle" font-weight="700">Antigravity</text>
+            <text x="615" y="288" fill="var(--color-neutral)" text-anchor="middle" font-size="12">應用程式 · 指令版</text>
+
+            <line x1="20" y1="354" x2="700" y2="354" stroke="var(--color-rule)"/>
+            <text x="360" y="382" fill="var(--color-muted)" text-anchor="middle" font-size="13">預設兩套都分享 · 也能只選 Codex 或 Antigravity</text>
+          </g>
+        </svg>
+        <div class="share-mobile" aria-label="跨工具分享技能的三個步驟">
+          <div class="share-mobile-step">
+            <span class="order">01</span>
+            <b>找到技能</b>
+            <small>Claude 裡已有的</small>
+          </div>
+          <div class="share-mobile-step">
+            <span class="order">02</span>
+            <b>放進共用區</b>
+            <code>acg share</code>
+          </div>
+          <div class="share-mobile-step">
+            <span class="order">03</span>
+            <b>送到其他工具</b>
+            <code>acg apply</code>
+          </div>
+        </div>
+        <figcaption>同一個技能，不必重複安裝；你也能只分享給其中一套工具。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 10 · 安裝 -->
+  <section class="slide">
+    <p class="kicker">開始使用</p>
+    <h2>第一次開啟，會帶你完成設定</h2>
+    <div class="fig" style="max-width: 68rem;">
+      <span class="pre-label">想自己安裝時，複製這一行</span>
+      <pre class="term" style="max-width: none; white-space: pre-wrap; overflow-wrap: anywhere;"><span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | bash</pre>
+    </div>
+    <ul class="plain" style="margin-top: var(--space-xl);">
+      <li><b>不想碰指令也可以</b> — 把下一張投影片的那句話交給能操作電腦的 AI。</li>
+      <li><b>先選同步方式</b> — 使用自己的 Google Drive，或連上私人 Git 儲存庫。</li>
+      <li><b>保存位置不用煩惱</b> — 新設定預設放在隱藏的專用資料夾，舊位置仍然能用。</li>
+      <li><b>中文跨平台也能正確處理</b> — Linux、macOS 與繁中 Windows 都有對應方式。</li>
+      <li><b>連線完成後即可同步</b> — 換裝置時下載並套用，就能接著使用。</li>
+    </ul>
+  </section>
+
+  <!-- 11 · AI-operated workflow -->
+  <section class="slide">
+    <div class="cols">
+      <div class="txt">
+        <p class="kicker">不會用也沒關係</p>
+        <h2>不會指令，<br>也能請 AI 幫你</h2>
+        <p class="lede">直接說你想完成什麼。AI 會先讀 acg 的操作指南，再檢查目前狀況。真正會改動這台裝置、保存變更或上傳時，仍要先取得你的確認。</p>
+      </div>
+      <figure class="fig ai-handoff">
+        <blockquote class="ai-request">「幫我把這台的 AI 設定同步好。」</blockquote>
+        <div class="ai-guide-flow" aria-label="請 AI 操作 acg 的三個安全步驟">
+          <div class="ai-guide-step">
+            <span class="order">01</span>
+            <b>AI 先讀指南</b>
+            <code>acg skill</code>
+          </div>
+          <div class="ai-guide-step">
+            <span class="order">02</span>
+            <b>先看目前狀況</b>
+            <code>acg status</code>
+          </div>
+          <div class="ai-guide-step">
+            <span class="order">03</span>
+            <b>問過你才動</b>
+            <small>修改 · 保存 · 上傳</small>
+          </div>
+        </div>
+        <figcaption>ELI5 · 你說目的，AI 負責選對指令；安全確認仍由你決定。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 12 · GUI -->
+  <section class="slide">
+    <p class="kicker">桌面版</p>
+    <h2>不開終端機，也能管理設定</h2>
+    <div class="cols">
+      <div class="txt">
+        <ul class="plain">
+          <li><b>同步狀況一眼看見</b> — 同步方式、登入、保存位置與版本更新都能直接查看。</li>
+          <li><b>長清單不再塞滿畫面</b> — 同資料夾的大量項目會收成摘要，真正有差異的內容仍會顯示。</li>
+          <li><b>看過才真的上傳</b> — 先顯示精簡預覽；確認時若內容已變動，會停止並請你重看。</li>
+          <li><b>同一套技能交給更多 AI</b> — 可分享給其他工具，或準備成桌面版可安裝的檔案。</li>
+        </ul>
+      </div>
+      <figure class="fig">
+        <img class="gui-shot" src="./gui-desktop.png" width="880" height="680" alt="acg v1.0.33 桌面版實際介面，顯示 Google Drive 同步方式、上傳前預覽與整理後的變更摘要">
+        <figcaption>目前實驗版 GUI · v1.0.33 Google Drive 已連線狀態使用示意資料</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 13 · 結尾 -->
+  <section class="slide close">
+    <p class="kicker">重點</p>
+    <p class="statement">設定跟著<span class="accent" style="text-decoration: underline; text-underline-offset: 0.125rem; text-decoration-thickness: 0.125rem;">你</span>走。<br>換裝置，不必重來。</p>
+    <div class="meta">
+      <p><a href="https://csl426.github.io/ai-config/">線上簡報</a> · <a href="https://github.com/CSL426/ai-config">GitHub 原始碼</a> · MIT</p>
+      <p>不會用？把「幫我設定 ai-config」交給 AI。</p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="deck-chrome">
+  <span class="brand">ai-config · acg</span>
+  <nav class="slide-strip" id="slide-strip" aria-label="投影片進度"></nav>
+  <span class="counter" id="counter">01 ∕ 13</span>
+</footer>
+
+<script>
+(function () {
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const counter = document.getElementById('counter');
+  const strip = document.getElementById('slide-strip');
+  const pad = n => String(n).padStart(2, '0');
+  const markers = slides.map((slide, index) => {
+    const heading = slide.querySelector('h1, h2, .statement');
+    const label = heading ? heading.textContent.replace(/\s+/g, ' ').trim() : `第 ${index + 1} 張`;
+    const marker = document.createElement('button');
+    marker.type = 'button';
+    marker.className = 'slide-marker';
+    marker.dataset.slide = String(index);
+    marker.textContent = pad(index + 1);
+    marker.title = `${pad(index + 1)} · ${label}`;
+    marker.setAttribute('aria-label', `前往第 ${index + 1} 張：${label}`);
+    marker.addEventListener('click', () => go(index));
+    strip.append(marker);
+    return marker;
+  });
+  let cur = 0;
+
+  function go(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    if (n !== cur || !slides[n].classList.contains('is-active')) {
+      slides[cur].classList.remove('is-active');
+      cur = n;
+      slides[cur].classList.add('is-active');
+    }
+    counter.textContent = pad(cur + 1) + ' ∕ ' + pad(slides.length);
+    markers.forEach((marker, index) => {
+      marker.classList.toggle('is-past', index < cur);
+      if (index === cur) marker.setAttribute('aria-current', 'step');
+      else marker.removeAttribute('aria-current');
+      marker.tabIndex = index === cur ? 0 : -1;
+    });
+    markers[cur].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (location.hash !== '#' + (cur + 1)) history.replaceState(null, '', '#' + (cur + 1));
+  }
+
+  strip.addEventListener('keydown', e => {
+    const marker = e.target.closest('.slide-marker');
+    if (!marker) return;
+    const index = Number(marker.dataset.slide);
+    let target = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') target = index + 1;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') target = index - 1;
+    if (e.key === 'Home') target = 0;
+    if (e.key === 'End') target = slides.length - 1;
+    if (target === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    go(target);
+    markers[cur].focus();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    switch (e.key) {
+      case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown': go(cur + 1); e.preventDefault(); break;
+      case 'ArrowLeft': case 'ArrowUp': case 'PageUp': go(cur - 1); e.preventDefault(); break;
+      case 'Home': go(0); e.preventDefault(); break;
+      case 'End': go(slides.length - 1); e.preventDefault(); break;
+    }
+  });
+
+  let touchX = null;
+  document.addEventListener('touchstart', e => { touchX = e.changedTouches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 48) go(cur + (dx < 0 ? 1 : -1));
+    touchX = null;
+  }, { passive: true });
+
+  window.addEventListener('hashchange', () => {
+    const n = parseInt(location.hash.slice(1), 10);
+    if (Number.isFinite(n)) go(n - 1);
+  });
+
+  const fromHash = parseInt(location.hash.slice(1), 10);
+  go(Number.isFinite(fromHash) ? fromHash - 1 : 0);
+})();
+</script>
+</body>
+</html>
