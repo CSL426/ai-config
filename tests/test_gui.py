@@ -83,15 +83,59 @@ def test_run_converts_systemexit_and_exception(
     assert "boom" in result["output"]
 
 
-def test_push_prefeeds_stdin_confirmation(
+def test_push_requires_preview(
+    api: GuiApi,
+) -> None:
+    result = api.run("push")
+    assert result["code"] == 1
+    assert "先預覽" in result["output"]
+
+
+def test_push_preview_then_confirm_uses_matching_review(
     api: GuiApi, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def fake_main(argv):
-        answer = input("Push these changes? [y/N] ")
-        return 0 if answer.strip() == "y" else 1
+        print("review: one settings file")
+        answer = input("Commit and push these changes? [y/N] ")
+        print("uploaded" if answer.strip() == "y" else "cancelled")
+        return 0
 
     monkeypatch.setattr(cli, "main", fake_main)
-    assert api.run("push")["code"] == 0
+    preview = api.preview_push("codex")
+    assert preview["code"] == 0
+    assert preview["needs_confirmation"] is True
+    assert preview["token"]
+    assert "review: one settings file" in preview["output"]
+    assert "cancelled" not in preview["output"]
+
+    result = api.confirm_push("codex", preview["token"])
+    assert result["code"] == 0
+    assert "uploaded" in result["output"]
+
+
+def test_push_confirmation_rejects_changed_review(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    review = ["first"]
+
+    def fake_main(argv):
+        print(f"review: {review[0]}")
+        input("Commit and push these changes? [y/N] ")
+        return 0
+
+    monkeypatch.setattr(cli, "main", fake_main)
+    preview = api.preview_push()
+    review[0] = "changed"
+    result = api.confirm_push("all", preview["token"])
+
+    assert result["code"] == 1
+    assert "已有變動" in result["output"]
+
+
+def test_push_confirmation_rejects_invalid_preview(api: GuiApi) -> None:
+    result = api.confirm_push("all", "missing")
+    assert result["code"] == 1
+    assert "重新預覽" in result["output"]
 
 
 def test_run_is_serialized_by_lock(
@@ -262,7 +306,7 @@ def test_setup_repo_builds_argv_and_validates(
     ]
 
     api.setup_repo("git@host:me/cfg.git", "")
-    assert seen["argv"][2].endswith("data")  # default_data_repo fallback
+    assert seen["argv"][2].endswith(".acg/data")
 
 
 def test_get_info_reports_version_and_tools(api: GuiApi) -> None:

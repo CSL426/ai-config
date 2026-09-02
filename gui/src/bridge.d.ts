@@ -16,6 +16,11 @@ export interface RunResult {
   output: string;
 }
 
+export interface PushPreview extends RunResult {
+  needs_confirmation: boolean;
+  token: string;
+}
+
 export interface SkillEntry {
   name: string;
   shared: boolean;
@@ -44,6 +49,8 @@ export interface AcgApi {
   get_info(): Promise<AcgInfo>;
   config_info(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
+  preview_push(tool?: string): Promise<PushPreview>;
+  confirm_push(tool: string, token: string): Promise<RunResult>;
   list_skills(): Promise<SkillList>;
   package_skills(names: string[]): Promise<PackageResult>;
   share_skills(names: string[]): Promise<RunResult>;

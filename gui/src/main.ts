@@ -35,6 +35,9 @@ const outputBody = $("#output-body");
 let selectedTool = "all";
 let running = false;
 let configured = false;
+let awaitingPushConfirmation = false;
+let pendingPushToken: string | null = null;
+let pendingPushTool = "all";
 
 function api(): AcgApi | null {
   return window.pywebview?.api ?? null;
@@ -42,19 +45,57 @@ function api(): AcgApi | null {
 
 function setBusy(busy: boolean, cmd?: AcgCommand): void {
   running = busy;
-  configInfoBtn.disabled = busy;
+  configInfoBtn.disabled = busy || awaitingPushConfirmation;
   for (const btn of actionButtons) {
-    btn.disabled = busy || !configured;
+    btn.disabled = busy || !configured || awaitingPushConfirmation;
     btn.classList.toggle("is-running", busy && btn.dataset.cmd === cmd);
   }
-  for (const tab of toolTabs) tab.disabled = busy || !configured;
+  for (const tab of toolTabs) {
+    tab.disabled = busy || !configured || awaitingPushConfirmation;
+  }
 }
 
 /** CLI 輸出依行首符號上色:✓ 綠、⚠ 黃、✗ 紅、═══ 標題。 */
+function localizeOutputLine(raw: string): string | null {
+  const line = raw.trimStart();
+  const indent = raw.slice(0, raw.length - line.length);
+  const content = line.trimEnd();
+
+  if (content === "Commit and push these changes? [y/N]") return null;
+  if (content === "═══ Push local configuration") {
+    return "═══ 準備保存這台電腦的設定";
+  }
+  if (content === "ℹ Configuration changes to commit:") {
+    return "ℹ 這次要保存的變更：";
+  }
+  if (content.startsWith("ℹ Commit message: ")) {
+    return `${indent}ℹ 保存紀錄名稱：${content.slice("ℹ Commit message: ".length)}`;
+  }
+  if (content === "✓ Local configuration committed and pushed") {
+    return "✓ 設定已保存並上傳";
+  }
+
+  return raw
+    .replace(
+      /\((\d+) files only in ai-config(?:; repo modified [^)]+)?\)/,
+      "（$1 個檔案只在已保存設定）",
+    )
+    .replace(
+      /\((\d+) files only in live; apply removes\)/,
+      "（$1 個檔案只在這台電腦；套用時會移除）",
+    )
+    .replace(
+      /(\d+) files? changed, (\d+) insertions?\(\+\), (\d+) deletions?\(-\)/,
+      "$1 個檔案有變更，新增 $2 行，移除 $3 行",
+    );
+}
+
 function renderOutput(text: string): void {
   outputBody.replaceChildren();
   const lines = text.replace(/\n+$/, "").split("\n");
-  for (const raw of lines) {
+  for (const source of lines) {
+    const raw = localizeOutputLine(source);
+    if (raw === null) continue;
     const span = document.createElement("span");
     const line = raw.trimStart();
     if (line.startsWith("✓")) span.className = "line-ok";
@@ -62,6 +103,10 @@ function renderOutput(text: string): void {
     else if (line.startsWith("✗")) span.className = "line-err";
     else if (line.startsWith("═══")) span.className = "line-head";
     else if (line.startsWith("ℹ")) span.className = "line-dim";
+    else if (line.startsWith("+")) span.className = "line-add";
+    else if (line.startsWith("-")) span.className = "line-remove";
+    else if (/\|\s+\d+/.test(line)) span.className = "line-stat";
+    else if (/^\d+ files? changed/.test(line)) span.className = "line-head";
     span.textContent = raw;
     outputBody.append(span, document.createTextNode("\n"));
   }
@@ -72,6 +117,50 @@ function showPlaceholder(text: string): void {
   span.className = "line-placeholder";
   span.textContent = text;
   outputBody.replaceChildren(span);
+}
+
+async function previewPush(): Promise<void> {
+  const bridge = api();
+  if (!bridge || running) return;
+
+  awaitingPushConfirmation = false;
+  pendingPushToken = null;
+  confirmBox.hidden = true;
+  setBusy(true, "push");
+  outputTitle.textContent = `上傳前預覽(${toolLabel()})`;
+  outputState.textContent = "整理中…";
+  outputState.className = "output-state is-running";
+  showPlaceholder("正在整理變更摘要,不會上傳任何內容…");
+
+  try {
+    const result = await bridge.preview_push(selectedTool);
+    renderOutput(result.output || "(沒有輸出)");
+    if (result.code !== 0) {
+      outputState.textContent = "有問題";
+      outputState.className = "output-state is-fail";
+      return;
+    }
+    if (!result.needs_confirmation) {
+      outputState.textContent = "沒有待上傳內容";
+      outputState.className = "output-state is-ok";
+      return;
+    }
+
+    pendingPushToken = result.token;
+    pendingPushTool = selectedTool;
+    awaitingPushConfirmation = true;
+    outputState.textContent = "等你確認";
+    outputState.className = "output-state is-review";
+    confirmBox.hidden = false;
+    confirmYes.focus();
+  } catch (err) {
+    showPlaceholder(`無法產生預覽:${String(err)}`);
+    outputState.textContent = "有問題";
+    outputState.className = "output-state is-fail";
+  } finally {
+    setBusy(false);
+    outputBody.scrollTop = 0;
+  }
 }
 
 async function runCommand(cmd: AcgCommand): Promise<void> {
@@ -130,8 +219,7 @@ for (const btn of actionButtons) {
     const cmd = btn.dataset.cmd as AcgCommand | undefined;
     if (!cmd || running) return;
     if (cmd === "push") {
-      confirmBox.hidden = false;
-      confirmYes.focus();
+      void previewPush();
       return;
     }
     confirmBox.hidden = true;
@@ -139,12 +227,42 @@ for (const btn of actionButtons) {
   });
 }
 
-confirmYes.addEventListener("click", () => {
+confirmYes.addEventListener("click", async () => {
+  const bridge = api();
+  const token = pendingPushToken;
+  const tool = pendingPushTool;
+  if (!bridge || !token || running) return;
+
+  awaitingPushConfirmation = false;
+  pendingPushToken = null;
   confirmBox.hidden = true;
-  void runCommand("push");
+  setBusy(true, "push");
+  outputTitle.textContent = `上傳變更(${toolLabel()})`;
+  outputState.textContent = "再次核對中…";
+  outputState.className = "output-state is-running";
+  showPlaceholder("正在確認內容仍和預覽相同,相同才會上傳…");
+  try {
+    const result = await bridge.confirm_push(tool, token);
+    renderOutput(result.output || "(沒有輸出)");
+    outputState.textContent = result.code === 0 ? "完成" : "有問題";
+    outputState.className =
+      result.code === 0 ? "output-state is-ok" : "output-state is-fail";
+  } catch (err) {
+    showPlaceholder(`上傳失敗:${String(err)}`);
+    outputState.textContent = "有問題";
+    outputState.className = "output-state is-fail";
+  } finally {
+    setBusy(false);
+    outputBody.scrollTop = 0;
+  }
 });
 confirmNo.addEventListener("click", () => {
+  awaitingPushConfirmation = false;
+  pendingPushToken = null;
   confirmBox.hidden = true;
+  outputState.textContent = "未上傳";
+  outputState.className = "output-state";
+  setBusy(false);
 });
 
 // ── 技能打包 ───────────────────────────
@@ -461,7 +579,7 @@ async function loadInfo(): Promise<void> {
       setupGdriveDir.value = info.repo;
       providerEl.textContent = "尚未選擇同步方式";
       providerEl.dataset.provider = "none";
-      repoEl.textContent = "完成下方設定後即可開始同步";
+      repoEl.textContent = `新設定預設位置：${info.repo}`;
       if (info.config_error) {
         showPlaceholder(`設定檔有問題:${info.config_error}`);
       }

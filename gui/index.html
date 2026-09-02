@@ -41,7 +41,7 @@
             <input id="setup-url" type="text" placeholder="git@github.com:you/my-config.git" spellcheck="false" />
           </label>
           <label class="setup-field">
-            <span>本機目錄(可用預設)</span>
+            <span>本機保存位置（通常不用改）</span>
             <input id="setup-dir" type="text" spellcheck="false" />
           </label>
           <div class="package-buttons">
@@ -52,7 +52,7 @@
         <div id="setup-gdrive-panel" class="setup-panel" hidden>
           <p class="package-hint">適合自己的多臺電腦同步。設定會放在 Google Drive 的隱藏應用程式空間，不會出現在一般檔案列表，也無法分享給其他人。</p>
           <label class="setup-field">
-            <span>本機目錄(可用預設)</span>
+            <span>本機保存位置（通常不用改）</span>
             <input id="setup-gdrive-dir" type="text" spellcheck="false" />
           </label>
           <div class="package-buttons">
@@ -75,7 +75,7 @@
         <button class="action" data-cmd="status">
           <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"></circle><line x1="13.2" y1="13.2" x2="17" y2="17"></line></svg>
           <span class="action-name">檢查狀態</span>
-          <span class="action-desc">先看看哪些設定會更新，不會修改任何內容</span>
+          <span class="action-desc">用精簡摘要看看哪些設定會更新，不會修改內容</span>
         </button>
         <button class="action" data-cmd="apply">
           <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="12"></line><polyline points="5.5,8 10,12.5 14.5,8"></polyline><line x1="4" y1="16.5" x2="16" y2="16.5"></line></svg>
@@ -90,12 +90,12 @@
         <button class="action" data-cmd="push">
           <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5a3.5 3.5 0 0 1 .4-6.98 4.6 4.6 0 0 1 8.9 1.18 3 3 0 0 1-.55 5.8"></path><line x1="10" y1="17" x2="10" y2="10.5"></line><polyline points="7,13 10,10 13,13"></polyline></svg>
           <span class="action-name">上傳變更</span>
-          <span class="action-desc">先預覽，再把這台電腦的修改保存起來</span>
+          <span class="action-desc">先看變更摘要，確認後才保存並上傳</span>
         </button>
       </section>
 
       <details class="package" id="package">
-        <summary class="package-summary">讓其他 AI 工具使用同一套技能</summary>
+        <summary class="package-summary">分享與準備 AI 技能</summary>
         <div class="package-body">
           <p class="package-hint">勾選技能後，可以分享給 Codex 與 Antigravity；也能準備成桌面版 AI 可安裝的檔案與說明。</p>
           <div class="package-list" id="skill-list" role="group" aria-label="技能清單"></div>
@@ -114,7 +114,7 @@
       </details>
 
       <div class="confirm" id="confirm" hidden>
-        <p class="confirm-text">確定要保存這台電腦的變更嗎？完成後，其他電腦就能下載這份設定。</p>
+        <p class="confirm-text">上方是這次要保存的內容。確認後才會上傳；如果內容已變動，系統會要求重新預覽。</p>
         <div class="confirm-buttons">
           <button class="btn btn-primary" id="confirm-yes">確定上傳</button>
           <button class="btn btn-ghost" id="confirm-no">取消</button>
@@ -124,9 +124,9 @@
       <section class="output" aria-label="執行結果">
         <div class="output-head">
           <span class="output-title" id="output-title">執行結果</span>
-          <span class="output-state" id="output-state"></span>
+          <span class="output-state" id="output-state" aria-live="polite"></span>
         </div>
-        <pre class="output-body" id="output-body"><span class="line-placeholder">還沒有輸出 — 從上面選一個動作開始。</span></pre>
+        <pre class="output-body" id="output-body" aria-live="polite"><span class="line-placeholder">還沒有輸出 — 從上面選一個動作開始。</span></pre>
       </section>
     </div>
   </body>
