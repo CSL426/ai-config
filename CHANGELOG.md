@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.33 - 2026-09-02
 
 - status(以及 pull 結尾的狀態顯示)聚合長清單:「只在 ai-config」的新檔與
   「只在 live」的待刪檔,同目錄超過 3 個就收成一行統計(如
