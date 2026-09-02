@@ -165,6 +165,61 @@ def _planned_removals(tool: str, stage_dir: Path, home_dir: Path) -> list[Path]:
     return sorted(set(removals))
 
 
+_GROUP_THRESHOLD = 3
+
+
+def _group_key(path: str) -> str:
+    """聚合鍵:skills/acg/** → skills/acg,commands/x.md → commands。"""
+    parts = path.split("/")
+    if len(parts) == 1:
+        return path
+    if len(parts) == 2:
+        return parts[0]
+    return f"{parts[0]}/{parts[1]}"
+
+
+def _print_new_files(entries: "list[tuple[str, Path]]") -> None:
+    # 一行一檔在首次同步會列出數百行;同目錄超過門檻就收成統計行
+    groups: dict[str, list[tuple[str, Path]]] = {}
+    for rel_text, ai_file in entries:
+        groups.setdefault(_group_key(rel_text), []).append((rel_text, ai_file))
+    for key in sorted(groups):
+        members = groups[key]
+        if len(members) > _GROUP_THRESHOLD:
+            latest = max((_latest_mtime_ns(f) or 0) for _, f in members)
+            print(
+                f"  {GREEN}+ {key}/{NC} ({len(members)} files only in "
+                f"ai-config; repo modified {_format_mtime(latest or None)})"
+            )
+        else:
+            for rel_text, ai_file in members:
+                print(
+                    f"  {GREEN}+ {rel_text}{NC} (only in ai-config; "
+                    f"repo modified {_format_mtime(_latest_mtime_ns(ai_file))})"
+                )
+
+
+def _print_removal_entries(removals: "list[Path]", home_dir: Path) -> None:
+    groups: dict[str, list[Path]] = {}
+    for relative in removals:
+        groups.setdefault(_group_key(relative.as_posix()), []).append(relative)
+    for key in sorted(groups):
+        members = groups[key]
+        if len(members) > _GROUP_THRESHOLD:
+            print(
+                f"  {RED}- {key}/{NC} ({len(members)} files only in live; "
+                "apply removes)"
+            )
+        else:
+            for relative in members:
+                live_path = home_dir / relative
+                print(
+                    f"  {RED}- {relative.as_posix()}{NC} "
+                    "(only in live; apply removes; "
+                    f"live modified {_format_mtime(_latest_mtime_ns(live_path))})"
+                )
+
+
 def status_tool(tool: str) -> None:
     module = _TOOLS[tool]
     home_dir = tool_home(tool)
@@ -183,6 +238,7 @@ def status_tool(tool: str) -> None:
             return
 
         has_diff = False
+        new_files: list[tuple[str, Path]] = []
         for ai_file in sorted(p for p in stage_dir.rglob("*") if p.is_file()):
             rel = ai_file.relative_to(stage_dir)
             if is_excluded(rel):
@@ -196,10 +252,7 @@ def status_tool(tool: str) -> None:
                 home_file = home_dir / rel
 
             if not home_file.is_file():
-                print(
-                    f"  {GREEN}+ {rel_text}{NC} (only in ai-config; "
-                    f"repo modified {_format_mtime(_latest_mtime_ns(ai_file))})"
-                )
+                new_files.append((rel_text, ai_file))
                 has_diff = True
                 continue
 
@@ -268,13 +321,11 @@ def status_tool(tool: str) -> None:
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
 
-        for relative in _planned_removals(tool, stage_dir, home_dir):
-            live_path = home_dir / relative
-            print(
-                f"  {RED}- {relative.as_posix()}{NC} "
-                "(only in live; apply removes; "
-                f"live modified {_format_mtime(_latest_mtime_ns(live_path))})"
-            )
+        _print_new_files(new_files)
+
+        removals = _planned_removals(tool, stage_dir, home_dir)
+        if removals:
+            _print_removal_entries(removals, home_dir)
             has_diff = True
 
         if has_diff:

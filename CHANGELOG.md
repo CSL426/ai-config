@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- status(以及 pull 結尾的狀態顯示)聚合長清單:「只在 ai-config」的新檔與
+  「只在 live」的待刪檔,同目錄超過 3 個就收成一行統計(如
+  `+ skills/acg/ (12 files only in ai-config)`);內容有差異的檔案照舊
+  逐檔顯示 diff。首次同步不再噴出數百行。
+
 ## 1.0.32 - 2026-09-02
 
 - 資料儲存庫的預設位置改為 `~/.acg/data`(隱藏目錄,符合 CLI 慣例)。
