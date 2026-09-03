@@ -33,6 +33,8 @@ jobs:
         run: |
           mkdir -p _site
           cp docs/slides/intro.html _site/index.html
+          cp docs/slides/tokens.css _site/tokens.css
+          cp docs/slides/slides.css _site/slides.css
           cp docs/slides/gui-desktop.png _site/gui-desktop.png
           touch _site/.nojekyll
 

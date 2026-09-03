@@ -1,0 +1,53 @@
+:root {
+  color-scheme: light;
+
+  --color-paper: oklch(97% 0.012 95);
+  --color-paper-2: oklch(94% 0.016 95);
+  --color-paper-3: oklch(90% 0.022 95);
+  --color-rule: oklch(62% 0.026 95);
+  --color-ink: oklch(20% 0.012 250);
+  --color-ink-soft: oklch(38% 0.018 250);
+  --color-muted: oklch(48% 0.018 250);
+  --color-pear: oklch(86% 0.18 95);
+  --color-pear-soft: oklch(93% 0.075 95);
+  --color-sky: oklch(66% 0.18 235);
+  --color-sky-soft: oklch(91% 0.055 235);
+  --color-sky-deep: oklch(42% 0.14 235);
+  --color-coral: oklch(68% 0.24 18);
+  --color-coral-soft: oklch(93% 0.045 18);
+  --color-mint: oklch(80% 0.16 150);
+  --color-mint-soft: oklch(92% 0.055 150);
+  --color-focus: oklch(45% 0.17 235);
+  --color-accent-ink: oklch(20% 0.012 250);
+  --color-shadow: oklch(34% 0.025 80 / 0.16);
+
+  --font-display: "Plus Jakarta Sans", "Noto Sans TC", sans-serif;
+  --font-body: "Plus Jakarta Sans", "Noto Sans TC", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-xs: 0.72rem;
+  --text-sm: clamp(0.82rem, 0.78rem + 0.18vw, 0.94rem);
+  --text-base: clamp(1rem, 0.93rem + 0.28vw, 1.18rem);
+  --text-md: clamp(1.18rem, 1.02rem + 0.65vw, 1.56rem);
+  --text-lg: clamp(1.48rem, 1.16rem + 1.25vw, 2.24rem);
+  --text-xl: clamp(1.9rem, 1.35rem + 2.2vw, 3.2rem);
+  --text-display: clamp(2.75rem, 1.72rem + 4.2vw, 5.25rem);
+
+  --space-2xs: 0.35rem;
+  --space-xs: 0.55rem;
+  --space-sm: 0.8rem;
+  --space-md: 1.1rem;
+  --space-lg: 1.65rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+
+  --radius-sm: 0.65rem;
+  --radius-md: 1.15rem;
+  --radius-lg: 1.8rem;
+  --rule: 1px;
+  --shadow-paper: 0 0.9rem 2.4rem var(--color-shadow);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 180ms;
+  --dur-enter: 360ms;
+}
