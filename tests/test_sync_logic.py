@@ -319,6 +319,25 @@ def test_status_warns_when_live_codex_has_plugin_repo_dropped(tmp_path: Path) ->
     )
 
 
+def test_status_ignores_codex_managed_plugins(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/settings.json", '{"enabledPlugins": {"keep@mp": true}}\n')
+    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(
+        home_dir / ".codex/config.toml",
+        'model = "gpt-5"\n\n'
+        '[plugins."pdf@openai-primary-runtime"]\nenabled = true\n\n'
+        '[plugins."visualize@openai-bundled"]\nenabled = true\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "status")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "openai-primary-runtime" not in result.stdout
+    assert "openai-bundled" not in result.stdout
+    assert "No plugin drift detected" in result.stdout
+
+
 def test_status_reports_no_plugin_drift_when_aligned(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     write(repo_dir / "claude/settings.json", '{"enabledPlugins": {"keep@mp": true}}\n')

@@ -236,6 +236,36 @@ def test_apply_codex_preserves_live_notify_and_projects(tmp_path: Path) -> None:
     assert 'trust_level = "trusted"' in config
 
 
+def test_apply_codex_preserves_codex_managed_plugin_blocks(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(
+        repo_dir / "codex/config.toml",
+        'model = "shared"\n\n'
+        '[plugins."github@openai-curated"]\nenabled = true\n\n'
+        '[plugins."stale@openai-bundled"]\nenabled = true\n',
+    )
+    write(
+        home_dir / ".codex/config.toml",
+        'model = "local"\n\n'
+        '[plugins."pdf@openai-primary-runtime"]\nenabled = true\n\n'
+        '[plugins."browser@openai-bundled"]\nenabled = true\n\n'
+        '[plugins."lingering@openai-curated"]\nenabled = true\n',
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    config = (home_dir / ".codex/config.toml").read_text()
+    assert 'model = "shared"' in config
+    assert '[plugins."github@openai-curated"]' in config
+    # 機器本地的 Codex 內建外掛留下;repo 裡誤入的內建外掛區塊不會被帶出來
+    assert '[plugins."pdf@openai-primary-runtime"]' in config
+    assert '[plugins."browser@openai-bundled"]' in config
+    assert "stale@openai-bundled" not in config
+    # 手動裝的外掛仍由 repo 決定
+    assert "lingering@openai-curated" not in config
+
+
 def test_apply_codex_filters_repo_notify_from_fresh_copy(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     write(
