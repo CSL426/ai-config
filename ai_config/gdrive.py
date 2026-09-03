@@ -1,8 +1,8 @@
-"""Google Drive appDataFolder sync provider.
+"""Google Drive sync provider.
 
-Provides OAuth 2.0 PKCE authentication and appDataFolder bundle transport
-allowing users without GitHub accounts to sync their configuration repository
-across devices via Google Drive.
+Provides OAuth 2.0 PKCE authentication and bundle transport through a visible
+``ai-config`` folder in the user's My Drive, allowing users without GitHub
+accounts to sync their configuration repository across devices.
 """
 
 import base64
@@ -25,14 +25,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .config import config_path
+from .config import (
+    config_path,
+    configured_gdrive_folder,
+    configured_gdrive_folder_id,
+)
 from .console import log_error, log_info, log_success
 
 GDRIVE_CLIENT_ID = ""  # 開放原始碼儲存庫中預設為空字串,正式建置由 GitHub secret 注入
 # Google 的 Desktop 類型 client 即使走 PKCE,token 交換仍要求 client_secret;
 # 官方文件明言桌面應用的 secret「並非機密」但必須附上(gcloud/rclone 同做法)。
 GDRIVE_CLIENT_SECRET = ""
-GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
+# drive.file 只能看到本應用自己建立的檔案,權限最小;但檔案放在一般「我的雲端硬碟」
+# 底下,使用者在 Drive 網頁/桌面版都看得到(早期版本用 appDataFolder,永遠隱藏)。
+GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
@@ -263,10 +270,17 @@ def run_oauth_flow(
     access_token = data.get("access_token") if isinstance(data, dict) else None
     if not isinstance(access_token, str) or not access_token:
         raise GDriveAuthError("OAuth token exchange returned no access token")
+    # Google 的同意畫面允許使用者逐項取消勾選,拿到 token 不代表拿到 Drive 權限
+    granted_scope = str(data.get("scope") or GDRIVE_SCOPE)
+    if GDRIVE_SCOPE not in granted_scope.split():
+        raise GDriveAuthError(
+            "Google 帳號未授予 Drive 檔案權限,請重新登入並勾選允許存取"
+        )
     token_data = {
         "access_token": access_token,
         "refresh_token": data.get("refresh_token", ""),
         "expires_at": int(time.time()) + int(data.get("expires_in", 3600)),
+        "scope": granted_scope,
     }
     save_token(token_data, environ)
     log_success("Google 帳號授權成功")
@@ -312,13 +326,19 @@ def refresh_access_token(
             "Google Drive 授權已失效或過期,請重新登入 "
             "(acg setup --provider gdrive)"
         )
+    previous = load_token(environ) or {}
     token_data = {
         "access_token": access_token,
         "refresh_token": data.get("refresh_token") or refresh_token,
         "expires_at": int(time.time()) + int(data.get("expires_in", 3600)),
+        "scope": str(data.get("scope") or previous.get("scope") or ""),
     }
     save_token(token_data, environ)
     return token_data
+
+
+def token_has_scope(token_data: dict[str, Any]) -> bool:
+    return GDRIVE_SCOPE in str(token_data.get("scope", "")).split()
 
 
 def get_valid_access_token(
@@ -327,6 +347,13 @@ def get_valid_access_token(
     token_data = load_token(environ)
     if not token_data or "access_token" not in token_data:
         raise GDriveAuthError("尚未登入 Google Drive,請先執行 acg setup --provider gdrive")
+    if not token_has_scope(token_data):
+        # 舊版 token 只有 drive.appdata(隱藏空間),對可見資料夾的 API 一律 403
+        delete_token(environ)
+        raise GDriveAuthError(
+            "Google Drive 授權範圍已更新(設定改存到可見的 ai-config 資料夾),"
+            "請重新登入 (acg setup --provider gdrive)"
+        )
 
     expires_at = token_data.get("expires_at", 0)
     if time.time() >= expires_at - 60:
@@ -409,22 +436,126 @@ def make_drive_request(
             raise GDriveError(f"Network error calling Google Drive: {exc}") from exc
 
 
-class GDriveClient:
-    def __init__(self, environ: "dict[str, str] | None" = None) -> None:
-        self.environ = environ
+def _escape_query_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
 
-    def find_file(self, name: str) -> "dict[str, Any] | None":
-        escaped_name = name.replace("\\", "\\\\").replace("'", "\\'")
-        query = f"name='{escaped_name}' and trashed=false"
+
+def _require_folder_id(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise GDriveError(
+            f"Google Drive did not return an id for folder {name!r}"
+        )
+    return value
+
+
+class GDriveClient:
+    def __init__(
+        self,
+        environ: "dict[str, str] | None" = None,
+        folder_path: "str | None" = None,
+        folder_id: "str | None" = None,
+        use_configured_id: bool = True,
+    ) -> None:
+        self.environ = environ
+        self.folder_path = folder_path or configured_gdrive_folder(environ)
+        configured_id = (
+            configured_gdrive_folder_id(environ) if use_configured_id else None
+        )
+        self._configured_folder_id = folder_id or configured_id
+        self._folder_id: str | None = None
+
+    def _list_files(self, query: str) -> list[dict[str, Any]]:
         params = urllib.parse.urlencode({
-            "spaces": "appDataFolder",
             "q": query,
             "fields": "files(id, name, headRevisionId, modifiedTime)",
+            "orderBy": "createdTime",
+            "pageSize": 10,
         })
         url = f"{DRIVE_API_BASE}/files?{params}"
         _, _, body = make_drive_request(url, environ=self.environ)
         data = json.loads(body.decode("utf-8"))
-        files = data.get("files", [])
+        files = data.get("files", []) if isinstance(data, dict) else []
+        return [item for item in files if isinstance(item, dict)]
+
+    def _folder_still_exists(self, folder_id: str) -> bool:
+        params = urllib.parse.urlencode({"fields": "id,trashed,mimeType"})
+        url = f"{DRIVE_API_BASE}/files/{folder_id}?{params}"
+        try:
+            _, _, body = make_drive_request(url, environ=self.environ)
+        except GDriveAuthError:
+            raise
+        except GDriveError:
+            return False
+        data = json.loads(body.decode("utf-8"))
+        return (
+            isinstance(data, dict)
+            and data.get("id") == folder_id
+            and not data.get("trashed")
+            and data.get("mimeType") == FOLDER_MIME_TYPE
+        )
+
+    def _child_folder(self, parent_id: str, name: str) -> str:
+        query = (
+            f"name='{_escape_query_value(name)}' "
+            f"and mimeType='{FOLDER_MIME_TYPE}' "
+            f"and '{parent_id}' in parents and trashed=false"
+        )
+        folders = self._list_files(query)
+        if folders:
+            return _require_folder_id(folders[0].get("id"), name)
+        return self._create_folder(parent_id, name)
+
+    def _create_folder(self, parent_id: str, name: str) -> str:
+        metadata = json.dumps({
+            "name": name,
+            "mimeType": FOLDER_MIME_TYPE,
+            "parents": [parent_id],
+        })
+        url = f"{DRIVE_API_BASE}/files?fields=id"
+        _, _, body = make_drive_request(
+            url,
+            method="POST",
+            headers={"Content-Type": "application/json; charset=UTF-8"},
+            data=metadata.encode("utf-8"),
+            environ=self.environ,
+        )
+        created = json.loads(body.decode("utf-8"))
+        folder_id = created.get("id") if isinstance(created, dict) else None
+        return _require_folder_id(folder_id, name)
+
+    def get_folder_id(self) -> str:
+        """Return the id of the sync folder, creating the path if needed.
+
+        The id saved at setup wins so the user may move or rename the folder
+        in Drive afterwards. Only when that id is gone (folder trashed or
+        deleted) is ``folder_path`` walked from My Drive root, creating each
+        missing segment. drive.file only exposes folders this app created, so
+        a hand-made folder with the same name is invisible here and a second
+        one appears next to it.
+        """
+        if self._folder_id:
+            return self._folder_id
+        if self._configured_folder_id and self._folder_still_exists(
+            self._configured_folder_id
+        ):
+            self._folder_id = self._configured_folder_id
+            return self._folder_id
+        parent_id = "root"
+        for segment in self.folder_path.split("/"):
+            parent_id = self._child_folder(parent_id, segment)
+        self._folder_id = parent_id
+        return parent_id
+
+    def folder_url(self) -> str:
+        return f"https://drive.google.com/drive/folders/{self.get_folder_id()}"
+
+    def find_file(self, name: str) -> "dict[str, Any] | None":
+        folder_id = self.get_folder_id()
+        query = (
+            f"name='{_escape_query_value(name)}' "
+            f"and '{folder_id}' in parents and trashed=false"
+        )
+        files = self._list_files(query)
         return files[0] if files else None
 
     def get_file_metadata(self, file_id: str) -> dict[str, Any]:
@@ -466,7 +597,7 @@ class GDriveClient:
             return json.loads(body.decode("utf-8"))
 
         boundary = f"=====boundary_{secrets.token_hex(8)}====="
-        metadata = json.dumps({"name": name, "parents": ["appDataFolder"]})
+        metadata = json.dumps({"name": name, "parents": [self.get_folder_id()]})
 
         parts = [
             f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n".encode(),
@@ -521,8 +652,12 @@ class GDriveClient:
         content = json.dumps(head_data, ensure_ascii=False, indent=2).encode("utf-8")
         return self.upload_file("head.json", content, content_type="application/json")
 
-    def verify_setup_access(self) -> None:
-        """§1.5 Setup verification: create -> read back -> delete -> confirm vanished."""
+    def verify_setup_access(self) -> str:
+        """§1.5 Setup verification: create -> read back -> delete -> confirm vanished.
+
+        Returns the URL of the ai-config folder so setup can show the user
+        where the synced files live.
+        """
         test_name = f"test_{secrets.token_hex(8)}.tmp"
         test_data = secrets.token_bytes(64)
 
@@ -549,6 +684,7 @@ class GDriveClient:
             except GDriveError:
                 pass
             raise
+        return self.folder_url()
 
 
 def gdrive_pull(repo_dir: Path, tool: str) -> int:
@@ -791,7 +927,10 @@ def _gdrive_push_upload(repo_dir: Path) -> int:
             return 1
 
         client.update_head_info(local_head)
-        log_success("Local configuration committed and uploaded to Google Drive")
+        log_success(
+            "Local configuration committed and uploaded to Google Drive "
+            f"({client.folder_path})"
+        )
         return 0
     finally:
         tmp_bundle_path.unlink(missing_ok=True)

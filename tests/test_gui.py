@@ -356,3 +356,7 @@ def test_setup_gdrive_builds_argv_and_validates(
         "--data-dir",
         "/tmp/gdrive_dir",
     ]
+
+    result = api.setup_gdrive("/tmp/gdrive_dir", " Backups/acg ")
+    assert result["code"] == 0
+    assert seen["argv"][-2:] == ["--gdrive-folder", "Backups/acg"]

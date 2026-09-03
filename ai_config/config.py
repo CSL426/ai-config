@@ -10,6 +10,7 @@ from typing import Any
 CONFIG_ENV = "AI_CONFIG_CONFIG"
 DATA_REPO_ENV = "AI_CONFIG_REPO"
 REMOTE_PROVIDERS = frozenset({"git", "gdrive"})
+GDRIVE_FOLDER_DEFAULT = "ai-config"
 
 
 class ConfigError(RuntimeError):
@@ -83,7 +84,44 @@ def load_config(path: "Path | None" = None) -> dict[str, Any]:
         raise ConfigError(
             f"remote_provider must be git or gdrive in {target}"
         )
+    for key in ("gdrive_folder", "gdrive_folder_id"):
+        if payload.get(key) is not None and not isinstance(payload[key], str):
+            raise ConfigError(f"{key} must be a string in {target}")
     return payload
+
+
+def normalize_gdrive_folder(value: "str | None") -> str:
+    """Turn user input like `` Backups / ai-config `` into ``Backups/ai-config``.
+
+    Segments are relative to My Drive; both slash styles are accepted because
+    Windows users type backslashes by reflex.
+    """
+    if value is None:
+        return GDRIVE_FOLDER_DEFAULT
+    segments = []
+    for raw_segment in value.replace("\\", "/").split("/"):
+        segment = raw_segment.strip()
+        if segment:
+            segments.append(segment)
+    if not segments:
+        return GDRIVE_FOLDER_DEFAULT
+    if any(segment in (".", "..") for segment in segments):
+        raise ConfigError(f"Google Drive folder path is invalid: {value!r}")
+    return "/".join(segments)
+
+
+def configured_gdrive_folder(
+    environ: "dict[str, str] | None" = None,
+) -> str:
+    value = load_config(config_path(environ)).get("gdrive_folder")
+    return normalize_gdrive_folder(value if isinstance(value, str) else None)
+
+
+def configured_gdrive_folder_id(
+    environ: "dict[str, str] | None" = None,
+) -> "str | None":
+    value = load_config(config_path(environ)).get("gdrive_folder_id")
+    return value if isinstance(value, str) and value else None
 
 
 def configured_data_repo() -> "Path | None":
@@ -110,6 +148,8 @@ def save_data_repo(
     data_repo: Path,
     path: "Path | None" = None,
     remote_provider: "str | None" = None,
+    gdrive_folder: "str | None" = None,
+    gdrive_folder_id: "str | None" = None,
 ) -> Path:
     if remote_provider is not None and remote_provider not in REMOTE_PROVIDERS:
         raise ConfigError("remote_provider must be git or gdrive")
@@ -129,6 +169,13 @@ def save_data_repo(
         current["remote_provider"] = "gdrive"
     elif remote_provider == "git" and "remote_provider" in current:
         current["remote_provider"] = "git"
+    if gdrive_folder is not None:
+        current["gdrive_folder"] = normalize_gdrive_folder(gdrive_folder)
+        # 資料夾 id 綁定 Drive 上的實體;使用者事後在 Drive 裡搬動資料夾也不會失聯
+        if gdrive_folder_id:
+            current["gdrive_folder_id"] = gdrive_folder_id
+        else:
+            current.pop("gdrive_folder_id", None)
 
     payload = json.dumps(
         current,

@@ -57,7 +57,7 @@ export interface AcgApi {
   check_update(): Promise<UpdateCheck>;
   run_update(): Promise<RunResult>;
   setup_repo(repoUrl: string, dataDir?: string): Promise<RunResult>;
-  setup_gdrive(dataDir?: string): Promise<RunResult>;
+  setup_gdrive(dataDir?: string, gdriveFolder?: string): Promise<RunResult>;
 }
 
 declare global {

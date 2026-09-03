@@ -3,7 +3,14 @@
 import subprocess
 import time
 
-from ..config import ConfigError, config_path, configured_remote_provider
+from ..config import (
+    GDRIVE_FOLDER_DEFAULT,
+    ConfigError,
+    config_path,
+    configured_gdrive_folder,
+    configured_gdrive_folder_id,
+    configured_remote_provider,
+)
 from ..console import log_header, log_info, log_success, log_warn
 from ..paths import ALL_TOOLS, SCRIPT_DIR, tilde, tool_home
 from ..version import current_version
@@ -46,7 +53,7 @@ def run_config_info() -> int:
 
     provider_label = {
         "git": "git(Git 遠端同步)",
-        "gdrive": "gdrive(Google Drive appDataFolder)",
+        "gdrive": "gdrive(Google Drive 資料夾同步)",
     }.get(provider, provider)
     log_info(f"Remote provider: {provider_label}")
 
@@ -85,6 +92,19 @@ def run_config_info() -> int:
     else:
         source = "built-in" if GDRIVE_CLIENT_ID else "environment variable"
         log_info(f"Client ID: available ({source})")
+
+    try:
+        folder = configured_gdrive_folder()
+        folder_id = configured_gdrive_folder_id()
+    except ConfigError:
+        folder, folder_id = GDRIVE_FOLDER_DEFAULT, None
+    if folder_id:
+        log_info(
+            f"Folder: 我的雲端硬碟/{folder} "
+            f"(https://drive.google.com/drive/folders/{folder_id})"
+        )
+    else:
+        log_info(f"Folder: 我的雲端硬碟/{folder} (尚未建立,setup 時建立)")
 
     token = load_token()
     if token is None:

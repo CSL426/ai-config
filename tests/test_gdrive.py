@@ -1,5 +1,6 @@
 """Unit tests for Google Drive sync provider (ai_config/gdrive.py)."""
 
+import json
 import os
 import subprocess
 import urllib.error
@@ -10,7 +11,13 @@ from typing import Any, Self
 import pytest
 
 from ai_config.commands.setup import SetupError, setup_gdrive_repository
-from ai_config.config import ConfigError, configured_remote_provider, load_config
+from ai_config.config import (
+    ConfigError,
+    configured_remote_provider,
+    load_config,
+    normalize_gdrive_folder,
+    save_data_repo,
+)
 from ai_config.gdrive import (
     GDRIVE_CLIENT_ID,
     GDRIVE_CLIENT_SECRET,
@@ -29,6 +36,13 @@ from ai_config.gdrive import (
     save_token,
 )
 from ai_config.paths import EXCLUDED_FILES
+
+
+class _MockDriveClient:
+    folder_path = "ai-config"
+
+    def __init__(self, environ: Any = None, **kwargs: Any) -> None:
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +123,7 @@ def test_pkce_generation() -> None:
     assert len(verifier) >= 43
     assert len(challenge) > 0
     assert "=" not in challenge
-    assert GDRIVE_SCOPE == "https://www.googleapis.com/auth/drive.appdata"
+    assert GDRIVE_SCOPE == "https://www.googleapis.com/auth/drive.file"
 
 
 def test_token_save_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,6 +132,7 @@ def test_token_save_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         "access_token": "acc_123",
         "refresh_token": "ref_456",
         "expires_at": 2000000000,
+        "scope": GDRIVE_SCOPE,
     }
     saved_path = save_token(token_data, environ)
     assert saved_path.is_file()
@@ -152,6 +167,7 @@ def test_refresh_token_failure_clears_token(
             "access_token": "old_acc",
             "refresh_token": "bad_ref",
             "expires_at": 100,  # expired
+            "scope": GDRIVE_SCOPE,
         },
         environ,
     )
@@ -187,21 +203,24 @@ def test_setup_gdrive_verification_flow(
             "access_token": "mock_token",
             "refresh_token": "mock_refresh",
             "expires_at": 2000000000,
+            "scope": GDRIVE_SCOPE,
         },
     )
 
     steps: list[str] = []
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
-        def verify_setup_access(self) -> None:
+        def verify_setup_access(self) -> str:
             steps.append("verified")
+            return "https://drive.google.com/drive/folders/folder_abc"
+
+        def get_folder_id(self) -> str:
+            return "folder_abc"
 
     monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
 
-    setup_gdrive_repository(data_dir)
+    setup_gdrive_repository(data_dir, " Backups / ai-config ")
 
     assert steps == ["verified"]
     assert (data_dir / ".git").is_dir()
@@ -211,6 +230,8 @@ def test_setup_gdrive_verification_flow(
 
     cfg = load_config()
     assert cfg["remote_provider"] == "gdrive"
+    assert cfg["gdrive_folder"] == "Backups/ai-config"
+    assert cfg["gdrive_folder_id"] == "folder_abc"
 
 
 def test_setup_gdrive_verification_failure_does_not_save_config(
@@ -225,11 +246,12 @@ def test_setup_gdrive_verification_failure_does_not_save_config(
             "access_token": "mock_token",
             "refresh_token": "mock_refresh",
             "expires_at": 2000000000,
+            "scope": GDRIVE_SCOPE,
         },
     )
 
     class FailingDriveClient:
-        def __init__(self, environ: Any = None) -> None:
+        def __init__(self, environ: Any = None, **kwargs: Any) -> None:
             pass
 
         def verify_setup_access(self) -> None:
@@ -279,9 +301,7 @@ def test_gdrive_pull_empty_remote(
     init_git_repo(repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return None
@@ -304,9 +324,7 @@ def test_gdrive_pull_already_up_to_date(
     head_sha = init_git_repo(repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return {"commit": head_sha}
@@ -355,9 +373,7 @@ def test_gdrive_pull_fast_forwardable(
 
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", local_repo)
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return {"commit": new_remote_sha}
@@ -391,9 +407,7 @@ def test_gdrive_push_upload_success(
 
     uploaded: dict[str, Any] = {}
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return None
@@ -427,9 +441,7 @@ def test_gdrive_push_upload_diverged(
     init_git_repo(repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return {"commit": "0000000000000000000000000000000000000000"}
@@ -505,9 +517,7 @@ def test_gdrive_pull_rejects_diverged_history(
         capture_output=True,
     )
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return {"commit": remote_head, "format": 1}
@@ -561,9 +571,7 @@ def test_gdrive_pull_rejects_bundle_head_mismatch(
         capture_output=True,
     )
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return {"commit": "f" * 40, "format": 1}
@@ -588,9 +596,7 @@ def test_gdrive_push_rechecks_uploaded_revision(
     init_git_repo(repo_dir)
     head_updated = False
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return None
@@ -645,6 +651,7 @@ def test_drive_request_retries_403_three_times(
             "access_token": "token",
             "refresh_token": "refresh",
             "expires_at": 4_000_000_000,
+            "scope": GDRIVE_SCOPE,
         },
         environ,
     )
@@ -698,9 +705,7 @@ def test_gdrive_preflight_counts_commits_when_remote_is_empty(
     monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
 
-    class MockDriveClient:
-        def __init__(self, environ: Any = None) -> None:
-            pass
+    class MockDriveClient(_MockDriveClient):
 
         def get_head_info(self) -> Any:
             return None
@@ -856,3 +861,186 @@ def test_gdrive_can_create_first_commit_in_unborn_repository(
         check=True,
         capture_output=True,
     ).returncode == 0
+
+
+def test_stale_appdata_token_forces_relogin(tmp_path: Path) -> None:
+    environ = {"HOME": str(tmp_path), "AI_CONFIG_GDRIVE_CLIENT_ID": "dummy"}
+    save_token(
+        {
+            "access_token": "token",
+            "refresh_token": "refresh",
+            "expires_at": 4_000_000_000,
+            "scope": "https://www.googleapis.com/auth/drive.appdata",
+        },
+        environ,
+    )
+
+    with pytest.raises(GDriveAuthError) as exc_info:
+        get_valid_access_token(environ)
+
+    assert "重新登入" in str(exc_info.value)
+    assert load_token(environ) is None
+
+
+def _drive_responder(
+    monkeypatch: pytest.MonkeyPatch,
+    handler: Any,
+) -> list[tuple[str, str, bytes | None]]:
+    calls: list[tuple[str, str, bytes | None]] = []
+
+    def fake_request(
+        url: str,
+        method: str = "GET",
+        headers: Any = None,
+        data: Any = None,
+        environ: Any = None,
+    ) -> tuple[int, dict[str, str], bytes]:
+        calls.append((method, url, data))
+        return 200, {}, handler(method, url, data)
+
+    monkeypatch.setattr("ai_config.gdrive.make_drive_request", fake_request)
+    return calls
+
+
+def test_folder_is_created_in_my_drive_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(method: str, url: str, data: Any) -> bytes:
+        if method == "GET":
+            return b'{"files": []}'
+        return b'{"id": "folder_new"}'
+
+    calls = _drive_responder(monkeypatch, handler)
+    client = GDriveClient()
+
+    assert client.folder_path == "ai-config"
+    assert client.get_folder_id() == "folder_new"
+    assert client.folder_url() == "https://drive.google.com/drive/folders/folder_new"
+    # 第二次直接用快取,不再打 API
+    assert client.get_folder_id() == "folder_new"
+
+    assert [method for method, _, _ in calls] == ["GET", "POST"]
+    list_url = calls[0][1]
+    assert "spaces=appDataFolder" not in list_url
+    assert "mimeType%3D%27application%2Fvnd.google-apps.folder%27" in list_url
+    assert "name%3D%27ai-config%27" in list_url
+    assert "%27root%27+in+parents" in list_url
+    created = json.loads(calls[1][2])
+    assert created == {
+        "name": "ai-config",
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": ["root"],
+    }
+
+
+def test_nested_folder_path_is_walked_and_created(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(method: str, url: str, data: Any) -> bytes:
+        if method == "GET" and "name%3D%27Backups%27" in url:
+            return b'{"files": [{"id": "backups_id", "name": "Backups"}]}'
+        if method == "GET":
+            return b'{"files": []}'
+        return b'{"id": "leaf_id"}'
+
+    calls = _drive_responder(monkeypatch, handler)
+    client = GDriveClient(folder_path="Backups/ai-config")
+
+    assert client.get_folder_id() == "leaf_id"
+    assert [method for method, _, _ in calls] == ["GET", "GET", "POST"]
+    assert "%27root%27+in+parents" in calls[0][1]
+    assert "%27backups_id%27+in+parents" in calls[1][1]
+    assert json.loads(calls[2][2])["parents"] == ["backups_id"]
+
+
+def test_saved_folder_id_wins_over_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environ = {
+        "HOME": str(tmp_path),
+        "AI_CONFIG_GDRIVE_CLIENT_ID": "dummy",
+        "AI_CONFIG_CONFIG": os.environ["AI_CONFIG_CONFIG"],
+    }
+    save_data_repo(
+        tmp_path / "repo",
+        remote_provider="gdrive",
+        gdrive_folder="Old/Name",
+        gdrive_folder_id="saved_id",
+    )
+
+    def handler(method: str, url: str, data: Any) -> bytes:
+        assert method == "GET" and "/files/saved_id?" in url
+        return (
+            b'{"id": "saved_id", "trashed": false, '
+            b'"mimeType": "application/vnd.google-apps.folder"}'
+        )
+
+    calls = _drive_responder(monkeypatch, handler)
+    client = GDriveClient(environ)
+
+    assert client.folder_path == "Old/Name"
+    assert client.get_folder_id() == "saved_id"
+    assert len(calls) == 1
+
+
+def test_trashed_saved_folder_falls_back_to_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environ = {
+        "HOME": str(tmp_path),
+        "AI_CONFIG_GDRIVE_CLIENT_ID": "dummy",
+        "AI_CONFIG_CONFIG": os.environ["AI_CONFIG_CONFIG"],
+    }
+    save_data_repo(
+        tmp_path / "repo",
+        remote_provider="gdrive",
+        gdrive_folder="ai-config",
+        gdrive_folder_id="gone_id",
+    )
+
+    def handler(method: str, url: str, data: Any) -> bytes:
+        if "/files/gone_id?" in url:
+            return b'{"id": "gone_id", "trashed": true}'
+        if method == "GET":
+            return b'{"files": []}'
+        return b'{"id": "recreated"}'
+
+    calls = _drive_responder(monkeypatch, handler)
+    client = GDriveClient(environ)
+
+    assert client.get_folder_id() == "recreated"
+    assert [method for method, _, _ in calls] == ["GET", "GET", "POST"]
+
+
+def test_normalize_gdrive_folder() -> None:
+    assert normalize_gdrive_folder(None) == "ai-config"
+    assert normalize_gdrive_folder("   ") == "ai-config"
+    assert normalize_gdrive_folder("/Backups//ai-config/") == "Backups/ai-config"
+    assert normalize_gdrive_folder("Backups\\acg") == "Backups/acg"
+    with pytest.raises(ConfigError):
+        normalize_gdrive_folder("../x")
+
+
+def test_files_are_scoped_to_existing_folder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(method: str, url: str, data: Any) -> bytes:
+        if "vnd.google-apps.folder" in url:
+            return b'{"files": [{"id": "folder_1", "name": "ai-config"}]}'
+        if method == "GET" and "repo.bundle" in url:
+            return b'{"files": [{"id": "bundle_1", "name": "repo.bundle"}]}'
+        if method == "GET":
+            return b'{"files": []}'
+        return b'{"id": "created", "headRevisionId": "rev"}'
+
+    calls = _drive_responder(monkeypatch, handler)
+    client = GDriveClient()
+
+    found = client.find_file("repo.bundle")
+    assert found is not None and found["id"] == "bundle_1"
+    assert "%27folder_1%27+in+parents" in calls[-1][1]
+
+    client.upload_file("head.json", b"{}", content_type="application/json")
+    multipart = calls[-1][2]
+    assert b'"parents": ["folder_1"]' in multipart
+    assert b"appDataFolder" not in multipart

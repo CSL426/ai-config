@@ -11,10 +11,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ..config import (
+    GDRIVE_FOLDER_DEFAULT,
     ConfigError,
     config_path,
     configured_data_repo,
     default_data_repo,
+    normalize_gdrive_folder,
     save_data_repo,
 )
 from ..console import log_error, log_info, log_success, log_warn
@@ -338,7 +340,10 @@ def setup_repository(
     return repository
 
 
-def setup_gdrive_repository(data_dir: Path) -> Path:
+def setup_gdrive_repository(
+    data_dir: Path,
+    gdrive_folder: "str | None" = None,
+) -> Path:
     from ..gdrive import (
         GDriveAuthError,
         GDriveClient,
@@ -362,10 +367,17 @@ def setup_gdrive_repository(data_dir: Path) -> Path:
             log_info("Starting Google OAuth login...")
             run_oauth_flow()
 
-        log_info("Verifying Google Drive appDataFolder access...")
-        client = GDriveClient()
-        client.verify_setup_access()
+        # setup 一律照路徑重新解析,不沿用舊 id:使用者改路徑就是要換資料夾
+        folder_path = normalize_gdrive_folder(gdrive_folder)
+        log_info(f"Verifying Google Drive folder access ({folder_path})...")
+        client = GDriveClient(folder_path=folder_path, use_configured_id=False)
+        folder_url = client.verify_setup_access()
         log_success("Google Drive access verified")
+        if folder_url:
+            log_info(
+                f"設定會同步到「我的雲端硬碟/{folder_path}」:{folder_url}"
+            )
+        folder_id = client.get_folder_id() if folder_url else None
     except GDriveError as exc:
         raise SetupError(f"Google Drive setup failed: {exc}") from exc
 
@@ -400,7 +412,12 @@ def setup_gdrive_repository(data_dir: Path) -> Path:
     for tool in ("claude", "codex", "agy"):
         (data_dir / tool).mkdir(exist_ok=True)
 
-    saved_path = save_data_repo(data_dir, remote_provider="gdrive")
+    saved_path = save_data_repo(
+        data_dir,
+        remote_provider="gdrive",
+        gdrive_folder=folder_path,
+        gdrive_folder_id=folder_id,
+    )
     log_success(f"Data repository configured for Google Drive: {data_dir}")
     log_info(f"Saved configuration: {saved_path}")
     return data_dir
@@ -458,6 +475,13 @@ def _parser() -> argparse.ArgumentParser:
         default="git",
         help="Remote sync provider (git or gdrive)",
     )
+    parser.add_argument(
+        "--gdrive-folder",
+        help=(
+            "Google Drive folder path relative to My Drive "
+            f"(default: {GDRIVE_FOLDER_DEFAULT}; nested like Backups/ai-config)"
+        ),
+    )
     return parser
 
 
@@ -494,7 +518,13 @@ def run_setup(argv: "list[str] | None" = None) -> int:
                 provider = "gdrive"
 
         if provider == "gdrive":
-            setup_gdrive_repository(data_dir)
+            gdrive_folder = args.gdrive_folder
+            if gdrive_folder is None and interactive:
+                gdrive_folder = _prompt(
+                    "Google Drive 資料夾(相對於「我的雲端硬碟」)",
+                    GDRIVE_FOLDER_DEFAULT,
+                )
+            setup_gdrive_repository(data_dir, gdrive_folder)
             return 0
 
         if not repo_url and interactive and not _has_usable_remote(
