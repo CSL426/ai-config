@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.34 - 2026-09-03
 
 - Codex 自帶外掛(`@openai-bundled`、`@openai-primary-runtime`,如 documents、
   pdf、browser、visualize)視為機器本地設定:apply 合併 config.toml 時原樣保留、
