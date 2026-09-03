@@ -306,7 +306,8 @@ def test_setup_repo_builds_argv_and_validates(
     ]
 
     api.setup_repo("git@host:me/cfg.git", "")
-    assert seen["argv"][2].endswith(".acg/data")
+    # Windows 預設路徑用反斜線,不能拿字串尾巴比
+    assert Path(seen["argv"][2]).parts[-2:] == (".acg", "data")
 
 
 def test_get_info_reports_version_and_tools(api: GuiApi) -> None:
