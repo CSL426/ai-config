@@ -86,9 +86,16 @@ body {
 
 .app-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-sm);
   flex-wrap: wrap;
+}
+
+.app-logo {
+  width: 2rem;
+  height: 2rem;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .app-title h1 {
@@ -647,6 +654,25 @@ body {
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.output-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: 100%;
+  padding: var(--space-md);
+  text-align: center;
+  user-select: none;
+}
+
+.empty-mascot {
+  width: 7rem;
+  height: 7rem;
+  object-fit: contain;
+  filter: drop-shadow(0 0.25rem 0.5rem oklch(30% 0.011 95 / 0.1));
 }
 
 .line-placeholder,
