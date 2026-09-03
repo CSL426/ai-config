@@ -392,6 +392,92 @@ def test_setup_configures_read_only_remote_with_a_warning(tmp_path: Path) -> Non
     assert config.exists()
 
 
+def _run_setup(config: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["AI_CONFIG_CONFIG"] = str(config)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    return subprocess.run(
+        [sys.executable, "-m", "ai_config", "setup", *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+
+def test_setup_sets_upstream_for_existing_repo_without_remote(
+    tmp_path: Path,
+) -> None:
+    # 情境:Google Drive 模式留下的本機 repo(有 commit、沒 remote),改用 Git
+    # 連到同一份設定;setup 必須把 main 綁到 origin/main,否則 pull 立刻失敗。
+    remote, seed = create_data_remote(tmp_path)
+    branch = run_git(seed, "branch", "--show-current")
+    local = tmp_path / "local"
+    subprocess.run(["git", "init", "-b", branch, str(local)], check=True)
+    configure_git_identity(local)
+    seed_head = run_git(seed, "rev-parse", "HEAD")
+    run_git(local, "fetch", str(remote), branch)
+    run_git(local, "reset", "--hard", "FETCH_HEAD")
+    assert run_git(local, "rev-parse", "HEAD") == seed_head
+
+    result = _run_setup(
+        tmp_path / "config.json",
+        "--data-dir",
+        str(local),
+        "--repo-url",
+        str(remote),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert f"now tracks origin/{branch}" in output
+    assert run_git(local, "rev-parse", "--abbrev-ref", "@{upstream}") == f"origin/{branch}"
+
+
+def test_setup_adopts_remote_branch_for_unborn_repo(tmp_path: Path) -> None:
+    remote, seed = create_data_remote(tmp_path)
+    branch = run_git(seed, "branch", "--show-current")
+    local = tmp_path / "local"
+    subprocess.run(["git", "init", "-b", branch, str(local)], check=True)
+    configure_git_identity(local)
+    for tool in ("claude", "codex", "agy"):
+        (local / tool).mkdir()
+
+    result = _run_setup(
+        tmp_path / "config.json",
+        "--data-dir",
+        str(local),
+        "--repo-url",
+        str(remote),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "set it as upstream" in output
+    assert run_git(local, "rev-parse", "HEAD") == run_git(seed, "rev-parse", "HEAD")
+    assert run_git(local, "rev-parse", "--abbrev-ref", "@{upstream}") == f"origin/{branch}"
+
+
+def test_setup_leaves_unborn_repo_with_files_alone(tmp_path: Path) -> None:
+    remote, seed = create_data_remote(tmp_path)
+    branch = run_git(seed, "branch", "--show-current")
+    local = tmp_path / "local"
+    subprocess.run(["git", "init", "-b", branch, str(local)], check=True)
+    configure_git_identity(local)
+    (local / "claude").mkdir()
+    (local / "claude" / "notes.md").write_text("mine", encoding="utf-8")
+
+    result = _run_setup(
+        tmp_path / "config.json",
+        "--data-dir",
+        str(local),
+        "--repo-url",
+        str(remote),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "upstream not set" in output
+    assert (local / "claude" / "notes.md").read_text(encoding="utf-8") == "mine"
+
+
 def test_setup_rejects_unreachable_remote(tmp_path: Path) -> None:
     seed = tmp_path / "seed"
     seed.mkdir()

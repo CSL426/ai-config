@@ -152,6 +152,99 @@ def _ensure_remote(
     return repo_url
 
 
+def _ensure_upstream(data_dir: Path, remote_name: str) -> None:
+    """Bind the current branch to the same-named remote branch.
+
+    A repo that already existed locally (a Google Drive setup, a hand-made
+    `git init`) gets its remote added by setup but never learns which remote
+    branch to track, and the very next `acg pull` refuses to run. Fetch once
+    and set the upstream so setup leaves a pullable repository behind.
+    """
+    branch = _run_git(
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD",
+        cwd=data_dir,
+        check=False,
+    )
+    if branch.returncode != 0:
+        return
+    branch_name = branch.stdout.strip()
+    upstream = _run_git(
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}",
+        cwd=data_dir,
+        check=False,
+    )
+    if upstream.returncode == 0:
+        return
+
+    fetched = _run_git("fetch", remote_name, cwd=data_dir, check=False)
+    if fetched.returncode != 0:
+        log_warn(
+            f"Could not fetch from {remote_name!r}; upstream not set: "
+            f"{_git_error_detail(fetched, 'unknown error')}"
+        )
+        return
+    remote_branch = f"{remote_name}/{branch_name}"
+    exists = _run_git(
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        f"refs/remotes/{remote_branch}",
+        cwd=data_dir,
+        check=False,
+    )
+    if exists.returncode != 0:
+        log_info(
+            f"Remote has no {branch_name!r} branch yet; "
+            "the first acg push will publish it."
+        )
+        return
+
+    has_commits = _run_git(
+        "rev-parse", "--verify", "--quiet", "HEAD", cwd=data_dir, check=False
+    )
+    if has_commits.returncode != 0:
+        # Unborn branch (fresh `git init`): there is no local commit to track
+        # from, so adopt the remote branch outright. Refuse if the tree holds
+        # anything, since reset --hard would overwrite it.
+        dirty = _run_git(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            cwd=data_dir,
+            check=False,
+        )
+        if dirty.stdout.strip():
+            log_warn(
+                "Local repository has no commits but contains files; "
+                f"upstream not set. Commit or remove them, then run: "
+                f"git branch --set-upstream-to={remote_branch} {branch_name}"
+            )
+            return
+        _run_git("reset", "--hard", remote_branch, cwd=data_dir)
+        _run_git(
+            "branch",
+            f"--set-upstream-to={remote_branch}",
+            branch_name,
+            cwd=data_dir,
+        )
+        log_success(f"Checked out {remote_branch} and set it as upstream")
+        return
+
+    _run_git(
+        "branch",
+        f"--set-upstream-to={remote_branch}",
+        branch_name,
+        cwd=data_dir,
+    )
+    log_success(f"Branch {branch_name!r} now tracks {remote_branch}")
+
+
 def _remote_refs(data_dir: Path, remote_name: str) -> str:
     output = _run_git("ls-remote", "--refs", remote_name, cwd=data_dir).stdout
     return "\n".join(sorted(output.splitlines()))
@@ -171,20 +264,41 @@ def verify_read_access(data_dir: Path, remote_name: str = "origin") -> None:
         raise SetupError(f"Read access verification failed: {detail}")
 
 
+def _push_check_source(data_dir: Path, remote_name: str) -> str:
+    """Pick a commit to push to the temporary verification ref.
+
+    HEAD is the natural choice, but an unborn repository has none; the
+    fetched remote branch works just as well since only write access is
+    being tested, not the content.
+    """
+    head = _run_git("rev-parse", "--verify", "--quiet", "HEAD", cwd=data_dir, check=False)
+    if head.returncode == 0:
+        return head.stdout.strip()
+    branch = _run_git(
+        "symbolic-ref", "--quiet", "--short", "HEAD", cwd=data_dir, check=False
+    )
+    if branch.returncode == 0:
+        remote_ref = f"refs/remotes/{remote_name}/{branch.stdout.strip()}"
+        fetched = _run_git(
+            "rev-parse", "--verify", "--quiet", remote_ref, cwd=data_dir, check=False
+        )
+        if fetched.returncode == 0:
+            return fetched.stdout.strip()
+    raise SetupError(
+        "Cannot verify push access: the local repository has no commits and "
+        "the remote branch was not fetched."
+    )
+
+
 def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
-    local_head = _run_git(
-        "rev-parse",
-        "--verify",
-        "HEAD",
-        cwd=data_dir,
-    ).stdout.strip()
+    local_head = _push_check_source(data_dir, remote_name)
     refs_before = _remote_refs(data_dir, remote_name)
     check_ref = f"refs/heads/ai-config-write-check-{uuid.uuid4().hex}"
     result = _run_git(
         "push",
         "--porcelain",
         remote_name,
-        f"HEAD:{check_ref}",
+        f"{local_head}:{check_ref}",
         cwd=data_dir,
         check=False,
     )
@@ -299,6 +413,7 @@ def setup_repository(
         log_info(f"Verifying access to remote {remote_name!r}")
         verify_read_access(repository, remote_name)
         log_success("Read access verified")
+        _ensure_upstream(repository, remote_name)
         try:
             verify_push_access(repository, remote_name)
         except PushAccessError as exc:

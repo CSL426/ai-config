@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 修正 setup 對既有本機 repo(例如 Google Drive 模式建立的、或手動 `git init`
+  的)加上 Git remote 後沒有綁 upstream,導致下一步 `acg pull` 直接報「no
+  upstream」。現在 setup 會 fetch 一次並把目前分支綁到同名遠端分支;沒有任何
+  commit 的空 repo 會直接採用遠端分支(工作區有檔案時不動它,改印出手動指令)。
+  push 權限驗證也不再要求本機一定要有 commit。
 - Google Drive 同步改存到「我的雲端硬碟」裡看得到的 `ai-config` 資料夾
   (`repo.bundle` 與 `head.json`),不再用隱藏的 appDataFolder;OAuth scope 由
   `drive.appdata` 改為 `drive.file`(仍只能存取本程式建立的檔案)。setup 完成後
