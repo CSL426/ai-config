@@ -4,12 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>acg — AI 設定同步</title>
+    <link rel="icon" type="image/png" href="./src/assets/bibilabu.png" />
     <script type="module" src="./src/main.ts"></script>
   </head>
   <body>
     <div class="app">
       <header class="app-header">
         <div class="app-title">
+          <img class="app-logo" src="./src/assets/bibilabu.png" alt="" aria-hidden="true" />
           <h1>AI 設定同步</h1>
           <span class="app-version" id="version">—</span>
           <button class="btn btn-ghost update-btn" id="update-check">檢查更新</button>
@@ -130,7 +132,12 @@
           <span class="output-title" id="output-title">執行結果</span>
           <span class="output-state" id="output-state" aria-live="polite"></span>
         </div>
-        <pre class="output-body" id="output-body" aria-live="polite"><span class="line-placeholder">還沒有輸出 — 從上面選一個動作開始。</span></pre>
+        <div class="output-body" id="output-body" aria-live="polite">
+          <div class="output-empty">
+            <img class="empty-mascot" src="./src/assets/bibilabu.png" alt="比比拉布" />
+            <span class="line-placeholder">還沒有輸出 — 從上面選一個動作開始。</span>
+          </div>
+        </div>
       </section>
     </div>
   </body>

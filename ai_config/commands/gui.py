@@ -20,7 +20,7 @@ from ..paths import ALL_TOOLS
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 # 白名單:GUI 只開放無互動提示的命令;push 的確認由前端對話框負責。
 _ALLOWED_COMMANDS = ("status", "apply", "pull", "push")
-_ASSETS_DIR = Path(__file__).resolve().parent / "gui_assets"
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "gui_assets"
 
 WINDOW_TITLE = "acg — AI 設定同步"
 
@@ -370,6 +370,15 @@ def run_gui() -> int:
     except ImportError:
         log_error('pywebview is not installed. Install with: pip install "ai-config[gui]"')
         return 1
+
+    # Windows: 分離工作列群組,避免顯示預設 Python 圖示
+    if sys.platform == "win32":
+        with contextlib.suppress(AttributeError, OSError):
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "CSL426.ai-config.gui"
+            )
 
     webview.create_window(
         WINDOW_TITLE,
