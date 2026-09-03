@@ -75,12 +75,15 @@ jobs:
           - os: windows-latest
             source: dist/ai-config.exe
             asset: ai-config-windows-x86_64.exe
+            extra_args: "--icon assets/icon.ico"
           - os: macos-15-intel
             source: dist/ai-config
             asset: ai-config-macos-x86_64
+            extra_args: "--icon assets/icon.icns"
           - os: macos-14
             source: dist/ai-config
             asset: ai-config-macos-arm64
+            extra_args: "--icon assets/icon.icns"
 
     steps:
       - name: Check out repository
@@ -124,6 +127,7 @@ jobs:
           python -m PyInstaller --clean --noconfirm --onefile
           --name ai-config --hidden-import ai_config.__main__
           --copy-metadata ai-config
+          ${{ matrix.extra_args }}
           scripts/standalone_entry.py
 
       - name: Name asset and write checksum
