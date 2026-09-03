@@ -474,6 +474,7 @@ const setupUrl = $<HTMLInputElement>("#setup-url");
 const setupDir = $<HTMLInputElement>("#setup-dir");
 const setupGo = $<HTMLButtonElement>("#setup-go");
 const setupGdriveDir = $<HTMLInputElement>("#setup-gdrive-dir");
+const setupGdriveFolder = $<HTMLInputElement>("#setup-gdrive-folder");
 const setupGdriveGo = $<HTMLButtonElement>("#setup-gdrive-go");
 const setupGitPanel = $("#setup-git-panel");
 const setupGdrivePanel = $("#setup-gdrive-panel");
@@ -541,7 +542,10 @@ setupGdriveGo.addEventListener("click", async () => {
   outputState.className = "output-state is-running";
   showPlaceholder("已開啟瀏覽器,請完成登入…");
   try {
-    const result = await bridge.setup_gdrive(setupGdriveDir.value);
+    const result = await bridge.setup_gdrive(
+      setupGdriveDir.value,
+      setupGdriveFolder.value,
+    );
     renderOutput(result.output || "(沒有輸出)");
     if (result.code === 0) {
       outputState.textContent = "完成";

@@ -99,24 +99,20 @@ class GuiApi:
         finally:
             self._lock.release()
 
-    def setup_gdrive(self, data_dir: str = "") -> dict:
+    def setup_gdrive(self, data_dir: str = "", gdrive_folder: str = "") -> dict:
         from ..config import default_data_repo
 
-        if not isinstance(data_dir, str):
+        if not isinstance(data_dir, str) or not isinstance(gdrive_folder, str):
             return {"code": 1, "output": "✗ 無效的本機目錄"}
         target = data_dir.strip() or str(default_data_repo())
+        folder = gdrive_folder.strip()
+        argv = ["setup", "--provider", "gdrive", "--data-dir", target]
+        if folder:
+            argv += ["--gdrive-folder", folder]
         if not self._lock.acquire(blocking=False):
             return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
         try:
-            return self._run_captured(
-                [
-                    "setup",
-                    "--provider",
-                    "gdrive",
-                    "--data-dir",
-                    target,
-                ]
-            )
+            return self._run_captured(argv)
         finally:
             self._lock.release()
 

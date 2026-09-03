@@ -7,14 +7,17 @@
 ## 0. 目標與非目標
 
 **目標**:讓沒有 GitHub 帳號的使用者(GUI 的目標族群)用 Google 帳號登入,
-把 acg 的資料儲存庫同步到 Google Drive 的 `appDataFolder`,跨裝置使用。
+把 acg 的資料儲存庫同步到 Google Drive「我的雲端硬碟」下可見的 `ai-config`
+資料夾,跨裝置使用。(v1.0.26–1.0.33 曾用隱藏的 `appDataFolder`;使用者看不到
+檔案、也無法從 Drive 介面確認同步狀態,故改為可見資料夾。)
 
 **核心設計原則(不可違反)**:本機資料儲存庫**仍然是完整的 Git repo**。
 Drive 只是傳輸層(取代 `git push`/`git fetch` 的遠端),版本歷史、diff 審查、
 secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP 蓋掉對方」。
 
 **非目標(v1 不做)**:
-- 多人共用同一份設定(appDataFolder 是單一 Google 帳號私有的)
+- 多人共用同一份設定(資料夾雖可見,但 `drive.file` scope 只看得到本應用建立的檔案;
+  他人分享來的資料夾不會被讀取)
 - 合併衝突解決(維持 ff-only;diverged 時要求使用者先 pull)
 - Google Drive 桌面版資料夾方案
 - 增量 bundle(設定檔僅數 MB,每次全量即可)
@@ -36,7 +39,15 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 只依賴標準庫(`urllib.request`、`json`、`secrets`、`hashlib`、`http.server`),
 **不得引入 google-api-python-client 等重依賴**(PyInstaller 體積與供應鏈考量)。
 
-### 1.2 Drive 端資料佈局(appDataFolder)
+### 1.2 Drive 端資料佈局(我的雲端硬碟/ai-config)
+
+資料夾路徑可設定(`config.json` 的 `gdrive_folder`,相對於「我的雲端硬碟」,
+`/` 分層,預設 `ai-config`;CLI `--gdrive-folder`,GUI 有欄位)。setup 時從根目錄
+逐層以名稱 + MIME `application/vnd.google-apps.folder` + parent 查找,缺的建立,
+最後把葉節點 id 存進 `gdrive_folder_id`。之後同步先用 id(`files.get` 確認未被
+丟進垃圾桶),所以使用者在 Drive 裡搬動或改名都不影響;id 失效才照路徑重建。
+注意 `drive.file` 看不到使用者手動建立的資料夾:路徑若指向既有的手動資料夾,
+會在旁邊出現同名的新資料夾;想放進既有資料夾,setup 後在 Drive 裡拖進去即可。
 
 | 檔名 | 內容 |
 |---|---|
@@ -66,7 +77,9 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 
 ### 1.4 OAuth(installed app + PKCE)
 
-- Scope 僅 `https://www.googleapis.com/auth/drive.appdata`,不得多要。
+- Scope 僅 `https://www.googleapis.com/auth/drive.file`(只能存取本應用建立的
+  檔案,非敏感 scope),不得多要。Token 檔記錄授予的 `scope`;缺少或只有舊的
+  `drive.appdata` 時視為失效,清除並要求重新登入(舊 token 對可見資料夾一律 403)。
 - 流程:系統瀏覽器 + loopback redirect(`http://127.0.0.1:<隨機port>`)+ PKCE
   (S256)。
 - **client secret 必須附上**(實測修正):Google 的 Desktop 類型 client 即使走
@@ -85,8 +98,9 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 
 `acg setup --provider gdrive`(及 GUI)在保存設定前必須:
 1. 完成 OAuth 登入。
-2. 在 appDataFolder 建立隨機名稱測試檔(內容為隨機 bytes)→ 讀回並比對 →
-   永久刪除(`files.delete`)→ 再列舉確認已消失。
+2. 找到或建立 `ai-config` 資料夾 → 在其中建立隨機名稱測試檔(內容為隨機 bytes)
+   → 讀回並比對 → 永久刪除(`files.delete`)→ 再列舉確認已消失 → 回傳資料夾
+   URL 顯示給使用者。
 3. 全部成功才寫入 `config.json`(`remote_provider: "gdrive"`);
    本機 repo 不存在時 `git init` + 建立 `claude/ codex/ agy/` 骨架
    (語意等同現行 git provider 首次 setup 後的空骨架)。
@@ -104,8 +118,8 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 - 首次設定卡片改為兩個 radio 選項:
   - 「Git 儲存庫」:現行表單(URL + 目錄)。
   - 「Google Drive」:一顆「用 Google 帳號登入」按鈕 + 文案:
-    「設定會存在你 Google 帳號的隱藏應用程式空間,只有這臺程式能存取;
-    適合自己的多臺電腦同步,無法分享給其他人。」
+    「設定會放在你『我的雲端硬碟』裡的 ai-config 資料夾,在 Drive 網頁或桌面版
+    都看得到;這個程式只能存取自己建立的檔案。」
 - 橋接新增 `setup_gdrive()`:觸發 OAuth(開系統瀏覽器)→ 驗證 → 回報結果。
   GUI 端顯示「已開啟瀏覽器,請完成登入…」等待狀態。
 
@@ -125,7 +139,8 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 
 1. GCP 建專案 → 啟用 Drive API → OAuth consent screen → Desktop client ID。
 2. Testing 模式:100 名測試者、授權 7 天失效;對外發佈前切 In production
-   (drive.appdata 為非敏感 scope,通常免品牌驗證,但以 Google 審查為準)。
+   (drive.file 為非敏感 scope,通常免品牌驗證,但以 Google 審查為準);consent
+   screen 的 scope 清單同步改列 drive.file。
 3. Release workflow 注入 client ID(GitHub secret)。
 
 ## 5. 驗收標準(Claude 驗收時逐項檢查)
@@ -133,9 +148,9 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 - [ ] `remote_provider` 缺省/為 git 時,全部現行測試與行為零改變
 - [ ] gdrive pull:空遠端、已最新、可 ff、diverged 四情境行為如 §1.3
 - [ ] gdrive push:守衛流程完整保留;祖先檢查;revisionId 複查;head.json 更新
-- [ ] OAuth:僅 drive.appdata scope;PKCE;token 檔 0600 且列入排除;
-      refresh 失效有清楚指引
-- [ ] setup 驗證:建立→讀回→刪除→確認消失,失敗不寫 config
+- [ ] OAuth:僅 drive.file scope;PKCE;token 檔 0600 且列入排除;
+      refresh 失效與舊 scope token 都有清楚的重新登入指引
+- [ ] setup 驗證:找到/建立資料夾→建立→讀回→刪除→確認消失,失敗不寫 config
 - [ ] GUI 雙選項表單可用;Drive 文案含單帳號限制說明
 - [ ] 無新第三方執行期依賴;`pnpm build`、`ruff`、全套 pytest 綠
 - [ ] 秘密掃描:repo 內不得出現任何 client secret / token;client ID 常數為空

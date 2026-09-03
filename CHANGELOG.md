@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Google Drive 同步改存到「我的雲端硬碟」裡看得到的 `ai-config` 資料夾
+  (`repo.bundle` 與 `head.json`),不再用隱藏的 appDataFolder;OAuth scope 由
+  `drive.appdata` 改為 `drive.file`(仍只能存取本程式建立的檔案)。setup 完成後
+  會印出資料夾連結。既有的 gdrive 使用者第一次 pull/push 會被要求重新登入
+  (`acg setup --provider gdrive`),然後 push 一次即可;舊的隱藏資料不會自動
+  搬移,可在 Drive 設定 → 管理應用程式 清掉。
+- Drive 資料夾位置可設定:`acg setup --provider gdrive --gdrive-folder
+  Backups/ai-config`(相對於「我的雲端硬碟」,`/` 分層,預設 `ai-config`);互動
+  模式與 GUI 首次設定都會問。config.json 記錄 `gdrive_folder` 與
+  `gdrive_folder_id`,之後同步以 id 為準,在 Drive 裡搬動或改名資料夾都不會失聯;
+  資料夾被刪除時才照路徑重建。`acg config` 顯示資料夾路徑與連結。
 - GUI:push 改為兩段式 — 先取得與 CLI 完全一致的審查內容(diff 與 commit
   訊息)顯示給使用者,確認後才送出;不再預填同意。
 - 新增對外介紹簡報(docs/slides/intro.html,v1.0.33 內容含 Google Drive/
