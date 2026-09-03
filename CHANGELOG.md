@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Codex 自帶外掛(`@openai-bundled`、`@openai-primary-runtime`,如 documents、
+  pdf、browser、visualize)視為機器本地設定:apply 合併 config.toml 時原樣保留、
+  init 不收進 repo、status 的 plugin drift 不再列出。新版 Codex 啟動時會自己寫
+  這些區塊,之前會造成「apply 刪掉 → Codex 寫回 → 永遠報漂移」。
 - 修正 setup 對既有本機 repo(例如 Google Drive 模式建立的、或手動 `git init`
   的)加上 Git remote 後沒有綁 upstream,導致下一步 `acg pull` 直接報「no
   upstream」。現在 setup 會 fetch 一次並把目前分支綁到同名遠端分支;沒有任何

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .console import CYAN, NC, log_success, log_warn
 from .paths import AGY_HOME, CODEX_HOME, SCRIPT_DIR, claude_source_dir
+from .tools.codex import CODEX_MANAGED_MARKETPLACES
 
 _CODEX_KEY = re.compile(r'^\[plugins\."([^"]*)"\]', re.MULTILINE)
 
@@ -48,6 +49,9 @@ def check_plugin_drift() -> None:
         repo_keys = set(_CODEX_KEY.findall(repo_codex.read_text(encoding="utf-8")))
         live_keys = _CODEX_KEY.findall(live_codex.read_text(encoding="utf-8"))
         for key in live_keys:
+            # Codex 自帶外掛不進 repo,apply 也會保留,不算漂移
+            if key.rsplit("@", 1)[-1] in CODEX_MANAGED_MARKETPLACES:
+                continue
             if key not in repo_keys:
                 log_warn(
                     f"codex live config has plugin not in repo codex/config.toml: {key}"

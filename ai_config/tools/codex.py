@@ -37,7 +37,18 @@ from ..skills import (
 )
 
 _PROJECTS_HEADER = re.compile(r"^\[projects\.")
+# Codex 出貨時自帶的外掛(documents、pdf、browser、visualize…)由 Codex 本身在
+# 啟動時寫進 config.toml,版本不同內容就不同;跟 [projects.*] 一樣屬於機器本地,
+# 不進 repo、apply 時原樣保留,否則 Codex 寫回 → apply 刪掉 → 永遠報漂移。
+CODEX_MANAGED_MARKETPLACES = ("openai-bundled", "openai-primary-runtime")
+_MANAGED_PLUGIN_HEADER = re.compile(
+    r'^\[plugins\."[^"]*@(' + "|".join(CODEX_MANAGED_MARKETPLACES) + r')"\]'
+)
 _ANY_HEADER = re.compile(r"^\[")
+
+
+def _is_machine_local_header(line: str) -> bool:
+    return bool(_PROJECTS_HEADER.match(line) or _MANAGED_PLUGIN_HEADER.match(line))
 _TOP_LEVEL_ASSIGNMENT = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
 _MACHINE_LOCAL_TOP_LEVEL_KEYS = {"notify"}
 
@@ -75,12 +86,12 @@ def _insert_top_level_statements(text: str, statements: list[str]) -> str:
 
 
 def filter_codex_config(text: str) -> str:
-    """Remove machine-local settings and [projects.*] blocks."""
+    """Remove machine-local settings, [projects.*] and Codex-managed plugin blocks."""
     out: list[str] = []
     skip = False
     in_table = False
     for line in text.splitlines():
-        if _PROJECTS_HEADER.match(line):
+        if _is_machine_local_header(line):
             skip = True
             in_table = True
             continue
@@ -115,7 +126,7 @@ def merge_codex_config(source_text: str, target_text: str) -> str:
     projects: list[str] = []
     in_projects = False
     for line in target_text.splitlines():
-        if _PROJECTS_HEADER.match(line):
+        if _is_machine_local_header(line):
             in_projects = True
             projects.append(line)
             continue
@@ -239,7 +250,9 @@ def apply_internal(src: Path, dst: Path) -> None:
                 target.read_text(encoding="utf-8"),
             )
             _write_config(target, merged, source_stat)
-            log_success("config.toml (merged, preserved [projects.*])")
+            log_success(
+                "config.toml (merged, preserved [projects.*] and Codex-managed plugins)"
+            )
         else:
             filtered = filter_codex_config(source.read_text(encoding="utf-8"))
             _write_config(target, filtered, source_stat)
