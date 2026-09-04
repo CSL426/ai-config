@@ -74,6 +74,8 @@ body {
   padding: var(--space-lg);
   max-width: 64rem;
   margin: 0 auto;
+  /* 高度固定,各區塊自己處理溢位,整頁不該出現捲軸 */
+  overflow: hidden;
 }
 
 /* ── 標頭 ─────────────────────────────── */
@@ -434,6 +436,31 @@ body {
   border: 1px solid var(--color-paper-3);
   border-radius: var(--radius-md);
   background: var(--color-card);
+  /* .app 是固定 100dvh 的 flex column;展開時若不能收縮就把整頁撐出捲軸 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.package[open] {
+  /* 展開後讓面板自己滾,而不是推長整個頁面或壓垮輸出區 */
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+
+.package[open] .package-list {
+  /* 視窗矮的時候技能清單先縮,讓出空間給輸出區 */
+  max-height: min(9rem, 30dvh);
+}
+
+.package[open] .package-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.package > summary {
+  flex-shrink: 0;
 }
 
 .package-summary {
@@ -625,7 +652,8 @@ body {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 0;
+  /* 技能面板展開時會搶空間,沒有下限的話輸出區會被壓到只剩幾個像素 */
+  min-height: 8rem;
   border: 1px solid var(--color-paper-3);
   border-radius: var(--radius-md);
   background: var(--color-console-bg);
