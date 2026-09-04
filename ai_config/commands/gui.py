@@ -16,6 +16,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from ..cli import launched_by_double_click
 from ..console import log_error, log_info, log_success
 from ..paths import ALL_TOOLS
 
@@ -576,6 +577,18 @@ def run_gui() -> int:
     except ImportError:
         log_error('pywebview 尚未安裝,請執行:pip install "ai-config[gui]"')
         return 1
+
+    # Windows: 視窗開起來後把當初開啟的主控台藏起來。exe 是 console 應用
+    # (CLI 需要它),雙擊時 Windows 會先開一個黑視窗;留著它在旁邊很難看,
+    # 而且關掉它會一併結束程式。只在自己獨佔主控台時隱藏,從 shell 執行時
+    # 那是使用者的視窗,不能碰。
+    if sys.platform == "win32" and launched_by_double_click():
+        with contextlib.suppress(AttributeError, OSError):
+            import ctypes
+
+            console = ctypes.windll.kernel32.GetConsoleWindow()
+            if console:
+                ctypes.windll.user32.ShowWindow(console, 0)  # SW_HIDE
 
     # Windows: 分離工作列群組,避免顯示預設 Python 圖示
     if sys.platform == "win32":

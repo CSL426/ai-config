@@ -34,13 +34,19 @@ def launched_by_double_click() -> bool:
     """
     if sys.platform != "win32":
         return False
+    if os.environ.get("AI_CONFIG_FORCE_DOUBLE_CLICK") == "1":
+        return True
     try:
         import ctypes
 
-        attached = (ctypes.c_uint * 2)()
-        return ctypes.windll.kernel32.GetConsoleProcessList(attached, 2) == 1
+        # 緩衝區必須夠大:太小時這個 API 會失敗而不是回報總數,
+        # 用 2 個元素在有多個附著行程時只會拿到 0
+        buffer = (ctypes.c_uint * 64)()
+        count = ctypes.windll.kernel32.GetConsoleProcessList(buffer, 64)
     except (AttributeError, OSError, ValueError):
         return False
+    # 0 代表呼叫失敗(通常是沒有主控台),不是「沒有行程」
+    return count == 1
 
 
 def gui_assets_bundled() -> bool:
@@ -53,26 +59,33 @@ def gui_assets_bundled() -> bool:
 def standalone_main() -> int:
     """Entry point for the PyInstaller build.
 
-    A double-clicked exe has no arguments and its console dies with the
-    process, so the CLI help would flash past unread. Open the GUI instead
-    when this build carries it, and otherwise explain the situation and hold
-    the window open. Anything launched from a shell behaves like the CLI.
+    Running with no arguments means no command was given, which is exactly
+    what a double-click produces. When this build carries the desktop app,
+    that opens it — deliberately NOT gated on detecting the double-click,
+    because that detection is a single Win32 call that can be wrong, and
+    being wrong there means the window vanishes with nothing to read.
+    Typing `acg` bare in a shell opens the app too, which is a reasonable
+    reading of the bare command.
+
+    Everything else behaves as the CLI always has; the window is only held
+    open when this process owns the console, since that console dies with
+    the process and would take the output with it.
     """
-    keep_window = launched_by_double_click()
-    if keep_window and len(sys.argv) <= 1:
-        if gui_assets_bundled():
-            code = _run_gui_guarded()
-            if code == 0:
-                return code
-            # 開不起來時不能直接結束:雙擊的 console 會立刻消失,
-            # 使用者只會看到視窗閃一下,拿不到任何線索
-        else:
-            print("acg 是命令列工具,請在 PowerShell 或 cmd 視窗裡執行,例如:")
-            print("    acg status")
-            print()
-            code = console_main()
+    no_arguments = len(sys.argv) <= 1
+    if no_arguments and gui_assets_bundled():
+        code = _run_gui_guarded()
+        if code == 0:
+            return code
+        # 開不起來時不能直接結束:雙擊的 console 會隨行程消失,
+        # 使用者只會看到視窗閃一下,拿不到任何線索
         _pause_before_closing()
         return code
+
+    keep_window = launched_by_double_click()
+    if keep_window and no_arguments:
+        print("acg 是命令列工具,請在 PowerShell 或 cmd 視窗裡執行,例如:")
+        print("    acg status")
+        print()
     code = console_main()
     if keep_window:
         _pause_before_closing()

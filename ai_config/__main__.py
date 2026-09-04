@@ -53,8 +53,9 @@ def usage() -> None:
     print("  unshare <skill> Remove a skill from claude/shared/ (undoes share)")
     print("                  --from <both|codex|agy> limit to one target")
     print("  config          Show provider (git/gdrive), repo, and login state")
-    print("  gui             Launch the desktop app (bundled on Windows)")
+    print("  desktop         Launch the desktop app (bundled on Windows)")
     print("                  --shortcut add a Start-menu entry (Windows)")
+    print("  gui             Alias for desktop")
     print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
     print("  update [version] Install the latest release, or a specific version")
@@ -151,13 +152,13 @@ def main(argv: "list[str] | None" = None) -> int:
         return run_config_info()
 
     # gui 放在設定檢查之前:未設定時 GUI 內建首次設定表單
-    if cmd == "gui":
+    if cmd in ("gui", "desktop"):
         if args[1:] == ["--shortcut"]:
             from .commands.gui import create_desktop_shortcut
 
             return create_desktop_shortcut()
         if len(args) != 1:
-            log_error(f"Usage: {ENTRYPOINT} gui [--shortcut]")
+            log_error(f"Usage: {ENTRYPOINT} {cmd} [--shortcut]")
             return 1
         from .commands.gui import run_gui
 
