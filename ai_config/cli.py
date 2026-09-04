@@ -61,17 +61,42 @@ def standalone_main() -> int:
     keep_window = launched_by_double_click()
     if keep_window and len(sys.argv) <= 1:
         if gui_assets_bundled():
-            from ai_config.commands.gui import run_gui
-
-            return run_gui()
-        print("acg 是命令列工具,請在 PowerShell 或 cmd 視窗裡執行,例如:")
-        print("    acg status")
-        print()
+            code = _run_gui_guarded()
+            if code == 0:
+                return code
+            # 開不起來時不能直接結束:雙擊的 console 會立刻消失,
+            # 使用者只會看到視窗閃一下,拿不到任何線索
+        else:
+            print("acg 是命令列工具,請在 PowerShell 或 cmd 視窗裡執行,例如:")
+            print("    acg status")
+            print()
+            code = console_main()
+        _pause_before_closing()
+        return code
     code = console_main()
     if keep_window:
-        print()
-        try:
-            input("按 Enter 關閉視窗…")
-        except EOFError:
-            pass
+        _pause_before_closing()
     return code
+
+
+def _run_gui_guarded() -> int:
+    """Start the desktop app, turning any failure into a readable message."""
+    from ai_config.commands.gui import run_gui
+
+    try:
+        return run_gui()
+    except Exception as exc:  # noqa: BLE001 - 最後一道防線,不能讓視窗直接消失
+        print(f"桌面版啟動失敗:{type(exc).__name__}: {exc}", file=sys.stderr)
+        print(
+            "在 PowerShell 執行 acg gui 可以看到完整錯誤訊息。",
+            file=sys.stderr,
+        )
+        return 1
+
+
+def _pause_before_closing() -> None:
+    print()
+    try:
+        input("按 Enter 關閉視窗…")
+    except (EOFError, KeyboardInterrupt):
+        pass

@@ -238,8 +238,10 @@ git diff --check
 A desktop window for people who would rather not use the terminal,
 covering status/apply/pull/push.
 
-On Windows the released executable already contains it: double-click
-`ai-config-windows-x86_64.exe`, or run `acg gui`.
+On Windows the released executable already contains it: download
+`acg.exe` from the latest release and double-click it, or run `acg gui`.
+`acg gui --shortcut` adds a Start-menu entry. Windows 10 builds without
+Microsoft Edge WebView2 need that runtime installed first.
 
 Elsewhere, and when working from a source checkout:
 
