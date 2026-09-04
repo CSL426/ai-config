@@ -166,6 +166,8 @@ def _planned_removals(tool: str, stage_dir: Path, home_dir: Path) -> list[Path]:
 
 
 _GROUP_THRESHOLD = 3
+# 超過這個數量就不再一行一個路徑,改印成一行名稱清單
+_UNMANAGED_LIST_THRESHOLD = 5
 
 
 def _group_key(path: str) -> str:
@@ -359,9 +361,17 @@ def check_unmanaged_skills(tool: str) -> None:
         if not names:
             continue
         found = True
-        log_warn(f"{label}: {len(names)} skill(s) on disk that ai-config does not manage")
-        for name in names:
-            print(f"    {tilde(store / name)}")
+        log_warn(
+            f"{label}: {len(names)} skill(s) on disk that ai-config does not manage"
+        )
+        print(f"    {tilde(store)}/")
+        # 一行一個路徑會刷掉整個畫面(某些機器有數十個工具自帶的技能),
+        # 超過門檻就併成一行名稱清單
+        if len(names) > _UNMANAGED_LIST_THRESHOLD:
+            print(f"    {', '.join(names)}")
+        else:
+            for name in names:
+                print(f"    {name}")
     if found:
         log_info("These are left untouched by apply; remove any you no longer want")
     else:
