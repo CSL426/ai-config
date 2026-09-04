@@ -53,7 +53,18 @@
 
         <div id="setup-gdrive-panel" class="setup-panel" hidden>
           <p class="package-hint">適合自己的多臺電腦同步。設定會放在你「我的雲端硬碟」裡的 ai-config 資料夾（repo.bundle 與 head.json），在 Google Drive 網頁或桌面版都看得到；這個程式只能存取自己建立的檔案，碰不到你其他的 Drive 內容。</p>
-          <label class="setup-field">
+          <fieldset class="setup-choice">
+            <legend>設定檔存在 Drive 的哪裡？</legend>
+            <label class="setup-radio">
+              <input type="radio" name="gdrive-space" value="visible" checked />
+              <span><strong>我的雲端硬碟裡的資料夾</strong>／自己看得到、可以搬動</span>
+            </label>
+            <label class="setup-radio">
+              <input type="radio" name="gdrive-space" value="hidden" />
+              <span><strong>隱藏的應用程式空間</strong>／不會出現在檔案列表</span>
+            </label>
+          </fieldset>
+          <label class="setup-field" id="setup-gdrive-folder-field">
             <span>Google Drive 資料夾（相對於「我的雲端硬碟」，可用 / 分層）</span>
             <input id="setup-gdrive-folder" type="text" spellcheck="false" value="ai-config" placeholder="ai-config" />
           </label>

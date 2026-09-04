@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Google Drive 的儲存位置改為可選:`visible`(預設,「我的雲端硬碟」底下看得到的
+  資料夾)或 `hidden`(Google 的隱藏應用程式空間,不會出現在檔案列表)。CLI 用
+  `--gdrive-space`,互動模式與 GUI 首次設定都會問。兩者各自使用最小的 scope
+  (`drive.file` 與 `drive.appdata`),都只能存取本程式建立的檔案。換位置要重新
+  登入一次,兩邊的資料互不相通。
 - Ctrl+C 在任何確認提示都直接取消,不再往下追問或丟出中斷例外。取消時原本的
   清理照常執行(例如 push 會把暫存的變更還原成未 staged)。
 

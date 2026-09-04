@@ -11,6 +11,9 @@ CONFIG_ENV = "AI_CONFIG_CONFIG"
 DATA_REPO_ENV = "AI_CONFIG_REPO"
 REMOTE_PROVIDERS = frozenset({"git", "gdrive"})
 GDRIVE_FOLDER_DEFAULT = "ai-config"
+# visible: 檔案放在「我的雲端硬碟」看得到;hidden: appDataFolder 隱藏空間
+GDRIVE_SPACES = frozenset({"visible", "hidden"})
+GDRIVE_SPACE_DEFAULT = "visible"
 
 
 class ConfigError(RuntimeError):
@@ -84,10 +87,29 @@ def load_config(path: "Path | None" = None) -> dict[str, Any]:
         raise ConfigError(
             f"remote_provider must be git or gdrive in {target}"
         )
-    for key in ("gdrive_folder", "gdrive_folder_id"):
+    for key in ("gdrive_folder", "gdrive_folder_id", "gdrive_space"):
         if payload.get(key) is not None and not isinstance(payload[key], str):
             raise ConfigError(f"{key} must be a string in {target}")
+    space = payload.get("gdrive_space")
+    if space is not None and space not in GDRIVE_SPACES:
+        raise ConfigError(f"gdrive_space must be visible or hidden in {target}")
     return payload
+
+
+def normalize_gdrive_space(value: "str | None") -> str:
+    if value is None:
+        return GDRIVE_SPACE_DEFAULT
+    space = value.strip().lower()
+    if space not in GDRIVE_SPACES:
+        raise ConfigError("gdrive_space must be visible or hidden")
+    return space
+
+
+def configured_gdrive_space(
+    environ: "dict[str, str] | None" = None,
+) -> str:
+    value = load_config(config_path(environ)).get("gdrive_space")
+    return normalize_gdrive_space(value if isinstance(value, str) else None)
 
 
 def normalize_gdrive_folder(value: "str | None") -> str:
@@ -150,6 +172,7 @@ def save_data_repo(
     remote_provider: "str | None" = None,
     gdrive_folder: "str | None" = None,
     gdrive_folder_id: "str | None" = None,
+    gdrive_space: "str | None" = None,
 ) -> Path:
     if remote_provider is not None and remote_provider not in REMOTE_PROVIDERS:
         raise ConfigError("remote_provider must be git or gdrive")
@@ -169,6 +192,8 @@ def save_data_repo(
         current["remote_provider"] = "gdrive"
     elif remote_provider == "git" and "remote_provider" in current:
         current["remote_provider"] = "git"
+    if gdrive_space is not None:
+        current["gdrive_space"] = normalize_gdrive_space(gdrive_space)
     if gdrive_folder is not None:
         current["gdrive_folder"] = normalize_gdrive_folder(gdrive_folder)
         # 資料夾 id 綁定 Drive 上的實體;使用者事後在 Drive 裡搬動資料夾也不會失聯

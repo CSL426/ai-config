@@ -13,9 +13,11 @@ import pytest
 from ai_config.commands.setup import SetupError, setup_gdrive_repository
 from ai_config.config import (
     ConfigError,
+    configured_gdrive_space,
     configured_remote_provider,
     load_config,
     normalize_gdrive_folder,
+    normalize_gdrive_space,
     save_data_repo,
 )
 from ai_config.gdrive import (
@@ -40,9 +42,14 @@ from ai_config.paths import EXCLUDED_FILES
 
 class _MockDriveClient:
     folder_path = "ai-config"
+    space = "visible"
+    hidden = False
 
     def __init__(self, environ: Any = None, **kwargs: Any) -> None:
         pass
+
+    def location_label(self) -> str:
+        return f"我的雲端硬碟/{self.folder_path}"
 
 
 @pytest.fixture(autouse=True)
@@ -253,6 +260,9 @@ def test_setup_gdrive_verification_failure_does_not_save_config(
     class FailingDriveClient:
         def __init__(self, environ: Any = None, **kwargs: Any) -> None:
             pass
+
+        def location_label(self) -> str:
+            return "我的雲端硬碟/ai-config"
 
         def verify_setup_access(self) -> None:
             raise GDriveError("Setup verification test failed")
@@ -1044,3 +1054,101 @@ def test_files_are_scoped_to_existing_folder(
     multipart = calls[-1][2]
     assert b'"parents": ["folder_1"]' in multipart
     assert b"appDataFolder" not in multipart
+
+
+def test_normalize_gdrive_space() -> None:
+    assert normalize_gdrive_space(None) == "visible"
+    assert normalize_gdrive_space("visible") == "visible"
+    assert normalize_gdrive_space(" HIDDEN ") == "hidden"
+    with pytest.raises(ConfigError):
+        normalize_gdrive_space("elsewhere")
+
+
+def test_scope_depends_on_space() -> None:
+    from ai_config.gdrive import SCOPE_HIDDEN, SCOPE_VISIBLE, scope_for_space
+
+    assert scope_for_space("visible") == SCOPE_VISIBLE
+    assert scope_for_space("hidden") == SCOPE_HIDDEN
+    assert SCOPE_VISIBLE == "https://www.googleapis.com/auth/drive.file"
+    assert SCOPE_HIDDEN == "https://www.googleapis.com/auth/drive.appdata"
+
+
+def test_hidden_space_uses_appdatafolder_without_lookup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environ = {
+        "HOME": str(tmp_path),
+        "AI_CONFIG_GDRIVE_CLIENT_ID": "dummy",
+        "AI_CONFIG_CONFIG": os.environ["AI_CONFIG_CONFIG"],
+    }
+    save_data_repo(tmp_path / "repo", remote_provider="gdrive", gdrive_space="hidden")
+    assert configured_gdrive_space(environ) == "hidden"
+
+    def handler(method: str, url: str, data: Any) -> bytes:
+        return b'{"files": []}'
+
+    calls = _drive_responder(monkeypatch, handler)
+    client = GDriveClient(environ)
+
+    assert client.hidden is True
+    # 隱藏空間直接用別名,不必查詢或建立資料夾
+    assert client.get_folder_id() == "appDataFolder"
+    assert calls == []
+    assert client.folder_url() == ""
+
+    client.find_file("repo.bundle")
+    assert "spaces=appDataFolder" in calls[-1][1]
+
+
+def test_visible_space_never_sets_spaces_parameter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(method: str, url: str, data: Any) -> bytes:
+        if "vnd.google-apps.folder" in url:
+            return b'{"files": [{"id": "f1", "name": "ai-config"}]}'
+        return b'{"files": []}'
+
+    calls = _drive_responder(monkeypatch, handler)
+    client = GDriveClient(space="visible")
+
+    client.find_file("repo.bundle")
+    assert all("spaces=appDataFolder" not in url for _, url, _ in calls)
+
+
+def test_hidden_space_uploads_into_appdatafolder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(method: str, url: str, data: Any) -> bytes:
+        if method == "GET":
+            return b'{"files": []}'
+        return b'{"id": "new", "headRevisionId": "rev"}'
+
+    calls = _drive_responder(monkeypatch, handler)
+    client = GDriveClient(space="hidden")
+
+    client.upload_file("head.json", b"{}", content_type="application/json")
+    assert b'"parents": ["appDataFolder"]' in calls[-1][2]
+
+
+def test_token_scope_check_follows_configured_space(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.gdrive import SCOPE_HIDDEN, SCOPE_VISIBLE, token_has_scope
+
+    environ = {
+        "HOME": str(tmp_path),
+        "AI_CONFIG_CONFIG": os.environ["AI_CONFIG_CONFIG"],
+    }
+    save_data_repo(tmp_path / "repo", remote_provider="gdrive", gdrive_space="hidden")
+
+    assert token_has_scope({"scope": SCOPE_HIDDEN}, environ) is True
+    # 設定是隱藏空間,但 token 只有可見空間的 scope:不算通過
+    assert token_has_scope({"scope": SCOPE_VISIBLE}, environ) is False
+
+
+def test_location_label_describes_each_space() -> None:
+    visible = GDriveClient(space="visible", folder_path="Backups/acg")
+    hidden = GDriveClient(space="hidden")
+
+    assert visible.location_label() == "我的雲端硬碟/Backups/acg"
+    assert "appDataFolder" in hidden.location_label()

@@ -475,6 +475,21 @@ const setupDir = $<HTMLInputElement>("#setup-dir");
 const setupGo = $<HTMLButtonElement>("#setup-go");
 const setupGdriveDir = $<HTMLInputElement>("#setup-gdrive-dir");
 const setupGdriveFolder = $<HTMLInputElement>("#setup-gdrive-folder");
+const setupGdriveFolderField = $("#setup-gdrive-folder-field");
+const gdriveSpaceRadios = Array.from(
+  document.querySelectorAll<HTMLInputElement>("input[name=gdrive-space]"),
+);
+
+function selectedGdriveSpace(): string {
+  return gdriveSpaceRadios.find((radio) => radio.checked)?.value ?? "visible";
+}
+
+for (const radio of gdriveSpaceRadios) {
+  radio.addEventListener("change", () => {
+    // 隱藏空間沒有資料夾路徑可填
+    setupGdriveFolderField.hidden = selectedGdriveSpace() === "hidden";
+  });
+}
 const setupGdriveGo = $<HTMLButtonElement>("#setup-gdrive-go");
 const setupGitPanel = $("#setup-git-panel");
 const setupGdrivePanel = $("#setup-gdrive-panel");
@@ -545,6 +560,7 @@ setupGdriveGo.addEventListener("click", async () => {
     const result = await bridge.setup_gdrive(
       setupGdriveDir.value,
       setupGdriveFolder.value,
+      selectedGdriveSpace(),
     );
     renderOutput(result.output || "(沒有輸出)");
     if (result.code === 0) {
