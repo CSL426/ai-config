@@ -26,10 +26,52 @@ def _eof_on_input(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(builtins, "input", eof)
 
 
-def test_ask_returns_none_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ask_returns_none_on_double_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     seen = _interrupt_on_input(monkeypatch)
     assert console.ask("pick? ") is None
-    assert seen == ["pick? "]
+    # 第一次是提醒,第二次才真的取消
+    assert seen == ["pick? ", "pick? "]
+
+
+def test_single_interrupt_re_reads_the_prompt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answers = [KeyboardInterrupt, "yes"]
+
+    def once_then_answer(prompt: str = "") -> str:
+        value = answers.pop(0)
+        if value is KeyboardInterrupt:
+            raise KeyboardInterrupt
+        return str(value)
+
+    monkeypatch.setattr(builtins, "input", once_then_answer)
+
+    assert console.ask("continue? ") == "yes"
+    assert "再按一次" in capsys.readouterr().err
+
+
+def test_interrupts_outside_the_window_do_not_accumulate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = iter([1000.0, 1100.0, 1200.0])
+    seen: list[str] = []
+    answers = [KeyboardInterrupt, KeyboardInterrupt, "ok"]
+
+    def spaced(prompt: str = "") -> str:
+        seen.append(prompt)
+        value = answers.pop(0)
+        if value is KeyboardInterrupt:
+            raise KeyboardInterrupt
+        return str(value)
+
+    monkeypatch.setattr(builtins, "input", spaced)
+    monkeypatch.setattr(console.time, "monotonic", lambda: next(clock))
+
+    # 兩次相隔很久的誤觸各自獨立,不該合併成一次取消
+    assert console.ask("continue? ") == "ok"
+    assert len(seen) == 3
 
 
 def test_ask_returns_none_on_eof(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,7 +79,9 @@ def test_ask_returns_none_on_eof(monkeypatch: pytest.MonkeyPatch) -> None:
     assert console.ask("pick? ") is None
 
 
-def test_confirm_declines_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_confirm_declines_on_double_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _interrupt_on_input(monkeypatch)
     assert console.confirm("sure? [y/N] ") is False
 
@@ -56,12 +100,12 @@ def test_confirm_rejects_anything_else(
     assert console.confirm("sure? [y/N] ") is False
 
 
-def test_push_confirmation_asks_once_on_interrupt(
+def test_push_confirmation_stops_after_double_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen = _interrupt_on_input(monkeypatch)
     assert push._review_and_confirm_push("pending", "diff", "message") is False
-    assert len(seen) == 1
+    assert len(seen) == 2
 
 
 def test_reset_cancels_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,7 +117,7 @@ def test_reset_cancels_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(maintenance, "reset_tool", unexpected, raising=False)
 
     assert maintenance.do_reset() is True
-    assert len(seen) == 1
+    assert len(seen) == 2
 
 
 def test_setup_prompt_raises_cancelled_on_interrupt(
@@ -98,5 +142,5 @@ def test_interactive_setup_exits_quietly_on_interrupt(
     monkeypatch.setattr(setup.sys.stdin, "isatty", lambda: True, raising=False)
 
     assert setup.run_setup([]) == 130
-    # 只問一次:取消之後不會再往下追問 provider 或 URL
-    assert len(seen) == 1
+    # 兩次中斷取消掉第一個提示後,不會再往下追問 provider 或 URL
+    assert len(seen) == 2
