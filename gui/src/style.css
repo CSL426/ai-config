@@ -652,6 +652,11 @@ body {
 
 /* ── 輸出面板 ─────────────────────────── */
 
+.output[hidden],
+.package[hidden] {
+  display: none;
+}
+
 .output {
   display: flex;
   flex-direction: column;
@@ -797,23 +802,45 @@ body {
 
 /* ── 設定畫面 ─────────────────────────── */
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+  background: oklch(30% 0.011 95 / 0.32);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
 .settings {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  inline-size: min(34rem, 100%);
+  max-block-size: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding-block-end: var(--space-sm);
-}
-
-.settings[hidden] {
-  display: none;
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-md);
+  background: var(--color-paper);
+  padding: var(--space-lg);
+  box-shadow: 0 1rem 2.5rem oklch(30% 0.011 95 / 0.18);
 }
 
 .settings-head {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.settings-head .settings-back {
+  margin-inline-start: auto;
 }
 
 .settings-title {
