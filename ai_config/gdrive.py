@@ -29,6 +29,7 @@ from .config import (
     config_path,
     configured_gdrive_folder,
     configured_gdrive_folder_id,
+    configured_gdrive_space,
 )
 from .console import log_error, log_info, log_success
 
@@ -38,8 +39,19 @@ GDRIVE_CLIENT_ID = ""  # 開放原始碼儲存庫中預設為空字串,正式建
 GDRIVE_CLIENT_SECRET = ""
 # drive.file 只能看到本應用自己建立的檔案,權限最小;但檔案放在一般「我的雲端硬碟」
 # 底下,使用者在 Drive 網頁/桌面版都看得到(早期版本用 appDataFolder,永遠隱藏)。
-GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+# 兩種儲存位置各自對應最小的 scope:
+# visible = drive.file,檔案在「我的雲端硬碟」底下,使用者看得到也搬得動;
+# hidden  = drive.appdata,Google 給應用程式的隱藏空間,Drive 介面永遠看不到。
+# 兩者都只能存取本程式自己建立的檔案,碰不到使用者其他的 Drive 內容。
+SCOPE_VISIBLE = "https://www.googleapis.com/auth/drive.file"
+SCOPE_HIDDEN = "https://www.googleapis.com/auth/drive.appdata"
+GDRIVE_SCOPE = SCOPE_VISIBLE  # 預設;實際使用一律走 scope_for_space()
+APPDATA_SPACE = "appDataFolder"
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
+
+
+def scope_for_space(space: str) -> str:
+    return SCOPE_HIDDEN if space == "hidden" else SCOPE_VISIBLE
 OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
@@ -190,8 +202,10 @@ class _OAuthRedirectHandler(http.server.BaseHTTPRequestHandler):
 def run_oauth_flow(
     timeout: float = 120.0,
     environ: "dict[str, str] | None" = None,
+    space: "str | None" = None,
 ) -> dict[str, Any]:
     client_id = get_client_id(environ)
+    wanted_scope = scope_for_space(space or configured_gdrive_space(environ))
     verifier, challenge = generate_pkce()
     state = secrets.token_hex(16)
 
@@ -208,7 +222,7 @@ def run_oauth_flow(
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": GDRIVE_SCOPE,
+        "scope": wanted_scope,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
         "state": state,
@@ -271,8 +285,8 @@ def run_oauth_flow(
     if not isinstance(access_token, str) or not access_token:
         raise GDriveAuthError("OAuth token exchange returned no access token")
     # Google 的同意畫面允許使用者逐項取消勾選,拿到 token 不代表拿到 Drive 權限
-    granted_scope = str(data.get("scope") or GDRIVE_SCOPE)
-    if GDRIVE_SCOPE not in granted_scope.split():
+    granted_scope = str(data.get("scope") or wanted_scope)
+    if wanted_scope not in granted_scope.split():
         raise GDriveAuthError(
             "Google 帳號未授予 Drive 檔案權限,請重新登入並勾選允許存取"
         )
@@ -337,8 +351,12 @@ def refresh_access_token(
     return token_data
 
 
-def token_has_scope(token_data: dict[str, Any]) -> bool:
-    return GDRIVE_SCOPE in str(token_data.get("scope", "")).split()
+def token_has_scope(
+    token_data: dict[str, Any],
+    environ: "dict[str, str] | None" = None,
+) -> bool:
+    wanted = scope_for_space(configured_gdrive_space(environ))
+    return wanted in str(token_data.get("scope", "")).split()
 
 
 def get_valid_access_token(
@@ -347,11 +365,11 @@ def get_valid_access_token(
     token_data = load_token(environ)
     if not token_data or "access_token" not in token_data:
         raise GDriveAuthError("尚未登入 Google Drive,請先執行 acg setup --provider gdrive")
-    if not token_has_scope(token_data):
-        # 舊版 token 只有 drive.appdata(隱藏空間),對可見資料夾的 API 一律 403
+    if not token_has_scope(token_data, environ):
+        # 換儲存位置就換 scope,舊 token 對新位置的 API 一律 403
         delete_token(environ)
         raise GDriveAuthError(
-            "Google Drive 授權範圍已更新(設定改存到可見的 ai-config 資料夾),"
+            "Google Drive 授權範圍與目前的儲存位置設定不符,"
             "請重新登入 (acg setup --provider gdrive)"
         )
 
@@ -455,8 +473,10 @@ class GDriveClient:
         folder_path: "str | None" = None,
         folder_id: "str | None" = None,
         use_configured_id: bool = True,
+        space: "str | None" = None,
     ) -> None:
         self.environ = environ
+        self.space = space or configured_gdrive_space(environ)
         self.folder_path = folder_path or configured_gdrive_folder(environ)
         configured_id = (
             configured_gdrive_folder_id(environ) if use_configured_id else None
@@ -464,13 +484,21 @@ class GDriveClient:
         self._configured_folder_id = folder_id or configured_id
         self._folder_id: str | None = None
 
+    @property
+    def hidden(self) -> bool:
+        return self.space == "hidden"
+
     def _list_files(self, query: str) -> list[dict[str, Any]]:
-        params = urllib.parse.urlencode({
+        query_params: dict[str, str] = {
             "q": query,
             "fields": "files(id, name, headRevisionId, modifiedTime)",
             "orderBy": "createdTime",
             "pageSize": 10,
-        })
+        }
+        if self.hidden:
+            # 隱藏空間不在預設的搜尋範圍內,要明確指定 spaces
+            query_params["spaces"] = APPDATA_SPACE
+        params = urllib.parse.urlencode(query_params)
         url = f"{DRIVE_API_BASE}/files?{params}"
         _, _, body = make_drive_request(url, environ=self.environ)
         data = json.loads(body.decode("utf-8"))
@@ -524,7 +552,10 @@ class GDriveClient:
         return _require_folder_id(folder_id, name)
 
     def get_folder_id(self) -> str:
-        """Return the id of the sync folder, creating the path if needed.
+        """Return the parent that holds the synced files.
+
+        In hidden mode that is the literal ``appDataFolder`` alias, which
+        needs no lookup and cannot be renamed or moved by the user.
 
         The id saved at setup wins so the user may move or rename the folder
         in Drive afterwards. Only when that id is gone (folder trashed or
@@ -533,6 +564,8 @@ class GDriveClient:
         a hand-made folder with the same name is invisible here and a second
         one appears next to it.
         """
+        if self.hidden:
+            return APPDATA_SPACE
         if self._folder_id:
             return self._folder_id
         if self._configured_folder_id and self._folder_still_exists(
@@ -547,7 +580,15 @@ class GDriveClient:
         return parent_id
 
     def folder_url(self) -> str:
+        """Link to the folder, or empty in hidden mode where none is visible."""
+        if self.hidden:
+            return ""
         return f"https://drive.google.com/drive/folders/{self.get_folder_id()}"
+
+    def location_label(self) -> str:
+        if self.hidden:
+            return "Google 帳號的隱藏應用程式空間(appDataFolder)"
+        return f"我的雲端硬碟/{self.folder_path}"
 
     def find_file(self, name: str) -> "dict[str, Any] | None":
         folder_id = self.get_folder_id()
@@ -929,7 +970,7 @@ def _gdrive_push_upload(repo_dir: Path) -> int:
         client.update_head_info(local_head)
         log_success(
             "Local configuration committed and uploaded to Google Drive "
-            f"({client.folder_path})"
+            f"({client.location_label()})"
         )
         return 0
     finally:

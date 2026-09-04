@@ -77,8 +77,8 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 
 ### 1.4 OAuth(installed app + PKCE)
 
-- Scope 僅 `https://www.googleapis.com/auth/drive.file`(只能存取本應用建立的
-  檔案,非敏感 scope),不得多要。Token 檔記錄授予的 `scope`;缺少或只有舊的
+- Scope 依 `gdrive_space` 決定,兩者都是非敏感 scope 且只能存取本應用建立的檔案:
+  `visible` → `drive.file`;`hidden` → `drive.appdata`。不得多要。Token 檔記錄授予的 `scope`;缺少或只有舊的
   `drive.appdata` 時視為失效,清除並要求重新登入(舊 token 對可見資料夾一律 403)。
 - 流程:系統瀏覽器 + loopback redirect(`http://127.0.0.1:<隨機port>`)+ PKCE
   (S256)。

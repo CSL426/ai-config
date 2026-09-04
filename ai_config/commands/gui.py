@@ -113,15 +113,36 @@ class GuiApi:
         finally:
             self._lock.release()
 
-    def setup_gdrive(self, data_dir: str = "", gdrive_folder: str = "") -> dict:
-        from ..config import default_data_repo
+    def setup_gdrive(
+        self,
+        data_dir: str = "",
+        gdrive_folder: str = "",
+        gdrive_space: str = "",
+    ) -> dict:
+        from ..config import GDRIVE_SPACES, default_data_repo
 
-        if not isinstance(data_dir, str) or not isinstance(gdrive_folder, str):
+        if (
+            not isinstance(data_dir, str)
+            or not isinstance(gdrive_folder, str)
+            or not isinstance(gdrive_space, str)
+        ):
             return {"code": 1, "output": "✗ 無效的本機目錄"}
+        space = gdrive_space.strip() or "visible"
+        if space not in GDRIVE_SPACES:
+            return {"code": 1, "output": "✗ 無效的儲存位置"}
         target = data_dir.strip() or str(default_data_repo())
         folder = gdrive_folder.strip()
-        argv = ["setup", "--provider", "gdrive", "--data-dir", target]
-        if folder:
+        argv = [
+            "setup",
+            "--provider",
+            "gdrive",
+            "--data-dir",
+            target,
+            "--gdrive-space",
+            space,
+        ]
+        # 隱藏空間沒有資料夾路徑可言
+        if space == "visible" and folder:
             argv += ["--gdrive-folder", folder]
         if not self._lock.acquire(blocking=False):
             return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}

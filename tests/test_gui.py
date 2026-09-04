@@ -356,8 +356,19 @@ def test_setup_gdrive_builds_argv_and_validates(
         "gdrive",
         "--data-dir",
         "/tmp/gdrive_dir",
+        "--gdrive-space",
+        "visible",
     ]
 
     result = api.setup_gdrive("/tmp/gdrive_dir", " Backups/acg ")
     assert result["code"] == 0
     assert seen["argv"][-2:] == ["--gdrive-folder", "Backups/acg"]
+    assert "--gdrive-space" in seen["argv"]
+
+    # 隱藏空間沒有資料夾路徑,即使前端還留著舊值也不該送出
+    result = api.setup_gdrive("/tmp/gdrive_dir", "Backups/acg", "hidden")
+    assert result["code"] == 0
+    assert seen["argv"][-2:] == ["--gdrive-space", "hidden"]
+    assert "--gdrive-folder" not in seen["argv"]
+
+    assert api.setup_gdrive("/tmp/gdrive_dir", "", "elsewhere")["code"] == 1

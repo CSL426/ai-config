@@ -9,6 +9,7 @@ from ..config import (
     config_path,
     configured_gdrive_folder,
     configured_gdrive_folder_id,
+    configured_gdrive_space,
     configured_remote_provider,
 )
 from ..console import log_header, log_info, log_success, log_warn
@@ -96,15 +97,18 @@ def run_config_info() -> int:
     try:
         folder = configured_gdrive_folder()
         folder_id = configured_gdrive_folder_id()
+        space = configured_gdrive_space()
     except ConfigError:
-        folder, folder_id = GDRIVE_FOLDER_DEFAULT, None
-    if folder_id:
+        folder, folder_id, space = GDRIVE_FOLDER_DEFAULT, None, "visible"
+    if space == "hidden":
+        log_info("Storage: 隱藏的應用程式空間(appDataFolder,Drive 介面看不到)")
+    elif folder_id:
         log_info(
-            f"Folder: 我的雲端硬碟/{folder} "
+            f"Storage: 我的雲端硬碟/{folder} "
             f"(https://drive.google.com/drive/folders/{folder_id})"
         )
     else:
-        log_info(f"Folder: 我的雲端硬碟/{folder} (尚未建立,setup 時建立)")
+        log_info(f"Storage: 我的雲端硬碟/{folder} (尚未建立,setup 時建立)")
 
     token = load_token()
     if token is None:
