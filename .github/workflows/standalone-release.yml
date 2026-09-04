@@ -75,7 +75,13 @@ jobs:
           - os: windows-latest
             source: dist/ai-config.exe
             asset: ai-config-windows-x86_64.exe
-            extra_args: "--icon assets/icon.ico"
+            # Windows 是唯一內建 GUI 的組建:pywebview 走系統的 WebView2,
+            # 不必打包瀏覽器;Linux/macOS 需要額外的 GTK/Cocoa 執行期依賴。
+            extra_args: >-
+              --icon assets/icon.ico
+              "--add-data=ai_config/gui_assets;gui_assets"
+              --hidden-import webview.platforms.winforms
+            with_gui: "true"
           - os: macos-15-intel
             source: dist/ai-config
             asset: ai-config-macos-x86_64
@@ -119,8 +125,35 @@ jobs:
           fi
           rm -f ai_config/gdrive.py.bak
 
+      - name: Set up Node
+        if: matrix.with_gui == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # pnpm 版本釘死:package.json 沒有 packageManager 欄位,靠 corepack 的
+      # 預設值會隨 Node 版本漂移,而 lockfileVersion 9 需要 pnpm 9 以上。
+      - name: Set up pnpm
+        if: matrix.with_gui == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Build GUI frontend
+        if: matrix.with_gui == 'true'
+        shell: bash
+        run: |
+          cd gui
+          pnpm install --frozen-lockfile
+          pnpm build
+          test -f ../ai_config/gui_assets/index.html
+
       - name: Install PyInstaller
         run: python -m pip install pyinstaller==6.21.0 .
+
+      - name: Install GUI runtime
+        if: matrix.with_gui == 'true'
+        run: python -m pip install ".[gui]"
 
       - name: Build standalone executable
         run: >-

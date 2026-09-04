@@ -22,6 +22,20 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _ALLOWED_COMMANDS = ("status", "apply", "pull", "push")
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "gui_assets"
 
+
+def gui_index_path() -> Path:
+    """Locate index.html in a source checkout or inside a PyInstaller bundle.
+
+    --add-data unpacks gui_assets next to the frozen modules in sys._MEIPASS,
+    which is not where __file__ points once the package is bundled.
+    """
+    bundle_dir = getattr(sys, "_MEIPASS", "")
+    if bundle_dir:
+        bundled = Path(bundle_dir) / "gui_assets" / "index.html"
+        if bundled.is_file():
+            return bundled
+    return _ASSETS_DIR / "index.html"
+
 WINDOW_TITLE = "acg — AI 設定同步"
 
 
@@ -358,7 +372,7 @@ def _package_output_dir() -> Path:
 
 
 def run_gui() -> int:
-    index = _ASSETS_DIR / "index.html"
+    index = gui_index_path()
     if not index.is_file():
         log_error(
             "GUI assets not found. Build them first:\n"
