@@ -255,9 +255,23 @@ function setHero(
   heroSub.textContent = sub;
 }
 
+/** 從 CLI 輸出挑出第一行實際的錯誤訊息,讓它能直接顯示在畫面上方。 */
+function firstErrorLine(output: string): string {
+  for (const raw of output.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("✗") || line.startsWith("⚠")) {
+      return line.replace(/^[✗⚠]\s*/, "");
+    }
+  }
+  return "";
+}
+
 function updateHero(cmd: AcgCommand, result: { code: number; output: string }): void {
   if (result.code !== 0) {
-    setHero("fail", "指令沒有完成", "詳細輸出裡有錯誤訊息。");
+    // 錯誤訊息原本只在下方的輸出區,視窗矮時根本看不到
+    const detail = firstErrorLine(result.output);
+    setHero("fail", "指令沒有完成", detail || "詳細輸出裡有錯誤訊息。");
+    showOutputPane(true);
     return;
   }
   if (cmd !== "status") {
@@ -327,6 +341,8 @@ async function runCommand(cmd: AcgCommand): Promise<void> {
       outputState.className = "output-state is-fail";
     }
     updateHero(cmd, result);
+    // status 的結論已經在上方講清楚,其他指令的輸出才需要自動展開
+    if (result.code === 0 && cmd !== "status") showOutputPane(true);
   } catch (err) {
     showPlaceholder(`執行失敗:${String(err)}`);
     outputState.textContent = "有問題";
@@ -801,12 +817,9 @@ async function loadSettings(): Promise<void> {
 }
 
 function showSettings(value: boolean): void {
+  // 覆蓋式對話框:主畫面原樣留在後面,不必逐一收起各區塊
+  // (先前那樣做會被各自的 display 規則蓋掉,反而把設定內容擠成一條)
   settingsBox.hidden = !value;
-  // 設定畫面接管整個視窗,底下的動作與輸出區暫時收起來
-  for (const id of ["#scope", "#actions", "#package", "#output"]) {
-    const el = document.querySelector<HTMLElement>(id);
-    if (el) el.hidden = value;
-  }
   if (value) void loadSettings();
 }
 
@@ -817,6 +830,15 @@ settingsOpenBtn.addEventListener("click", () => {
 
 settingsCloseBtn.addEventListener("click", () => {
   showSettings(false);
+});
+
+settingsBox.addEventListener("click", (event) => {
+  // 點背景關閉,點對話框本身不關
+  if (event.target === settingsBox) showSettings(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !settingsBox.hidden) showSettings(false);
 });
 
 settingsOpenDirBtn.addEventListener("click", async () => {
@@ -906,11 +928,17 @@ packageOpenBtn.addEventListener("click", () => {
   details.scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 
+function showOutputPane(value: boolean): void {
+  const output = document.querySelector<HTMLElement>("#output");
+  if (!output) return;
+  output.hidden = !value;
+  outputToggleBtn.textContent = value ? "收起詳細輸出" : "查看詳細輸出";
+}
+
 outputToggleBtn.addEventListener("click", () => {
   const output = document.querySelector<HTMLElement>("#output");
   if (!output) return;
-  output.hidden = !output.hidden;
-  outputToggleBtn.textContent = output.hidden ? "查看詳細輸出" : "收起詳細輸出";
+  showOutputPane(output.hidden);
 });
 
 function boot(): void {

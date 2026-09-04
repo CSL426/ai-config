@@ -24,10 +24,11 @@
         </div>
       </header>
 
-      <section class="settings" id="settings" hidden aria-label="設定">
+      <div class="modal-backdrop" id="settings" hidden>
+        <section class="settings" role="dialog" aria-modal="true" aria-label="設定">
         <div class="settings-head">
-          <button class="btn btn-ghost settings-back" id="settings-close">‹ 返回</button>
           <h2 class="settings-title">設定</h2>
+          <button class="btn btn-ghost settings-back" id="settings-close" aria-label="關閉設定">關閉</button>
         </div>
 
         <div class="settings-group">
@@ -90,7 +91,8 @@
           <p class="settings-switch-note" id="settings-switch-note"></p>
           <div id="settings-switch-form"></div>
         </div>
-      </section>
+        </section>
+      </div>
 
       <section class="setup" id="setup" hidden aria-label="首次設定">
         <h2 class="setup-title">首次設定</h2>
@@ -223,7 +225,7 @@
         </div>
       </div>
 
-      <section class="output" id="output" aria-label="執行結果">
+      <section class="output" id="output" hidden aria-label="執行結果">
         <div class="output-head">
           <span class="output-title" id="output-title">執行結果</span>
           <span class="output-state" id="output-state" aria-live="polite"></span>
