@@ -597,6 +597,9 @@ def detach_and_run_gui() -> bool:
         subprocess.Popen(command, **kwargs)
     except OSError:
         return False
+    # 這個行程即將結束,但雙擊開的主控台會活到視窗關閉為止(它屬於這個
+    # 行程樹)。分離出去的子行程沒有主控台可藏,所以要在這裡先藏起來。
+    hide_console()
     return True
 
 
@@ -656,6 +659,7 @@ def run_gui() -> int:
         log_error('pywebview 尚未安裝,請執行:pip install "ai-config[gui]"')
         return 1
 
+    # 前景模式(--wait 或分離失敗)才需要在這裡藏;分離時已由父行程處理
     hide_console()
 
     # Windows: 分離工作列群組,避免顯示預設 Python 圖示

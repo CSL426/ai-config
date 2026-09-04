@@ -291,3 +291,22 @@ def test_update_warns_when_running_an_unmanaged_copy(
     update_module._warn_if_updating_a_different_copy()
     text = capsys.readouterr().out + capsys.readouterr().err
     assert "不在安裝位置" in text or "Desktop" in text
+
+
+def test_detach_hides_the_console_before_exiting(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    index = tmp_path / "index.html"
+    index.write_text("<h1>x</h1>", encoding="utf-8")
+    monkeypatch.delenv(gui_module._DETACH_ENV, raising=False)
+    monkeypatch.setattr(gui_module, "gui_index_path", lambda: index)
+    monkeypatch.setattr(gui_module.subprocess, "Popen", lambda *a, **k: object())
+
+    hidden = []
+    monkeypatch.setattr(gui_module, "hide_console", lambda: hidden.append(True) or True)
+
+    # 分離出去的子行程沒有主控台可藏,所以父行程必須在結束前自己藏
+    assert gui_module.detach_and_run_gui() is True
+    assert hidden == [True]
