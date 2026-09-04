@@ -143,6 +143,7 @@
         <div class="output-head">
           <span class="output-title" id="output-title">執行結果</span>
           <span class="output-state" id="output-state" aria-live="polite"></span>
+          <button class="btn btn-ghost output-copy" id="output-copy" hidden>複製輸出</button>
         </div>
         <div class="output-body" id="output-body" aria-live="polite">
           <div class="output-empty">
@@ -151,6 +152,8 @@
           </div>
         </div>
       </section>
+      <!-- clipboard API 不可用時的後備:選取這個 textarea 讓使用者 Ctrl+C -->
+      <textarea id="copy-fallback" class="visually-hidden" readonly aria-hidden="true" tabindex="-1"></textarea>
     </div>
   </body>
 </html>

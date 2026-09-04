@@ -31,6 +31,8 @@ const confirmNo = $<HTMLButtonElement>("#confirm-no");
 const outputTitle = $("#output-title");
 const outputState = $("#output-state");
 const outputBody = $("#output-body");
+const outputCopy = $<HTMLButtonElement>("#output-copy");
+const copyFallback = $<HTMLTextAreaElement>("#copy-fallback");
 
 let selectedTool = "all";
 let running = false;
@@ -90,7 +92,27 @@ function localizeOutputLine(raw: string): string | null {
     );
 }
 
+let lastOutput = "";
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // pywebview 某些平臺不開放 clipboard API,退回隱藏 textarea + execCommand
+    copyFallback.value = text;
+    copyFallback.select();
+    try {
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    }
+  }
+}
+
 function renderOutput(text: string): void {
+  lastOutput = text;
+  outputCopy.hidden = text.trim() === "";
   outputBody.replaceChildren();
   const lines = text.replace(/\n+$/, "").split("\n");
   for (const source of lines) {
@@ -112,7 +134,17 @@ function renderOutput(text: string): void {
   }
 }
 
+outputCopy.addEventListener("click", async () => {
+  const ok = await copyText(lastOutput);
+  outputCopy.textContent = ok ? "已複製!" : "複製失敗";
+  setTimeout(() => {
+    outputCopy.textContent = "複製輸出";
+  }, 2000);
+});
+
 function showPlaceholder(text: string): void {
+  lastOutput = "";
+  outputCopy.hidden = true;
   const span = document.createElement("span");
   span.className = "line-placeholder";
   span.textContent = text;
@@ -378,13 +410,8 @@ skillPackage.addEventListener("click", async () => {
 
 packageCopy.addEventListener("click", async () => {
   packageMessage.select();
-  try {
-    await navigator.clipboard.writeText(packageMessage.value);
-    packageCopy.textContent = "已複製!";
-  } catch {
-    // pywebview 某些平臺不開放 clipboard API;退回選取讓使用者 Ctrl+C
-    packageCopy.textContent = "請按 Ctrl+C 複製";
-  }
+  const ok = await copyText(packageMessage.value);
+  packageCopy.textContent = ok ? "已複製!" : "請按 Ctrl+C 複製";
   setTimeout(() => {
     packageCopy.textContent = "複製說明";
   }, 2000);
