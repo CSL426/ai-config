@@ -160,3 +160,38 @@ def test_gui_reports_a_webview_start_failure(
     assert gui_module.run_gui() == 1
     output = capsys.readouterr()
     assert "WebView2" in output.out + output.err
+
+
+def test_bundled_build_opens_the_app_without_double_click_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    opened = []
+    # 偵測失敗(回 False)時仍然要開視窗:那個判斷只有一次 Win32 呼叫,
+    # 判斷錯就等於視窗一閃而過,不能拿它當開不開 GUI 的條件
+    monkeypatch.setattr(cli, "launched_by_double_click", lambda: False)
+    monkeypatch.setattr(cli, "gui_assets_bundled", lambda: True)
+    monkeypatch.setattr(gui_module, "run_gui", lambda: opened.append(True) or 0)
+    monkeypatch.setattr(cli.sys, "argv", ["ai-config.exe"])
+
+    assert cli.standalone_main() == 0
+    assert opened == [True]
+
+
+def test_double_click_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setenv("AI_CONFIG_FORCE_DOUBLE_CLICK", "1")
+    assert cli.launched_by_double_click() is True
+
+
+def test_desktop_is_an_alias_for_gui(monkeypatch: pytest.MonkeyPatch) -> None:
+    import ai_config.__main__ as main_module
+    from ai_config.commands import gui as gui_module
+
+    seen = []
+    monkeypatch.setattr(gui_module, "run_gui", lambda: seen.append("ran") or 0)
+
+    assert main_module.main(["desktop"]) == 0
+    assert main_module.main(["gui"]) == 0
+    assert seen == ["ran", "ran"]
