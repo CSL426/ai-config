@@ -114,16 +114,17 @@
       <details class="package" id="package">
         <summary class="package-summary">分享與準備 AI 技能</summary>
         <div class="package-body">
-          <p class="package-hint">勾選技能後，可以分享給 Codex 與 Antigravity；也能準備成桌面版 AI 可安裝的檔案與說明。</p>
+          <p class="package-hint">勾選技能後，可以分享給 Codex 與 Antigravity，或取消分享收回；也能準備成其他 AI 工具可安裝的檔案與說明。</p>
           <div class="package-list" id="skill-list" role="group" aria-label="技能清單"></div>
           <div class="package-buttons">
             <button class="btn btn-ghost" id="skill-all">全選</button>
             <button class="btn btn-ghost" id="skill-none">清除</button>
             <button class="btn btn-primary" id="skill-share">分享給其他工具</button>
-            <button class="btn btn-primary" id="skill-package">準備桌面版檔案</button>
+            <button class="btn btn-ghost" id="skill-unshare">取消分享</button>
+            <button class="btn btn-primary" id="skill-package">準備安裝檔</button>
           </div>
           <div class="package-result" id="package-result" hidden>
-            <p class="package-hint">檔案已準備好。複製下面這段話並貼給桌面版 AI；Claude Desktop 也可以在「設定 &gt; Customize &gt; Skills」直接上傳。</p>
+            <p class="package-hint">檔案已準備好。複製下面這段話並貼給該 AI 工具；Claude Desktop 也可以在「設定 &gt; Customize &gt; Skills」直接上傳。</p>
             <textarea class="package-message" id="package-message" readonly rows="6"></textarea>
             <button class="btn btn-primary" id="package-copy">複製說明</button>
           </div>

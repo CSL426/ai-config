@@ -401,3 +401,86 @@ def test_source_checkout_without_assets_says_to_build(
     assert gui_module.run_gui() == 1
     output = capsys.readouterr()
     assert "pnpm" in output.out + output.err
+
+
+def test_shortcut_refuses_outside_windows(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    monkeypatch.setattr(gui_module.sys, "platform", "linux")
+    assert gui_module.create_desktop_shortcut() == 1
+    output = capsys.readouterr()
+    assert "Windows" in output.out + output.err
+
+
+def test_shortcut_builds_a_powershell_command(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    exe = tmp_path / "ai-config.exe"
+    exe.write_text("binary", encoding="utf-8")
+    appdata = tmp_path / "AppData"
+
+    monkeypatch.setattr(gui_module.sys, "platform", "win32")
+    monkeypatch.setattr(gui_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(gui_module.sys, "executable", str(exe))
+    monkeypatch.setenv("APPDATA", str(appdata))
+
+    captured = {}
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return Result()
+
+    monkeypatch.setattr(gui_module.subprocess, "run", fake_run)
+
+    assert gui_module.create_desktop_shortcut() == 0
+    script = captured["cmd"][-1]
+    # 捷徑要帶 gui 參數,否則點下去只會跑 CLI
+    assert "$s.Arguments = 'gui'" in script
+    assert str(exe) in script
+    assert (appdata / "Microsoft/Windows/Start Menu/Programs").is_dir()
+
+
+def test_shortcut_reports_a_powershell_failure(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    exe = tmp_path / "ai-config.exe"
+    exe.write_text("binary", encoding="utf-8")
+
+    monkeypatch.setattr(gui_module.sys, "platform", "win32")
+    monkeypatch.setattr(gui_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(gui_module.sys, "executable", str(exe))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData"))
+
+    class Failure:
+        returncode = 1
+        stdout = ""
+        stderr = "access denied"
+
+    monkeypatch.setattr(gui_module.subprocess, "run", lambda *a, **k: Failure())
+
+    assert gui_module.create_desktop_shortcut() == 1
+
+
+def test_unshare_skills_validates_and_builds_argv(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = []
+
+    monkeypatch.setattr(cli, "main", lambda argv: seen.append(argv) or 0)
+
+    assert api.unshare_skills("nope")["code"] == 1
+    assert api.unshare_skills([])["code"] == 1
+
+    assert api.unshare_skills(["demo"])["code"] == 0
+    assert seen[-1] == ["unshare", "demo"]

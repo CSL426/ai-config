@@ -54,6 +54,7 @@ export interface AcgApi {
   list_skills(): Promise<SkillList>;
   package_skills(names: string[]): Promise<PackageResult>;
   share_skills(names: string[]): Promise<RunResult>;
+  unshare_skills(names: string[]): Promise<RunResult>;
   check_update(): Promise<UpdateCheck>;
   run_update(): Promise<RunResult>;
   setup_repo(repoUrl: string, dataDir?: string): Promise<RunResult>;
