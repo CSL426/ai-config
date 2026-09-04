@@ -1,6 +1,6 @@
 """PyInstaller entry point for the standalone executable."""
 
-from ai_config.cli import console_main
+from ai_config.cli import standalone_main
 
 if __name__ == "__main__":
-    raise SystemExit(console_main())
+    raise SystemExit(standalone_main())

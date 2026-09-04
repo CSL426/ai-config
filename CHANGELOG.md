@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Windows 執行檔改為點兩下就開 GUI:release 版把前端資源與 pywebview 一起打包,
+  從檔案總管點兩下直接開視窗,不再閃一下就關。從 PowerShell/cmd 帶參數執行的
+  行為完全不變,仍是純 CLI。其他平台的執行檔不含 GUI(需要額外的 GTK/Cocoa
+  執行期依賴),點兩下時會說明用法並停在「按 Enter 關閉視窗」。
+- GUI:標題列與空狀態加上吉祥物;修正 gui_assets 路徑(gui.py 搬進 commands/
+  後指錯目錄)。Windows 與 macOS 的執行檔內嵌應用程式圖示。
+
 ## 1.0.34 - 2026-09-03
 
 - Codex 自帶外掛(`@openai-bundled`、`@openai-primary-runtime`,如 documents、
