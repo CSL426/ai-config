@@ -448,9 +448,22 @@ body {
 }
 
 .package[open] {
-  /* 展開後讓面板自己滾,而不是推長整個頁面或壓垮輸出區 */
-  flex: 0 1 auto;
+  /* 展開後這是使用者正在看的東西,讓它拿到剩餘空間並自己捲動 */
+  flex: 1 1 auto;
+  min-block-size: 12rem;
   overflow: hidden;
+}
+
+/* 面板展開時 hero 收起狀態列與說明,把空間讓出來 */
+.app:has(.package[open]) .hero {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app:has(.package[open]) .tool-rows,
+.app:has(.package[open]) .hero-links {
+  display: none;
 }
 
 .package[open] .package-list {
