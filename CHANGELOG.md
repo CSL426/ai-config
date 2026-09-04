@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.35 - 2026-09-04
 
 - Windows 執行檔改為點兩下就開 GUI:release 版把前端資源與 pywebview 一起打包,
   從檔案總管點兩下直接開視窗,不再閃一下就關。從 PowerShell/cmd 帶參數執行的
