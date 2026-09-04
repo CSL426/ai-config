@@ -191,7 +191,103 @@ def test_desktop_is_an_alias_for_gui(monkeypatch: pytest.MonkeyPatch) -> None:
 
     seen = []
     monkeypatch.setattr(gui_module, "run_gui", lambda: seen.append("ran") or 0)
+    # 兩個名稱都要走同一條路徑;這裡不分離,才能觀察到實際呼叫
+    monkeypatch.setattr(gui_module, "detach_and_run_gui", lambda: False)
 
     assert main_module.main(["desktop"]) == 0
     assert main_module.main(["gui"]) == 0
     assert seen == ["ran", "ran"]
+
+
+def test_desktop_detaches_by_default_and_waits_on_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ai_config.__main__ as main_module
+    from ai_config.commands import gui as gui_module
+
+    ran = []
+    monkeypatch.setattr(gui_module, "run_gui", lambda: ran.append("fg") or 0)
+    monkeypatch.setattr(gui_module, "detach_and_run_gui", lambda: True)
+
+    # 預設分離,終端機立刻回到提示字元
+    assert main_module.main(["desktop"]) == 0
+    assert ran == []
+
+    # --wait 留在前景
+    assert main_module.main(["desktop", "--wait"]) == 0
+    assert ran == ["fg"]
+
+
+def test_detach_skips_when_already_detached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    monkeypatch.setenv(gui_module._DETACH_ENV, "1")
+    # 子行程再呼叫一次不能又分離出去,否則會無限產生行程
+    assert gui_module.detach_and_run_gui() is False
+
+
+def test_detach_stays_foreground_without_assets(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    monkeypatch.delenv(gui_module._DETACH_ENV, raising=False)
+    monkeypatch.setattr(gui_module, "gui_index_path", lambda: tmp_path / "none")
+    # 開不起來時要留在前景,才看得到錯誤原因
+    assert gui_module.detach_and_run_gui() is False
+
+
+def test_detach_starts_a_new_session(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    index = tmp_path / "index.html"
+    index.write_text("<h1>x</h1>", encoding="utf-8")
+    monkeypatch.delenv(gui_module._DETACH_ENV, raising=False)
+    monkeypatch.setattr(gui_module, "gui_index_path", lambda: index)
+
+    seen = {}
+
+    def fake_popen(cmd, **kwargs):
+        seen["cmd"] = cmd
+        seen["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(gui_module.subprocess, "Popen", fake_popen)
+
+    assert gui_module.detach_and_run_gui() is True
+    assert seen["kwargs"]["env"][gui_module._DETACH_ENV] == "1"
+    assert seen["kwargs"]["stdin"] == gui_module.subprocess.DEVNULL
+
+
+def test_hide_console_is_a_noop_off_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    monkeypatch.setattr(gui_module.sys, "platform", "linux")
+    assert gui_module.hide_console() is False
+
+
+def test_update_warns_when_running_an_unmanaged_copy(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ai_config.commands import update as update_module
+
+    elsewhere = tmp_path / "Desktop" / "acg.exe"
+    elsewhere.parent.mkdir(parents=True)
+    elsewhere.write_text("binary", encoding="utf-8")
+    managed = tmp_path / "bin" / "ai-config"
+    managed.parent.mkdir(parents=True)
+    managed.write_text("binary", encoding="utf-8")
+
+    monkeypatch.setattr(update_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(update_module.sys, "executable", str(elsewhere))
+    monkeypatch.setattr(update_module, "_standalone_candidate", lambda: managed)
+
+    update_module._warn_if_updating_a_different_copy()
+    text = capsys.readouterr().out + capsys.readouterr().err
+    assert "不在安裝位置" in text or "Desktop" in text

@@ -55,6 +55,7 @@ def usage() -> None:
     print("  config          Show provider (git/gdrive), repo, and login state")
     print("  desktop         Launch the desktop app (bundled on Windows)")
     print("                  --shortcut add a Start-menu entry (Windows)")
+    print("                  --wait stay in the foreground (shows errors)")
     print("  gui             Alias for desktop")
     print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
@@ -157,11 +158,16 @@ def main(argv: "list[str] | None" = None) -> int:
             from .commands.gui import create_desktop_shortcut
 
             return create_desktop_shortcut()
-        if len(args) != 1:
-            log_error(f"Usage: {ENTRYPOINT} {cmd} [--shortcut]")
+        wait = args[1:] == ["--wait"]
+        if not wait and len(args) != 1:
+            log_error(f"Usage: {ENTRYPOINT} {cmd} [--shortcut] [--wait]")
             return 1
-        from .commands.gui import run_gui
+        from .commands.gui import detach_and_run_gui, run_gui
 
+        # 預設放進背景,讓終端機立刻拿回控制權;--wait 保留前景模式,
+        # 錯誤訊息才看得到
+        if not wait and detach_and_run_gui():
+            return 0
         return run_gui()
 
     if CONFIG_ERROR:

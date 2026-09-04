@@ -16,7 +16,6 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from ..cli import launched_by_double_click
 from ..console import log_error, log_info, log_success
 from ..paths import ALL_TOOLS
 
@@ -557,6 +556,85 @@ def create_desktop_shortcut() -> int:
     return 0
 
 
+_DETACH_ENV = "AI_CONFIG_GUI_DETACHED"
+
+
+def detach_and_run_gui() -> bool:
+    """Relaunch this command detached, so a terminal is not held hostage.
+
+    webview.start() blocks until the window closes, which leaves the shell
+    that launched it unusable. Re-run the same command in a new session and
+    return: the caller exits, the window lives on. Returns False when this
+    process is already the detached child, or when relaunching is not
+    possible, so the caller runs it in the foreground instead.
+    """
+    if os.environ.get(_DETACH_ENV) == "1":
+        return False
+    if not gui_index_path().is_file():
+        # 開不起來的話留在前景,才看得到原因
+        return False
+
+    environment = dict(os.environ, **{_DETACH_ENV: "1"})
+    if getattr(sys, "frozen", False):
+        # 打包版:sys.executable 就是這支 exe
+        command = [sys.executable, *sys.argv[1:]]
+    else:
+        command = [sys.executable, "-m", "ai_config", *sys.argv[1:]]
+
+    kwargs: dict = {
+        "env": environment,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if sys.platform == "win32":
+        # DETACHED_PROCESS,子行程不繼承這個主控台
+        kwargs["creationflags"] = 0x00000008
+    else:
+        kwargs["start_new_session"] = True
+
+    try:
+        subprocess.Popen(command, **kwargs)
+    except OSError:
+        return False
+    return True
+
+
+def hide_console() -> bool:
+    """Hide the console window this process owns, if it owns one.
+
+    The exe is a console application because the CLI needs one, so Windows
+    opens a black window before Python starts. Once the desktop window is
+    up that console is just clutter, and closing it would kill the app.
+
+    Ownership is decided by how many processes are attached to the console:
+    exactly one means nobody else is using it, so it was created for this
+    process and hiding it disturbs no one. A shell the user is typing in is
+    attached too, which makes the count two or more, and that window is
+    theirs to keep.
+
+    (GetWindowThreadProcessId is the wrong question here — a console window
+    is owned by conhost.exe, never by us, so it would refuse every case.)
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+
+        console = ctypes.windll.kernel32.GetConsoleWindow()
+        if not console:
+            return False
+        # 緩衝區要夠大,太小時這個 API 會失敗而不是回報總數
+        buffer = (ctypes.c_uint * 64)()
+        count = ctypes.windll.kernel32.GetConsoleProcessList(buffer, 64)
+        if count != 1:
+            return False
+        ctypes.windll.user32.ShowWindow(console, 0)  # SW_HIDE
+    except (AttributeError, OSError, ValueError):
+        return False
+    return True
+
+
 def run_gui() -> int:
     index = gui_index_path()
     if not index.is_file():
@@ -578,17 +656,7 @@ def run_gui() -> int:
         log_error('pywebview 尚未安裝,請執行:pip install "ai-config[gui]"')
         return 1
 
-    # Windows: 視窗開起來後把當初開啟的主控台藏起來。exe 是 console 應用
-    # (CLI 需要它),雙擊時 Windows 會先開一個黑視窗;留著它在旁邊很難看,
-    # 而且關掉它會一併結束程式。只在自己獨佔主控台時隱藏,從 shell 執行時
-    # 那是使用者的視窗,不能碰。
-    if sys.platform == "win32" and launched_by_double_click():
-        with contextlib.suppress(AttributeError, OSError):
-            import ctypes
-
-            console = ctypes.windll.kernel32.GetConsoleWindow()
-            if console:
-                ctypes.windll.user32.ShowWindow(console, 0)  # SW_HIDE
+    hide_console()
 
     # Windows: 分離工作列群組,避免顯示預設 Python 圖示
     if sys.platform == "win32":
