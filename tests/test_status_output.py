@@ -64,4 +64,8 @@ def test_the_store_path_is_printed_once_not_per_skill(
     status_cmd.check_unmanaged_skills("codex")
     text = capsys.readouterr().out
 
-    assert text.count(str(store)) == 1
+    # tilde() 會把家目錄縮成 ~,而 Windows 的 tmp_path 就在家目錄底下,
+    # 所以比對結尾片段而不是完整路徑
+    tail = store.name
+    path_lines = [line for line in text.splitlines() if line.strip().endswith(f"{tail}/")]
+    assert len(path_lines) == 1
