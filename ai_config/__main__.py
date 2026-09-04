@@ -50,8 +50,11 @@ def usage() -> None:
     print("                  --save-as <name> remember this selection")
     print("  share <skill>   Copy a Claude skill (or plugin skill) into claude/shared/")
     print("                  --to <both|codex|agy> pick the target tools (default both)")
+    print("  unshare <skill> Remove a skill from claude/shared/ (undoes share)")
+    print("                  --from <both|codex|agy> limit to one target")
     print("  config          Show provider (git/gdrive), repo, and login state")
-    print("  gui             Launch the graphical interface (needs ai-config[gui])")
+    print("  gui             Launch the desktop app (bundled on Windows)")
+    print("                  --shortcut add a Start-menu entry (Windows)")
     print("  skill           Print the acg usage guide (written for AI agents)")
     print("  completion      Print Bash or PowerShell completion script")
     print("  update [version] Install the latest release, or a specific version")
@@ -149,8 +152,12 @@ def main(argv: "list[str] | None" = None) -> int:
 
     # gui 放在設定檢查之前:未設定時 GUI 內建首次設定表單
     if cmd == "gui":
+        if args[1:] == ["--shortcut"]:
+            from .commands.gui import create_desktop_shortcut
+
+            return create_desktop_shortcut()
         if len(args) != 1:
-            log_error(f"Usage: {ENTRYPOINT} gui")
+            log_error(f"Usage: {ENTRYPOINT} gui [--shortcut]")
             return 1
         from .commands.gui import run_gui
 
@@ -191,6 +198,33 @@ def main(argv: "list[str] | None" = None) -> int:
         from .commands.share import run_share
 
         return run_share(name, target)
+
+    if cmd == "unshare":
+        unshare_usage = (
+            f"Usage: {ENTRYPOINT} unshare <skill> [--from both|codex|agy]"
+        )
+        rest, name, target = args[1:], None, None
+        while rest:
+            token = rest.pop(0)
+            if token == "--from":
+                if not rest:
+                    log_error(f"--from requires a target\n{unshare_usage}")
+                    return 1
+                target = rest.pop(0)
+            elif token.startswith("--"):
+                log_error(f"Unknown option: {token}\n{unshare_usage}")
+                return 1
+            elif name is None:
+                name = token
+            else:
+                log_error(unshare_usage)
+                return 1
+        if name is None:
+            log_error(unshare_usage)
+            return 1
+        from .commands.share import run_unshare
+
+        return run_unshare(name, target)
 
     if cmd == "deploy":
         from .commands.deploy import run_deploy

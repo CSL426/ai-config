@@ -54,6 +54,51 @@ def _copy_items(source: Path, dest: Path) -> int:
     return copied
 
 
+def shared_copies(name: str) -> "list[tuple[str, Path]]":
+    """Every shared target that currently holds a copy of this skill."""
+    found = []
+    for target in SHARE_TARGETS:
+        candidate = SCRIPT_DIR / "claude" / "shared" / target / name
+        if (candidate / "SKILL.md").is_file():
+            found.append((target, candidate))
+    return found
+
+
+def run_unshare(name: str, target: "str | None" = None) -> int:
+    """Remove the repo's shared copy, undoing `share`.
+
+    The skill's own home in ~/.claude/skills/ is left alone: only the
+    cross-tool copy goes. Because the shared tree is authoritative, the next
+    apply prunes the Codex and Antigravity mirrors to match.
+    """
+    label = target or "both/codex/agy"
+    log_header(f"Unshare skill ← claude/shared/{label}")
+    if target is not None and target not in SHARE_TARGETS:
+        log_error(f"Unknown target: {target} (expected both|codex|agy)")
+        return 1
+
+    copies = shared_copies(name)
+    if target is not None:
+        copies = [(found, path) for found, path in copies if found == target]
+    if not copies:
+        where = f"claude/shared/{target}/" if target else "claude/shared/"
+        log_error(f"Skill is not shared: {name} (nothing in {where})")
+        return 1
+
+    for found_target, path in copies:
+        shutil.rmtree(path)
+        log_success(f"Removed shared copy: {tilde(path)}")
+        del found_target
+
+    source = find_skill_source(name)
+    if source is not None:
+        log_info(f"Left the original in place: {tilde(source)}")
+    log_info(
+        f"Run {ENTRYPOINT} apply to drop it from the other tools"
+    )
+    return 0
+
+
 def run_share(name: str, target: str = "both") -> int:
     log_header(f"Share skill → claude/shared/{target}")
     if target not in SHARE_TARGETS:

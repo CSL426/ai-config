@@ -190,6 +190,26 @@ class GuiApi:
         finally:
             self._lock.release()
 
+    def unshare_skills(self, names: "list[str]") -> dict:
+        if not isinstance(names, list) or not all(
+            isinstance(n, str) for n in names
+        ):
+            return {"code": 1, "output": "✗ 無效的技能清單"}
+        if not names:
+            return {"code": 1, "output": "⚠ 還沒有勾選任何技能"}
+        if not self._lock.acquire(blocking=False):
+            return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
+        try:
+            outputs: list[str] = []
+            code = 0
+            for name in names:
+                result = self._run_captured(["unshare", name])
+                outputs.append(result["output"])
+                code = max(code, result["code"])
+            return {"code": code, "output": "".join(outputs)}
+        finally:
+            self._lock.release()
+
     def package_skills(self, names: "list[str]") -> dict:
         from ..package import SkillNotFoundError, package_skill
 

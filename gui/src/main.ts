@@ -271,6 +271,7 @@ const skillList = $("#skill-list");
 const skillAll = $<HTMLButtonElement>("#skill-all");
 const skillNone = $<HTMLButtonElement>("#skill-none");
 const skillShare = $<HTMLButtonElement>("#skill-share");
+const skillUnshare = $<HTMLButtonElement>("#skill-unshare");
 const skillPackage = $<HTMLButtonElement>("#skill-package");
 const updateBtn = $<HTMLButtonElement>("#update-check");
 const packageResult = $("#package-result");
@@ -341,6 +342,18 @@ skillShare.addEventListener("click", async () => {
   if (!bridge || running) return;
   outputTitle.textContent = "分享技能";
   const result = await bridge.share_skills(selectedSkills());
+  renderOutput(result.output);
+  outputState.textContent = result.code === 0 ? "完成" : "有問題";
+  outputState.className =
+    result.code === 0 ? "output-state is-ok" : "output-state is-fail";
+  void loadSkills();
+});
+
+skillUnshare.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running) return;
+  outputTitle.textContent = "取消分享";
+  const result = await bridge.unshare_skills(selectedSkills());
   renderOutput(result.output);
   outputState.textContent = result.code === 0 ? "完成" : "有問題";
   outputState.className =
@@ -513,6 +526,7 @@ function setConfigured(value: boolean): void {
   setupBox.hidden = value;
   setBusy(running);
   skillShare.disabled = !value;
+  skillUnshare.disabled = !value;
   skillPackage.disabled = !value;
 }
 
