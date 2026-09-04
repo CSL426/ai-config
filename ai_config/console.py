@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 
 
 def _configure_utf8_output() -> None:
@@ -43,22 +44,40 @@ def log_header(msg: str) -> None:
     print(f"\n{BOLD}{CYAN}═══ {msg} ═══{NC}")
 
 
+INTERRUPT_WINDOW_SECONDS = 2.0
+
+
 def ask(prompt: str) -> "str | None":
     """Read one answer, returning None when the user declines to give one.
 
-    Ctrl+C and EOF (a closed stdin, a piped run) are the same intent: leave
-    without acting. Returning None instead of raising lets each caller run
-    its own cleanup and print its own "cancelled" line, rather than having
-    KeyboardInterrupt escape past that and reach the top-level handler.
+    A single Ctrl+C is treated as a slip: say so and re-read, the way an
+    interactive shell does. Two within INTERRUPT_WINDOW_SECONDS is a
+    deliberate quit. EOF (closed stdin, a piped run) means there is nobody
+    to ask, so it gives up at once.
+
+    Returning None rather than raising lets each caller run its own cleanup
+    and print its own "cancelled" line, instead of KeyboardInterrupt
+    escaping past that to the top-level handler.
     """
-    try:
-        return input(prompt)
-    except EOFError:
-        return None
-    except KeyboardInterrupt:
-        # 使用者按 Ctrl+C 時游標停在提示行尾,先換行再讓呼叫端印取消訊息
-        print()
-        return None
+    # None,不是 0.0:monotonic() 的原點未定義,用數值當哨兵會讓第一次中斷
+    # 在時鐘剛好接近 0 時被誤判成「連續兩次」
+    last_interrupt: float | None = None
+    while True:
+        try:
+            return input(prompt)
+        except EOFError:
+            return None
+        except KeyboardInterrupt:
+            now = time.monotonic()
+            # 游標停在提示行尾,先換行再印訊息
+            print()
+            if (
+                last_interrupt is not None
+                and now - last_interrupt <= INTERRUPT_WINDOW_SECONDS
+            ):
+                return None
+            last_interrupt = now
+            print("再按一次 Ctrl+C 取消", file=sys.stderr)
 
 
 def confirm(prompt: str) -> bool:
