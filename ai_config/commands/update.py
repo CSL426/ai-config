@@ -72,6 +72,27 @@ def _standalone_candidate() -> Path:
     return Path(os.environ.get("AI_CONFIG_BIN_DIR", default_bin)) / executable
 
 
+def _warn_if_updating_a_different_copy() -> None:
+    """Say so when the running exe is not the one the installer manages.
+
+    The installer and `update` both work on ~/.local/bin; a copy someone
+    downloaded to the desktop is a separate file that no update will ever
+    touch, and it would silently stay on its original version.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    managed = _standalone_candidate()
+    try:
+        running = Path(sys.executable).resolve()
+        if running == managed.resolve():
+            return
+    except OSError:
+        return
+    log_warn(f"這個執行檔不在安裝位置:{running}")
+    log_info(f"更新會套用到 {managed}(安裝腳本管理的那一份)")
+    log_info("你手上這一份不會被更新,請改用安裝位置的版本,或重新下載")
+
+
 def _delegate_source_update(tag: "str | None" = None) -> "int | None":
     if os.environ.get(_DELEGATED_UPDATE) == "1":
         return None
@@ -220,6 +241,8 @@ def run_update(requested_version: "str | None" = None) -> int:
             "(then `pip install -e .` if the package metadata changed)"
         )
         return 1
+
+    _warn_if_updating_a_different_copy()
 
     current = current_version()
     if tag is not None:
