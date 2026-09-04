@@ -484,3 +484,44 @@ def test_unshare_skills_validates_and_builds_argv(
 
     assert api.unshare_skills(["demo"])["code"] == 0
     assert seen[-1] == ["unshare", "demo"]
+
+
+def test_settings_info_reports_local_config_only(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("settings_info must not touch the network")
+
+    # 視窗開啟時就會呼叫,不能做 dry-run push 之類的網路往返
+    monkeypatch.setattr(gui_module.subprocess, "run", fail)
+    monkeypatch.setattr(GuiApi, "_redacted_remote", staticmethod(lambda: ""))
+
+    info = api.settings_info()
+    assert set(info) == {
+        "provider",
+        "repo",
+        "remote_url",
+        "gdrive_space",
+        "gdrive_folder",
+        "gdrive_folder_url",
+        "signed_in",
+    }
+    assert info["provider"] in {"git", "gdrive"}
+
+
+def test_settings_info_redacts_remote_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    class Result:
+        returncode = 0
+        stdout = "https://user:secret@example.com/me/cfg.git\n"
+
+    monkeypatch.setattr(gui_module.subprocess, "run", lambda *a, **k: Result())
+
+    remote = GuiApi._redacted_remote()
+    assert "secret" not in remote
+    assert remote.endswith("example.com/me/cfg.git")

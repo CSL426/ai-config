@@ -789,3 +789,198 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+
+/* ── 設定畫面 ─────────────────────────── */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: 0;
+  overflow-y: auto;
+  padding-block-end: var(--space-sm);
+}
+
+.settings[hidden] {
+  display: none;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.settings-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.settings-back {
+  padding-inline: var(--space-sm);
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.settings-label {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.settings-providers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+  gap: var(--space-sm);
+}
+
+.provider-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  padding: var(--space-md);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.provider-choice:has(input:checked) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.provider-choice:has(input:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.provider-choice input {
+  margin: 0.3125rem 0 0;
+  flex-shrink: 0;
+}
+
+.provider-choice-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.provider-choice-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.provider-choice-name {
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.provider-choice-current {
+  padding: 0.125rem var(--space-sm);
+  border-radius: 62.4375rem;
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.provider-choice-desc {
+  color: var(--color-ink-soft);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  overflow: hidden;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-block-end: 1px solid var(--color-paper-3);
+}
+
+.settings-row:last-child {
+  border-block-end: none;
+}
+
+.settings-row[hidden] {
+  display: none;
+}
+
+.settings-row-key {
+  flex-shrink: 0;
+  inline-size: 6rem;
+  color: var(--color-ink-soft);
+  font-size: 0.8125rem;
+}
+
+.settings-row-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-mono {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.settings-row-action {
+  flex-shrink: 0;
+  min-block-size: 2.25rem;
+  padding-inline: var(--space-sm);
+  font-size: 0.8125rem;
+  color: var(--color-accent);
+}
+
+.settings-switch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  padding: var(--space-md);
+}
+
+.settings-switch[hidden] {
+  display: none;
+}
+
+.settings-switch-note {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
