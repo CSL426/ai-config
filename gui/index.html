@@ -147,7 +147,45 @@
         </div>
       </section>
 
-      <section class="scope" id="scope" aria-label="同步範圍">
+      <section class="hero" id="hero" aria-label="同步狀態">
+        <div class="hero-state" id="hero-state">
+          <span class="hero-mark" id="hero-mark" aria-hidden="true"></span>
+          <h2 class="hero-title" id="hero-title">尚未檢查</h2>
+          <p class="hero-sub" id="hero-sub">按「檢查狀態」看看這台電腦跟雲端是否一致。</p>
+        </div>
+
+        <div class="hero-actions" id="actions">
+          <button class="btn btn-primary hero-primary" data-cmd="status">檢查狀態</button>
+          <button class="btn hero-secondary" data-cmd="pull">下載更新</button>
+          <button class="btn hero-secondary" data-cmd="push">上傳變更</button>
+        </div>
+
+        <div class="tool-rows" id="tool-rows">
+          <div class="tool-row" data-tool-row="claude">
+            <span class="tool-dot" aria-hidden="true"></span>
+            <span class="tool-name">Claude Code</span>
+            <span class="tool-state">尚未檢查</span>
+          </div>
+          <div class="tool-row" data-tool-row="codex">
+            <span class="tool-dot" aria-hidden="true"></span>
+            <span class="tool-name">Codex</span>
+            <span class="tool-state">尚未檢查</span>
+          </div>
+          <div class="tool-row" data-tool-row="agy">
+            <span class="tool-dot" aria-hidden="true"></span>
+            <span class="tool-name">Antigravity</span>
+            <span class="tool-state">尚未檢查</span>
+          </div>
+        </div>
+
+        <div class="hero-links">
+          <button class="link-btn" id="package-open">分享與準備 AI 技能</button>
+          <button class="link-btn" id="output-toggle">查看詳細輸出</button>
+          <button class="link-btn" data-cmd="apply">套用設定</button>
+        </div>
+      </section>
+
+      <section class="scope" id="scope" hidden aria-label="同步範圍">
         <span class="scope-label">要管理哪些工具</span>
         <div class="scope-tabs" role="radiogroup" id="tool-tabs">
           <button class="scope-tab is-selected" role="radio" aria-checked="true" data-tool="all">全部工具</button>
@@ -155,29 +193,6 @@
           <button class="scope-tab" role="radio" aria-checked="false" data-tool="codex">Codex</button>
           <button class="scope-tab" role="radio" aria-checked="false" data-tool="agy">Antigravity</button>
         </div>
-      </section>
-
-      <section class="actions" id="actions" aria-label="動作">
-        <button class="action" data-cmd="status">
-          <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"></circle><line x1="13.2" y1="13.2" x2="17" y2="17"></line></svg>
-          <span class="action-name">檢查狀態</span>
-          <span class="action-desc">用精簡摘要看看哪些設定會更新，不會修改內容</span>
-        </button>
-        <button class="action" data-cmd="apply">
-          <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="12"></line><polyline points="5.5,8 10,12.5 14.5,8"></polyline><line x1="4" y1="16.5" x2="16" y2="16.5"></line></svg>
-          <span class="action-name">套用設定</span>
-          <span class="action-desc">先備份，再把已保存的設定帶到這台電腦</span>
-        </button>
-        <button class="action" data-cmd="pull">
-          <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5a3.5 3.5 0 0 1 .4-6.98 4.6 4.6 0 0 1 8.9 1.18 3 3 0 0 1-.55 5.8"></path><line x1="10" y1="10" x2="10" y2="17"></line><polyline points="7,14.5 10,17.5 13,14.5"></polyline></svg>
-          <span class="action-name">下載更新</span>
-          <span class="action-desc">取得其他電腦保存的最新設定</span>
-        </button>
-        <button class="action" data-cmd="push">
-          <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5a3.5 3.5 0 0 1 .4-6.98 4.6 4.6 0 0 1 8.9 1.18 3 3 0 0 1-.55 5.8"></path><line x1="10" y1="17" x2="10" y2="10.5"></line><polyline points="7,13 10,10 13,13"></polyline></svg>
-          <span class="action-name">上傳變更</span>
-          <span class="action-desc">先看變更摘要，確認後才保存並上傳</span>
-        </button>
       </section>
 
       <details class="package" id="package">
