@@ -7,14 +7,16 @@ through pywebview's js_api bridge as methods on GuiApi.
 
 import contextlib
 import io
+import os
 import re
 import secrets
+import subprocess
 import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from ..console import log_error, log_info
+from ..console import log_error, log_info, log_success
 from ..paths import ALL_TOOLS
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -392,6 +394,60 @@ def _package_output_dir() -> Path:
     return downloads if downloads.is_dir() else Path.home()
 
 
+def create_desktop_shortcut() -> int:
+    """Put a Start-menu shortcut on Windows so the exe is findable.
+
+    The executable installs under ~/.local/bin, which nobody browses to;
+    without this the desktop app is only reachable by typing a command,
+    which is exactly the audience it is not for.
+    """
+    if sys.platform != "win32":
+        log_error("捷徑目前只支援 Windows")
+        return 1
+
+    target = Path(sys.executable if getattr(sys, "frozen", False) else sys.argv[0])
+    target = target.resolve()
+    if not target.is_file():
+        log_error(f"找不到執行檔:{target}")
+        return 1
+
+    start_menu = (
+        Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming"))
+        / "Microsoft/Windows/Start Menu/Programs"
+    )
+    try:
+        start_menu.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log_error(f"無法建立開始選單資料夾:{exc}")
+        return 1
+
+    shortcut = start_menu / "acg.lnk"
+    # 用 PowerShell 的 WScript.Shell 建 .lnk,不必額外依賴 pywin32
+    script = (
+        "$s = (New-Object -ComObject WScript.Shell)."
+        f"CreateShortcut('{shortcut}');"
+        f"$s.TargetPath = '{target}';"
+        "$s.Arguments = 'gui';"
+        f"$s.WorkingDirectory = '{target.parent}';"
+        f"$s.IconLocation = '{target}';"
+        "$s.Description = 'acg — AI 設定同步';"
+        "$s.Save()"
+    )
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        log_error(f"建立捷徑失敗:{result.stderr.strip() or result.stdout.strip()}")
+        return 1
+
+    log_success(f"已建立捷徑:{shortcut}")
+    log_info("在開始選單搜尋「acg」就能開啟")
+    return 0
+
+
 def run_gui() -> int:
     index = gui_index_path()
     if not index.is_file():
@@ -430,5 +486,21 @@ def run_gui() -> int:
         height=680,
         min_size=(640, 480),
     )
-    webview.start()
+    try:
+        webview.start()
+    except Exception as exc:  # noqa: BLE001 - pywebview 各平台丟的例外型別不一
+        log_error(f"無法開啟視窗:{type(exc).__name__}: {exc}")
+        if sys.platform == "win32":
+            # Windows 10 較舊的版本沒有預裝 WebView2,pywebview 就開不起來
+            log_info(
+                "Windows 需要 Microsoft Edge WebView2 執行期,"
+                "可從以下網址安裝:"
+            )
+            log_info("https://developer.microsoft.com/microsoft-edge/webview2/")
+        else:
+            log_info(
+                "Linux 需要系統的 WebKit2GTK 套件,"
+                "例如 Debian/Ubuntu 的 gir1.2-webkit2-4.1 與 python3-gi"
+            )
+        return 1
     return 0

@@ -223,6 +223,15 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      # 給人下載的好記名字。安裝腳本與 acg update 仍抓平台+架構的原名,
+      # 所以兩個名字都要上傳,內容是同一支執行檔。
+      - name: Add a friendly Windows filename
+        run: |
+          cp release-assets/ai-config-windows-x86_64.exe release-assets/acg.exe
+          sed 's/ai-config-windows-x86_64.exe/acg.exe/' \
+            release-assets/ai-config-windows-x86_64.exe.sha256 \
+            > release-assets/acg.exe.sha256
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
