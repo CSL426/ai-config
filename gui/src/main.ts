@@ -42,8 +42,16 @@ const toolTabs = Array.from(
   document.querySelectorAll<HTMLButtonElement>("#tool-tabs .scope-tab"),
 );
 const actionButtons = Array.from(
-  document.querySelectorAll<HTMLButtonElement>(".action"),
+  document.querySelectorAll<HTMLButtonElement>("[data-cmd]"),
 );
+const heroMark = $("#hero-mark");
+const heroTitle = $("#hero-title");
+const heroSub = $("#hero-sub");
+const toolRows = Array.from(
+  document.querySelectorAll<HTMLElement>(".tool-row"),
+);
+const packageOpenBtn = $<HTMLButtonElement>("#package-open");
+const outputToggleBtn = $<HTMLButtonElement>("#output-toggle");
 const confirmBox = $("#confirm");
 const confirmYes = $<HTMLButtonElement>("#confirm-yes");
 const confirmNo = $<HTMLButtonElement>("#confirm-no");
@@ -214,6 +222,86 @@ async function previewPush(): Promise<void> {
   }
 }
 
+/**
+ * 從 status 輸出判斷每個工具是否一致。
+ * CLI 會為每個工具印一段 `═══ Status: <tool> ═══`,段內出現
+ * "No differences found" 就是一致,其餘視為有待處理的差異。
+ */
+function parseToolStates(output: string): Map<string, boolean> {
+  const states = new Map<string, boolean>();
+  let current = "";
+  for (const raw of output.split("\n")) {
+    const line = raw.trim();
+    const header = /^═+\s*Status:\s*(\S+)/.exec(line);
+    if (header) {
+      current = header[1];
+      states.set(current, false);
+      continue;
+    }
+    if (current && line.includes("No differences found")) {
+      states.set(current, true);
+    }
+  }
+  return states;
+}
+
+function setHero(
+  mark: "ok" | "pending" | "fail" | "none",
+  title: string,
+  sub: string,
+): void {
+  heroMark.className = mark === "none" ? "hero-mark" : `hero-mark is-${mark}`;
+  heroTitle.textContent = title;
+  heroSub.textContent = sub;
+}
+
+function updateHero(cmd: AcgCommand, result: { code: number; output: string }): void {
+  if (result.code !== 0) {
+    setHero("fail", "指令沒有完成", "詳細輸出裡有錯誤訊息。");
+    return;
+  }
+  if (cmd !== "status") {
+    // 其他指令改變了狀態,先前的比對結果不再可信
+    setHero("none", "已完成", "按「檢查狀態」重新確認目前是否一致。");
+    for (const row of toolRows) {
+      row.className = "tool-row";
+      const state = row.querySelector(".tool-state");
+      if (state) state.textContent = "尚未檢查";
+    }
+    return;
+  }
+
+  const states = parseToolStates(result.output);
+  if (states.size === 0) {
+    setHero("none", "已完成", "");
+    return;
+  }
+  let pending = 0;
+  for (const row of toolRows) {
+    const tool = row.dataset.toolRow ?? "";
+    const stateEl = row.querySelector(".tool-state");
+    if (!states.has(tool)) {
+      row.className = "tool-row";
+      if (stateEl) stateEl.textContent = "未檢查";
+      continue;
+    }
+    const ok = states.get(tool) === true;
+    if (!ok) pending += 1;
+    row.className = ok ? "tool-row is-ok" : "tool-row is-pending";
+    if (stateEl) stateEl.textContent = ok ? "一致" : "有待更新";
+  }
+
+  if (pending === 0) {
+    setHero("ok", "設定已是最新", "所有工具都與雲端一致。");
+  } else {
+    setHero(
+      "pending",
+      `${pending} 個工具有差異`,
+      "看詳細輸出確認內容，再決定要下載更新還是上傳變更。",
+    );
+  }
+}
+
 async function runCommand(cmd: AcgCommand): Promise<void> {
   const bridge = api();
   if (!bridge) {
@@ -238,6 +326,7 @@ async function runCommand(cmd: AcgCommand): Promise<void> {
       outputState.textContent = "有問題";
       outputState.className = "output-state is-fail";
     }
+    updateHero(cmd, result);
   } catch (err) {
     showPlaceholder(`執行失敗:${String(err)}`);
     outputState.textContent = "有問題";
@@ -809,6 +898,20 @@ function offerProviderSwitch(provider: string, relogin: boolean): void {
     }
   });
 }
+
+packageOpenBtn.addEventListener("click", () => {
+  const details = document.querySelector<HTMLDetailsElement>("#package");
+  if (!details) return;
+  details.open = true;
+  details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
+
+outputToggleBtn.addEventListener("click", () => {
+  const output = document.querySelector<HTMLElement>("#output");
+  if (!output) return;
+  output.hidden = !output.hidden;
+  outputToggleBtn.textContent = output.hidden ? "查看詳細輸出" : "收起詳細輸出";
+});
 
 function boot(): void {
   void loadInfo();

@@ -170,6 +170,10 @@ body {
 
 /* ── 範圍選擇 ─────────────────────────── */
 
+.scope[hidden] {
+  display: none;
+}
+
 .scope {
   display: flex;
   align-items: center;
@@ -651,9 +655,10 @@ body {
 .output {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  /* 技能面板展開時會搶空間,沒有下限的話輸出區會被壓到只剩幾個像素 */
-  min-height: 8rem;
+  /* hero 的內容高度是固定的,所以由輸出區吸收剩餘空間並在視窗變矮時先縮 */
+  flex: 1 1 auto;
+  min-block-size: 6rem;
+  min-height: 0;
   border: 1px solid var(--color-paper-3);
   border-radius: var(--radius-md);
   background: var(--color-console-bg);
@@ -983,4 +988,182 @@ body {
   color: var(--color-ink-soft);
   font-size: 0.8125rem;
   line-height: 1.55;
+}
+
+/* ── 主畫面(狀態優先)─────────────────── */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* 視窗矮的時候整塊要能收縮,否則把輸出區推出視窗外。用 flex 收縮而不是
+     dvh:高度取決於這個容器分到多少空間,不是視窗有多高。 */
+  gap: var(--space-md);
+  padding-block: var(--space-sm);
+  flex: 0 0 auto;
+}
+
+.hero[hidden] {
+  display: none;
+}
+
+.hero-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.hero-mark {
+  inline-size: 3.25rem;
+  block-size: 3.25rem;
+  flex-shrink: 0;
+  border-radius: 62.4375rem;
+  background: var(--color-paper-2);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 1.75rem;
+}
+
+.hero-mark.is-ok {
+  background-color: var(--color-success-soft);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d7a4e' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4,12.5 9.5,18 20,7'/%3E%3C/svg%3E");
+}
+
+.hero-mark.is-pending {
+  background-color: var(--color-warn-soft);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23927209' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='7' x2='12' y2='13'/%3E%3Cline x1='12' y1='16.6' x2='12' y2='16.8'/%3E%3C/svg%3E");
+}
+
+.hero-mark.is-fail {
+  background-color: var(--color-accent-soft);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b4522f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='7' y1='7' x2='17' y2='17'/%3E%3Cline x1='17' y1='7' x2='7' y2='17'/%3E%3C/svg%3E");
+}
+
+.hero-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.hero-sub {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 0.875rem;
+}
+
+.hero-actions {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hero-primary {
+  min-block-size: 3rem;
+  padding-inline: var(--space-xl);
+  font-size: 0.9375rem;
+}
+
+.hero-secondary {
+  min-block-size: 3rem;
+  padding-inline: var(--space-lg);
+  font-size: 0.9375rem;
+  border: 1px solid var(--color-paper-3);
+  background: var(--color-card);
+  color: var(--color-ink);
+}
+
+.hero-secondary:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.tool-rows {
+  inline-size: 100%;
+  max-inline-size: 38.75rem;
+  display: flex;
+  flex-direction: column;
+  /* 這三列是主畫面的重點,不能被 flex 壓縮掉 */
+  flex-shrink: 0;
+  gap: 1px;
+  border: 1px solid var(--color-paper-3);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-3);
+  overflow: hidden;
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: var(--color-card);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.tool-dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 62.4375rem;
+  background: var(--color-paper-3);
+  flex-shrink: 0;
+}
+
+.tool-row.is-ok .tool-dot {
+  background: var(--color-success);
+}
+
+.tool-row.is-pending .tool-dot {
+  background: var(--color-warn);
+}
+
+.tool-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.tool-state {
+  color: var(--color-ink-soft);
+  font-size: 0.8125rem;
+}
+
+.tool-row.is-pending .tool-state {
+  color: var(--color-warn);
+  font-weight: 600;
+}
+
+.hero-links {
+  display: flex;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.link-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-ink-soft);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: var(--space-xs);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.link-btn:hover:not(:disabled) {
+  color: var(--color-accent);
+}
+
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
