@@ -41,3 +41,28 @@ def log_error(msg: str) -> None:
 
 def log_header(msg: str) -> None:
     print(f"\n{BOLD}{CYAN}═══ {msg} ═══{NC}")
+
+
+def ask(prompt: str) -> "str | None":
+    """Read one answer, returning None when the user declines to give one.
+
+    Ctrl+C and EOF (a closed stdin, a piped run) are the same intent: leave
+    without acting. Returning None instead of raising lets each caller run
+    its own cleanup and print its own "cancelled" line, rather than having
+    KeyboardInterrupt escape past that and reach the top-level handler.
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        return None
+    except KeyboardInterrupt:
+        # 使用者按 Ctrl+C 時游標停在提示行尾,先換行再讓呼叫端印取消訊息
+        print()
+        return None
+
+
+def confirm(prompt: str) -> bool:
+    answer = ask(prompt)
+    if answer is None:
+        return False
+    return answer.strip().lower() in {"y", "yes"}
