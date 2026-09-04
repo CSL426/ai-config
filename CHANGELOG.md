@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.36 - 2026-09-04
 
 - Google Drive 的儲存位置改為可選:`visible`(預設,「我的雲端硬碟」底下看得到的
   資料夾)或 `hidden`(Google 的隱藏應用程式空間,不會出現在檔案列表)。CLI 用
