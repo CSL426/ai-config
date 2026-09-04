@@ -20,8 +20,77 @@
           <span class="provider-badge" id="provider">同步方式讀取中…</span>
           <p class="app-repo" id="repo" title="">設定位置讀取中…</p>
           <button class="btn btn-ghost connection-btn" id="config-info">查看連線資訊</button>
+          <button class="btn btn-ghost connection-btn" id="settings-open">設定</button>
         </div>
       </header>
+
+      <section class="settings" id="settings" hidden aria-label="設定">
+        <div class="settings-head">
+          <button class="btn btn-ghost settings-back" id="settings-close">‹ 返回</button>
+          <h2 class="settings-title">設定</h2>
+        </div>
+
+        <div class="settings-group">
+          <p class="settings-label">設定存在哪裡</p>
+          <div class="settings-providers">
+            <label class="provider-choice" id="provider-choice-gdrive">
+              <input type="radio" name="settings-provider" value="gdrive" />
+              <span class="provider-choice-body">
+                <span class="provider-choice-head">
+                  <span class="provider-choice-name">Google Drive</span>
+                  <span class="provider-choice-current" hidden>使用中</span>
+                </span>
+                <span class="provider-choice-desc">用 Google 帳號登入即可，不需要 GitHub。適合自己的多台電腦。</span>
+              </span>
+            </label>
+            <label class="provider-choice" id="provider-choice-git">
+              <input type="radio" name="settings-provider" value="git" />
+              <span class="provider-choice-body">
+                <span class="provider-choice-head">
+                  <span class="provider-choice-name">Git 儲存庫</span>
+                  <span class="provider-choice-current" hidden>使用中</span>
+                </span>
+                <span class="provider-choice-desc">用自己的私人 Git 儲存庫，可以和其他人共用同一份設定。</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-rows">
+          <div class="settings-row" id="settings-row-account" hidden>
+            <span class="settings-row-key">Google 帳號</span>
+            <span class="settings-row-value" id="settings-account">未登入</span>
+            <button class="btn btn-ghost settings-row-action" id="settings-relogin">重新登入</button>
+          </div>
+          <div class="settings-row" id="settings-row-folder" hidden>
+            <span class="settings-row-key">雲端位置</span>
+            <span class="settings-row-value" id="settings-folder">—</span>
+            <button class="btn btn-ghost settings-row-action" id="settings-folder-open">開啟</button>
+          </div>
+          <div class="settings-row" id="settings-row-remote" hidden>
+            <span class="settings-row-key">Git 遠端</span>
+            <span class="settings-row-value settings-row-mono" id="settings-remote">—</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-key">本機位置</span>
+            <span class="settings-row-value settings-row-mono" id="settings-repo">—</span>
+            <button class="btn btn-ghost settings-row-action" id="settings-open-dir">開啟資料夾</button>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <p class="settings-label">這台電腦可以做什麼</p>
+          <p class="settings-note">
+            檢查、下載、套用一律可用。上傳需要遠端給的寫入權限；沒有的話這台會設為唯讀，
+            其他功能不受影響。想確認目前狀態，執行一次「上傳變更」就會知道。
+          </p>
+        </div>
+
+        <div class="settings-switch" id="settings-switch" hidden>
+          <p class="settings-switch-note" id="settings-switch-note"></p>
+          <div id="settings-switch-form"></div>
+        </div>
+      </section>
 
       <section class="setup" id="setup" hidden aria-label="首次設定">
         <h2 class="setup-title">首次設定</h2>
@@ -40,11 +109,11 @@
           <p class="package-hint">適合已有私人儲存庫，或想和其他人共用設定。貼上 Git URL 後即可連線。</p>
           <label class="setup-field">
             <span>儲存庫 Git URL</span>
-            <input id="setup-url" type="text" placeholder="git@github.com:you/my-config.git" spellcheck="false" />
+            <input id="setup-url" data-field="repo-url" type="text" placeholder="git@github.com:you/my-config.git" spellcheck="false" />
           </label>
           <label class="setup-field">
             <span>本機保存位置（通常不用改）</span>
-            <input id="setup-dir" type="text" spellcheck="false" />
+            <input id="setup-dir" data-field="data-dir" type="text" spellcheck="false" />
           </label>
           <div class="package-buttons">
             <button class="btn btn-primary" id="setup-go">連線並完成設定</button>
@@ -56,21 +125,21 @@
           <fieldset class="setup-choice">
             <legend>設定檔存在 Drive 的哪裡？</legend>
             <label class="setup-radio">
-              <input type="radio" name="gdrive-space" value="visible" checked />
+              <input type="radio" name="gdrive-space" data-field="gdrive-space" value="visible" checked />
               <span><strong>我的雲端硬碟裡的資料夾</strong>／自己看得到、可以搬動</span>
             </label>
             <label class="setup-radio">
-              <input type="radio" name="gdrive-space" value="hidden" />
+              <input type="radio" name="gdrive-space" data-field="gdrive-space" value="hidden" />
               <span><strong>隱藏的應用程式空間</strong>／不會出現在檔案列表</span>
             </label>
           </fieldset>
           <label class="setup-field" id="setup-gdrive-folder-field">
             <span>Google Drive 資料夾（相對於「我的雲端硬碟」，可用 / 分層）</span>
-            <input id="setup-gdrive-folder" type="text" spellcheck="false" value="ai-config" placeholder="ai-config" />
+            <input id="setup-gdrive-folder" data-field="gdrive-folder" type="text" spellcheck="false" value="ai-config" placeholder="ai-config" />
           </label>
           <label class="setup-field">
             <span>本機保存位置（通常不用改）</span>
-            <input id="setup-gdrive-dir" type="text" spellcheck="false" />
+            <input id="setup-gdrive-dir" data-field="data-dir" type="text" spellcheck="false" />
           </label>
           <div class="package-buttons">
             <button class="btn btn-primary" id="setup-gdrive-go">用 Google 帳號登入</button>
@@ -78,7 +147,7 @@
         </div>
       </section>
 
-      <section class="scope" aria-label="同步範圍">
+      <section class="scope" id="scope" aria-label="同步範圍">
         <span class="scope-label">要管理哪些工具</span>
         <div class="scope-tabs" role="radiogroup" id="tool-tabs">
           <button class="scope-tab is-selected" role="radio" aria-checked="true" data-tool="all">全部工具</button>
@@ -88,7 +157,7 @@
         </div>
       </section>
 
-      <section class="actions" aria-label="動作">
+      <section class="actions" id="actions" aria-label="動作">
         <button class="action" data-cmd="status">
           <svg class="action-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"></circle><line x1="13.2" y1="13.2" x2="17" y2="17"></line></svg>
           <span class="action-name">檢查狀態</span>
@@ -139,7 +208,7 @@
         </div>
       </div>
 
-      <section class="output" aria-label="執行結果">
+      <section class="output" id="output" aria-label="執行結果">
         <div class="output-head">
           <span class="output-title" id="output-title">執行結果</span>
           <span class="output-state" id="output-state" aria-live="polite"></span>

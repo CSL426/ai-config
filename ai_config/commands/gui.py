@@ -83,6 +83,94 @@ class GuiApi:
             "config_error": CONFIG_ERROR or "",
         }
 
+    def settings_info(self) -> dict:
+        """Everything the settings screen shows, read from local config only.
+
+        Deliberately does no network work: this runs when the window opens,
+        and a dry-run push against the remote would stall it. Whether the
+        remote accepts writes is answered by running a real command.
+        """
+        from ..config import (
+            ConfigError,
+            configured_gdrive_folder,
+            configured_gdrive_folder_id,
+            configured_gdrive_space,
+            configured_remote_provider,
+        )
+        from ..paths import CONFIG_ERROR, SCRIPT_DIR
+
+        provider = "git"
+        space = "visible"
+        folder = ""
+        folder_url = ""
+        if CONFIG_ERROR is None:
+            try:
+                provider = configured_remote_provider()
+                space = configured_gdrive_space()
+                folder = configured_gdrive_folder()
+                folder_id = configured_gdrive_folder_id()
+                if folder_id and space == "visible":
+                    folder_url = (
+                        f"https://drive.google.com/drive/folders/{folder_id}"
+                    )
+            except ConfigError:
+                pass
+
+        signed_in = False
+        if provider == "gdrive":
+            from ..gdrive import load_token
+
+            signed_in = bool((load_token() or {}).get("access_token"))
+
+        return {
+            "provider": provider,
+            "repo": str(SCRIPT_DIR),
+            "remote_url": self._redacted_remote(),
+            "gdrive_space": space,
+            "gdrive_folder": folder,
+            "gdrive_folder_url": folder_url,
+            "signed_in": signed_in,
+        }
+
+    @staticmethod
+    def _redacted_remote() -> str:
+        from ..paths import SCRIPT_DIR
+        from .sync import _GIT_URL_CREDENTIALS
+
+        result = subprocess.run(
+            ["git", "-C", str(SCRIPT_DIR), "config", "--get", "remote.origin.url"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return ""
+        # 遠端 URL 可能內嵌帳密,顯示前一律遮掉
+        return _GIT_URL_CREDENTIALS.sub(r"\1***@", result.stdout.strip())
+
+    def open_data_dir(self) -> dict:
+        """Reveal the local data repository in the desktop file manager."""
+        from ..paths import SCRIPT_DIR
+
+        if not SCRIPT_DIR.is_dir():
+            return {"code": 1, "output": f"✗ 找不到資料夾:{SCRIPT_DIR}"}
+        if sys.platform == "win32":
+            opener = ["explorer", str(SCRIPT_DIR)]
+        elif sys.platform == "darwin":
+            opener = ["open", str(SCRIPT_DIR)]
+        else:
+            opener = ["xdg-open", str(SCRIPT_DIR)]
+        try:
+            # explorer 開啟成功時仍可能回非 0,所以不看 returncode
+            subprocess.Popen(
+                opener,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as exc:
+            return {"code": 1, "output": f"✗ 無法開啟資料夾:{exc}"}
+        return {"code": 0, "output": f"✓ 已開啟 {SCRIPT_DIR}"}
+
     def config_info(self) -> dict:
         """Return the same read-only overview as ``acg config``."""
         if not self._lock.acquire(blocking=False):

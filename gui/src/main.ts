@@ -19,6 +19,25 @@ const versionEl = $("#version");
 const repoEl = $("#repo");
 const providerEl = $("#provider");
 const configInfoBtn = $<HTMLButtonElement>("#config-info");
+const settingsOpenBtn = $<HTMLButtonElement>("#settings-open");
+const settingsBox = $("#settings");
+const settingsCloseBtn = $<HTMLButtonElement>("#settings-close");
+const settingsAccount = $("#settings-account");
+const settingsFolder = $("#settings-folder");
+const settingsRemote = $("#settings-remote");
+const settingsRepo = $("#settings-repo");
+const settingsRowAccount = $("#settings-row-account");
+const settingsRowFolder = $("#settings-row-folder");
+const settingsRowRemote = $("#settings-row-remote");
+const settingsOpenDirBtn = $<HTMLButtonElement>("#settings-open-dir");
+const settingsReloginBtn = $<HTMLButtonElement>("#settings-relogin");
+const settingsFolderOpenBtn = $<HTMLButtonElement>("#settings-folder-open");
+const settingsSwitch = $("#settings-switch");
+const settingsSwitchNote = $("#settings-switch-note");
+const settingsSwitchForm = $("#settings-switch-form");
+const settingsProviderRadios = Array.from(
+  document.querySelectorAll<HTMLInputElement>("input[name=settings-provider]"),
+);
 const toolTabs = Array.from(
   document.querySelectorAll<HTMLButtonElement>("#tool-tabs .scope-tab"),
 );
@@ -648,6 +667,147 @@ async function loadInfo(): Promise<void> {
   } catch {
     repoEl.textContent = "無法讀取儲存庫資訊";
   }
+}
+
+// ── 設定畫面 ───────────────────────────
+
+let currentProvider = "";
+
+function providerLabel(provider: string): string {
+  return provider === "gdrive" ? "Google Drive" : "私人 Git 儲存庫";
+}
+
+async function loadSettings(): Promise<void> {
+  const bridge = api();
+  if (!bridge) return;
+  const info = await bridge.settings_info();
+  currentProvider = info.provider;
+
+  for (const radio of settingsProviderRadios) {
+    radio.checked = radio.value === info.provider;
+    const badge = radio
+      .closest(".provider-choice")
+      ?.querySelector<HTMLElement>(".provider-choice-current");
+    if (badge) badge.hidden = radio.value !== info.provider;
+  }
+
+  const isGdrive = info.provider === "gdrive";
+  settingsRowAccount.hidden = !isGdrive;
+  settingsRowFolder.hidden = !isGdrive;
+  settingsRowRemote.hidden = isGdrive || info.remote_url === "";
+
+  settingsAccount.textContent = info.signed_in ? "已登入" : "尚未登入";
+  settingsFolder.textContent =
+    info.gdrive_space === "hidden"
+      ? "隱藏的應用程式空間"
+      : `我的雲端硬碟 / ${info.gdrive_folder}`;
+  settingsFolderOpenBtn.hidden = info.gdrive_folder_url === "";
+  settingsFolderOpenBtn.dataset.url = info.gdrive_folder_url;
+  settingsRemote.textContent = info.remote_url || "—";
+  settingsRemote.title = info.remote_url;
+  settingsRepo.textContent = info.repo;
+  settingsRepo.title = info.repo;
+
+  settingsSwitch.hidden = true;
+}
+
+function showSettings(value: boolean): void {
+  settingsBox.hidden = !value;
+  // 設定畫面接管整個視窗,底下的動作與輸出區暫時收起來
+  for (const id of ["#scope", "#actions", "#package", "#output"]) {
+    const el = document.querySelector<HTMLElement>(id);
+    if (el) el.hidden = value;
+  }
+  if (value) void loadSettings();
+}
+
+settingsOpenBtn.addEventListener("click", () => {
+  if (running) return;
+  showSettings(true);
+});
+
+settingsCloseBtn.addEventListener("click", () => {
+  showSettings(false);
+});
+
+settingsOpenDirBtn.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge) return;
+  const result = await bridge.open_data_dir();
+  if (result.code !== 0) {
+    outputTitle.textContent = "開啟資料夾";
+    renderOutput(result.output);
+  }
+});
+
+settingsFolderOpenBtn.addEventListener("click", () => {
+  const url = settingsFolderOpenBtn.dataset.url;
+  if (url) window.open(url, "_blank");
+});
+
+settingsReloginBtn.addEventListener("click", () => {
+  offerProviderSwitch("gdrive", true);
+});
+
+for (const radio of settingsProviderRadios) {
+  radio.addEventListener("change", () => {
+    if (!radio.checked) return;
+    if (radio.value === currentProvider) {
+      settingsSwitch.hidden = true;
+      return;
+    }
+    offerProviderSwitch(radio.value, false);
+  });
+}
+
+function offerProviderSwitch(provider: string, relogin: boolean): void {
+  settingsSwitch.hidden = false;
+  settingsSwitchNote.textContent = relogin
+    ? "重新登入 Google 帳號。本機設定不會被更動。"
+    : `切換到${providerLabel(provider)}後，需要重新設定一次連線；` +
+      "本機已保存的設定不會被刪除，但兩邊的資料不會自動搬移。";
+
+  // 沿用首次設定的表單,但要用複製的:直接搬走會讓尚未設定的機器
+  // 在關閉設定後永遠失去首次設定表單
+  settingsSwitchForm.replaceChildren();
+  const source = provider === "gdrive" ? setupGdrivePanel : setupGitPanel;
+  const panel = source.cloneNode(true) as HTMLElement;
+  panel.hidden = false;
+  panel.removeAttribute("id");
+  for (const node of panel.querySelectorAll("[id]")) node.removeAttribute("id");
+  settingsSwitchForm.append(panel);
+
+  const go = panel.querySelector<HTMLButtonElement>(".btn-primary");
+  // 用 data-field 取值,不靠輸入框順序:表單日後調整順序也不會靜默錯位
+  const field = (name: string): string =>
+    panel.querySelector<HTMLInputElement>(`[data-field="${name}"]`)?.value ?? "";
+  const checkedSpace = (): string =>
+    panel.querySelector<HTMLInputElement>('[data-field="gdrive-space"]:checked')
+      ?.value ?? "visible";
+  go?.addEventListener("click", async () => {
+    const bridge = api();
+    if (!bridge || running) return;
+    go.disabled = true;
+    try {
+      const result =
+        provider === "gdrive"
+          ? await bridge.setup_gdrive(
+              field("data-dir"),
+              field("gdrive-folder"),
+              checkedSpace(),
+            )
+          : await bridge.setup_repo(field("repo-url"), field("data-dir"));
+      showSettings(false);
+      outputTitle.textContent = relogin ? "重新登入" : "切換同步方式";
+      renderOutput(result.output || "(沒有輸出)");
+      outputState.textContent = result.code === 0 ? "完成" : "有問題";
+      outputState.className =
+        result.code === 0 ? "output-state is-ok" : "output-state is-fail";
+      void loadInfo();
+    } finally {
+      go.disabled = false;
+    }
+  });
 }
 
 function boot(): void {

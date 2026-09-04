@@ -45,9 +45,21 @@ export interface UpdateCheck {
   output: string;
 }
 
-export interface AcgApi {
+export interface SettingsInfo {
+  provider: string;
+  repo: string;
+  remote_url: string;
+  gdrive_space: string;
+  gdrive_folder: string;
+  gdrive_folder_url: string;
+  signed_in: boolean;
+}
+
+interface AcgApi {
   get_info(): Promise<AcgInfo>;
   config_info(): Promise<RunResult>;
+  settings_info(): Promise<SettingsInfo>;
+  open_data_dir(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
   preview_push(tool?: string): Promise<PushPreview>;
   confirm_push(tool: string, token: string): Promise<RunResult>;
