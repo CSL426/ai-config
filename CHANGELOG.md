@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.37 - 2026-09-04
 
 - 修正 Windows exe 點兩下仍然閃退:先前開不開 Desktop 取決於一個判斷「是不是
   雙擊啟動」的 Win32 呼叫,判斷錯就直接跑 CLI 然後結束。現在只要沒有帶參數,
