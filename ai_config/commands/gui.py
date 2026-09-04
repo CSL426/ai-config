@@ -14,7 +14,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from ..console import log_error
+from ..console import log_error, log_info
 from ..paths import ALL_TOOLS
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -395,15 +395,22 @@ def _package_output_dir() -> Path:
 def run_gui() -> int:
     index = gui_index_path()
     if not index.is_file():
-        log_error(
-            "GUI assets not found. Build them first:\n"
-            "  cd gui && pnpm install && pnpm build"
-        )
+        if getattr(sys, "_MEIPASS", ""):
+            # 打包版沒有原始碼可以 build,叫使用者 pnpm build 是無效的指示
+            log_error(
+                "這個平台的執行檔沒有內建 Desktop 介面(目前只有 Windows 版有)。"
+            )
+            log_info('改用 pip 安裝即可使用:pip install "ai-config[gui]"')
+        else:
+            log_error(
+                "找不到 Desktop 介面的檔案,請先建置:\n"
+                "  cd gui && pnpm install && pnpm build"
+            )
         return 1
     try:
         import webview
     except ImportError:
-        log_error('pywebview is not installed. Install with: pip install "ai-config[gui]"')
+        log_error('pywebview 尚未安裝,請執行:pip install "ai-config[gui]"')
         return 1
 
     # Windows: 分離工作列群組,避免顯示預設 Python 圖示
