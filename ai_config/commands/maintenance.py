@@ -16,6 +16,9 @@ from ..console import (
     log_success,
     log_warn,
 )
+from ..console import (
+    confirm as confirm_prompt,
+)
 from ..fsops import count_files
 from ..package import SkillNotFoundError, available_skills, package_skill
 from ..paths import (
@@ -55,11 +58,7 @@ def do_reset() -> bool:
     print(f"  This will {RED}delete all config files{NC} and leave empty directories.")
     print(f"  You can then run {CYAN}{ENTRYPOINT} init{NC} to pull your own configs.")
     print()
-    try:
-        confirm = input("  Are you sure? [y/N] ")
-    except EOFError:
-        confirm = ""
-    if confirm not in ("y", "Y"):
+    if not confirm_prompt("  Are you sure? [y/N] "):
         log_info("Cancelled")
         return True
 

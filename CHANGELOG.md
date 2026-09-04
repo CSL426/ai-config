@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Ctrl+C 在任何確認提示都直接取消,不再往下追問或丟出中斷例外。取消時原本的
+  清理照常執行(例如 push 會把暫存的變更還原成未 staged)。
+
 ## 1.0.35 - 2026-09-04
 
 - Windows 執行檔改為點兩下就開 GUI:release 版把前端資源與 pywebview 一起打包,

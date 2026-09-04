@@ -2,7 +2,19 @@
 
 from pathlib import Path
 
-from ..console import BOLD, CYAN, NC, log_error, log_header, log_info, log_success
+from ..console import (
+    BOLD,
+    CYAN,
+    NC,
+    ask,
+    log_error,
+    log_header,
+    log_info,
+    log_success,
+)
+from ..console import (
+    confirm as confirm_prompt,
+)
 from ..fsops import mirror_dir, safe_cp
 from ..paths import CLAUDE_MANAGED_DIRS, CLAUDE_MANAGED_FILES, SCRIPT_DIR
 from ..profiles import (
@@ -157,10 +169,8 @@ def run_deploy(
     print()
     print(f"  Select items: numbers (1 3), a range (1-3), or {BOLD}a{NC} for all")
 
-    try:
-        selection = _parse_selection(input("  > "), len(items))
-    except EOFError:
-        selection = None
+    answer = ask("  > ")
+    selection = None if answer is None else _parse_selection(answer, len(items))
     if selection is None:
         log_info("Nothing selected; deploy cancelled")
         return 0
@@ -178,11 +188,7 @@ def run_deploy(
         print()
         log_info(f"Overwrites existing: {', '.join(existing)}")
 
-    try:
-        confirmed = input("\n  Deploy these items? [y/N] ").strip().lower() in {"y", "yes"}
-    except EOFError:
-        confirmed = False
-    if not confirmed:
+    if not confirm_prompt("\n  Deploy these items? [y/N] "):
         log_info("Cancelled; nothing was written")
         return 0
 

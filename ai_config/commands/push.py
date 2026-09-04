@@ -7,6 +7,9 @@ from dataclasses import dataclass
 
 from ..config import configured_remote_provider
 from ..console import (
+    confirm as confirm_prompt,
+)
+from ..console import (
     log_error,
     log_header,
     log_info,
@@ -697,11 +700,7 @@ def _push_existing_commits(selected: list[str], ahead: int) -> int:
         f"git -C {tilde(SCRIPT_DIR)} diff {revision_range}",
     )
 
-    try:
-        confirm = input("Push these existing local commits? [y/N] ")
-    except EOFError:
-        confirm = ""
-    if confirm not in ("y", "Y"):
+    if not confirm_prompt("Push these existing local commits? [y/N] "):
         log_info("Cancelled; existing local commits were not pushed")
         return 0
     if not _ahead_push_matches(snapshot, selected, commits):
@@ -837,11 +836,7 @@ def _review_and_confirm_push(
 
     print()
     log_info(f"Commit message: {commit_message}")
-    try:
-        confirm = input("Commit and push these changes? [y/N] ")
-    except EOFError:
-        confirm = ""
-    return confirm in ("y", "Y")
+    return confirm_prompt("Commit and push these changes? [y/N] ")
 
 
 def _stage_push_changes(selected: list[str]) -> "str | None":
