@@ -233,15 +233,24 @@ bash -n install.sh
 git diff --check
 ```
 
-### GUI (experimental)
+### Desktop app (experimental)
 
-A desktop window for non-CLI users, covering status/apply/pull/push:
+A desktop window for people who would rather not use the terminal,
+covering status/apply/pull/push.
+
+On Windows the released executable already contains it: double-click
+`ai-config-windows-x86_64.exe`, or run `acg gui`.
+
+Elsewhere, and when working from a source checkout:
 
 ```bash
 pip install "ai-config[gui]"        # pywebview
 cd gui && pnpm install && pnpm build # frontend → ai_config/gui_assets/
 acg gui
 ```
+
+On Linux pywebview also needs system packages for the web view, such as
+`gir1.2-webkit2-4.1` and `python3-gi` on Debian and Ubuntu.
 
 Roadmap and design notes: [docs/gui-plan.md](docs/gui-plan.md).
 
@@ -251,7 +260,7 @@ Additional documentation:
 - [Skills](docs/skills.md)
 - [Development](docs/development.md)
 - [Platform behavior](docs/platform-behavior.md)
-- [GUI plan (draft)](docs/gui-plan.md)
+- [Desktop app plan (draft)](docs/gui-plan.md)
 
 ## License
 

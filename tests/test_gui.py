@@ -372,3 +372,32 @@ def test_setup_gdrive_builds_argv_and_validates(
     assert "--gdrive-folder" not in seen["argv"]
 
     assert api.setup_gdrive("/tmp/gdrive_dir", "", "elsewhere")["code"] == 1
+
+
+def test_frozen_build_without_assets_points_at_pip(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    # 打包版但沒有前端資源:不能叫使用者去 build 不存在的原始碼
+    monkeypatch.setattr(gui_module.sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.setattr(gui_module, "_ASSETS_DIR", tmp_path / "missing")
+
+    assert gui_module.run_gui() == 1
+    output = capsys.readouterr()
+    combined = output.out + output.err
+    assert "pnpm" not in combined
+    assert "pip install" in combined
+
+
+def test_source_checkout_without_assets_says_to_build(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    monkeypatch.delattr(gui_module.sys, "_MEIPASS", raising=False)
+    monkeypatch.setattr(gui_module, "_ASSETS_DIR", tmp_path / "missing")
+
+    assert gui_module.run_gui() == 1
+    output = capsys.readouterr()
+    assert "pnpm" in output.out + output.err
