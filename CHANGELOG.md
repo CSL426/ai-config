@@ -7,6 +7,9 @@
   `--gdrive-space`,互動模式與 Desktop 首次設定都會問。兩者各自使用最小的 scope
   (`drive.file` 與 `drive.appdata`),都只能存取本程式建立的檔案。換位置要重新
   登入一次,兩邊的資料互不相通。
+- Desktop 的執行結果加上「複製輸出」按鈕,並明確允許選取文字。先前視窗裡的
+  訊息無法複製,遇到錯誤時沒辦法把內容貼給別人求助。clipboard API 在部分平臺
+  不可用,會自動退回隱藏 textarea 的複製方式。
 - 修正雙擊開啟時 Desktop 開不起來就整個視窗消失的問題:啟動失敗現在會印出
   原因並停在「按 Enter 關閉視窗」。Windows 缺少 Microsoft Edge WebView2 執行期
   時會給出安裝連結,Linux 則提示需要的 WebKit2GTK 套件。
