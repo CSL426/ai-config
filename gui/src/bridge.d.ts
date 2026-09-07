@@ -55,10 +55,36 @@ export interface SettingsInfo {
   signed_in: boolean;
 }
 
+export interface GithubAccess {
+  repository: string;
+  installed: boolean;
+  logged_in: boolean;
+  account: string;
+  accounts: string[];
+  can_push: boolean | null;
+  actionable: boolean;
+  lines: string[];
+}
+
+export interface GithubLoginStart extends RunResult {
+  device_code?: string;
+  user_code?: string;
+  verification_uri?: string;
+  interval?: number;
+}
+
+export interface GithubLoginPoll extends RunResult {
+  status: "pending" | "done" | "error";
+}
+
 interface AcgApi {
   get_info(): Promise<AcgInfo>;
   config_info(): Promise<RunResult>;
   settings_info(): Promise<SettingsInfo>;
+  github_access(): Promise<GithubAccess>;
+  github_start_login(): Promise<GithubLoginStart>;
+  github_poll_login(deviceCode: string, interval: number): Promise<GithubLoginPoll>;
+  github_use_account(account: string): Promise<RunResult>;
   relogin_gdrive(): Promise<RunResult>;
   open_data_dir(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;

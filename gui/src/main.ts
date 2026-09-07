@@ -1,7 +1,7 @@
 import "./style.css";
 
 import type {
-  AcgApi, AcgCommand, RunResult, SettingsInfo, SkillEntry,
+  AcgApi, AcgCommand, GithubAccess, RunResult, SettingsInfo, SkillEntry,
 } from "./bridge";
 
 const COMMAND_LABELS: Record<AcgCommand, string> = {
@@ -21,6 +21,15 @@ const settingsFeedback = $("#settings-feedback");
 const settingsRetry = $<HTMLButtonElement>("#settings-retry");
 const settingsSwitch = $("#settings-switch");
 const settingsSwitchForm = $("#settings-switch-form");
+const githubGroup = $("#settings-github");
+const githubState = $("#github-state");
+const githubAccounts = $("#github-accounts");
+const githubActions = $("#github-actions");
+const githubLoginBtn = $<HTMLButtonElement>("#github-login");
+const githubCode = $("#github-code");
+const githubCodeValue = $("#github-code-value");
+const githubCodeCopy = $<HTMLButtonElement>("#github-code-copy");
+const githubCodeHint = $("#github-code-hint");
 const toolTabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".scope-tab"));
 const toolRows = Array.from(document.querySelectorAll<HTMLElement>(".tool-row"));
 const heroMark = $("#hero-mark");
@@ -754,6 +763,129 @@ function providerLabel(provider: string): string {
   return provider === "gdrive" ? "Google Drive" : "私人 Git 儲存庫";
 }
 
+// ── GitHub 上傳權限 ─────────────────────
+
+let githubPollTimer: number | null = null;
+
+function stopGithubPolling(): void {
+  if (githubPollTimer !== null) {
+    window.clearTimeout(githubPollTimer);
+    githubPollTimer = null;
+  }
+}
+
+function resetGithubCode(): void {
+  stopGithubPolling();
+  githubCode.hidden = true;
+  githubCodeValue.textContent = "————";
+  githubCodeHint.textContent = "";
+  githubLoginBtn.disabled = false;
+  githubLoginBtn.textContent = "用瀏覽器登入 GitHub";
+}
+
+async function loadGithubAccess(): Promise<void> {
+  const bridge = api();
+  if (!bridge) return;
+  resetGithubCode();
+  githubGroup.hidden = false;
+  githubState.textContent = "檢查中…";
+  githubAccounts.hidden = true;
+  githubAccounts.replaceChildren();
+  githubActions.hidden = true;
+
+  let access: GithubAccess;
+  try {
+    access = await bridge.github_access();
+  } catch {
+    githubGroup.hidden = true;
+    return;
+  }
+
+  // 遠端不是 GitHub 就沒什麼好說的,整段收起來
+  if (!access.repository) {
+    githubGroup.hidden = true;
+    return;
+  }
+
+  githubState.textContent = access.lines.join(" ");
+  if (access.can_push === true) return;
+
+  // 已經登入過的其他帳號通常就是解法,直接讓人一鍵切過去
+  const others = access.accounts.filter(
+    (name: string) => name !== access.account,
+  );
+  if (others.length > 0) {
+    for (const name of others) {
+      const button = document.createElement("button");
+      button.className = "btn btn-ghost";
+      button.textContent = `改用 ${name}`;
+      button.addEventListener("click", () => void useGithubAccount(name));
+      githubAccounts.append(button);
+    }
+    githubAccounts.hidden = false;
+  }
+  githubActions.hidden = !access.installed;
+}
+
+async function useGithubAccount(account: string): Promise<void> {
+  const bridge = api();
+  if (!bridge) return;
+  githubState.textContent = `正在切換到 ${account}…`;
+  const result = await bridge.github_use_account(account);
+  githubState.textContent = result.output;
+  if (result.code === 0) void loadGithubAccess();
+}
+
+async function startGithubLogin(): Promise<void> {
+  const bridge = api();
+  if (!bridge) return;
+  githubLoginBtn.disabled = true;
+  githubLoginBtn.textContent = "準備中…";
+
+  const start = await bridge.github_start_login();
+  if (start.code !== 0 || !start.device_code) {
+    githubState.textContent = start.output || "無法開始登入";
+    resetGithubCode();
+    return;
+  }
+
+  githubCodeValue.textContent = start.user_code ?? "";
+  githubCodeHint.textContent = `已開啟 ${start.verification_uri}，完成後這裡會自動更新`;
+  githubCode.hidden = false;
+  githubLoginBtn.textContent = "等待瀏覽器確認…";
+
+  const interval = Math.max(start.interval ?? 5, 1);
+  const deadline = Date.now() + 15 * 60 * 1000;
+
+  const poll = async (): Promise<void> => {
+    if (Date.now() > deadline) {
+      githubState.textContent = "登入逾時，請再試一次";
+      resetGithubCode();
+      return;
+    }
+    const result = await bridge.github_poll_login(start.device_code!, interval);
+    if (result.status === "pending") {
+      githubPollTimer = window.setTimeout(() => void poll(), interval * 1000);
+      return;
+    }
+    resetGithubCode();
+    githubState.textContent = result.output;
+    if (result.status === "done") void loadGithubAccess();
+  };
+
+  githubPollTimer = window.setTimeout(() => void poll(), interval * 1000);
+}
+
+githubLoginBtn.addEventListener("click", () => void startGithubLogin());
+
+githubCodeCopy.addEventListener("click", async () => {
+  const ok = await copyText(githubCodeValue.textContent ?? "");
+  githubCodeCopy.textContent = ok ? "已複製！" : "請手動複製";
+  window.setTimeout(() => {
+    githubCodeCopy.textContent = "複製";
+  }, 2000);
+});
+
 async function loadSettings(): Promise<void> {
   const bridge = api();
   if (!bridge || settingsLoading) return;
@@ -783,6 +915,13 @@ async function loadSettings(): Promise<void> {
     $("#settings-remote").textContent = info.remote_url || "—";
     $("#settings-repo").textContent = info.repo;
     feedback(settingsFeedback, "");
+    // 只有 git provider 才談得上 GitHub 推送權限
+    if (info.provider === "gdrive") {
+      githubGroup.hidden = true;
+      resetGithubCode();
+    } else {
+      void loadGithubAccess();
+    }
   } catch (error) {
     feedback(settingsFeedback, `無法讀取設定：${String(error)}`, true);
     settingsRetry.hidden = false;
@@ -794,6 +933,9 @@ async function loadSettings(): Promise<void> {
 
 function showSettings(show: boolean): void {
   settingsBox.hidden = !show;
+  // 關閉時停止輪詢並清掉畫面:否則離開後還在打 GitHub 的 API,
+  // 而且下次打開會看到一組早就失效的舊驗證碼
+  if (!show) resetGithubCode();
   for (const child of Array.from($(".app").children)) {
     if (child instanceof HTMLElement && child !== settingsBox) child.inert = show;
   }
