@@ -135,7 +135,7 @@
               <span><strong>隱藏的應用程式空間</strong>／不會出現在檔案列表</span>
             </label>
           </fieldset>
-          <label class="setup-field" id="setup-gdrive-folder-field">
+          <label class="setup-field" id="setup-gdrive-folder-field" data-field-row="gdrive-folder">
             <span>Google Drive 資料夾（相對於「我的雲端硬碟」，可用 / 分層）</span>
             <input id="setup-gdrive-folder" data-field="gdrive-folder" type="text" spellcheck="false" value="ai-config" placeholder="ai-config" />
           </label>
@@ -180,6 +180,16 @@
           </div>
         </div>
 
+        <div class="scope" id="scope" aria-label="同步範圍">
+          <span class="scope-label">套用範圍</span>
+          <div class="scope-tabs" role="radiogroup" id="tool-tabs">
+            <button class="scope-tab is-selected" role="radio" aria-checked="true" data-tool="all">全部工具</button>
+            <button class="scope-tab" role="radio" aria-checked="false" data-tool="claude">Claude Code</button>
+            <button class="scope-tab" role="radio" aria-checked="false" data-tool="codex">Codex</button>
+            <button class="scope-tab" role="radio" aria-checked="false" data-tool="agy">Antigravity</button>
+          </div>
+        </div>
+
         <div class="hero-links">
           <button class="link-btn" id="package-open">分享與準備 AI 技能</button>
           <button class="link-btn" id="output-toggle">查看詳細輸出</button>
@@ -187,21 +197,13 @@
         </div>
       </section>
 
-      <section class="scope" id="scope" hidden aria-label="同步範圍">
-        <span class="scope-label">要管理哪些工具</span>
-        <div class="scope-tabs" role="radiogroup" id="tool-tabs">
-          <button class="scope-tab is-selected" role="radio" aria-checked="true" data-tool="all">全部工具</button>
-          <button class="scope-tab" role="radio" aria-checked="false" data-tool="claude">Claude Code</button>
-          <button class="scope-tab" role="radio" aria-checked="false" data-tool="codex">Codex</button>
-          <button class="scope-tab" role="radio" aria-checked="false" data-tool="agy">Antigravity</button>
-        </div>
-      </section>
-
-      <details class="package" id="package">
+      <details class="package" id="package" hidden>
         <summary class="package-summary">分享與準備 AI 技能</summary>
         <div class="package-body">
+          <button class="btn btn-ghost view-back" id="package-back" type="button">‹ 返回</button>
           <p class="package-hint">勾選技能後，可以分享給 Codex 與 Antigravity，或取消分享收回；也能準備成其他 AI 工具可安裝的檔案與說明。</p>
           <div class="package-list" id="skill-list" role="group" aria-label="技能清單"></div>
+          <p class="skill-result" id="skill-result" role="status" hidden></p>
           <div class="package-buttons">
             <button class="btn btn-ghost" id="skill-all">全選</button>
             <button class="btn btn-ghost" id="skill-none">清除</button>
@@ -227,6 +229,7 @@
 
       <section class="output" id="output" hidden aria-label="執行結果">
         <div class="output-head">
+          <button class="btn btn-ghost view-back" id="output-back">‹ 返回</button>
           <span class="output-title" id="output-title">執行結果</span>
           <span class="output-state" id="output-state" aria-live="polite"></span>
           <button class="btn btn-ghost output-copy" id="output-copy" hidden>複製輸出</button>

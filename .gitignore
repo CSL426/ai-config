@@ -36,3 +36,6 @@ __pycache__/
 # GUI frontend
 /gui/node_modules/
 /ai_config/gui_assets/
+
+# 手動測試用的建置產物,不進版控
+/acg-test.exe

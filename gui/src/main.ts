@@ -140,8 +140,10 @@ async function copyText(text: string): Promise<boolean> {
 function renderOutput(text: string): void {
   lastOutput = text;
   outputCopy.hidden = text.trim() === "";
-  outputBody.replaceChildren();
   const lines = text.replace(/\n+$/, "").split("\n");
+  // 一次組好再插入:上千行的 diff 逐行 append 會反覆重排,
+  // 在 WebView2 / WebKit2GTK 上明顯卡頓
+  const fragment = document.createDocumentFragment();
   for (const source of lines) {
     const raw = localizeOutputLine(source);
     if (raw === null) continue;
@@ -153,17 +155,18 @@ function renderOutput(text: string): void {
     else if (line.startsWith("═══")) span.className = "line-head";
     else if (line.startsWith("ℹ")) span.className = "line-dim";
     else if (line.startsWith("+")) span.className = "line-add";
-    else if (line.startsWith("-")) span.className = "line-remove";
+    else if (/^-(?!\s)/.test(line)) span.className = "line-remove";
     else if (/\|\s+\d+/.test(line)) span.className = "line-stat";
     else if (/^\d+ files? changed/.test(line)) span.className = "line-head";
     span.textContent = raw;
-    outputBody.append(span, document.createTextNode("\n"));
+    fragment.append(span, document.createTextNode("\n"));
   }
+  outputBody.replaceChildren(fragment);
 }
 
 outputCopy.addEventListener("click", async () => {
   const ok = await copyText(lastOutput);
-  outputCopy.textContent = ok ? "已複製!" : "複製失敗";
+  outputCopy.textContent = ok ? "已複製！" : "複製失敗";
   setTimeout(() => {
     outputCopy.textContent = "複製輸出";
   }, 2000);
@@ -186,10 +189,13 @@ async function previewPush(): Promise<void> {
   pendingPushToken = null;
   confirmBox.hidden = true;
   setBusy(true, "push");
+  // 確認列寫著「上方是這次要保存的內容」,所以一定要先切到輸出視圖,
+  // 否則使用者是在盲按同意
+  showView("output");
   outputTitle.textContent = `上傳前預覽(${toolLabel()})`;
   outputState.textContent = "整理中…";
   outputState.className = "output-state is-running";
-  showPlaceholder("正在整理變更摘要,不會上傳任何內容…");
+  showPlaceholder("正在整理變更摘要，不會上傳任何內容…");
 
   try {
     const result = await bridge.preview_push(selectedTool);
@@ -275,13 +281,9 @@ function updateHero(cmd: AcgCommand, result: { code: number; output: string }): 
     return;
   }
   if (cmd !== "status") {
-    // 其他指令改變了狀態,先前的比對結果不再可信
-    setHero("none", "已完成", "按「檢查狀態」重新確認目前是否一致。");
-    for (const row of toolRows) {
-      row.className = "tool-row";
-      const state = row.querySelector(".tool-state");
-      if (state) state.textContent = "尚未檢查";
-    }
+    // 剛套用或下載完的結果不再可信,但直接清空等於逼使用者再按一次檢查。
+    // 保留原本的列,只標示需要重新確認。
+    setHero("none", "已完成", "設定可能已改變，建議再檢查一次狀態。");
     return;
   }
 
@@ -319,7 +321,7 @@ function updateHero(cmd: AcgCommand, result: { code: number; output: string }): 
 async function runCommand(cmd: AcgCommand): Promise<void> {
   const bridge = api();
   if (!bridge) {
-    showPlaceholder("尚未連上後端 — 請透過「acg gui」啟動,而不是直接開啟網頁。");
+    showPlaceholder("尚未連上後端 — 請透過「acg gui」啟動，而不是直接開啟網頁。");
     return;
   }
   if (running) return;
@@ -328,7 +330,7 @@ async function runCommand(cmd: AcgCommand): Promise<void> {
   outputTitle.textContent = `${COMMAND_LABELS[cmd]}(${toolLabel()})`;
   outputState.textContent = "執行中…";
   outputState.className = "output-state is-running";
-  showPlaceholder("執行中,請稍候…");
+  showPlaceholder("執行中，請稍候…");
 
   try {
     const result = await bridge.run(cmd, selectedTool);
@@ -396,7 +398,7 @@ confirmYes.addEventListener("click", async () => {
   outputTitle.textContent = `上傳變更(${toolLabel()})`;
   outputState.textContent = "再次核對中…";
   outputState.className = "output-state is-running";
-  showPlaceholder("正在確認內容仍和預覽相同,相同才會上傳…");
+  showPlaceholder("正在確認內容仍和預覽相同，相同才會上傳…");
   try {
     const result = await bridge.confirm_push(tool, token);
     renderOutput(result.output || "(沒有輸出)");
@@ -487,6 +489,19 @@ skillNone.addEventListener("click", () => {
   for (const box of skillCheckboxes()) box.checked = false;
 });
 
+/** 技能面板裡的即時回饋:輸出區在這個視圖是看不到的。 */
+function reportSkillResult(result: { code: number; output: string }): void {
+  const banner = document.querySelector<HTMLElement>("#skill-result");
+  if (!banner) return;
+  const failed = result.code !== 0;
+  const detail = failed ? firstErrorLine(result.output) : "";
+  banner.textContent = failed
+    ? detail || "沒有完成，可從「查看詳細輸出」看原因"
+    : "完成";
+  banner.className = failed ? "skill-result is-fail" : "skill-result is-ok";
+  banner.hidden = false;
+}
+
 function selectedSkills(): string[] {
   return skillCheckboxes()
     .filter((box) => box.checked)
@@ -502,6 +517,7 @@ skillShare.addEventListener("click", async () => {
   outputState.textContent = result.code === 0 ? "完成" : "有問題";
   outputState.className =
     result.code === 0 ? "output-state is-ok" : "output-state is-fail";
+  reportSkillResult(result);
   void loadSkills();
 });
 
@@ -514,6 +530,7 @@ skillUnshare.addEventListener("click", async () => {
   outputState.textContent = result.code === 0 ? "完成" : "有問題";
   outputState.className =
     result.code === 0 ? "output-state is-ok" : "output-state is-fail";
+  reportSkillResult(result);
   void loadSkills();
 });
 
@@ -535,7 +552,7 @@ skillPackage.addEventListener("click", async () => {
 packageCopy.addEventListener("click", async () => {
   packageMessage.select();
   const ok = await copyText(packageMessage.value);
-  packageCopy.textContent = ok ? "已複製!" : "請按 Ctrl+C 複製";
+  packageCopy.textContent = ok ? "已複製！" : "請按 Ctrl+C 複製";
   setTimeout(() => {
     packageCopy.textContent = "複製說明";
   }, 2000);
@@ -554,14 +571,14 @@ updateBtn.addEventListener("click", async () => {
     outputTitle.textContent = `更新到 v${pendingUpdate}`;
     outputState.textContent = "執行中…";
     outputState.className = "output-state is-running";
-    showPlaceholder("下載並安裝新版本,請稍候…");
+    showPlaceholder("下載並安裝新版本，請稍候…");
     try {
       const result = await bridge.run_update();
       renderOutput(result.output || "(沒有輸出)");
       if (result.code === 0) {
         outputState.textContent = "完成";
         outputState.className = "output-state is-ok";
-        updateBtn.textContent = "已更新,重開視窗生效";
+        updateBtn.textContent = "已更新，重開視窗生效";
         updateBtn.disabled = true;
         pendingUpdate = null;
       } else {
@@ -689,7 +706,7 @@ setupGo.addEventListener("click", async () => {
   outputTitle.textContent = "首次設定";
   outputState.textContent = "執行中…";
   outputState.className = "output-state is-running";
-  showPlaceholder("正在下載儲存庫並驗證存取權,請稍候…");
+  showPlaceholder("正在下載儲存庫並驗證存取權，請稍候…");
   try {
     const result = await bridge.setup_repo(setupUrl.value, setupDir.value);
     renderOutput(result.output || "(沒有輸出)");
@@ -700,7 +717,7 @@ setupGo.addEventListener("click", async () => {
       const done = document.createElement("p");
       done.className = "package-hint";
       done.textContent =
-        "✓ 設定完成!請關閉並重新開啟這個視窗,就能開始同步。";
+        "✓ 設定完成！請關閉並重新開啟這個視窗，就能開始同步。";
       setupBox.append(done);
     } else {
       outputState.textContent = "有問題";
@@ -720,7 +737,7 @@ setupGdriveGo.addEventListener("click", async () => {
   outputTitle.textContent = "首次設定 (Google Drive)";
   outputState.textContent = "執行中…";
   outputState.className = "output-state is-running";
-  showPlaceholder("已開啟瀏覽器,請完成登入…");
+  showPlaceholder("已開啟瀏覽器，請完成登入…");
   try {
     const result = await bridge.setup_gdrive(
       setupGdriveDir.value,
@@ -735,7 +752,7 @@ setupGdriveGo.addEventListener("click", async () => {
       const done = document.createElement("p");
       done.className = "package-hint";
       done.textContent =
-        "✓ Google Drive 設定完成!請關閉並重新開啟這個視窗,就能開始同步。";
+        "✓ Google Drive 設定完成！請關閉並重新開啟這個視窗，就能開始同步。";
       setupBox.append(done);
     } else {
       outputState.textContent = "有問題";
@@ -816,11 +833,21 @@ async function loadSettings(): Promise<void> {
   settingsSwitch.hidden = true;
 }
 
+let settingsOpener: HTMLElement | null = null;
+
 function showSettings(value: boolean): void {
   // 覆蓋式對話框:主畫面原樣留在後面,不必逐一收起各區塊
   // (先前那樣做會被各自的 display 規則蓋掉,反而把設定內容擠成一條)
   settingsBox.hidden = !value;
-  if (value) void loadSettings();
+  if (value) {
+    settingsOpener = document.activeElement as HTMLElement | null;
+    void loadSettings();
+    settingsCloseBtn.focus();
+  } else {
+    // 關閉後把焦點還給打開它的按鈕,不然鍵盤使用者會迷路
+    settingsOpener?.focus();
+    settingsOpener = null;
+  }
 }
 
 settingsOpenBtn.addEventListener("click", () => {
@@ -888,6 +915,25 @@ function offerProviderSwitch(provider: string, relogin: boolean): void {
   for (const node of panel.querySelectorAll("[id]")) node.removeAttribute("id");
   settingsSwitchForm.append(panel);
 
+  // cloneNode 不會複製事件監聽器,所以複製出來的表單要自己重新綁:
+  // 少了這段,在設定裡選「隱藏的應用程式空間」時資料夾欄位不會收起來
+  // 用 data 屬性而不是 :has(),舊版 WebView2 不一定支援;id 也已經被移除
+  const folderField = panel.querySelector<HTMLElement>(
+    '[data-field-row="gdrive-folder"]',
+  );
+  const spaceRadios = Array.from(
+    panel.querySelectorAll<HTMLInputElement>('[data-field="gdrive-space"]'),
+  );
+  const syncFolderField = (): void => {
+    if (!folderField) return;
+    const hidden = spaceRadios.find((r) => r.checked)?.value === "hidden";
+    folderField.hidden = hidden;
+  };
+  for (const radio of spaceRadios) {
+    radio.addEventListener("change", syncFolderField);
+  }
+  syncFolderField();
+
   const go = panel.querySelector<HTMLButtonElement>(".btn-primary");
   // 用 data-field 取值,不靠輸入框順序:表單日後調整順序也不會靜默錯位
   const field = (name: string): string =>
@@ -922,24 +968,41 @@ function offerProviderSwitch(provider: string, relogin: boolean): void {
 }
 
 packageOpenBtn.addEventListener("click", () => {
-  const details = document.querySelector<HTMLDetailsElement>("#package");
-  if (!details) return;
-  details.open = true;
-  details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  showView("skills");
 });
 
-function showOutputPane(value: boolean): void {
+type MainView = "status" | "output" | "skills";
+
+/**
+ * 主區域一次只顯示一個視圖。880x680 同時塞下狀態、技能與輸出的結果是
+ * 每一塊都太小 — 輸出區曾經只分到一行的高度。
+ */
+function showView(view: MainView): void {
+  const hero = document.querySelector<HTMLElement>("#hero");
   const output = document.querySelector<HTMLElement>("#output");
-  if (!output) return;
-  output.hidden = !value;
-  outputToggleBtn.textContent = value ? "收起詳細輸出" : "查看詳細輸出";
+  const pkg = document.querySelector<HTMLDetailsElement>("#package");
+  if (!hero || !output || !pkg) return;
+
+  hero.hidden = view !== "status";
+  output.hidden = view !== "output";
+  pkg.hidden = view !== "skills";
+  pkg.open = view === "skills";
+  outputToggleBtn.textContent = "查看詳細輸出";
+}
+
+function showOutputPane(value: boolean): void {
+  showView(value ? "output" : "status");
 }
 
 outputToggleBtn.addEventListener("click", () => {
-  const output = document.querySelector<HTMLElement>("#output");
-  if (!output) return;
-  showOutputPane(output.hidden);
+  showView("output");
 });
+
+for (const id of ["#output-back", "#package-back"]) {
+  document.querySelector<HTMLButtonElement>(id)?.addEventListener("click", () => {
+    showView("status");
+  });
+}
 
 function boot(): void {
   void loadInfo();
