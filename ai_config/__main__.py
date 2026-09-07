@@ -51,6 +51,8 @@ def usage() -> None:
     print("  share <skill>   Copy a Claude skill (or plugin skill) into claude/shared/")
     print("                  --to <both|codex|agy> pick the target tools (default both)")
     print("  unshare <skill> Remove a skill from claude/shared/ (undoes share)")
+    print("  ignore-skills [tool]")
+    print("                  Stop reporting the tool's own bundled skills")
     print("                  --from <both|codex|agy> limit to one target")
     print("  config          Show provider (git/gdrive), repo, and login state")
     print("  desktop         Launch the desktop app (bundled on Windows)")
@@ -205,6 +207,14 @@ def main(argv: "list[str] | None" = None) -> int:
         from .commands.share import run_share
 
         return run_share(name, target)
+
+    if cmd == "ignore-skills":
+        if len(args) > 2:
+            log_error(f"Usage: {ENTRYPOINT} ignore-skills [tool]")
+            return 1
+        from .commands.status import run_ignore_skills
+
+        return run_ignore_skills(args[1] if len(args) == 2 else "all")
 
     if cmd == "unshare":
         unshare_usage = (

@@ -94,6 +94,9 @@ CODEX_BACKUP_PATHS = ["AGENTS.md", "config.toml", "rules", "skills"]
 AGY_BACKUP_PATHS = ["mcp_config.json", "settings.json", "skills", "plugins"]
 
 MANIFEST_NAME = ".ai-config-managed"
+# 使用者確認過「這些是工具自帶的,不用再提醒」的技能名單。
+# 放在技能目錄裡而不是共用 config:每台機器裝的工具版本不同。
+ACKNOWLEDGED_NAME = ".ai-config-known-unmanaged"
 
 TOOL_HOMES = {"claude": CLAUDE_HOME, "codex": CODEX_HOME, "agy": AGY_HOME}
 

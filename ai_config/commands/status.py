@@ -11,6 +11,7 @@ from ..console import (
     NC,
     RED,
     YELLOW,
+    log_error,
     log_header,
     log_info,
     log_success,
@@ -23,6 +24,7 @@ from ..paths import (
     CLAUDE_HOME,
     CLAUDE_MANAGED_DIRS,
     CODEX_CANONICAL_SKILLS,
+    ENTRYPOINT,
     codex_live_skills,
     tilde,
     tool_home,
@@ -374,8 +376,39 @@ def check_unmanaged_skills(tool: str) -> None:
                 print(f"    {name}")
     if found:
         log_info("These are left untouched by apply; remove any you no longer want")
+        log_info(
+            f"工具自帶的技能可以標記為已知,不再列出:{ENTRYPOINT} ignore-skills [tool]"
+        )
     else:
         log_success("No unmanaged skill directories")
+
+
+def run_ignore_skills(tool: str) -> int:
+    """Mark the tool's current unmanaged skills as known, once.
+
+    A snapshot, not a curated list: nothing here needs maintaining when a
+    tool changes what it ships. Anything added later is reported once so
+    the choice is made again, deliberately.
+    """
+    from ..skills import acknowledge_unmanaged
+
+    log_header("Ignore tool-provided skills")
+    if tool not in (*ALL_TOOLS, "all"):
+        log_error(f"Unknown tool: {tool}")
+        return 1
+
+    total = 0
+    for label, store in _skill_stores(tool):
+        names = acknowledge_unmanaged(store)
+        if not names:
+            continue
+        total += len(names)
+        log_success(f"{label}: 已記住 {len(names)} 個工具自帶技能")
+    if total == 0:
+        log_info("沒有未管理的技能需要標記")
+        return 0
+    log_info("這些技能不會再出現在 status;工具日後新增的仍會提醒一次")
+    return 0
 
 
 def show_status(tool: str) -> None:

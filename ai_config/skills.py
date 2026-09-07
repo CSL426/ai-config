@@ -8,7 +8,7 @@ from pathlib import Path
 from .console import log_info, log_warn
 from .frontmatter import sanitize_skill_frontmatter
 from .fsops import mirror_dir
-from .paths import MANIFEST_NAME, SCRIPT_DIR
+from .paths import ACKNOWLEDGED_NAME, MANIFEST_NAME, SCRIPT_DIR
 
 
 def _safe_skill_name(name: str) -> bool:
@@ -112,13 +112,59 @@ def unmanaged_skills(dst_skills: Path) -> list[str]:
         for name in manifest.read_text(encoding="utf-8").splitlines()
         if name
     }
+    known = acknowledged_skills(dst_skills)
     return sorted(
         entry.name
         for entry in dst_skills.iterdir()
         if entry.is_dir()
         and not entry.name.startswith(".")
         and entry.name not in managed
+        and entry.name not in known
     )
+
+
+def _record_baseline(dst_skills: Path, incoming: "list[str]") -> None:
+    """Mark everything already here, minus what we are about to deploy."""
+    existing = {
+        entry.name
+        for entry in dst_skills.iterdir()
+        if entry.is_dir() and not entry.name.startswith(".")
+    }
+    baseline = existing - set(incoming)
+    if not baseline:
+        return
+    marker = dst_skills / ACKNOWLEDGED_NAME
+    merged = sorted(acknowledged_skills(dst_skills) | baseline)
+    marker.write_text("\n".join(merged) + "\n", encoding="utf-8", newline="\n")
+
+
+def acknowledged_skills(dst_skills: Path) -> set[str]:
+    """Names the user has said are the tool's own, not worth reporting."""
+    marker = dst_skills / ACKNOWLEDGED_NAME
+    if not marker.is_file():
+        return set()
+    try:
+        text = marker.read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
+def acknowledge_unmanaged(dst_skills: Path) -> list[str]:
+    """Record every currently unmanaged skill as known, and return them.
+
+    Deliberately a snapshot rather than a maintained list: whatever a tool
+    ships today stops being reported, and anything it adds later shows up
+    once so the user can decide again. Nothing here needs updating when a
+    tool changes its bundled set.
+    """
+    names = unmanaged_skills(dst_skills)
+    if not names:
+        return []
+    marker = dst_skills / ACKNOWLEDGED_NAME
+    merged = sorted(acknowledged_skills(dst_skills) | set(names))
+    marker.write_text("\n".join(merged) + "\n", encoding="utf-8", newline="\n")
+    return names
 
 
 def managed_skill_orphans(staged_skills: Path, dst_skills: Path) -> list[str]:
@@ -146,6 +192,13 @@ def reconcile_managed_skills(staged_skills: Path, dst_skills: Path) -> None:
         return
     manifest = dst_skills / MANIFEST_NAME
     current = _current_skill_names(staged_skills)
+
+    # 第一次接管這個目錄時,先把既有的技能記成「已知」。
+    # 沒有任何欄位能分辨官方內建與使用者自寫,但「在 acg 之前就存在」
+    # 是可靠的訊號:那些不是 acg 放的,使用者也早就知道它們在。
+    # 這裡不能用 unmanaged_skills():它在 manifest 還不存在時回空清單。
+    if not manifest.is_file():
+        _record_baseline(dst_skills, current)
 
     for name in managed_skill_orphans(staged_skills, dst_skills):
         shutil.rmtree(dst_skills / name)
