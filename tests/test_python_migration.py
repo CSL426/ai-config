@@ -648,3 +648,41 @@ def test_apply_agy_rejects_source_plugin_symlink_escape(tmp_path: Path) -> None:
     assert settings.read_text() == '{"theme":"old"}\n'
     assert outside.read_text() == "outside\n"
     assert not (home_dir / ".ai-config-backup").exists()
+
+
+def test_apply_codex_preserves_local_marketplace_paths(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "codex/config.toml", 'model = "shared"\n')
+    write(
+        home_dir / ".codex/config.toml",
+        'model = "local"\n\n'
+        "[marketplaces.openai-primary-runtime]\n"
+        'source_type = "local"\n'
+        "source = 'C:/Users/someone/.cache/codex-runtimes/plugins'\n",
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    config = (home_dir / ".codex/config.toml").read_text()
+    # 這是本機路徑:留在這台,但絕不寫進 repo
+    assert "[marketplaces.openai-primary-runtime]" in config
+    assert "codex-runtimes" in config
+
+
+def test_init_codex_drops_local_marketplace_paths(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    (repo_dir / "claude").mkdir(exist_ok=True)
+    write(
+        home_dir / ".codex/config.toml",
+        'model = "local"\n\n'
+        "[marketplaces.openai-primary-runtime]\n"
+        "source = 'C:/Users/someone/.cache/codex-runtimes/plugins'\n",
+    )
+
+    result = run_ai_config(repo_dir, home_dir, "init", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    stored = (repo_dir / "codex/config.toml").read_text()
+    assert "marketplaces" not in stored
+    assert "codex-runtimes" not in stored

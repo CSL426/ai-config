@@ -44,11 +44,18 @@ CODEX_MANAGED_MARKETPLACES = ("openai-bundled", "openai-primary-runtime")
 _MANAGED_PLUGIN_HEADER = re.compile(
     r'^\[plugins\."[^"]*@(' + "|".join(CODEX_MANAGED_MARKETPLACES) + r')"\]'
 )
+# marketplace 區塊帶的是這台機器上的絕對路徑(cache 目錄),
+# 同步到別台只會指向不存在的位置,所以和 [projects.*] 一樣不進 repo。
+_MARKETPLACE_HEADER = re.compile(r"^\[marketplaces\.")
 _ANY_HEADER = re.compile(r"^\[")
 
 
 def _is_machine_local_header(line: str) -> bool:
-    return bool(_PROJECTS_HEADER.match(line) or _MANAGED_PLUGIN_HEADER.match(line))
+    return bool(
+        _PROJECTS_HEADER.match(line)
+        or _MANAGED_PLUGIN_HEADER.match(line)
+        or _MARKETPLACE_HEADER.match(line)
+    )
 _TOP_LEVEL_ASSIGNMENT = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
 _MACHINE_LOCAL_TOP_LEVEL_KEYS = {"notify"}
 
