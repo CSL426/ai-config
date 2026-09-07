@@ -83,6 +83,23 @@
           </div>
         </div>
 
+        <div class="settings-group" id="settings-github" hidden>
+          <p class="settings-label">上傳權限</p>
+          <p class="settings-note" id="github-state">檢查中…</p>
+          <div class="github-accounts" id="github-accounts" hidden></div>
+          <div class="package-buttons" id="github-actions" hidden>
+            <button class="btn btn-primary" id="github-login">用瀏覽器登入 GitHub</button>
+          </div>
+          <div class="github-code" id="github-code" hidden>
+            <p class="settings-note">請在瀏覽器輸入這組驗證碼：</p>
+            <div class="github-code-row">
+              <code class="github-code-value" id="github-code-value">————</code>
+              <button class="btn btn-ghost" id="github-code-copy">複製</button>
+            </div>
+            <p class="settings-note" id="github-code-hint"></p>
+          </div>
+        </div>
+
         <div class="settings-group">
           <p class="settings-label">這台電腦可以做什麼</p>
           <p class="settings-note">
