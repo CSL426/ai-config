@@ -392,6 +392,20 @@ def _clone_or_open(
     return _repository_root(data_dir)
 
 
+def _explain_push_access(remote_url: str) -> None:
+    """Say why the push was refused, and how to fix it from here."""
+    from ..ghauth import check_push_access, describe
+    from ..paths import ENTRYPOINT
+
+    status = check_push_access(remote_url)
+    if not status.repository:
+        return
+    for line in describe(status):
+        log_info(line)
+    if status.actionable:
+        log_info(f"可以用 {ENTRYPOINT} login 連結有權限的 GitHub 帳號")
+
+
 def setup_repository(
     data_dir: Path,
     repo_url: "str | None" = None,
@@ -426,6 +440,7 @@ def setup_repository(
         except PushAccessError as exc:
             read_only = True
             log_warn(str(exc))
+            _explain_push_access(remote_url)
             log_warn(
                 "No push access; configuring this machine as read-only. "
                 "status, pull, and apply work; push does not."

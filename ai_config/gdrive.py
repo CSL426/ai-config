@@ -742,10 +742,11 @@ def gdrive_pull(repo_dir: Path, tool: str) -> int:
             log_error(f"Data repository has a {operation} in progress; pull cancelled.")
         return 1
 
+    # 同 git provider:未追蹤的新檔不影響 fast-forward,不該擋住 pull
     status = _run_repo_git(
         "status",
         "--porcelain=v1",
-        "--untracked-files=all",
+        "--untracked-files=no",
         repo_dir=repo_dir,
     )
     if status.returncode != 0:
