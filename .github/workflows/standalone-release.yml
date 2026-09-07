@@ -108,6 +108,7 @@ jobs:
         env:
           GDRIVE_CLIENT_ID: ${{ secrets.AI_CONFIG_GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.AI_CONFIG_GDRIVE_CLIENT_SECRET }}
+          GITHUB_APP_CLIENT_ID: ${{ secrets.AI_CONFIG_GITHUB_CLIENT_ID }}
         run: |
           if [ -n "$GDRIVE_CLIENT_ID" ]; then
             sed -i.bak 's/^GDRIVE_CLIENT_ID = ""/GDRIVE_CLIENT_ID = "'"$GDRIVE_CLIENT_ID"'"/' ai_config/gdrive.py
@@ -124,6 +125,14 @@ jobs:
             echo "No AI_CONFIG_GDRIVE_CLIENT_SECRET secret; Google Desktop clients need it for the token exchange"
           fi
           rm -f ai_config/gdrive.py.bak
+          if [ -n "$GITHUB_APP_CLIENT_ID" ]; then
+            sed -i.bak 's/^GITHUB_CLIENT_ID = ""/GITHUB_CLIENT_ID = "'"$GITHUB_APP_CLIENT_ID"'"/' ai_config/ghauth.py
+            grep -q "$GITHUB_APP_CLIENT_ID" ai_config/ghauth.py
+            echo "GitHub client ID injected"
+          else
+            echo "No AI_CONFIG_GITHUB_CLIENT_ID secret; the desktop GitHub login will be unavailable"
+          fi
+          rm -f ai_config/ghauth.py.bak
 
       - name: Set up Node
         if: matrix.with_gui == 'true'

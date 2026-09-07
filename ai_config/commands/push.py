@@ -1047,6 +1047,22 @@ def _commit_and_push(
     return 0
 
 
+def _explain_push_refusal() -> None:
+    """Turn a refused push into the specific reason, and the fix."""
+    from ..ghauth import check_push_access, describe
+
+    remote = _run_repo_git("config", "--get", "remote.origin.url")
+    if remote.returncode != 0:
+        return
+    status = check_push_access(remote.stdout.strip())
+    if not status.repository:
+        return
+    for line in describe(status):
+        log_info(line)
+    if status.actionable:
+        log_info(f"執行 {ENTRYPOINT} login 連結有權限的帳號")
+
+
 def do_push(tool: str, allow_secrets: bool = False) -> int:
     # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
     # 才會為 True(GUI 走不到,維持硬擋)。
@@ -1062,6 +1078,7 @@ def do_push(tool: str, allow_secrets: bool = False) -> int:
             "Configuration set up here is read-only: status, pull, and apply "
             "work, but push needs a credential that can write to the remote."
         )
+        _explain_push_refusal()
         return 1
     selected = _selected_tools(tool)
     try:

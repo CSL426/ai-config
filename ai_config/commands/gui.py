@@ -83,6 +83,106 @@ class GuiApi:
             "config_error": CONFIG_ERROR or "",
         }
 
+    def github_access(self) -> dict:
+        """Why pushing is refused, and whether acg can fix it from here.
+
+        Called on demand rather than at window open: it shells out to gh
+        and asks GitHub, which is too slow to sit in the startup path.
+        """
+        from ..ghauth import check_push_access, describe
+
+        status = check_push_access(self._redacted_remote())
+        return {
+            "repository": status.repository,
+            "installed": status.installed,
+            "logged_in": status.logged_in,
+            "account": status.account,
+            "accounts": status.accounts,
+            "can_push": status.can_push,
+            "actionable": status.actionable,
+            "lines": describe(status),
+        }
+
+    def github_start_login(self) -> dict:
+        """Begin the device flow and open GitHub in the browser."""
+        import webbrowser
+
+        from ..ghauth import GhAuthError, start_device_login
+
+        try:
+            flow = start_device_login()
+        except GhAuthError as exc:
+            return {"code": 1, "output": f"✗ {exc}"}
+        with contextlib.suppress(Exception):
+            webbrowser.open(flow["verification_uri"])
+        return {
+            "code": 0,
+            "device_code": flow["device_code"],
+            "user_code": flow["user_code"],
+            "verification_uri": flow["verification_uri"],
+            "interval": flow["interval"],
+            "output": "",
+        }
+
+    def github_poll_login(self, device_code: str = "", interval: int = 5) -> dict:
+        """One poll step; the page decides how long to keep waiting."""
+        from ..ghauth import (
+            GhAuthError,
+            check_push_access,
+            poll_device_login,
+            setup_git_credentials,
+            store_token,
+        )
+
+        if not isinstance(device_code, str) or not device_code:
+            return {"code": 1, "status": "error", "output": "✗ 沒有登入請求"}
+        try:
+            token = poll_device_login(device_code, int(interval))
+        except GhAuthError as exc:
+            return {"code": 1, "status": "error", "output": f"✗ {exc}"}
+        if token is None:
+            return {"code": 0, "status": "pending", "output": ""}
+
+        stored, detail = store_token(token)
+        if not stored:
+            return {"code": 1, "status": "error", "output": f"✗ {detail}"}
+        setup_git_credentials()
+        status = check_push_access(self._redacted_remote())
+        if status.can_push:
+            return {
+                "code": 0,
+                "status": "done",
+                "output": f"✓ 已連結 {status.account},現在可以上傳",
+            }
+        return {
+            "code": 1,
+            "status": "error",
+            "output": f"✗ {status.account} 對 {status.repository} 沒有寫入權",
+        }
+
+    def github_use_account(self, account: str = "") -> dict:
+        """Switch to an account gh already knows, then reconnect git."""
+        from ..ghauth import check_push_access, setup_git_credentials, switch_account
+
+        if not isinstance(account, str) or not account.strip():
+            return {"code": 1, "output": "✗ 沒有指定帳號"}
+        if not self._lock.acquire(blocking=False):
+            return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
+        try:
+            ok, detail = switch_account(account.strip())
+            if not ok:
+                return {"code": 1, "output": f"✗ 切換帳號失敗:{detail}"}
+            setup_git_credentials()
+            status = check_push_access(self._redacted_remote())
+            if not status.can_push:
+                return {
+                    "code": 1,
+                    "output": f"✗ {account} 仍然無法寫入 {status.repository}",
+                }
+            return {"code": 0, "output": f"✓ 已切換到 {account},現在可以上傳"}
+        finally:
+            self._lock.release()
+
     def settings_info(self) -> dict:
         """Everything the settings screen shows, read from local config only.
 

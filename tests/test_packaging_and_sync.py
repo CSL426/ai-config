@@ -709,7 +709,7 @@ def test_pull_refuses_dirty_conflicting_change_without_autostash(
     assert local_settings.read_text(encoding="utf-8") == '{"theme":"local"}\n'
 
 
-def test_pull_refuses_untracked_files(tmp_path: Path) -> None:
+def test_pull_proceeds_with_untracked_files(tmp_path: Path) -> None:
     _, data_repo = create_data_remote(tmp_path)
     (data_repo / "notes.txt").write_text("local notes\n", encoding="utf-8")
     home = tmp_path / "home"
@@ -717,9 +717,25 @@ def test_pull_refuses_untracked_files(tmp_path: Path) -> None:
 
     result = run_data_cli(data_repo, home, "pull", "claude")
 
+    # fast-forward 碰不到未追蹤的檔案,拿它們擋 pull 等於還沒 push 的
+    # 新技能會讓人完全無法更新
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert run_git(data_repo, "status", "--short") == "?? notes.txt"
+    assert (data_repo / "notes.txt").read_text(encoding="utf-8") == "local notes\n"
+
+
+def test_pull_still_refuses_modified_tracked_files(tmp_path: Path) -> None:
+    _, data_repo = create_data_remote(tmp_path)
+    tracked = data_repo / "claude" / "settings.json"
+    tracked.write_text('{"changed": true}\n', encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    # 已追蹤檔案的改動才是真的會被 merge 覆蓋的東西
     assert result.returncode != 0
     assert "uncommitted changes" in result.stderr
-    assert run_git(data_repo, "status", "--short") == "?? notes.txt"
 
 
 def test_pull_refuses_local_ahead_branch(tmp_path: Path) -> None:

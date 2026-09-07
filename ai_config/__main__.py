@@ -55,6 +55,7 @@ def usage() -> None:
     print("                  Stop reporting the tool's own bundled skills")
     print("                  --from <both|codex|agy> limit to one target")
     print("  config          Show provider (git/gdrive), repo, and login state")
+    print("  login [account] Connect a GitHub account that can push")
     print("  desktop         Launch the desktop app (bundled on Windows)")
     print("                  --shortcut add a Start-menu entry (Windows)")
     print("                  --wait stay in the foreground (shows errors)")
@@ -207,6 +208,14 @@ def main(argv: "list[str] | None" = None) -> int:
         from .commands.share import run_share
 
         return run_share(name, target)
+
+    if cmd == "login":
+        if len(args) > 2:
+            log_error(f"Usage: {ENTRYPOINT} login [account]")
+            return 1
+        from .commands.login import run_login
+
+        return run_login(args[1] if len(args) == 2 else None)
 
     if cmd == "ignore-skills":
         if len(args) > 2:

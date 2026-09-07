@@ -44,7 +44,9 @@ def _pull_preflight() -> "tuple[int, int] | None":
             )
         return None
 
-    status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
+    # 只看已追蹤檔案的改動:fast-forward 不會碰到未追蹤的新檔,
+    # 拿它們擋 pull 等於還沒 push 過的新技能會讓人完全無法更新。
+    status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=no")
     if status.returncode != 0:
         _git_failure("Reading repository status", status)
         return None
@@ -52,6 +54,16 @@ def _pull_preflight() -> "tuple[int, int] | None":
         log_error("Data repository has uncommitted changes; pull cancelled.")
         print(status.stdout.rstrip())
         return None
+
+    untracked = _run_repo_git(
+        "ls-files", "--others", "--exclude-standard"
+    )
+    if untracked.returncode == 0 and untracked.stdout.strip():
+        count = len(untracked.stdout.strip().splitlines())
+        log_info(
+            f"有 {count} 個尚未保存的新檔案,pull 不會動到它們"
+            f"(要保存請執行 {ENTRYPOINT} push)"
+        )
 
     branch = _run_repo_git("symbolic-ref", "--quiet", "--short", "HEAD")
     if branch.returncode != 0:
