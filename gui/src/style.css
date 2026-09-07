@@ -28,7 +28,8 @@
   --color-console-head: oklch(54% 0.08 65);
   --shadow-selection: 0 0.0625rem 0.125rem oklch(30% 0.011 95 / 0.1);
 
-  --font-display: "Noto Serif TC", "Songti TC", Georgia, serif;
+  --font-display: "Noto Serif TC", "Songti TC", "PingFang TC",
+    "Microsoft JhengHei", "Segoe UI", system-ui, sans-serif;
   --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
     system-ui, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Noto Sans Mono CJK TC",
@@ -74,8 +75,9 @@ body {
   padding: var(--space-lg);
   max-width: 64rem;
   margin: 0 auto;
-  /* 高度固定,各區塊自己處理溢位,整頁不該出現捲軸 */
-  overflow: hidden;
+  /* 視窗可以縮到 640x480,高 DPI 縮放後更矮。塞不下時要能捲動,
+     否則底部的連結會被切掉而且完全按不到。 */
+  overflow-y: auto;
 }
 
 /* ── 標頭 ─────────────────────────────── */
@@ -116,14 +118,15 @@ body {
   font-size: 0.8125rem;
 }
 
-.update-btn {
+.btn.update-btn {
+  min-block-size: 1.75rem;
   font-size: 0.75rem;
   font-weight: 500;
   padding: 0.125rem var(--space-sm);
   border: 1px solid var(--color-paper-3);
 }
 
-.update-btn:disabled {
+.btn.update-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -142,6 +145,8 @@ body {
 .connection-summary {
   display: flex;
   align-items: center;
+  /* 折行時兩個按鈕要留在一起,不能各自被 margin auto 拉到兩端 */
+  gap: var(--space-sm);
   gap: var(--space-sm);
   flex-wrap: wrap;
 }
@@ -151,7 +156,7 @@ body {
   align-items: center;
   min-block-size: 2rem;
   padding-inline: var(--space-sm);
-  border-radius: 62.4375rem;
+  border-radius: 999px;
   background: var(--color-paper-2);
   color: var(--color-ink-soft);
   font-size: 0.75rem;
@@ -164,8 +169,8 @@ body {
   color: var(--color-accent-strong);
 }
 
-.connection-btn {
-  margin-inline-start: auto;
+.btn.connection-btn {
+  min-block-size: 1.75rem;
 }
 
 /* ── 範圍選擇 ─────────────────────────── */
@@ -177,8 +182,10 @@ body {
 .scope {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
+  gap: var(--space-sm);
   flex-wrap: wrap;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .scope-label {
@@ -207,9 +214,9 @@ body {
   background: transparent;
   color: var(--color-ink-soft);
   font: inherit;
-  font-size: 0.875rem;
-  padding: var(--space-xs) var(--space-md);
-  min-block-size: 2.75rem;
+  font-size: 0.8125rem;
+  padding: var(--space-xs) var(--space-sm);
+  min-block-size: 2rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
@@ -448,22 +455,9 @@ body {
 }
 
 .package[open] {
-  /* 展開後這是使用者正在看的東西,讓它拿到剩餘空間並自己捲動 */
   flex: 1 1 auto;
-  min-block-size: 12rem;
+  min-block-size: 0;
   overflow: hidden;
-}
-
-/* 面板展開時 hero 收起狀態列與說明,把空間讓出來 */
-.app:has(.package[open]) .hero {
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.app:has(.package[open]) .tool-rows,
-.app:has(.package[open]) .hero-links {
-  display: none;
 }
 
 .package[open] .package-list {
@@ -547,7 +541,7 @@ body {
   font-weight: 600;
   color: var(--color-success);
   background: var(--color-success-soft);
-  border-radius: 62.4375rem;
+  border-radius: 999px;
   padding: 0.0625rem var(--space-sm);
 }
 
@@ -673,9 +667,8 @@ body {
 .output {
   display: flex;
   flex-direction: column;
-  /* hero 的內容高度是固定的,所以由輸出區吸收剩餘空間並在視窗變矮時先縮 */
+  /* 顯示時獨佔主區域,不再和狀態區搶空間 */
   flex: 1 1 auto;
-  min-block-size: 6rem;
   min-height: 0;
   border: 1px solid var(--color-paper-3);
   border-radius: var(--radius-md);
@@ -942,7 +935,7 @@ body {
 
 .provider-choice-current {
   padding: 0.125rem var(--space-sm);
-  border-radius: 62.4375rem;
+  border-radius: 999px;
   background: var(--color-success-soft);
   color: var(--color-success);
   font-size: 0.6875rem;
@@ -1032,6 +1025,8 @@ body {
 
 /* ── 主畫面(狀態優先)─────────────────── */
 
+/* 880x680 放不下三個並排的區塊。主區域改為一次一個視圖:狀態、技能、
+   輸出各自拿到完整高度,而不是互相搶剩餘空間搶到誰都不夠用。 */
 .hero {
   display: flex;
   flex-direction: column;
@@ -1042,6 +1037,7 @@ body {
   gap: var(--space-md);
   padding-block: var(--space-sm);
   flex: 0 0 auto;
+  min-block-size: 0;
 }
 
 .hero[hidden] {
@@ -1061,11 +1057,19 @@ body {
   inline-size: 3.25rem;
   block-size: 3.25rem;
   flex-shrink: 0;
-  border-radius: 62.4375rem;
+  /* 沒有狀態時不畫圓球,免得看起來像圖片破圖 */
+  display: none;
+  border-radius: 999px;
   background: var(--color-paper-2);
   background-repeat: no-repeat;
   background-position: center;
   background-size: 1.75rem;
+}
+
+.hero-mark.is-ok,
+.hero-mark.is-pending,
+.hero-mark.is-fail {
+  display: block;
 }
 
 .hero-mark.is-ok {
@@ -1149,7 +1153,7 @@ body {
 .tool-dot {
   inline-size: 0.5rem;
   block-size: 0.5rem;
-  border-radius: 62.4375rem;
+  border-radius: 999px;
   background: var(--color-paper-3);
   flex-shrink: 0;
 }
@@ -1206,4 +1210,45 @@ body {
 .link-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.view-back {
+  min-block-size: 2rem;
+  padding-inline: var(--space-sm);
+  font-size: 0.8125rem;
+  flex-shrink: 0;
+}
+
+.package-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* 一次一個視圖:面板顯示時就是展開的,不需要收合箭頭 */
+.package-summary::-webkit-details-marker,
+.package-summary::marker {
+  content: "";
+}
+
+.skill-result {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.skill-result.is-ok {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.skill-result.is-fail {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.skill-result[hidden] {
+  display: none;
 }
