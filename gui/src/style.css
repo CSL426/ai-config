@@ -78,6 +78,7 @@ body {
   /* 視窗可以縮到 640x480,高 DPI 縮放後更矮。塞不下時要能捲動,
      否則底部的連結會被切掉而且完全按不到。 */
   overflow-y: auto;
+  container: app / size;
 }
 
 /* ── 標頭 ─────────────────────────────── */
@@ -287,8 +288,10 @@ body {
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  gap: var(--space-md);
-  padding-block: var(--space-sm);
+  /* 視窗矮的時候(Windows 125%/150% 縮放後只剩 ~540/450px)先縮間距,
+     不然整頁會出現捲軸。內容本身不壓縮。 */
+  gap: clamp(var(--space-xs), 2.2vh, var(--space-md));
+  padding-block: clamp(0px, 1vh, var(--space-sm));
   flex: 0 0 auto;
   inline-size: 100%;
   max-inline-size: 42rem;
@@ -1396,5 +1399,57 @@ summary:focus-visible,
   * {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
+  }
+}
+
+/* 矮視窗(Windows 125%/150% 縮放)的緊湊版:只收間距與非必要的說明文字,
+   按鈕與狀態列本身維持原大小,不犧牲可讀性與點擊面積 */
+@media (max-height: 620px) {
+  .app {
+    padding: var(--space-sm) var(--space-lg);
+    gap: var(--space-sm);
+  }
+
+  .hero-sub,
+  .command-hint {
+    display: none;
+  }
+
+  .tool-row {
+    padding-block: var(--space-xs);
+  }
+
+  .hero-mark {
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+  }
+
+  .hero-title {
+    font-size: 1.25rem;
+  }
+}
+
+@container app (max-height: 620px) {
+  .app {
+    padding: var(--space-sm) var(--space-lg);
+    gap: var(--space-sm);
+  }
+
+  .hero-sub,
+  .command-hint {
+    display: none;
+  }
+
+  .tool-row {
+    padding-block: var(--space-xs);
+  }
+
+  .hero-mark {
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+  }
+
+  .hero-title {
+    font-size: 1.25rem;
   }
 }
