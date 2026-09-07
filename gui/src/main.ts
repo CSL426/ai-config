@@ -1,86 +1,219 @@
 import "./style.css";
 
-import type { AcgApi, AcgCommand, SkillEntry } from "./bridge";
+import type {
+  AcgApi, AcgCommand, RunResult, SettingsInfo, SkillEntry,
+} from "./bridge";
 
 const COMMAND_LABELS: Record<AcgCommand, string> = {
-  status: "檢查狀態",
-  apply: "套用設定",
-  pull: "下載更新",
-  push: "上傳變更",
+  status: "檢查狀態", apply: "套用設定", pull: "下載更新", push: "上傳變更",
 };
-
-const $ = <T extends HTMLElement>(sel: string): T => {
-  const el = document.querySelector<T>(sel);
-  if (!el) throw new Error(`missing element: ${sel}`);
-  return el;
+const $ = <T extends HTMLElement>(selector: string): T => {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`missing element: ${selector}`);
+  return element;
 };
-
 const versionEl = $("#version");
 const repoEl = $("#repo");
 const providerEl = $("#provider");
-const configInfoBtn = $<HTMLButtonElement>("#config-info");
-const settingsOpenBtn = $<HTMLButtonElement>("#settings-open");
 const settingsBox = $("#settings");
-const settingsCloseBtn = $<HTMLButtonElement>("#settings-close");
-const settingsAccount = $("#settings-account");
-const settingsFolder = $("#settings-folder");
-const settingsRemote = $("#settings-remote");
-const settingsRepo = $("#settings-repo");
-const settingsRowAccount = $("#settings-row-account");
-const settingsRowFolder = $("#settings-row-folder");
-const settingsRowRemote = $("#settings-row-remote");
-const settingsOpenDirBtn = $<HTMLButtonElement>("#settings-open-dir");
-const settingsReloginBtn = $<HTMLButtonElement>("#settings-relogin");
-const settingsFolderOpenBtn = $<HTMLButtonElement>("#settings-folder-open");
+const settingsClose = $<HTMLButtonElement>("#settings-close");
+const settingsFeedback = $("#settings-feedback");
+const settingsRetry = $<HTMLButtonElement>("#settings-retry");
 const settingsSwitch = $("#settings-switch");
-const settingsSwitchNote = $("#settings-switch-note");
 const settingsSwitchForm = $("#settings-switch-form");
-const settingsProviderRadios = Array.from(
-  document.querySelectorAll<HTMLInputElement>("input[name=settings-provider]"),
-);
-const toolTabs = Array.from(
-  document.querySelectorAll<HTMLButtonElement>("#tool-tabs .scope-tab"),
-);
-const actionButtons = Array.from(
-  document.querySelectorAll<HTMLButtonElement>("[data-cmd]"),
-);
+const toolTabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".scope-tab"));
+const toolRows = Array.from(document.querySelectorAll<HTMLElement>(".tool-row"));
 const heroMark = $("#hero-mark");
 const heroTitle = $("#hero-title");
 const heroSub = $("#hero-sub");
-const toolRows = Array.from(
-  document.querySelectorAll<HTMLElement>(".tool-row"),
-);
-const packageOpenBtn = $<HTMLButtonElement>("#package-open");
-const outputToggleBtn = $<HTMLButtonElement>("#output-toggle");
 const confirmBox = $("#confirm");
 const confirmYes = $<HTMLButtonElement>("#confirm-yes");
-const confirmNo = $<HTMLButtonElement>("#confirm-no");
 const outputTitle = $("#output-title");
 const outputState = $("#output-state");
 const outputBody = $("#output-body");
 const outputCopy = $<HTMLButtonElement>("#output-copy");
 const copyFallback = $<HTMLTextAreaElement>("#copy-fallback");
+const skillList = $("#skill-list");
+const skillSearch = $<HTMLInputElement>("#skill-search");
+const skillFilter = $<HTMLSelectElement>("#skill-filter");
+const skillResult = $("#skill-result");
+const skillRetry = $<HTMLButtonElement>("#skill-retry");
+const packageMessage = $<HTMLTextAreaElement>("#package-message");
+const packageCopy = $<HTMLButtonElement>("#package-copy");
+const updateBtn = $<HTMLButtonElement>("#update-check");
+const appNotice = $("#app-notice");
+const operationStatus = $("#operation-status");
+const setupBox = $("#setup");
+const setupGitPanel = $("#setup-git-panel");
+const setupGdrivePanel = $("#setup-gdrive-panel");
 
+type MainView = "status" | "output" | "skills" | "export";
+let currentView: MainView = "status";
+let outputReturn: MainView = "status";
 let selectedTool = "all";
-let running = false;
 let configured = false;
-let awaitingPushConfirmation = false;
+let running = false;
+let connected = false;
+let restartRequired = false;
+let skillsLoading = false;
+let settingsLoading = false;
 let pendingPushToken: string | null = null;
 let pendingPushTool = "all";
+let pendingUpdate: string | null = null;
+let updateInstalled = false;
+let settingsInfo: SettingsInfo | null = null;
+let settingsOpener: HTMLElement | null = null;
+let skills: SkillEntry[] = [];
+const selectedSkills = new Set<string>();
 
 function api(): AcgApi | null {
   return window.pywebview?.api ?? null;
 }
 
-function setBusy(busy: boolean, cmd?: AcgCommand): void {
-  running = busy;
-  configInfoBtn.disabled = busy || awaitingPushConfirmation;
-  for (const btn of actionButtons) {
-    btn.disabled = busy || !configured || awaitingPushConfirmation;
-    btn.classList.toggle("is-running", busy && btn.dataset.cmd === cmd);
+function toolLabel(tool = selectedTool): string {
+  return toolTabs.find(tab => tab.dataset.tool === tool)?.textContent?.trim() ?? tool;
+}
+
+function feedback(element: HTMLElement, text: string, failed = false): void {
+  element.textContent = text;
+  element.hidden = !text;
+  element.classList.toggle("is-fail", failed);
+}
+
+function syncControls(): void {
+  const blocked = running || !connected || pendingPushToken !== null;
+  for (const control of document.querySelectorAll<
+    HTMLButtonElement | HTMLInputElement | HTMLSelectElement
+  >("button, input, select")) {
+    control.disabled = blocked;
   }
-  for (const tab of toolTabs) {
-    tab.disabled = busy || !configured || awaitingPushConfirmation;
+  // 閱讀、複製、取消確認與關閉對話框不會更動設定。
+  for (const id of ["#output-copy", "#package-copy", "#settings-close"]) {
+    $<HTMLButtonElement>(id).disabled = false;
+  }
+  for (const id of ["#output-back", "#confirm-yes", "#confirm-no"]) {
+    $<HTMLButtonElement>(id).disabled = running;
+  }
+  $<HTMLButtonElement>("#info-retry").disabled = running;
+  updateBtn.disabled = blocked || updateInstalled;
+  for (const control of document.querySelectorAll<HTMLButtonElement>(
+    "[data-cmd], .scope-tab, #package-open",
+  )) control.disabled = blocked || !configured || restartRequired;
+  for (const control of setupBox.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+    "input, button",
+  )) control.disabled = blocked || restartRequired;
+  for (const control of settingsBox.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+    "input, button:not(#settings-close):not(#settings-retry)",
+  )) control.disabled = blocked || settingsLoading || settingsInfo === null;
+  settingsRetry.disabled = blocked || settingsLoading;
+  $<HTMLButtonElement>("#settings-open").disabled = blocked || restartRequired;
+  const selected = skills.filter((skill) => selectedSkills.has(skill.name));
+  const unavailable = blocked || !configured || skillsLoading || restartRequired;
+  const hasSelection = selected.length > 0;
+  const canShare = hasSelection && selected.every((skill) => skill.shareable);
+  const canUnshare = hasSelection && selected.every((skill) => skill.shared);
+
+  $<HTMLButtonElement>("#skill-share").disabled = unavailable || !canShare;
+  $<HTMLButtonElement>("#skill-unshare").disabled = unavailable || !canUnshare;
+  $<HTMLButtonElement>("#skill-package").disabled = unavailable || !hasSelection;
+  $<HTMLButtonElement>("#skill-all").disabled = unavailable || visibleSkills().length === 0;
+  $<HTMLButtonElement>("#skill-none").disabled = unavailable || !hasSelection;
+  skillSearch.disabled = blocked || skillsLoading;
+  skillFilter.disabled = blocked || skillsLoading;
+  skillRetry.disabled = blocked || skillsLoading;
+  $("#skill-selection").textContent = `已選 ${selected.length} 項 · 顯示 ${visibleSkills().length} / ${skills.length} 項`;
+  $("#skill-share").title = !hasSelection || canShare
+    ? "分享給 Codex 與 Antigravity"
+    : "選取項目包含無法從 Claude Code 分享的技能";
+  $("#skill-unshare").title = !hasSelection || canUnshare
+    ? "收回已分享的技能"
+    : "請只選擇已分享的技能";
+}
+
+function setBusy(busy: boolean, label = ""): void {
+  running = busy;
+  feedback(operationStatus, busy ? `${label}，請稍候…` : "");
+  $(".app").setAttribute("aria-busy", String(busy));
+  syncControls();
+}
+
+function cancelPush(): void {
+  pendingPushToken = null;
+  confirmBox.hidden = true;
+  syncControls();
+}
+
+function viewFocusTarget(view: MainView): HTMLElement {
+  switch (view) {
+    case "output":
+      return outputTitle;
+    case "skills":
+      return $("#skills-title");
+    case "export":
+      return $("#export-title");
+    case "status":
+      return configured ? heroTitle : $(".setup-title");
+  }
+}
+
+function showView(view: MainView, focus = true): void {
+  if (view !== "output" && pendingPushToken) {
+    cancelPush();
+    outputState.textContent = "已取消確認，尚未上傳";
+    outputState.className = "output-state";
+  }
+  currentView = view;
+  $("#hero").hidden = view !== "status" || !configured;
+  setupBox.hidden = view !== "status" || configured;
+  $("#output").hidden = view !== "output";
+  $("#package").hidden = view !== "skills";
+  $("#package-result").hidden = view !== "export";
+  $(".app").scrollTop = 0;
+  if (focus) {
+    const target = viewFocusTarget(view);
+    target.tabIndex = -1;
+    target.focus({ preventScroll: true });
+  }
+}
+
+function openOutput(): void {
+  if (currentView !== "output") outputReturn = currentView;
+  showView("output");
+}
+
+function presentResult(result: RunResult): void {
+  renderOutput(result.output || "（沒有輸出）");
+  outputState.textContent = result.code === 0 ? "完成" : "未完成";
+  outputState.className = `output-state ${result.code === 0 ? "is-ok" : "is-fail"}`;
+  outputBody.scrollTop = 0;
+}
+
+function errorResult(error: unknown): RunResult {
+  return { code: 1, output: `✗ 操作失敗：${String(error)}` };
+}
+
+async function perform<T extends RunResult>(
+  label: string,
+  task: () => Promise<T>,
+  reveal = true,
+): Promise<T | RunResult | null> {
+  if (running || pendingPushToken || !api()) return null;
+  if (reveal) openOutput();
+  setBusy(true, label);
+  outputTitle.textContent = label;
+  outputState.textContent = "執行中…";
+  outputState.className = "output-state is-running";
+  showPlaceholder(`${label}，請稍候…`);
+  try {
+    const result = await task();
+    presentResult(result);
+    return result;
+  } catch (error) {
+    const result = errorResult(error);
+    presentResult(result);
+    return result;
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -127,12 +260,15 @@ async function copyText(text: string): Promise<boolean> {
     return true;
   } catch {
     // pywebview 某些平臺不開放 clipboard API,退回隱藏 textarea + execCommand
+    const focused = document.activeElement as HTMLElement | null;
     copyFallback.value = text;
     copyFallback.select();
     try {
       return document.execCommand("copy");
     } catch {
       return false;
+    } finally {
+      focused?.focus();
     }
   }
 }
@@ -181,295 +317,6 @@ function showPlaceholder(text: string): void {
   outputBody.replaceChildren(span);
 }
 
-async function previewPush(): Promise<void> {
-  const bridge = api();
-  if (!bridge || running) return;
-
-  awaitingPushConfirmation = false;
-  pendingPushToken = null;
-  confirmBox.hidden = true;
-  setBusy(true, "push");
-  // 確認列寫著「上方是這次要保存的內容」,所以一定要先切到輸出視圖,
-  // 否則使用者是在盲按同意
-  showView("output");
-  outputTitle.textContent = `上傳前預覽(${toolLabel()})`;
-  outputState.textContent = "整理中…";
-  outputState.className = "output-state is-running";
-  showPlaceholder("正在整理變更摘要，不會上傳任何內容…");
-
-  try {
-    const result = await bridge.preview_push(selectedTool);
-    renderOutput(result.output || "(沒有輸出)");
-    if (result.code !== 0) {
-      outputState.textContent = "有問題";
-      outputState.className = "output-state is-fail";
-      return;
-    }
-    if (!result.needs_confirmation) {
-      outputState.textContent = "沒有待上傳內容";
-      outputState.className = "output-state is-ok";
-      return;
-    }
-
-    pendingPushToken = result.token;
-    pendingPushTool = selectedTool;
-    awaitingPushConfirmation = true;
-    outputState.textContent = "等你確認";
-    outputState.className = "output-state is-review";
-    confirmBox.hidden = false;
-    confirmYes.focus();
-  } catch (err) {
-    showPlaceholder(`無法產生預覽:${String(err)}`);
-    outputState.textContent = "有問題";
-    outputState.className = "output-state is-fail";
-  } finally {
-    setBusy(false);
-    outputBody.scrollTop = 0;
-  }
-}
-
-/**
- * 從 status 輸出判斷每個工具是否一致。
- * CLI 會為每個工具印一段 `═══ Status: <tool> ═══`,段內出現
- * "No differences found" 就是一致,其餘視為有待處理的差異。
- */
-function parseToolStates(output: string): Map<string, boolean> {
-  const states = new Map<string, boolean>();
-  let current = "";
-  for (const raw of output.split("\n")) {
-    const line = raw.trim();
-    const header = /^═+\s*Status:\s*(\S+)/.exec(line);
-    if (header) {
-      current = header[1];
-      states.set(current, false);
-      continue;
-    }
-    if (current && line.includes("No differences found")) {
-      states.set(current, true);
-    }
-  }
-  return states;
-}
-
-function setHero(
-  mark: "ok" | "pending" | "fail" | "none",
-  title: string,
-  sub: string,
-): void {
-  heroMark.className = mark === "none" ? "hero-mark" : `hero-mark is-${mark}`;
-  heroTitle.textContent = title;
-  heroSub.textContent = sub;
-}
-
-/** 從 CLI 輸出挑出第一行實際的錯誤訊息,讓它能直接顯示在畫面上方。 */
-function firstErrorLine(output: string): string {
-  for (const raw of output.split("\n")) {
-    const line = raw.trim();
-    if (line.startsWith("✗") || line.startsWith("⚠")) {
-      return line.replace(/^[✗⚠]\s*/, "");
-    }
-  }
-  return "";
-}
-
-function updateHero(cmd: AcgCommand, result: { code: number; output: string }): void {
-  if (result.code !== 0) {
-    // 錯誤訊息原本只在下方的輸出區,視窗矮時根本看不到
-    const detail = firstErrorLine(result.output);
-    setHero("fail", "指令沒有完成", detail || "詳細輸出裡有錯誤訊息。");
-    showOutputPane(true);
-    return;
-  }
-  if (cmd !== "status") {
-    // 剛套用或下載完的結果不再可信,但直接清空等於逼使用者再按一次檢查。
-    // 保留原本的列,只標示需要重新確認。
-    setHero("none", "已完成", "設定可能已改變，建議再檢查一次狀態。");
-    return;
-  }
-
-  const states = parseToolStates(result.output);
-  if (states.size === 0) {
-    setHero("none", "已完成", "");
-    return;
-  }
-  let pending = 0;
-  for (const row of toolRows) {
-    const tool = row.dataset.toolRow ?? "";
-    const stateEl = row.querySelector(".tool-state");
-    if (!states.has(tool)) {
-      row.className = "tool-row";
-      if (stateEl) stateEl.textContent = "未檢查";
-      continue;
-    }
-    const ok = states.get(tool) === true;
-    if (!ok) pending += 1;
-    row.className = ok ? "tool-row is-ok" : "tool-row is-pending";
-    if (stateEl) stateEl.textContent = ok ? "一致" : "有待更新";
-  }
-
-  if (pending === 0) {
-    setHero("ok", "設定已是最新", "所有工具都與雲端一致。");
-  } else {
-    setHero(
-      "pending",
-      `${pending} 個工具有差異`,
-      "看詳細輸出確認內容，再決定要下載更新還是上傳變更。",
-    );
-  }
-}
-
-async function runCommand(cmd: AcgCommand): Promise<void> {
-  const bridge = api();
-  if (!bridge) {
-    showPlaceholder("尚未連上後端 — 請透過「acg gui」啟動，而不是直接開啟網頁。");
-    return;
-  }
-  if (running) return;
-
-  setBusy(true, cmd);
-  outputTitle.textContent = `${COMMAND_LABELS[cmd]}(${toolLabel()})`;
-  outputState.textContent = "執行中…";
-  outputState.className = "output-state is-running";
-  showPlaceholder("執行中，請稍候…");
-
-  try {
-    const result = await bridge.run(cmd, selectedTool);
-    renderOutput(result.output || "(沒有輸出)");
-    if (result.code === 0) {
-      outputState.textContent = "完成";
-      outputState.className = "output-state is-ok";
-    } else {
-      outputState.textContent = "有問題";
-      outputState.className = "output-state is-fail";
-    }
-    updateHero(cmd, result);
-    // status 的結論已經在上方講清楚,其他指令的輸出才需要自動展開
-    if (result.code === 0 && cmd !== "status") showOutputPane(true);
-  } catch (err) {
-    showPlaceholder(`執行失敗:${String(err)}`);
-    outputState.textContent = "有問題";
-    outputState.className = "output-state is-fail";
-  } finally {
-    setBusy(false);
-    outputBody.scrollTop = 0;
-  }
-}
-
-function toolLabel(): string {
-  const tab = toolTabs.find((t) => t.dataset.tool === selectedTool);
-  return tab?.textContent?.trim() ?? selectedTool;
-}
-
-for (const tab of toolTabs) {
-  tab.addEventListener("click", () => {
-    if (running) return;
-    selectedTool = tab.dataset.tool ?? "all";
-    for (const t of toolTabs) {
-      const on = t === tab;
-      t.classList.toggle("is-selected", on);
-      t.setAttribute("aria-checked", on ? "true" : "false");
-    }
-  });
-}
-
-for (const btn of actionButtons) {
-  btn.addEventListener("click", () => {
-    const cmd = btn.dataset.cmd as AcgCommand | undefined;
-    if (!cmd || running) return;
-    if (cmd === "push") {
-      void previewPush();
-      return;
-    }
-    confirmBox.hidden = true;
-    void runCommand(cmd);
-  });
-}
-
-confirmYes.addEventListener("click", async () => {
-  const bridge = api();
-  const token = pendingPushToken;
-  const tool = pendingPushTool;
-  if (!bridge || !token || running) return;
-
-  awaitingPushConfirmation = false;
-  pendingPushToken = null;
-  confirmBox.hidden = true;
-  setBusy(true, "push");
-  outputTitle.textContent = `上傳變更(${toolLabel()})`;
-  outputState.textContent = "再次核對中…";
-  outputState.className = "output-state is-running";
-  showPlaceholder("正在確認內容仍和預覽相同，相同才會上傳…");
-  try {
-    const result = await bridge.confirm_push(tool, token);
-    renderOutput(result.output || "(沒有輸出)");
-    outputState.textContent = result.code === 0 ? "完成" : "有問題";
-    outputState.className =
-      result.code === 0 ? "output-state is-ok" : "output-state is-fail";
-  } catch (err) {
-    showPlaceholder(`上傳失敗:${String(err)}`);
-    outputState.textContent = "有問題";
-    outputState.className = "output-state is-fail";
-  } finally {
-    setBusy(false);
-    outputBody.scrollTop = 0;
-  }
-});
-confirmNo.addEventListener("click", () => {
-  awaitingPushConfirmation = false;
-  pendingPushToken = null;
-  confirmBox.hidden = true;
-  outputState.textContent = "未上傳";
-  outputState.className = "output-state";
-  setBusy(false);
-});
-
-// ── 技能打包 ───────────────────────────
-
-const skillList = $("#skill-list");
-const skillAll = $<HTMLButtonElement>("#skill-all");
-const skillNone = $<HTMLButtonElement>("#skill-none");
-const skillShare = $<HTMLButtonElement>("#skill-share");
-const skillUnshare = $<HTMLButtonElement>("#skill-unshare");
-const skillPackage = $<HTMLButtonElement>("#skill-package");
-const updateBtn = $<HTMLButtonElement>("#update-check");
-const packageResult = $("#package-result");
-const packageMessage = $<HTMLTextAreaElement>("#package-message");
-const packageCopy = $<HTMLButtonElement>("#package-copy");
-
-function skillCheckboxes(): HTMLInputElement[] {
-  return Array.from(
-    skillList.querySelectorAll<HTMLInputElement>("input[type=checkbox]"),
-  );
-}
-
-function renderSkills(skills: SkillEntry[]): void {
-  skillList.replaceChildren();
-  if (skills.length === 0) {
-    const p = document.createElement("p");
-    p.className = "package-hint";
-    p.textContent = "找不到可用的技能。";
-    skillList.append(p);
-    return;
-  }
-  for (const skill of skills) {
-    const label = document.createElement("label");
-    label.className = "skill-item";
-    const box = document.createElement("input");
-    box.type = "checkbox";
-    box.value = skill.name;
-    const text = document.createElement("span");
-    text.textContent = skill.name;
-    label.append(box, text);
-    if (skill.shared) {
-      const tag = document.createElement("span");
-      tag.className = "skill-tag";
-      tag.textContent = "已共享";
-      label.append(tag);
-    }
-    skillList.append(label);
-  }
-}
-
 function installMessage(zips: string[]): string {
   const paths = zips.map((z) => `- ${z}`).join("\n");
   return [
@@ -482,318 +329,426 @@ function installMessage(zips: string[]): string {
   ].join("\n");
 }
 
-skillAll.addEventListener("click", () => {
-  for (const box of skillCheckboxes()) box.checked = true;
-});
-skillNone.addEventListener("click", () => {
-  for (const box of skillCheckboxes()) box.checked = false;
-});
-
-/** 技能面板裡的即時回饋:輸出區在這個視圖是看不到的。 */
-function reportSkillResult(result: { code: number; output: string }): void {
-  const banner = document.querySelector<HTMLElement>("#skill-result");
-  if (!banner) return;
-  const failed = result.code !== 0;
-  const detail = failed ? firstErrorLine(result.output) : "";
-  banner.textContent = failed
-    ? detail || "沒有完成，可從「查看詳細輸出」看原因"
-    : "完成";
-  banner.className = failed ? "skill-result is-fail" : "skill-result is-ok";
-  banner.hidden = false;
-}
-
-function selectedSkills(): string[] {
-  return skillCheckboxes()
-    .filter((box) => box.checked)
-    .map((box) => box.value);
-}
-
-skillShare.addEventListener("click", async () => {
-  const bridge = api();
-  if (!bridge || running) return;
-  outputTitle.textContent = "分享技能";
-  const result = await bridge.share_skills(selectedSkills());
-  renderOutput(result.output);
-  outputState.textContent = result.code === 0 ? "完成" : "有問題";
-  outputState.className =
-    result.code === 0 ? "output-state is-ok" : "output-state is-fail";
-  reportSkillResult(result);
-  void loadSkills();
-});
-
-skillUnshare.addEventListener("click", async () => {
-  const bridge = api();
-  if (!bridge || running) return;
-  outputTitle.textContent = "取消分享";
-  const result = await bridge.unshare_skills(selectedSkills());
-  renderOutput(result.output);
-  outputState.textContent = result.code === 0 ? "完成" : "有問題";
-  outputState.className =
-    result.code === 0 ? "output-state is-ok" : "output-state is-fail";
-  reportSkillResult(result);
-  void loadSkills();
-});
-
-skillPackage.addEventListener("click", async () => {
-  const bridge = api();
-  if (!bridge || running) return;
-  outputTitle.textContent = "打包技能";
-  const result = await bridge.package_skills(selectedSkills());
-  renderOutput(result.output);
-  outputState.textContent = result.code === 0 ? "完成" : "有問題";
-  outputState.className =
-    result.code === 0 ? "output-state is-ok" : "output-state is-fail";
-  if (result.zips.length > 0) {
-    packageMessage.value = installMessage(result.zips);
-    packageResult.hidden = false;
-  }
-});
-
-packageCopy.addEventListener("click", async () => {
-  packageMessage.select();
-  const ok = await copyText(packageMessage.value);
-  packageCopy.textContent = ok ? "已複製！" : "請按 Ctrl+C 複製";
-  setTimeout(() => {
-    packageCopy.textContent = "複製說明";
-  }, 2000);
-});
-
-// ── 版本更新 ───────────────────────────
-
-let pendingUpdate: string | null = null;
-
-updateBtn.addEventListener("click", async () => {
-  const bridge = api();
-  if (!bridge || running) return;
-
-  if (pendingUpdate) {
-    setBusy(true);
-    outputTitle.textContent = `更新到 v${pendingUpdate}`;
-    outputState.textContent = "執行中…";
-    outputState.className = "output-state is-running";
-    showPlaceholder("下載並安裝新版本，請稍候…");
-    try {
-      const result = await bridge.run_update();
-      renderOutput(result.output || "(沒有輸出)");
-      if (result.code === 0) {
-        outputState.textContent = "完成";
-        outputState.className = "output-state is-ok";
-        updateBtn.textContent = "已更新，重開視窗生效";
-        updateBtn.disabled = true;
-        pendingUpdate = null;
-      } else {
-        outputState.textContent = "有問題";
-        outputState.className = "output-state is-fail";
-      }
-    } finally {
-      setBusy(false);
+function firstErrorLine(output: string): string {
+  for (const raw of output.split("\n")) {
+    const line = raw.trim();
+    if (/^[✗⚠]/.test(line)) {
+      return line.replace(/^[✗⚠]\s*/, "");
     }
+  }
+  return "請查看詳細結果。";
+}
+
+function setHero(mark: "ok" | "pending" | "fail" | "none", title: string, sub: string): void {
+  heroMark.className = mark === "none" ? "hero-mark" : `hero-mark is-${mark}`;
+  heroTitle.textContent = title;
+  heroSub.textContent = sub;
+}
+
+function invalidateToolStates(label = "需重新檢查"): void {
+  for (const row of toolRows) {
+    row.className = "tool-row";
+    row.querySelector<HTMLElement>(".tool-state")!.textContent = label;
+  }
+  setHero("none", "尚待確認", "設定可能已改變，請重新檢查工具與本機保存設定是否一致。");
+}
+
+function updateStatus(result: RunResult, tool: string): void {
+  if (result.code !== 0) {
+    invalidateToolStates();
+    setHero("fail", "檢查未完成", firstErrorLine(result.output));
     return;
   }
-
-  updateBtn.disabled = true;
-  updateBtn.textContent = "檢查中…";
-  const check = await bridge.check_update();
-  updateBtn.disabled = false;
-  if (check.code !== 0) {
-    renderOutput(check.output);
-    outputTitle.textContent = "檢查更新";
-    outputState.textContent = "有問題";
-    outputState.className = "output-state is-fail";
-    updateBtn.textContent = "檢查更新";
-  } else if (check.up_to_date) {
-    updateBtn.textContent = "已是最新版";
-    setTimeout(() => {
-      updateBtn.textContent = "檢查更新";
-    }, 3000);
-  } else {
-    pendingUpdate = check.latest;
-    updateBtn.textContent = `更新到 v${check.latest}`;
+  type ToolState = "ok" | "pending" | "unavailable";
+  const states = new Map<string, ToolState>();
+  let current = "";
+  for (const raw of result.output.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("═══")) {
+      current = /^═+\s*Status:\s*(\S+)/.exec(line)?.[1] ?? "";
+      if (current) states.set(current, "pending");
+    } else if (current && line.includes("No differences found")) {
+      states.set(current, "ok");
+    } else if (current && /No config in|Tool home directory not found/.test(line)) {
+      states.set(current, "unavailable");
+    }
   }
+  const expected = toolRows.filter(row => tool === "all" || row.dataset.toolRow === tool);
+  let pending = 0;
+  let unknown = 0;
+  for (const row of toolRows) {
+    const state = expected.includes(row) ? states.get(row.dataset.toolRow ?? "") : undefined;
+    const label = row.querySelector<HTMLElement>(".tool-state")!;
+    row.className = "tool-row";
+    if (state === "ok") {
+      row.classList.add("is-ok");
+      label.textContent = "一致";
+    } else if (state === "pending") {
+      row.classList.add("is-pending");
+      label.textContent = "有差異";
+      pending += 1;
+    } else {
+      label.textContent = state === "unavailable" ? "缺少設定／工具" : "未檢查";
+      if (expected.includes(row)) unknown += 1;
+    }
+  }
+  const scope = toolLabel(tool);
+  if (unknown) {
+    setHero("pending", `${scope}尚未全部確認`, "有工具缺少設定或未取得檢查結果，請查看詳細輸出。");
+  } else if (pending) {
+    setHero("pending", `${pending} 個工具有差異`, "比較的是工具設定與本機保存設定；請查看差異再決定如何同步。");
+  } else {
+    setHero("ok", `${scope}設定一致`, "與本機保存的設定一致；尚未檢查雲端是否有新版本。");
+  }
+}
+
+async function runCommand(cmd: AcgCommand): Promise<void> {
+  const bridge = api();
+  if (!bridge || running || !configured || pendingPushToken || restartRequired) return;
+  const tool = selectedTool;
+  invalidateToolStates(cmd === "status" ? "檢查中…" : "需重新檢查");
+  setHero("none", `${COMMAND_LABELS[cmd]}中…`, `操作範圍：${toolLabel(tool)}`);
+  const result = await perform(`${COMMAND_LABELS[cmd]}（${toolLabel(tool)}）`,
+    () => bridge.run(cmd, tool), cmd !== "status");
+  if (!result) return;
+  if (cmd === "status") updateStatus(result, tool);
+  else {
+    invalidateToolStates();
+    if (result.code !== 0) setHero("fail", "操作未完成", firstErrorLine(result.output));
+  }
+  if (result.code !== 0) openOutput();
+}
+
+async function previewPush(): Promise<void> {
+  const bridge = api();
+  if (!bridge || !configured || restartRequired) return;
+  const tool = selectedTool;
+  const result = await perform(`上傳前預覽（${toolLabel(tool)}）`, () => bridge.preview_push(tool));
+  if (!result || result.code !== 0) return;
+  if (!("needs_confirmation" in result) || !result.needs_confirmation) {
+    outputState.textContent = "沒有待上傳內容";
+    return;
+  }
+  if (!("token" in result) || typeof result.token !== "string" || !result.token) {
+    presentResult({ code: 1, output: "✗ 未取得有效預覽，請返回後重新預覽。" });
+    return;
+  }
+  pendingPushToken = result.token;
+  pendingPushTool = tool;
+  confirmBox.hidden = false;
+  outputState.textContent = "等你確認";
+  outputState.className = "output-state is-review";
+  syncControls();
+  // 焦點先留在可捲動的變更內容，避免直接落在執行上傳的按鈕。
+  outputBody.tabIndex = 0;
+  outputBody.focus();
+}
+
+for (const tab of toolTabs) {
+  tab.addEventListener("click", () => {
+    if (running || pendingPushToken) return;
+    selectedTool = tab.dataset.tool ?? "all";
+    for (const candidate of toolTabs) {
+      const selected = candidate === tab;
+      candidate.classList.toggle("is-selected", selected);
+      candidate.setAttribute("aria-checked", String(selected));
+      candidate.tabIndex = selected ? 0 : -1;
+    }
+  });
+  tab.addEventListener("keydown", (event) => {
+    let index: number;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      index = (toolTabs.indexOf(tab) + 1) % toolTabs.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      index = (toolTabs.indexOf(tab) - 1 + toolTabs.length) % toolTabs.length;
+    } else if (event.key === "Home") {
+      index = 0;
+    } else if (event.key === "End") {
+      index = toolTabs.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    toolTabs[index].click();
+    toolTabs[index].focus();
+  });
+}
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-cmd]")) {
+  button.addEventListener("click", () => {
+    const cmd = button.dataset.cmd as AcgCommand;
+    void (cmd === "push" ? previewPush() : runCommand(cmd));
+  });
+}
+confirmYes.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || !pendingPushToken || running || currentView !== "output") return;
+  const token = pendingPushToken;
+  const tool = pendingPushTool;
+  cancelPush();
+  invalidateToolStates();
+  await perform(`上傳變更（${toolLabel(tool)}）`, () => bridge.confirm_push(tool, token));
 });
+$("#confirm-no").addEventListener("click", () => {
+  cancelPush();
+  outputState.textContent = "已取消確認，尚未上傳";
+  outputState.className = "output-state";
+  $("#output-back").focus();
+});
+
+function matchesSkillFilter(skill: SkillEntry, filter: string): boolean {
+  if (filter === "shared") return skill.shared;
+  if (filter === "unshared") return !skill.shared;
+  return true;
+}
+
+function visibleSkills(): SkillEntry[] {
+  const query = skillSearch.value.trim().toLocaleLowerCase();
+  return skills.filter(
+    (skill) =>
+      skill.name.toLocaleLowerCase().includes(query) &&
+      matchesSkillFilter(skill, skillFilter.value),
+  );
+}
+
+function renderSkills(): void {
+  skillList.replaceChildren();
+  const visible = visibleSkills();
+  if (!visible.length) {
+    const message = document.createElement("p");
+    message.className = "package-hint";
+    message.textContent = skills.length ? "沒有符合條件的技能，請調整搜尋或篩選。" : "目前沒有可用的技能。";
+    skillList.append(message);
+  }
+  for (const skill of visible) {
+    const label = document.createElement("label");
+    label.className = "skill-item";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = skill.name;
+    checkbox.checked = selectedSkills.has(skill.name);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedSkills.add(skill.name);
+      else selectedSkills.delete(skill.name);
+      syncControls();
+    });
+    const name = document.createElement("span");
+    name.className = "skill-name";
+    name.textContent = skill.name;
+    label.append(checkbox, name);
+    if (skill.shared) {
+      const tag = document.createElement("span");
+      tag.className = "skill-tag";
+      tag.textContent = "已分享";
+      label.append(tag);
+    }
+    skillList.append(label);
+  }
+  syncControls();
+}
 
 async function loadSkills(): Promise<void> {
   const bridge = api();
-  if (!bridge) return;
+  if (!bridge || skillsLoading) return;
+  skillsLoading = true;
+  skillRetry.hidden = true;
+  skillList.setAttribute("aria-busy", "true");
+  skillList.textContent = "讀取技能中…";
+  syncControls();
   try {
     const result = await bridge.list_skills();
-    renderSkills(result.skills);
-  } catch {
-    renderSkills([]);
+    skills = result.skills;
+    for (const name of selectedSkills) {
+      if (!skills.some(skill => skill.name === name)) selectedSkills.delete(name);
+    }
+    renderSkills();
+  } catch (error) {
+    skills = [];
+    selectedSkills.clear();
+    skillList.textContent = `無法讀取技能：${String(error)}`;
+    skillRetry.hidden = false;
+  } finally {
+    skillsLoading = false;
+    skillList.setAttribute("aria-busy", "false");
+    syncControls();
   }
 }
+skillSearch.addEventListener("input", renderSkills);
+skillFilter.addEventListener("change", renderSkills);
+$("#skill-all").addEventListener("click", () => {
+  for (const skill of visibleSkills()) selectedSkills.add(skill.name);
+  renderSkills();
+});
+$("#skill-none").addEventListener("click", () => {
+  selectedSkills.clear();
+  renderSkills();
+});
+skillRetry.addEventListener("click", () => { void loadSkills(); });
 
-configInfoBtn.addEventListener("click", async () => {
+const SKILL_ACTION_LABELS = {
+  share: "分享技能",
+  unshare: "取消分享",
+  package: "匯出安裝檔",
+} as const;
+
+async function skillAction(action: "share" | "unshare" | "package"): Promise<void> {
   const bridge = api();
-  if (!bridge || running) return;
-
-  setBusy(true);
-  outputTitle.textContent = "連線資訊";
-  outputState.textContent = "讀取中…";
-  outputState.className = "output-state is-running";
-  showPlaceholder("正在讀取同步方式與登入狀態…");
-  try {
-    const result = await bridge.config_info();
-    renderOutput(result.output || "(沒有輸出)");
-    outputState.textContent = result.code === 0 ? "唯讀" : "有問題";
-    outputState.className =
-      result.code === 0 ? "output-state is-ok" : "output-state is-fail";
-  } catch (err) {
-    showPlaceholder(`無法讀取連線資訊：${String(err)}`);
-    outputState.textContent = "有問題";
-    outputState.className = "output-state is-fail";
-  } finally {
-    setBusy(false);
-    outputBody.scrollTop = 0;
+  if (!bridge || running || pendingPushToken || !selectedSkills.size) return;
+  const names = [...selectedSkills];
+  const label = SKILL_ACTION_LABELS[action];
+  packageMessage.value = "";
+  $("#package-result").hidden = true;
+  feedback(skillResult, "");
+  const result = await perform(label, async () => {
+    let res: RunResult;
+    if (action === "package") {
+      res = await bridge.package_skills(names);
+    } else if (action === "share") {
+      res = await bridge.share_skills(names);
+    } else {
+      res = await bridge.unshare_skills(names);
+    }
+    if (action !== "package") {
+      invalidateToolStates();
+      await loadSkills();
+    }
+    return res;
+  }, false);
+  if (!result) return;
+  feedback(skillResult, result.code === 0 ? `${label}完成。` : firstErrorLine(result.output), result.code !== 0);
+  if (action === "package" && "zips" in result && Array.isArray(result.zips) && result.zips.length) {
+    packageMessage.value = installMessage(result.zips);
+    const statusText = result.code === 0
+      ? `已準備 ${result.zips.length} 個安裝檔。`
+      : `僅完成 ${result.zips.length} / ${names.length} 項。${firstErrorLine(result.output)}`;
+    feedback($("#export-status"), statusText, result.code !== 0);
+    showView("export");
   }
+}
+$("#skill-share").addEventListener("click", () => { void skillAction("share"); });
+$("#skill-unshare").addEventListener("click", () => { void skillAction("unshare"); });
+$("#skill-package").addEventListener("click", () => { void skillAction("package"); });
+packageCopy.addEventListener("click", async () => {
+  packageMessage.select();
+  const copied = await copyText(packageMessage.value);
+  if (!copied) { packageMessage.focus(); packageMessage.select(); }
+  packageCopy.textContent = copied ? "已複製" : "請按複製快捷鍵";
+  setTimeout(() => { packageCopy.textContent = "複製說明"; }, 2000);
 });
 
-// ── 首次設定 ───────────────────────────
+updateBtn.addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running || pendingPushToken || updateInstalled) return;
+  if (pendingUpdate) {
+    const result = await perform(`更新到 v${pendingUpdate}`, () => bridge.run_update());
+    if (result?.code === 0) {
+      updateInstalled = true;
+      pendingUpdate = null;
+      updateBtn.textContent = "已更新，重開視窗生效";
+    }
+  } else {
+    updateBtn.textContent = "檢查中…";
+    const result = await perform("檢查更新", () => bridge.check_update(), false);
+    updateBtn.textContent = "檢查更新";
+    if (result?.code === 0 && "latest" in result && typeof result.latest === "string") {
+      if ("up_to_date" in result && result.up_to_date) {
+        feedback(appNotice, "目前已是最新版本。");
+      } else {
+        pendingUpdate = result.latest;
+        updateBtn.textContent = `更新到 v${pendingUpdate}`;
+        feedback(appNotice, `可更新到 v${pendingUpdate}，按上方更新按鈕開始安裝。`);
+      }
+    } else if (result) openOutput();
+  }
+  syncControls();
+});
+$("#config-info").addEventListener("click", () => {
+  const bridge = api();
+  if (bridge) void perform("連線資訊", () => bridge.config_info());
+});
 
-const setupBox = $("#setup");
-const setupUrl = $<HTMLInputElement>("#setup-url");
-const setupDir = $<HTMLInputElement>("#setup-dir");
-const setupGo = $<HTMLButtonElement>("#setup-go");
-const setupGdriveDir = $<HTMLInputElement>("#setup-gdrive-dir");
-const setupGdriveFolder = $<HTMLInputElement>("#setup-gdrive-folder");
-const setupGdriveFolderField = $("#setup-gdrive-folder-field");
-const gdriveSpaceRadios = Array.from(
-  document.querySelectorAll<HTMLInputElement>("input[name=gdrive-space]"),
-);
-
-function selectedGdriveSpace(): string {
-  return gdriveSpaceRadios.find((radio) => radio.checked)?.value ?? "visible";
+function field(panel: HTMLElement, name: string): HTMLInputElement {
+  const input = panel.querySelector<HTMLInputElement>(`[data-field="${name}"]`);
+  if (!input) throw new Error(`missing field: ${name}`);
+  return input;
 }
 
-for (const radio of gdriveSpaceRadios) {
+function bindSpace(panel: HTMLElement): void {
+  const sync = (): void => {
+    const folder = panel.querySelector<HTMLElement>('[data-field-row="gdrive-folder"]');
+    if (folder) folder.hidden = panel.querySelector<HTMLInputElement>('[data-field="gdrive-space"]:checked')?.value === "hidden";
+  };
+  for (const radio of panel.querySelectorAll<HTMLInputElement>('[data-field="gdrive-space"]')) {
+    radio.addEventListener("change", sync);
+  }
+  sync();
+}
+bindSpace(setupGdrivePanel);
+for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="setup-provider"]')) {
   radio.addEventListener("change", () => {
-    // 隱藏空間沒有資料夾路徑可填
-    setupGdriveFolderField.hidden = selectedGdriveSpace() === "hidden";
+    if (!radio.checked) return;
+    setupGitPanel.hidden = radio.value !== "git";
+    setupGdrivePanel.hidden = radio.value !== "gdrive";
   });
 }
-const setupGdriveGo = $<HTMLButtonElement>("#setup-gdrive-go");
-const setupGitPanel = $("#setup-git-panel");
-const setupGdrivePanel = $("#setup-gdrive-panel");
-const providerRadios = Array.from(
-  document.querySelectorAll<HTMLInputElement>("input[name=setup-provider]"),
-);
 
-for (const radio of providerRadios) {
-  radio.addEventListener("change", () => {
-    const isGdrive = radio.value === "gdrive" && radio.checked;
-    setupGitPanel.hidden = isGdrive;
-    setupGdrivePanel.hidden = !isGdrive;
-    if (isGdrive) {
-      setupGdriveDir.value = setupDir.value;
-    }
-  });
-}
-
-function setConfigured(value: boolean): void {
-  configured = value;
-  setupBox.hidden = value;
-  setBusy(running);
-  skillShare.disabled = !value;
-  skillUnshare.disabled = !value;
-  skillPackage.disabled = !value;
-}
-
-setupGo.addEventListener("click", async () => {
+async function submitSetup(provider: string, panel: HTMLElement, switching = false): Promise<void> {
   const bridge = api();
-  if (!bridge || running) return;
-  setupGo.disabled = true;
-  setupGo.textContent = "設定中…";
-  outputTitle.textContent = "首次設定";
-  outputState.textContent = "執行中…";
-  outputState.className = "output-state is-running";
-  showPlaceholder("正在下載儲存庫並驗證存取權，請稍候…");
-  try {
-    const result = await bridge.setup_repo(setupUrl.value, setupDir.value);
-    renderOutput(result.output || "(沒有輸出)");
-    if (result.code === 0) {
-      outputState.textContent = "完成";
-      outputState.className = "output-state is-ok";
-      setupBox.replaceChildren();
-      const done = document.createElement("p");
-      done.className = "package-hint";
-      done.textContent =
-        "✓ 設定完成！請關閉並重新開啟這個視窗，就能開始同步。";
-      setupBox.append(done);
-    } else {
-      outputState.textContent = "有問題";
-      outputState.className = "output-state is-fail";
-    }
-  } finally {
-    setupGo.disabled = false;
-    setupGo.textContent = "連線並完成設定";
+  if (!bridge || running || pendingPushToken) return;
+  if (provider === "git" && !field(panel, "repo-url").value.trim()) {
+    const input = field(panel, "repo-url");
+    input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-describedby", switching ? "settings-feedback" : "app-notice");
+    feedback(switching ? settingsFeedback : appNotice, "請先填入儲存庫 Git URL。", true);
+    input.focus();
+    return;
   }
-});
-
-setupGdriveGo.addEventListener("click", async () => {
-  const bridge = api();
-  if (!bridge || running) return;
-  setupGdriveGo.disabled = true;
-  setupGdriveGo.textContent = "驗證中…";
-  outputTitle.textContent = "首次設定 (Google Drive)";
-  outputState.textContent = "執行中…";
-  outputState.className = "output-state is-running";
-  showPlaceholder("已開啟瀏覽器，請完成登入…");
-  try {
-    const result = await bridge.setup_gdrive(
-      setupGdriveDir.value,
-      setupGdriveFolder.value,
-      selectedGdriveSpace(),
-    );
-    renderOutput(result.output || "(沒有輸出)");
-    if (result.code === 0) {
-      outputState.textContent = "完成";
-      outputState.className = "output-state is-ok";
-      setupBox.replaceChildren();
-      const done = document.createElement("p");
-      done.className = "package-hint";
-      done.textContent =
-        "✓ Google Drive 設定完成！請關閉並重新開啟這個視窗，就能開始同步。";
-      setupBox.append(done);
-    } else {
-      outputState.textContent = "有問題";
-      outputState.className = "output-state is-fail";
-    }
-  } finally {
-    setupGdriveGo.disabled = false;
-    setupGdriveGo.textContent = "用 Google 帳號登入";
+  panel.querySelector('[aria-invalid="true"]')?.removeAttribute("aria-invalid");
+  const dataDir = field(panel, "data-dir").value;
+  const repoUrl = provider === "git" ? field(panel, "repo-url").value : "";
+  const folder = provider === "gdrive" ? field(panel, "gdrive-folder").value : "";
+  const space = panel.querySelector<HTMLInputElement>('[data-field="gdrive-space"]:checked')?.value ?? "visible";
+  if (switching) showSettings(false);
+  const task = () =>
+    provider === "git"
+      ? bridge.setup_repo(repoUrl, dataDir)
+      : bridge.setup_gdrive(dataDir, folder, space);
+  const result = await perform(switching ? "切換同步方式" : "首次設定", task);
+  if (result?.code === 0) {
+    // 後端工具路徑於啟動時載入；完成 setup 後不可使用舊程序繼續同步。
+    restartRequired = true;
+    feedback(appNotice, "設定完成。請關閉並重新開啟視窗，載入新的連線設定。");
+    syncControls();
   }
-});
+}
+$("#setup-go").addEventListener("click", () => { void submitSetup("git", setupGitPanel); });
+$("#setup-gdrive-go").addEventListener("click", () => { void submitSetup("gdrive", setupGdrivePanel); });
 
 async function loadInfo(): Promise<void> {
   const bridge = api();
   if (!bridge) return;
   try {
     const info = await bridge.get_info();
+    connected = true;
+    configured = info.configured;
     versionEl.textContent = `v${info.version}`;
-    providerEl.textContent =
-      info.provider === "gdrive" ? "Google Drive" : "私人 Git 儲存庫";
-    providerEl.dataset.provider = info.provider;
+    providerEl.textContent = configured ? providerLabel(info.provider) : "尚未設定同步方式";
+    providerEl.dataset.provider = configured ? info.provider : "none";
     repoEl.textContent = `本機設定位置：${info.repo}`;
     repoEl.title = info.repo;
-    setConfigured(info.configured);
-    if (!info.configured) {
-      setupDir.value = info.repo;
-      setupGdriveDir.value = info.repo;
-      providerEl.textContent = "尚未選擇同步方式";
-      providerEl.dataset.provider = "none";
-      repoEl.textContent = `新設定預設位置：${info.repo}`;
-      if (info.config_error) {
-        showPlaceholder(`設定檔有問題:${info.config_error}`);
-      }
-    }
-  } catch {
-    repoEl.textContent = "無法讀取儲存庫資訊";
+    field(setupGitPanel, "data-dir").value = info.repo;
+    field(setupGdrivePanel, "data-dir").value = info.repo;
+    feedback(appNotice, info.config_error ? `設定檔有問題：${info.config_error}` : "", Boolean(info.config_error));
+    $("#info-retry").hidden = true;
+    showView(currentView, false);
+  } catch (error) {
+    connected = false;
+    feedback(appNotice, `無法讀取連線資訊：${String(error)}`, true);
+    $("#info-retry").hidden = false;
+  } finally {
+    syncControls();
   }
 }
-
-// ── 設定畫面 ───────────────────────────
-
-let currentProvider = "";
+$("#info-retry").addEventListener("click", () => { void boot(); });
 
 function providerLabel(provider: string): string {
   return provider === "gdrive" ? "Google Drive" : "私人 Git 儲存庫";
@@ -801,217 +756,153 @@ function providerLabel(provider: string): string {
 
 async function loadSettings(): Promise<void> {
   const bridge = api();
-  if (!bridge) return;
-  const info = await bridge.settings_info();
-  currentProvider = info.provider;
-
-  for (const radio of settingsProviderRadios) {
-    radio.checked = radio.value === info.provider;
-    const badge = radio
-      .closest(".provider-choice")
-      ?.querySelector<HTMLElement>(".provider-choice-current");
-    if (badge) badge.hidden = radio.value !== info.provider;
-  }
-
-  const isGdrive = info.provider === "gdrive";
-  settingsRowAccount.hidden = !isGdrive;
-  settingsRowFolder.hidden = !isGdrive;
-  settingsRowRemote.hidden = isGdrive || info.remote_url === "";
-
-  settingsAccount.textContent = info.signed_in ? "已登入" : "尚未登入";
-  settingsFolder.textContent =
-    info.gdrive_space === "hidden"
-      ? "隱藏的應用程式空間"
-      : `我的雲端硬碟 / ${info.gdrive_folder}`;
-  settingsFolderOpenBtn.hidden = info.gdrive_folder_url === "";
-  settingsFolderOpenBtn.dataset.url = info.gdrive_folder_url;
-  settingsRemote.textContent = info.remote_url || "—";
-  settingsRemote.title = info.remote_url;
-  settingsRepo.textContent = info.repo;
-  settingsRepo.title = info.repo;
-
+  if (!bridge || settingsLoading) return;
+  settingsLoading = true;
+  settingsInfo = null;
   settingsSwitch.hidden = true;
+  settingsRetry.hidden = true;
+  feedback(settingsFeedback, "讀取設定中…");
+  syncControls();
+  try {
+    const info = await bridge.settings_info();
+    settingsInfo = info;
+    for (const radio of settingsBox.querySelectorAll<HTMLInputElement>('input[name="settings-provider"]')) {
+      radio.checked = radio.value === info.provider;
+      const badge = radio.closest(".provider-choice")?.querySelector<HTMLElement>(".provider-choice-current");
+      if (badge) badge.hidden = !radio.checked;
+    }
+    $("#settings-row-account").hidden = info.provider !== "gdrive";
+    $("#settings-row-folder").hidden = info.provider !== "gdrive";
+    $("#settings-row-remote").hidden = info.provider === "gdrive" || !info.remote_url;
+    $("#settings-account").textContent = info.signed_in ? "已授權" : "尚未登入";
+    $("#settings-folder").textContent = info.gdrive_space === "hidden"
+      ? "隱藏的應用程式空間" : `我的雲端硬碟 / ${info.gdrive_folder}`;
+    $("#settings-folder").title = $("#settings-folder").textContent ?? "";
+    $("#settings-folder-open").hidden = !info.gdrive_folder_url;
+    $("#settings-folder-open").dataset.url = info.gdrive_folder_url;
+    $("#settings-remote").textContent = info.remote_url || "—";
+    $("#settings-repo").textContent = info.repo;
+    feedback(settingsFeedback, "");
+  } catch (error) {
+    feedback(settingsFeedback, `無法讀取設定：${String(error)}`, true);
+    settingsRetry.hidden = false;
+  } finally {
+    settingsLoading = false;
+    syncControls();
+  }
 }
 
-let settingsOpener: HTMLElement | null = null;
-
-function showSettings(value: boolean): void {
-  // 覆蓋式對話框:主畫面原樣留在後面,不必逐一收起各區塊
-  // (先前那樣做會被各自的 display 規則蓋掉,反而把設定內容擠成一條)
-  settingsBox.hidden = !value;
-  if (value) {
+function showSettings(show: boolean): void {
+  settingsBox.hidden = !show;
+  for (const child of Array.from($(".app").children)) {
+    if (child instanceof HTMLElement && child !== settingsBox) child.inert = show;
+  }
+  if (show) {
     settingsOpener = document.activeElement as HTMLElement | null;
+    settingsClose.focus();
     void loadSettings();
-    settingsCloseBtn.focus();
   } else {
-    // 關閉後把焦點還給打開它的按鈕,不然鍵盤使用者會迷路
     settingsOpener?.focus();
     settingsOpener = null;
   }
 }
-
-settingsOpenBtn.addEventListener("click", () => {
-  if (running) return;
-  showSettings(true);
-});
-
-settingsCloseBtn.addEventListener("click", () => {
-  showSettings(false);
-});
-
-settingsBox.addEventListener("click", (event) => {
-  // 點背景關閉,點對話框本身不關
+$("#settings-open").addEventListener("click", () => { showSettings(true); });
+settingsClose.addEventListener("click", () => { showSettings(false); });
+settingsRetry.addEventListener("click", () => { void loadSettings(); });
+settingsBox.addEventListener("click", event => {
   if (event.target === settingsBox) showSettings(false);
 });
-
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !settingsBox.hidden) showSettings(false);
-});
-
-settingsOpenDirBtn.addEventListener("click", async () => {
-  const bridge = api();
-  if (!bridge) return;
-  const result = await bridge.open_data_dir();
-  if (result.code !== 0) {
-    outputTitle.textContent = "開啟資料夾";
-    renderOutput(result.output);
+document.addEventListener("keydown", event => {
+  if (settingsBox.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    showSettings(false);
+  } else if (event.key === "Tab") {
+    const focusable = Array.from(settingsBox.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]',
+    )).filter(element => element.getClientRects().length > 0);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    const outside = !settingsBox.contains(document.activeElement);
+    if (event.shiftKey && (document.activeElement === first || outside)) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || outside)) {
+      event.preventDefault();
+      first?.focus();
+    }
   }
 });
-
-settingsFolderOpenBtn.addEventListener("click", () => {
-  const url = settingsFolderOpenBtn.dataset.url;
-  if (url) window.open(url, "_blank");
+$("#settings-open-dir").addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge) return;
+  const result = await perform("開啟資料夾", () => bridge.open_data_dir(), false);
+  if (result) feedback(settingsFeedback, result.code === 0 ? "已開啟資料夾。" : firstErrorLine(result.output), result.code !== 0);
+});
+$("#settings-folder-open").addEventListener("click", () => {
+  const url = $("#settings-folder-open").dataset.url;
+  if (url) window.open(url, "_blank", "noopener,noreferrer");
+});
+$("#settings-relogin").addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || settingsInfo?.provider !== "gdrive") return;
+  feedback(settingsFeedback, "請在瀏覽器完成 Google 登入。儲存位置保持不變。");
+  const result = await perform("重新登入 Google", () => bridge.relogin_gdrive(), false);
+  if (!result) return;
+  if (result.code === 0) await loadSettings();
+  feedback(settingsFeedback, result.code === 0 ? "已重新登入，儲存位置保持不變。" : firstErrorLine(result.output), result.code !== 0);
+  if (settingsBox.hidden) openOutput();
 });
 
-settingsReloginBtn.addEventListener("click", () => {
-  offerProviderSwitch("gdrive", true);
-});
-
-for (const radio of settingsProviderRadios) {
-  radio.addEventListener("change", () => {
-    if (!radio.checked) return;
-    if (radio.value === currentProvider) {
-      settingsSwitch.hidden = true;
-      return;
-    }
-    offerProviderSwitch(radio.value, false);
-  });
-}
-
-function offerProviderSwitch(provider: string, relogin: boolean): void {
+function offerProviderSwitch(provider: string): void {
+  const info = settingsInfo;
+  if (!info) return;
   settingsSwitch.hidden = false;
-  settingsSwitchNote.textContent = relogin
-    ? "重新登入 Google 帳號。本機設定不會被更動。"
-    : `切換到${providerLabel(provider)}後，需要重新設定一次連線；` +
-      "本機已保存的設定不會被刪除，但兩邊的資料不會自動搬移。";
-
-  // 沿用首次設定的表單,但要用複製的:直接搬走會讓尚未設定的機器
-  // 在關閉設定後永遠失去首次設定表單
-  settingsSwitchForm.replaceChildren();
+  feedback(settingsFeedback, "");
+  $("#settings-switch-note").textContent = `切換到${providerLabel(provider)}需要設定新的連線。既有資料不會刪除，兩邊的資料也不會自動搬移。`;
   const source = provider === "gdrive" ? setupGdrivePanel : setupGitPanel;
   const panel = source.cloneNode(true) as HTMLElement;
   panel.hidden = false;
   panel.removeAttribute("id");
   for (const node of panel.querySelectorAll("[id]")) node.removeAttribute("id");
-  settingsSwitchForm.append(panel);
-
-  // cloneNode 不會複製事件監聽器,所以複製出來的表單要自己重新綁:
-  // 少了這段,在設定裡選「隱藏的應用程式空間」時資料夾欄位不會收起來
-  // 用 data 屬性而不是 :has(),舊版 WebView2 不一定支援;id 也已經被移除
-  const folderField = panel.querySelector<HTMLElement>(
-    '[data-field-row="gdrive-folder"]',
-  );
-  const spaceRadios = Array.from(
-    panel.querySelectorAll<HTMLInputElement>('[data-field="gdrive-space"]'),
-  );
-  const syncFolderField = (): void => {
-    if (!folderField) return;
-    const hidden = spaceRadios.find((r) => r.checked)?.value === "hidden";
-    folderField.hidden = hidden;
-  };
-  for (const radio of spaceRadios) {
-    radio.addEventListener("change", syncFolderField);
+  // 複製表單的 radio 必須獨立分組，避免改到仍存在的首次設定表單。
+  for (const radio of panel.querySelectorAll<HTMLInputElement>('input[type="radio"]')) {
+    radio.name = `switch-${radio.name}`;
+    if (radio.dataset.field === "gdrive-space") radio.checked = radio.value === info.gdrive_space;
   }
-  syncFolderField();
-
-  const go = panel.querySelector<HTMLButtonElement>(".btn-primary");
-  // 用 data-field 取值,不靠輸入框順序:表單日後調整順序也不會靜默錯位
-  const field = (name: string): string =>
-    panel.querySelector<HTMLInputElement>(`[data-field="${name}"]`)?.value ?? "";
-  const checkedSpace = (): string =>
-    panel.querySelector<HTMLInputElement>('[data-field="gdrive-space"]:checked')
-      ?.value ?? "visible";
-  go?.addEventListener("click", async () => {
-    const bridge = api();
-    if (!bridge || running) return;
-    go.disabled = true;
-    try {
-      const result =
-        provider === "gdrive"
-          ? await bridge.setup_gdrive(
-              field("data-dir"),
-              field("gdrive-folder"),
-              checkedSpace(),
-            )
-          : await bridge.setup_repo(field("repo-url"), field("data-dir"));
-      showSettings(false);
-      outputTitle.textContent = relogin ? "重新登入" : "切換同步方式";
-      renderOutput(result.output || "(沒有輸出)");
-      outputState.textContent = result.code === 0 ? "完成" : "有問題";
-      outputState.className =
-        result.code === 0 ? "output-state is-ok" : "output-state is-fail";
-      void loadInfo();
-    } finally {
-      go.disabled = false;
-    }
+  field(panel, "data-dir").value = info.repo;
+  if (provider === "gdrive") field(panel, "gdrive-folder").value = info.gdrive_folder || "ai-config";
+  settingsSwitchForm.replaceChildren(panel);
+  bindSpace(panel);
+  const go = panel.querySelector<HTMLButtonElement>(".btn-primary")!;
+  go.addEventListener("click", () => { void submitSetup(provider, panel, true); });
+  syncControls();
+  settingsSwitch.scrollIntoView({ block: "nearest" });
+}
+for (const radio of settingsBox.querySelectorAll<HTMLInputElement>('input[name="settings-provider"]')) {
+  radio.addEventListener("change", () => {
+    if (!radio.checked) return;
+    if (radio.value === settingsInfo?.provider) settingsSwitch.hidden = true;
+    else offerProviderSwitch(radio.value);
   });
 }
 
-packageOpenBtn.addEventListener("click", () => {
-  showView("skills");
-});
+$("#package-open").addEventListener("click", () => { showView("skills"); });
+$("#package-back").addEventListener("click", () => { showView("status"); });
+$("#output-toggle").addEventListener("click", openOutput);
+$("#skill-output").addEventListener("click", openOutput);
+$("#output-back").addEventListener("click", () => { showView(outputReturn); });
+$("#export-back").addEventListener("click", () => { showView("skills"); });
 
-type MainView = "status" | "output" | "skills";
-
-/**
- * 主區域一次只顯示一個視圖。880x680 同時塞下狀態、技能與輸出的結果是
- * 每一塊都太小 — 輸出區曾經只分到一行的高度。
- */
-function showView(view: MainView): void {
-  const hero = document.querySelector<HTMLElement>("#hero");
-  const output = document.querySelector<HTMLElement>("#output");
-  const pkg = document.querySelector<HTMLDetailsElement>("#package");
-  if (!hero || !output || !pkg) return;
-
-  hero.hidden = view !== "status";
-  output.hidden = view !== "output";
-  pkg.hidden = view !== "skills";
-  pkg.open = view === "skills";
-  outputToggleBtn.textContent = "查看詳細輸出";
+async function boot(): Promise<void> {
+  syncControls();
+  await loadInfo();
+  if (connected && configured) await loadSkills();
 }
-
-function showOutputPane(value: boolean): void {
-  showView(value ? "output" : "status");
-}
-
-outputToggleBtn.addEventListener("click", () => {
-  showView("output");
-});
-
-for (const id of ["#output-back", "#package-back"]) {
-  document.querySelector<HTMLButtonElement>(id)?.addEventListener("click", () => {
-    showView("status");
-  });
-}
-
-function boot(): void {
-  void loadInfo();
-  void loadSkills();
-}
-
-if (window.pywebview) {
-  boot();
-} else {
-  window.addEventListener("pywebviewready", boot, { once: true });
+if (window.pywebview) void boot();
+else {
+  syncControls();
+  window.addEventListener("pywebviewready", () => { void boot(); }, { once: true });
   repoEl.textContent = "等待後端連線…";
+  feedback(appNotice, "正在連接應用程式；請透過 acg gui 啟動此介面。");
 }
