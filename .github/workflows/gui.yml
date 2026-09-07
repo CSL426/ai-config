@@ -1,0 +1,62 @@
+name: Desktop UI
+
+# 版面回歸只有跑起來才看得見:這些測試會在真實瀏覽器裡量高度與捲動,
+# 補上單元測試看不到的破版。
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "gui/**"
+      - ".github/workflows/gui.yml"
+  pull_request:
+    paths:
+      - "gui/**"
+      - ".github/workflows/gui.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regressions:
+    name: Layout regressions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gui
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # package.json 沒有 packageManager 欄位,corepack 的預設值會隨 Node 漂移
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check and build
+        run: pnpm build
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run layout regression tests
+        run: pnpm test
+
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: gui/playwright-report/
+          retention-days: 7
