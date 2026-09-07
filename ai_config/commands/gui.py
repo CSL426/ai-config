@@ -634,6 +634,18 @@ def detach_and_run_gui() -> bool:
     return True
 
 
+def show_console() -> None:
+    """Bring back a console hidden by hide_console, so errors can be read."""
+    if sys.platform != "win32":
+        return
+    with contextlib.suppress(AttributeError, OSError):
+        import ctypes
+
+        console = ctypes.windll.kernel32.GetConsoleWindow()
+        if console:
+            ctypes.windll.user32.ShowWindow(console, 5)  # SW_SHOW
+
+
 def hide_console() -> bool:
     """Hide the console window this process owns, if it owns one.
 
@@ -684,14 +696,18 @@ def run_gui() -> int:
                 "  cd gui && pnpm install && pnpm build"
             )
         return 1
+    # 在 import webview 之前就藏:打包版載入 pywebview 要好幾秒,
+    # 藏在後面的話那個黑視窗會杵在畫面上直到視窗開啟。
+    # 失敗時 show_console() 會把它叫回來,訊息才看得到。
+    hidden_console = hide_console()
+
     try:
         import webview
     except ImportError:
+        if hidden_console:
+            show_console()
         log_error('pywebview 尚未安裝,請執行:pip install "ai-config[gui]"')
         return 1
-
-    # 前景模式(--wait 或分離失敗)才需要在這裡藏;分離時已由父行程處理
-    hide_console()
 
     # Windows: 分離工作列群組,避免顯示預設 Python 圖示
     if sys.platform == "win32":
@@ -713,6 +729,8 @@ def run_gui() -> int:
     try:
         webview.start()
     except Exception as exc:  # noqa: BLE001 - pywebview 各平台丟的例外型別不一
+        if hidden_console:
+            show_console()
         log_error(f"無法開啟視窗:{type(exc).__name__}: {exc}")
         if sys.platform == "win32":
             # Windows 10 較舊的版本沒有預裝 WebView2,pywebview 就開不起來
