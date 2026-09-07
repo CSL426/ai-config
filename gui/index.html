@@ -19,8 +19,10 @@
         <div class="connection-summary">
           <span class="provider-badge" id="provider">同步方式讀取中…</span>
           <p class="app-repo" id="repo" title="">設定位置讀取中…</p>
-          <button class="btn btn-ghost connection-btn" id="config-info">查看連線資訊</button>
-          <button class="btn btn-ghost connection-btn" id="settings-open">設定</button>
+          <div class="connection-actions">
+            <button class="btn btn-ghost connection-btn" id="config-info">查看連線資訊</button>
+            <button class="btn btn-ghost connection-btn" id="settings-open">設定</button>
+          </div>
         </div>
       </header>
 
@@ -30,6 +32,8 @@
           <h2 class="settings-title">設定</h2>
           <button class="btn btn-ghost settings-back" id="settings-close" aria-label="關閉設定">關閉</button>
         </div>
+        <p class="feedback" id="settings-feedback" role="status" hidden></p>
+        <button class="btn btn-ghost" id="settings-retry" hidden>重新讀取設定</button>
 
         <div class="settings-group">
           <p class="settings-label">設定存在哪裡</p>
@@ -82,8 +86,8 @@
         <div class="settings-group">
           <p class="settings-label">這台電腦可以做什麼</p>
           <p class="settings-note">
-            檢查、下載、套用一律可用。上傳需要遠端給的寫入權限；沒有的話這台會設為唯讀，
-            其他功能不受影響。想確認目前狀態，執行一次「上傳變更」就會知道。
+            檢查會比較這台電腦的工具設定與本機保存的設定。下載、上傳需要遠端連線；
+            上傳也需要寫入權限。可從「查看連線資訊」查看目前設定。
           </p>
         </div>
 
@@ -93,6 +97,10 @@
         </div>
         </section>
       </div>
+
+      <p class="feedback" id="operation-status" role="status" hidden></p>
+      <p class="feedback" id="app-notice" role="status" hidden></p>
+      <button class="btn btn-ghost" id="info-retry" hidden>重新連線</button>
 
       <section class="setup" id="setup" hidden aria-label="首次設定">
         <h2 class="setup-title">首次設定</h2>
@@ -113,17 +121,22 @@
             <span>儲存庫 Git URL</span>
             <input id="setup-url" data-field="repo-url" type="text" placeholder="git@github.com:you/my-config.git" spellcheck="false" />
           </label>
+          <details class="setup-advanced">
+          <summary>進階設定：本機位置</summary>
           <label class="setup-field">
             <span>本機保存位置（通常不用改）</span>
             <input id="setup-dir" data-field="data-dir" type="text" spellcheck="false" />
           </label>
+          </details>
           <div class="package-buttons">
             <button class="btn btn-primary" id="setup-go">連線並完成設定</button>
           </div>
         </div>
 
         <div id="setup-gdrive-panel" class="setup-panel" hidden>
-          <p class="package-hint">適合自己的多臺電腦同步。設定會放在你「我的雲端硬碟」裡的 ai-config 資料夾（repo.bundle 與 head.json），在 Google Drive 網頁或桌面版都看得到；這個程式只能存取自己建立的檔案，碰不到你其他的 Drive 內容。</p>
+          <p class="package-hint">用 Google 帳號同步自己的多臺電腦。預設存放在「我的雲端硬碟」的 ai-config 資料夾，只會存取本程式建立的檔案。</p>
+          <details class="setup-advanced">
+          <summary>進階設定：儲存位置</summary>
           <fieldset class="setup-choice">
             <legend>設定檔存在 Drive 的哪裡？</legend>
             <label class="setup-radio">
@@ -143,6 +156,7 @@
             <span>本機保存位置（通常不用改）</span>
             <input id="setup-gdrive-dir" data-field="data-dir" type="text" spellcheck="false" />
           </label>
+          </details>
           <div class="package-buttons">
             <button class="btn btn-primary" id="setup-gdrive-go">用 Google 帳號登入</button>
           </div>
@@ -150,16 +164,10 @@
       </section>
 
       <section class="hero" id="hero" aria-label="同步狀態">
-        <div class="hero-state" id="hero-state">
+        <div class="hero-state" id="hero-state" role="status">
           <span class="hero-mark" id="hero-mark" aria-hidden="true"></span>
           <h2 class="hero-title" id="hero-title">尚未檢查</h2>
-          <p class="hero-sub" id="hero-sub">按「檢查狀態」看看這台電腦跟雲端是否一致。</p>
-        </div>
-
-        <div class="hero-actions" id="actions">
-          <button class="btn btn-primary hero-primary" data-cmd="status">檢查狀態</button>
-          <button class="btn hero-secondary" data-cmd="pull">下載更新</button>
-          <button class="btn hero-secondary" data-cmd="push">上傳變更</button>
+          <p class="hero-sub" id="hero-sub">比較工具目前的設定與本機保存的設定。</p>
         </div>
 
         <div class="tool-rows" id="tool-rows">
@@ -180,52 +188,69 @@
           </div>
         </div>
 
+
         <div class="scope" id="scope" aria-label="同步範圍">
-          <span class="scope-label">套用範圍</span>
-          <div class="scope-tabs" role="radiogroup" id="tool-tabs">
+          <span class="scope-label" id="scope-label">操作範圍</span>
+          <div class="scope-tabs" role="radiogroup" id="tool-tabs" aria-labelledby="scope-label">
             <button class="scope-tab is-selected" role="radio" aria-checked="true" data-tool="all">全部工具</button>
-            <button class="scope-tab" role="radio" aria-checked="false" data-tool="claude">Claude Code</button>
-            <button class="scope-tab" role="radio" aria-checked="false" data-tool="codex">Codex</button>
-            <button class="scope-tab" role="radio" aria-checked="false" data-tool="agy">Antigravity</button>
+            <button class="scope-tab" role="radio" aria-checked="false" tabindex="-1" data-tool="claude">Claude Code</button>
+            <button class="scope-tab" role="radio" aria-checked="false" tabindex="-1" data-tool="codex">Codex</button>
+            <button class="scope-tab" role="radio" aria-checked="false" tabindex="-1" data-tool="agy">Antigravity</button>
           </div>
         </div>
 
+        <div class="hero-actions" id="actions">
+          <button class="btn btn-primary hero-primary" data-cmd="status">檢查狀態</button>
+          <button class="btn hero-secondary" data-cmd="pull">下載更新</button>
+          <button class="btn hero-secondary" data-cmd="push">上傳變更</button>
+          <button class="btn hero-secondary" data-cmd="apply">套用設定</button>
+        </div>
+
+        <p class="command-hint">下載：取得雲端設定並套用 · 上傳：保存工具設定到雲端 · 套用：使用本機保存的設定</p>
         <div class="hero-links">
           <button class="link-btn" id="package-open">分享與準備 AI 技能</button>
           <button class="link-btn" id="output-toggle">查看詳細輸出</button>
-          <button class="link-btn" data-cmd="apply">套用設定</button>
         </div>
       </section>
 
-      <details class="package" id="package" hidden>
-        <summary class="package-summary">分享與準備 AI 技能</summary>
-        <div class="package-body">
+      <section class="package" id="package" hidden aria-labelledby="skills-title">
+        <div class="panel-head">
           <button class="btn btn-ghost view-back" id="package-back" type="button">‹ 返回</button>
-          <p class="package-hint">勾選技能後，可以分享給 Codex 與 Antigravity，或取消分享收回；也能準備成其他 AI 工具可安裝的檔案與說明。</p>
+          <h2 id="skills-title">分享與準備 AI 技能</h2>
+        </div>
+        <div class="package-body">
+          <div class="skill-toolbar">
+            <label class="setup-field"><span>搜尋技能</span><input id="skill-search" type="search" placeholder="輸入技能名稱" /></label>
+            <label class="setup-field"><span>顯示</span><select id="skill-filter"><option value="all">全部技能</option><option value="shared">已分享</option><option value="unshared">未分享</option></select></label>
+          </div>
+          <div class="skill-selection-row">
+            <span id="skill-selection" role="status">已選 0 項</span>
+            <button class="btn btn-ghost" id="skill-all">全選顯示項目</button>
+            <button class="btn btn-ghost" id="skill-none">清除選取</button>
+          </div>
           <div class="package-list" id="skill-list" role="group" aria-label="技能清單"></div>
+          <button class="btn btn-ghost" id="skill-retry" hidden>重新載入技能</button>
           <p class="skill-result" id="skill-result" role="status" hidden></p>
           <div class="package-buttons">
-            <button class="btn btn-ghost" id="skill-all">全選</button>
-            <button class="btn btn-ghost" id="skill-none">清除</button>
             <button class="btn btn-primary" id="skill-share">分享給其他工具</button>
             <button class="btn btn-ghost" id="skill-unshare">取消分享</button>
-            <button class="btn btn-primary" id="skill-package">準備安裝檔</button>
-          </div>
-          <div class="package-result" id="package-result" hidden>
-            <p class="package-hint">檔案已準備好。複製下面這段話並貼給該 AI 工具；Claude Desktop 也可以在「設定 &gt; Customize &gt; Skills」直接上傳。</p>
-            <textarea class="package-message" id="package-message" readonly rows="6"></textarea>
-            <button class="btn btn-primary" id="package-copy">複製說明</button>
+            <button class="btn hero-secondary" id="skill-package">匯出安裝檔</button>
+            <button class="btn btn-ghost" id="skill-output">詳細結果</button>
           </div>
         </div>
-      </details>
+      </section>
 
-      <div class="confirm" id="confirm" hidden>
-        <p class="confirm-text">上方是這次要保存的內容。確認後才會上傳；如果內容已變動，系統會要求重新預覽。</p>
-        <div class="confirm-buttons">
-          <button class="btn btn-primary" id="confirm-yes">確定上傳</button>
-          <button class="btn btn-ghost" id="confirm-no">取消</button>
+      <section class="package-result" id="package-result" hidden aria-labelledby="export-title">
+        <div class="panel-head">
+          <button class="btn btn-ghost view-back" id="export-back">‹ 返回技能</button>
+          <h2 id="export-title">安裝檔與說明</h2>
         </div>
-      </div>
+        <p class="feedback" id="export-status" role="status"></p>
+        <p class="package-hint">複製說明並貼給要安裝技能的 AI 工具；Claude Desktop 也可從「設定 &gt; Customize &gt; Skills」上傳 ZIP。</p>
+        <label for="package-message">安裝說明</label>
+        <textarea class="package-message" id="package-message" readonly rows="6"></textarea>
+        <button class="btn btn-primary" id="package-copy">複製說明</button>
+      </section>
 
       <section class="output" id="output" hidden aria-label="執行結果">
         <div class="output-head">
@@ -238,6 +263,13 @@
           <div class="output-empty">
             <img class="empty-mascot" src="./src/assets/bibilabu.png" alt="比比拉布" />
             <span class="line-placeholder">還沒有輸出 — 從上面選一個動作開始。</span>
+          </div>
+        </div>
+        <div class="confirm" id="confirm" hidden>
+          <p class="confirm-text">請檢閱變更內容後確認上傳。離開此頁會取消確認；內容變動時需要重新預覽。</p>
+          <div class="confirm-buttons">
+            <button class="btn btn-primary" id="confirm-yes">確定上傳</button>
+            <button class="btn btn-ghost" id="confirm-no">取消</button>
           </div>
         </div>
       </section>

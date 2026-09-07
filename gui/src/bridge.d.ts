@@ -59,6 +59,7 @@ interface AcgApi {
   get_info(): Promise<AcgInfo>;
   config_info(): Promise<RunResult>;
   settings_info(): Promise<SettingsInfo>;
+  relogin_gdrive(): Promise<RunResult>;
   open_data_dir(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
   preview_push(tool?: string): Promise<PushPreview>;

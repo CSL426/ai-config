@@ -241,6 +241,37 @@ class GuiApi:
         finally:
             self._lock.release()
 
+    def relogin_gdrive(self) -> dict:
+        """Renew OAuth authorization without changing the sync destination."""
+        from ..config import (
+            ConfigError,
+            configured_gdrive_space,
+            configured_remote_provider,
+        )
+        from ..gdrive import run_oauth_flow
+        from ..paths import CONFIG_ERROR
+
+        if not self._lock.acquire(blocking=False):
+            return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
+        try:
+            buf = io.StringIO()
+            code = 0
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                try:
+                    if CONFIG_ERROR is not None:
+                        raise ConfigError(CONFIG_ERROR)
+                    if configured_remote_provider() != "gdrive":
+                        raise ConfigError("目前尚未設定使用 Google Drive")
+                    # OAuth validates before atomically replacing the token;
+                    # refreshing or deleting it first would lose it on failure.
+                    run_oauth_flow(space=configured_gdrive_space())
+                except Exception as exc:  # noqa: BLE001 — 錯誤要回報前端
+                    log_error(f"Google Drive 重新登入失敗:{exc}")
+                    code = 1
+            return {"code": code, "output": _ANSI_RE.sub("", buf.getvalue())}
+        finally:
+            self._lock.release()
+
     def list_skills(self) -> dict:
         from ..package import available_skills
         from .share import shareable_skill_names
