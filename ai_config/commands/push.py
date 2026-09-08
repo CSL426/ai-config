@@ -16,7 +16,14 @@ from ..console import (
     log_success,
     log_warn,
 )
-from ..paths import ALL_TOOLS, ENTRYPOINT, EXCLUDED_FILES, SCRIPT_DIR, tilde
+from ..paths import (
+    ALL_TOOLS,
+    ENTRYPOINT,
+    EXCLUDED_FILES,
+    MEMORY_DIR_NAME,
+    SCRIPT_DIR,
+    tilde,
+)
 from .apply import _init_tools, _selected_tools
 from .sync import (
     _git_failure,
@@ -55,6 +62,47 @@ class _PushPreflight:
     has_changes: bool
 
 
+# 記憶不是工具,但在 push 裡是一個可選範圍:memory/ 是資料 repo 的普通追蹤目錄
+MEMORY_SCOPE = MEMORY_DIR_NAME
+
+
+def _push_scopes(tool: str) -> list[str]:
+    if tool == MEMORY_SCOPE:
+        return [MEMORY_SCOPE]
+    scopes = _selected_tools(tool)
+    if tool == "all":
+        scopes.append(MEMORY_SCOPE)
+    return scopes
+
+
+def _only_memory_changes() -> bool:
+    working = _working_paths()
+    return bool(working) and all(
+        path.startswith(f"{MEMORY_SCOPE}/") for path in working
+    )
+
+
+def _changed_scopes(selected: list[str], paths: list[str]) -> list[str]:
+    return [
+        scope
+        for scope in selected
+        if any(path == scope or path.startswith(f"{scope}/") for path in paths)
+    ]
+
+
+def _memory_root_available(selected: list[str], paths: list[str]) -> bool:
+    if (
+        MEMORY_SCOPE in _changed_scopes(selected, paths)
+        and not (SCRIPT_DIR / MEMORY_DIR_NAME).is_dir()
+    ):
+        log_error(
+            "Memory directory is missing or is not a directory; push cancelled."
+        )
+        log_info("Restore memory/ before pushing; a missing root is not a deletion request")
+        return False
+    return True
+
+
 def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
     operation = _repository_operation()
     if operation is not None:
@@ -82,11 +130,17 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
         working = _working_paths()
         if working is None:
             return None
+        if not _memory_root_available(selected, working):
+            return None
         outside = _paths_outside(working, selected)
         if outside:
             log_error("Uncommitted paths outside the selected tools; push cancelled:")
             _print_capped(outside)
-            if len(selected) < len(ALL_TOOLS):
+            if all(path.startswith(f"{MEMORY_SCOPE}/") for path in outside):
+                log_info(
+                    f"Run {ENTRYPOINT} memory push first, or {ENTRYPOINT} push all"
+                )
+            elif MEMORY_SCOPE not in selected:
                 log_info(
                     f"Run {ENTRYPOINT} push all if every listed path is intentional"
                 )
@@ -224,6 +278,12 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
 
 
 def _unstage_tools(tools: list[str]) -> bool:
+    staged = _staged_paths()
+    if staged is None:
+        return False
+    tools = _changed_scopes(tools, staged)
+    if not tools:
+        return True
     head = _run_repo_git("rev-parse", "--verify", "--quiet", "HEAD")
     if head.returncode == 0:
         result = _run_repo_git("restore", "--staged", "--", *tools)
@@ -724,6 +784,10 @@ def _push_existing_commits(selected: list[str], ahead: int) -> int:
 
 
 def _validate_staged_push(selected: list[str]) -> bool:
+    if MEMORY_SCOPE in selected:
+        staged = _staged_paths()
+        if staged is None or not _memory_root_available(selected, staged):
+            return False
     outside = _staged_paths_outside(selected)
     if outside is None:
         return False
@@ -840,10 +904,17 @@ def _review_and_confirm_push(
 
 
 def _stage_push_changes(selected: list[str]) -> "str | None":
-    stage = _run_repo_git("add", "-A", "--", *selected)
-    if stage.returncode != 0:
-        _git_failure("Staging collected configuration", stage)
+    working = _working_paths()
+    if working is None or not _memory_root_available(selected, working):
         return None
+    # Git rejects absent pathspecs, including optional scopes in older repos.
+    # Deleted tracked files remain in working, so their scope is still staged.
+    changed = _changed_scopes(selected, working)
+    if changed:
+        stage = _run_repo_git("add", "-A", "--", *changed)
+        if stage.returncode != 0:
+            _git_failure("Staging collected configuration", stage)
+            return None
 
     if not _validate_staged_push(selected):
         _unstage_tools(selected)
@@ -1080,7 +1151,7 @@ def do_push(tool: str, allow_secrets: bool = False) -> int:
         )
         _explain_push_refusal()
         return 1
-    selected = _selected_tools(tool)
+    selected = _push_scopes(tool)
     try:
         preflight = _push_preflight(selected)
         if preflight is None:
@@ -1095,9 +1166,10 @@ def do_push(tool: str, allow_secrets: bool = False) -> int:
     if preflight.ahead:
         return _push_existing_commits(selected, preflight.ahead)
 
-    if preflight.has_changes:
+    # 記憶隨時都可能有未保存的修改;只有它髒不能讓工具設定跳過收集
+    if preflight.has_changes and not _only_memory_changes():
         log_info("Reviewing existing uncommitted configuration changes")
-    elif not _init_tools(tool):
+    elif tool != MEMORY_SCOPE and not _init_tools(tool):
         return 1
 
     status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")

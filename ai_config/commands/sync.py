@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 from ..console import log_error, log_header, log_info, log_success
-from ..paths import ENTRYPOINT, SCRIPT_DIR
+from ..paths import ENTRYPOINT, MEMORY_DIR_NAME, SCRIPT_DIR
 from .status import show_status
 
 _GIT_URL_CREDENTIALS = re.compile(r"(https?://)[^/@\s]+@")
@@ -53,6 +53,9 @@ def _pull_preflight() -> "tuple[int, int] | None":
     if status.stdout.strip():
         log_error("Data repository has uncommitted changes; pull cancelled.")
         print(status.stdout.rstrip())
+        dirty = [line[3:] for line in status.stdout.splitlines() if line.strip()]
+        if all(path.startswith(f"{MEMORY_DIR_NAME}/") for path in dirty):
+            log_info(f"這些是尚未保存的記憶,先執行 {ENTRYPOINT} memory push")
         return None
 
     untracked = _run_repo_git(

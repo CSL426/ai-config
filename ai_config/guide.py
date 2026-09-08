@@ -116,6 +116,30 @@ worth repeating can be saved with `--save-as <name>` and replayed later with
 - Backups land in `~/.ai-config-backup/<timestamp>/` before every apply and
   project.
 
+## Shared memory
+
+`{entrypoint} memory enable` turns `<data-repo>/memory/` into a notebook every
+tool reads: it links `~/.claude/shared-memory` to it, appends an instruction
+block to `~/.claude/CLAUDE.md` (and to the data repo's copy so other machines
+get it on apply), and drops the same block into `~/.gemini/config/rules/` for
+agy. Codex's own AGENTS.md also receives the block; an existing link to
+Claude's rules is preserved. The notebook has a global
+layer (`MEMORY.md`, `topics/`) and a per-project layer under
+`projects/<owner--repo>/`, keyed by the project's `origin` URL so the key is
+the same on every machine. Save with `{entrypoint} memory push`; `pull` refuses
+while tracked memory has uncommitted edits and says so. Pull updates the
+notebook immediately; tool settings and skills still require apply.
+`{entrypoint} memory disable` removes the
+link and blocks but keeps the notes.
+
+The remember plugin's per-project journal (`.remember/`) is Claude-only and
+never leaves the machine. `enable` points the plugin at
+`~/.claude/shared-memory/journal/{{slug}}` (local, gitignored) and the block
+tells every tool to read the journal's `recent.md`. Run `{entrypoint} memory
+adopt` inside a project to move that project's journal to
+`projects/<owner--repo>/journal/` so it syncs with the notebook; `release`
+undoes it.
+
 ## Installing on a new machine
 
 ```bash

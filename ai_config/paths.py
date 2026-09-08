@@ -73,6 +73,12 @@ AGY_SKILLS_MIGRATION_MARKER = ".ai-config-agy-skills-migrated"
 # All managed tools (order matters for init/apply/status)
 ALL_TOOLS = ["claude", "codex", "agy"]
 
+# 共用記憶:資料 repo 裡的普通追蹤目錄,三方經由一個固定連結讀寫
+MEMORY_DIR_NAME = "memory"
+MEMORY_LINK = CLAUDE_HOME / "shared-memory"
+# agy CLI 的全域客製化根目錄,rules/ 下的 markdown 對所有專案生效
+AGY_CONFIG_RULES = HOME / ".gemini" / "config" / "rules"
+
 # Credential files to never copy
 EXCLUDED_FILES = {
     ".credentials.json",
