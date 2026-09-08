@@ -14,8 +14,8 @@ DRIVER = """
 import json, sys
 from pathlib import Path
 from ai_config.commands.gui import GuiApi
+from ai_config.paths import HOME as home
 api = GuiApi()
-home = Path.home()
 steps = json.loads(sys.argv[1])
 out = {}
 for name, call in steps:
@@ -41,8 +41,10 @@ print(json.dumps(out, ensure_ascii=False))
 
 def _drive(repo_dir: Path, home_dir: Path, steps: list) -> dict:
     env = os.environ.copy()
+    # Windows 的 Path.home() 看 USERPROFILE,不看 HOME
     env.update(
         HOME=str(home_dir),
+        USERPROFILE=str(home_dir),
         AI_CONFIG_REPO=str(repo_dir),
         PYTHONPATH=str(repo_dir),
     )
