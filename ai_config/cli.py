@@ -25,28 +25,73 @@ def console_main() -> int:
 
 
 def launched_by_double_click() -> bool:
-    """Windows only: True when this process is the sole owner of its console.
-
-    Explorer spawns a fresh console for a double-clicked exe and destroys it
-    the moment the process exits, so whatever we printed vanishes and the
-    user sees a window flash by. A console shared with a shell reports more
-    than one attached process.
-    """
+    """Detect a private console, including a frozen onefile bootloader."""
     if sys.platform != "win32":
         return False
     if os.environ.get("AI_CONFIG_FORCE_DOUBLE_CLICK") == "1":
         return True
+    return owns_console()
+
+
+def owns_console() -> bool:
+    """Only claim consoles attached to us and our own onefile bootloader."""
+    if sys.platform != "win32":
+        return False
     try:
         import ctypes
+        from ctypes import wintypes
 
-        # 緩衝區必須夠大:太小時這個 API 會失敗而不是回報總數,
-        # 用 2 個元素在有多個附著行程時只會拿到 0
-        buffer = (ctypes.c_uint * 64)()
-        count = ctypes.windll.kernel32.GetConsoleProcessList(buffer, 64)
+        get_processes = ctypes.windll.kernel32.GetConsoleProcessList
+        get_processes.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
+        get_processes.restype = wintypes.DWORD
+        buffer = (wintypes.DWORD * 64)()
+        count = get_processes(buffer, len(buffer))
+        # Zero is failure; a count above capacity means no PIDs were returned.
+        if not 0 < count <= len(buffer):
+            return False
+        attached = set(buffer[:count])
+        if attached == {os.getpid()}:
+            return True
+        # A shell also gives two processes. Verify both the parent PID and
+        # executable before treating it as PyInstaller's onefile bootloader.
+        return (
+            bool(getattr(sys, "frozen", False))
+            and attached == {os.getpid(), os.getppid()}
+            and _parent_uses_same_executable()
+        )
     except (AttributeError, OSError, ValueError):
         return False
-    # 0 代表呼叫失敗(通常是沒有主控台),不是「沒有行程」
-    return count == 1
+
+
+def _parent_uses_same_executable() -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.windll.kernel32
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    kernel.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    process = kernel.OpenProcess(0x1000, False, os.getppid())
+    if not process:
+        return False
+    try:
+        path = ctypes.create_unicode_buffer(32768)
+        size = wintypes.DWORD(len(path))
+        if not kernel.QueryFullProcessImageNameW(
+            process, 0, path, ctypes.byref(size)
+        ):
+            return False
+        return os.path.samefile(path.value, sys.executable)
+    finally:
+        kernel.CloseHandle(process)
 
 
 def gui_assets_bundled() -> bool:
@@ -87,7 +132,10 @@ def standalone_main() -> int:
         print("    acg status")
         print()
     code = console_main()
-    if keep_window:
+    gui_launch = sys.argv[1:] in (
+        ["gui"], ["desktop"], ["gui", "--wait"], ["desktop", "--wait"]
+    )
+    if keep_window and (not gui_launch or code != 0):
         _pause_before_closing()
     return code
 
@@ -101,7 +149,7 @@ def _run_gui_guarded() -> int:
     except Exception as exc:  # noqa: BLE001 - 最後一道防線,不能讓視窗直接消失
         print(f"桌面版啟動失敗:{type(exc).__name__}: {exc}", file=sys.stderr)
         print(
-            "在 PowerShell 執行 acg gui 可以看到完整錯誤訊息。",
+            "在 PowerShell 執行 acg gui --wait 可以看到完整錯誤訊息。",
             file=sys.stderr,
         )
         return 1

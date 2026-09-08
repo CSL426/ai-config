@@ -709,6 +709,8 @@ def detach_and_run_gui() -> bool:
     if getattr(sys, "frozen", False):
         # 打包版:sys.executable 就是這支 exe
         command = [sys.executable, *sys.argv[1:]]
+        # The GUI outlives this process and must own its extracted bundle.
+        environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     else:
         command = [sys.executable, "-m", "ai_config", *sys.argv[1:]]
 
@@ -728,8 +730,7 @@ def detach_and_run_gui() -> bool:
         subprocess.Popen(command, **kwargs)
     except OSError:
         return False
-    # 這個行程即將結束,但雙擊開的主控台會活到視窗關閉為止(它屬於這個
-    # 行程樹)。分離出去的子行程沒有主控台可藏,所以要在這裡先藏起來。
+    # Hide only our launch console while the onefile parent finishes cleanup.
     hide_console()
     return True
 
@@ -740,7 +741,10 @@ def show_console() -> None:
         return
     with contextlib.suppress(AttributeError, OSError):
         import ctypes
+        from ctypes import wintypes
 
+        ctypes.windll.kernel32.GetConsoleWindow.restype = wintypes.HWND
+        ctypes.windll.user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
         console = ctypes.windll.kernel32.GetConsoleWindow()
         if console:
             ctypes.windll.user32.ShowWindow(console, 5)  # SW_SHOW
@@ -753,27 +757,23 @@ def hide_console() -> bool:
     opens a black window before Python starts. Once the desktop window is
     up that console is just clutter, and closing it would kill the app.
 
-    Ownership is decided by how many processes are attached to the console:
-    exactly one means nobody else is using it, so it was created for this
-    process and hiding it disturbs no one. A shell the user is typing in is
-    attached too, which makes the count two or more, and that window is
-    theirs to keep.
-
-    (GetWindowThreadProcessId is the wrong question here — a console window
-    is owned by conhost.exe, never by us, so it would refuse every case.)
+    A onefile build attaches both its bootloader and Python child. The shared
+    ownership check recognizes that pair while preserving an existing shell.
     """
     if sys.platform != "win32":
         return False
     try:
         import ctypes
+        from ctypes import wintypes
 
+        from ..cli import owns_console
+
+        if not owns_console():
+            return False
+        ctypes.windll.kernel32.GetConsoleWindow.restype = wintypes.HWND
+        ctypes.windll.user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
         console = ctypes.windll.kernel32.GetConsoleWindow()
         if not console:
-            return False
-        # 緩衝區要夠大,太小時這個 API 會失敗而不是回報總數
-        buffer = (ctypes.c_uint * 64)()
-        count = ctypes.windll.kernel32.GetConsoleProcessList(buffer, 64)
-        if count != 1:
             return False
         ctypes.windll.user32.ShowWindow(console, 0)  # SW_HIDE
     except (AttributeError, OSError, ValueError):
@@ -808,6 +808,11 @@ def run_gui() -> int:
             show_console()
         log_error('pywebview 尚未安裝,請執行:pip install "ai-config[gui]"')
         return 1
+    except Exception as exc:  # noqa: BLE001 - native runtime loading can fail too
+        if hidden_console:
+            show_console()
+        log_error(f"無法載入桌面介面:{type(exc).__name__}: {exc}")
+        return 1
 
     # Windows: 分離工作列群組,避免顯示預設 Python 圖示
     if sys.platform == "win32":
@@ -818,15 +823,15 @@ def run_gui() -> int:
                 "CSL426.ai-config.gui"
             )
 
-    webview.create_window(
-        WINDOW_TITLE,
-        str(index),
-        js_api=GuiApi(),
-        width=880,
-        height=680,
-        min_size=(640, 480),
-    )
     try:
+        webview.create_window(
+            WINDOW_TITLE,
+            str(index),
+            js_api=GuiApi(),
+            width=880,
+            height=680,
+            min_size=(640, 480),
+        )
         webview.start()
     except Exception as exc:  # noqa: BLE001 - pywebview 各平台丟的例外型別不一
         if hidden_console:
