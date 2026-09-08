@@ -157,6 +157,23 @@ jobs:
           pnpm build
           test -f ../ai_config/gui_assets/index.html
 
+      - name: Embed build commit
+        env:
+          BUILD_COMMIT: ${{ github.sha }}
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          commit = os.environ["BUILD_COMMIT"]
+          if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit):
+              raise SystemExit("Invalid build commit")
+          Path("ai_config/_build.py").write_text(
+              f'"""Build metadata embedded during packaging."""\n\nCOMMIT_SHA = "{commit}"\n',
+              encoding="utf-8",
+          )
+
       - name: Install PyInstaller
         run: python -m pip install pyinstaller==6.21.0 .
 

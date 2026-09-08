@@ -4,6 +4,10 @@ import { boot, calls, queue, skills } from "./mock-bridge";
 test("640 × 480 設定內容可捲動，最後一列仍可操作", async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 480 });
   await boot(page);
+  await expect(page.locator("#version")).toHaveText("v1.0.0 · 01234567");
+  await expect(page.locator("#version")).toHaveAttribute(
+    "title", "0123456789abcdef0123456789abcdef01234567",
+  );
   await page.locator("#settings-open").click();
   await expect(page.locator("#settings-account")).toHaveText("已授權");
   const dialog = page.getByRole("dialog", { name: "設定", exact: true });

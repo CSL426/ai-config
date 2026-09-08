@@ -739,7 +739,10 @@ async function loadInfo(): Promise<void> {
     const info = await bridge.get_info();
     connected = true;
     configured = info.configured;
-    versionEl.textContent = `v${info.version}`;
+    versionEl.textContent = info.build_commit
+      ? `v${info.version} · ${info.build_commit.slice(0, 8)}`
+      : `v${info.version}`;
+    versionEl.title = info.build_commit || "";
     providerEl.textContent = configured ? providerLabel(info.provider) : "尚未設定同步方式";
     providerEl.dataset.provider = configured ? info.provider : "none";
     repoEl.textContent = `本機設定位置：${info.repo}`;
