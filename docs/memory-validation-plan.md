@@ -13,6 +13,9 @@
 目前基線：已有 CLI 隔離測試與 Linux 安裝後測試；本計畫新增的
 category／GUI 契約尚未實作，Windows 記憶原生與三方新會話仍未完成。
 已有 Windows workflow 不等於這批新增契約已通過 Windows 驗收。
+2026-09-08 的 CI 實測：記憶 enable 的預覽／確認在 Windows 通過（Junction）；
+apply 預覽 worker 在 Windows runner 回傳失敗，原因未查明，對應測試在
+Windows 標記略過，W04 仍為 NOT_RUN。
 
 測試使用臨時 data Git repo、合成設定與筆記、測試用 bare remote。
 不將真實私人筆記、帳號 home、主機資訊或服務 URL 放進公開 repo、
