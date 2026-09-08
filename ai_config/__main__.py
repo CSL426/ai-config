@@ -56,6 +56,8 @@ def usage() -> None:
     print("                  --from <both|codex|agy> limit to one target")
     print("  config          Show provider (git/gdrive), repo, and login state")
     print("  login [account] Connect a GitHub account that can push")
+    print("  memory <status|enable|disable|adopt|release|path|push>")
+    print("                  Shared notebook that every AI tool reads and writes")
     print("  desktop         Launch the desktop app (bundled on Windows)")
     print("                  --shortcut add a Start-menu entry (Windows)")
     print("                  --wait stay in the foreground (shows errors)")
@@ -217,6 +219,11 @@ def main(argv: "list[str] | None" = None) -> int:
 
         return run_login(args[1] if len(args) == 2 else None)
 
+    if cmd == "memory":
+        from .commands.memory import run_memory
+
+        return run_memory(args[1:])
+
     if cmd == "ignore-skills":
         if len(args) > 2:
             log_error(f"Usage: {ENTRYPOINT} ignore-skills [tool]")
@@ -311,6 +318,10 @@ def main(argv: "list[str] | None" = None) -> int:
     if len(positional) > 1:
         log_error(f"Unexpected arguments: {' '.join(positional[1:])}")
         return 1
+    if cmd == "push" and tool == "memory":
+        from .commands.push import MEMORY_SCOPE
+
+        return do_push(MEMORY_SCOPE, allow_secrets=allow_secrets)
     tool = resolve_tool(tool)
 
     if cmd == "init":
