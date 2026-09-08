@@ -314,10 +314,15 @@ def test_setup_repo_builds_argv_and_validates(
     assert Path(seen["argv"][2]).parts[-2:] == (".acg", "data")
 
 
-def test_get_info_reports_version_and_tools(api: GuiApi) -> None:
+def test_get_info_reports_version_and_tools(api: GuiApi, monkeypatch) -> None:
+    import ai_config.version as version_mod
+
+    commit = "0123456789abcdef" * 2 + "01234567"
+    monkeypatch.setattr(version_mod, "current_commit", lambda: commit)
     info = api.get_info()
     assert info["tools"] == ["claude", "codex", "agy"]
     assert info["version"]
+    assert info["build_commit"] == commit
     assert info["repo"]
     assert info["provider"] in {"git", "gdrive"}
 

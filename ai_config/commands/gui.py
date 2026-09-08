@@ -70,12 +70,13 @@ class GuiApi:
     def get_info(self) -> dict:
         from ..config import configured_remote_provider
         from ..paths import CONFIG_ERROR, SCRIPT_DIR
-        from ..version import current_version
+        from ..version import current_commit, current_version
 
         configured = CONFIG_ERROR is None and (SCRIPT_DIR / "claude").is_dir()
         provider = configured_remote_provider() if CONFIG_ERROR is None else "git"
         return {
             "version": current_version() or "unknown",
+            "build_commit": current_commit() or "",
             "repo": str(SCRIPT_DIR),
             "provider": provider,
             "tools": list(ALL_TOOLS),

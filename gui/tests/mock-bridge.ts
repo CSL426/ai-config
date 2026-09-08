@@ -24,6 +24,7 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
     const defaults: Record<string, Reply> = {
       get_info: {
         version: "1.0.0", repo: "/tmp/acg-test-data", provider: "gdrive",
+        build_commit: "0123456789abcdef0123456789abcdef01234567",
         tools: ["claude", "codex", "agy"], configured: true, config_error: "",
       },
       settings_info: {

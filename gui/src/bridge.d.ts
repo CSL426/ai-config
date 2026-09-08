@@ -4,6 +4,7 @@ export type AcgCommand = "status" | "apply" | "pull" | "push";
 
 export interface AcgInfo {
   version: string;
+  build_commit: string;
   repo: string;
   provider: "git" | "gdrive";
   tools: string[];
