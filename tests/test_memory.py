@@ -248,3 +248,24 @@ def test_disable_removes_only_our_journal_setting(tmp_path: Path) -> None:
     assert memory.JOURNAL_TEMPLATE in config_path.read_text(encoding="utf-8")
     assert run_ai_config(repo_dir, home_dir, "memory", "disable").returncode == 0
     assert not config_path.exists()
+
+
+def test_rules_block_is_identical_on_every_machine() -> None:
+    # 區塊會寫進同步的 CLAUDE.md;嵌入本機的執行檔名稱會讓每台機器互相改寫
+    assert "acg memory path" in memory.RULES_BLOCK
+    assert "ai-config.sh" not in memory.RULES_BLOCK
+    assert "{" not in memory.RULES_BLOCK
+
+
+def test_home_remember_config_dir_is_not_a_legacy_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / ".remember").mkdir(parents=True)
+    (home / ".remember" / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(memory, "HOME", home)
+    assert memory.legacy_journal_dir(home) is None
+    assert memory.journal_state(home)[0] == "none"
+    project = tmp_path / "proj"
+    (project / ".remember").mkdir(parents=True)
+    assert memory.legacy_journal_dir(project) == project / ".remember"

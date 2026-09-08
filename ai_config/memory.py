@@ -23,7 +23,6 @@ from .paths import (
     AGY_CONFIG_RULES,
     CLAUDE_HOME,
     CODEX_HOME,
-    ENTRYPOINT,
     HOME,
     MEMORY_DIR_NAME,
     MEMORY_LINK,
@@ -72,7 +71,7 @@ RULES_BLOCK = f"""{BLOCK_BEGIN}
   就寫全域層;分不清就問使用者。
 - 每則記錄寫結論、日期、適用範圍與來源。不寫憑證、聊天紀錄或暫時狀態,
   避免重複與未證實的猜測。
-- 專案層目錄不存在時自行建立 MEMORY.md。`{ENTRYPOINT} memory path` 會印出兩層路徑。
+- 專案層目錄不存在時自行建立 MEMORY.md。`acg memory path` 會印出兩層路徑。
 - 若 `~/.claude/shared-memory/projects/<鍵值>/journal/recent.md` 或專案目錄的
   `.remember/recent.md` 存在,讀它了解最近進度。那是 Claude 的工作日誌,唯讀。
 {BLOCK_END}
@@ -178,11 +177,8 @@ def preflight_memory() -> None:
         for path in journal_root().iterdir():
             if is_reparse_point(path):
                 target = _reparse_target(path)
-                if (
-                    target.name.casefold() != JOURNAL_DIR_NAME
-                    or not _path_identity(
-                        target.parent.parent, memory_dir() / PROJECTS_NAME
-                    )
+                if target.name.casefold() != JOURNAL_DIR_NAME or not _path_identity(
+                    target.parent.parent, memory_dir() / PROJECTS_NAME
                 ):
                     raise RuntimeError(f"Unexpected journal link: {path}")
                 assert_plain_path(target, directory=True)
@@ -473,7 +469,9 @@ def _read_user_config() -> "dict | None":
     try:
         data = json.loads(_read_text(REMEMBER_USER_CONFIG))
     except ValueError as exc:
-        raise RuntimeError(f"Invalid remember configuration: {REMEMBER_USER_CONFIG}") from exc
+        raise RuntimeError(
+            f"Invalid remember configuration: {REMEMBER_USER_CONFIG}"
+        ) from exc
     if not isinstance(data, dict):
         raise RuntimeError(  # noqa: TRY004 - report malformed user input at CLI boundary
             f"Expected remember config object: {REMEMBER_USER_CONFIG}"
@@ -626,7 +624,11 @@ def _move_contents(
     """Preserve collisions and retain enough information to undo later failures."""
     _check_journal_tree(source)
     _check_journal_tree(destination)
-    if source == destination or source in destination.parents or destination in source.parents:
+    if (
+        source == destination
+        or source in destination.parents
+        or destination in source.parents
+    ):
         raise RuntimeError("日誌來源與目的地不能重疊")
     destination.mkdir(parents=True, exist_ok=True)
     own_moves = moves is None
@@ -670,6 +672,17 @@ def _remove_journal_link(link: Path, target: Path) -> None:
         os.rmdir(link)
 
 
+def legacy_journal_dir(root: Path) -> "Path | None":
+    """Where the plugin kept this project's journal before adopt, or None.
+
+    At HOME the directory is the plugin's own config home, not a journal;
+    the plugin itself refuses to migrate it, and so must we.
+    """
+    if root.resolve() == HOME.resolve():
+        return None
+    return root / ".remember"
+
+
 def journal_state(root: Path) -> tuple[str, str]:
     """adopted / local / legacy / none / foreign for one project."""
     link = journal_link(root)
@@ -685,8 +698,12 @@ def journal_state(root: Path) -> tuple[str, str]:
         return "foreign", str(current)
     if link.is_dir():
         return "local", str(link)
-    legacy = root / ".remember"
-    if legacy.is_dir() and not (legacy / MIGRATED_NOTE).is_file():
+    legacy = legacy_journal_dir(root)
+    if (
+        legacy is not None
+        and legacy.is_dir()
+        and not (legacy / MIGRATED_NOTE).is_file()
+    ):
         return "legacy", str(legacy)
     return "none", ""
 
@@ -707,13 +724,18 @@ def adopt_journal(root: Path) -> list[str]:
     target = project_journal_dir(key)
     link = journal_link(root)
     lines: list[str] = []
-    legacy = root / ".remember"
+    legacy = legacy_journal_dir(root)
     _check_journal_tree(target)
     _check_journal_tree(link)
-    _check_journal_tree(legacy)
+    if legacy is not None:
+        _check_journal_tree(legacy)
     ignore = memory_dir() / ".gitignore"
     assert_plain_path(ignore, directory=False)
-    migrate_legacy = legacy.is_dir() and not (legacy / MIGRATED_NOTE).is_file()
+    migrate_legacy = (
+        legacy is not None
+        and legacy.is_dir()
+        and not (legacy / MIGRATED_NOTE).is_file()
+    )
     moves: list[tuple[Path, Path, str]] = []
     originals: dict[Path, bytes | None] = {}
     written: dict[Path, bytes | None] = {}
@@ -740,7 +762,10 @@ def adopt_journal(root: Path) -> list[str]:
             lines.append(f"搬入 {moved} 項 .remember 日誌")
 
         target_ignore = target / ".gitignore"
-        if target_ignore.exists() and target_ignore.read_bytes() != JOURNAL_GITIGNORE.encode():
+        if (
+            target_ignore.exists()
+            and target_ignore.read_bytes() != JOURNAL_GITIGNORE.encode()
+        ):
             backup = _journal_destination(target, ".gitignore", "journal")
             moves.append((target_ignore, backup, _journal_fingerprint(target_ignore)))
             shutil.move(str(target_ignore), str(backup))
@@ -945,6 +970,8 @@ def entry_status(path: Path) -> dict:
     except (OSError, RuntimeError, ValueError) as exc:
         status, reason = "blocked", str(exc)
     return {
-        "path": str(path), "target": str(target),
-        "status": status, "reason": reason,
+        "path": str(path),
+        "target": str(target),
+        "status": status,
+        "reason": reason,
     }

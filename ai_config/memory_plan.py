@@ -22,34 +22,58 @@ class MemoryPlan:
     relevant_values: dict = field(default_factory=dict)
 
     def change(
-        self, operation: str, destination: Path, reason: str, *,
-        source: Path | None = None, target: Path | None = None,
-        tool: str = "all", shared: bool = False,
+        self,
+        operation: str,
+        destination: Path,
+        reason: str,
+        *,
+        source: Path | None = None,
+        target: Path | None = None,
+        tool: str = "all",
+        shared: bool = False,
     ) -> None:
         physical = target or destination
-        self.changes.append({
-            "category": "memory", "tool": tool, "operation": operation,
-            "source": str(source) if source is not None else None,
-            "destination": str(destination), "physical_target": str(physical),
-            "shared": shared, "reason": reason,
-        })
+        self.changes.append(
+            {
+                "category": "memory",
+                "tool": tool,
+                "operation": operation,
+                "source": str(source) if source is not None else None,
+                "destination": str(destination),
+                "physical_target": str(physical),
+                "shared": shared,
+                "reason": reason,
+            }
+        )
         self.relevant_paths.extend(
             path for path in (source, destination, physical) if path is not None
         )
 
 
 def _text_change(
-    result: MemoryPlan, path: Path, updated: str | None, reason: str, *,
-    tool: str = "all", target: Path | None = None,
+    result: MemoryPlan,
+    path: Path,
+    updated: str | None,
+    reason: str,
+    *,
+    tool: str = "all",
+    target: Path | None = None,
 ) -> None:
     actual = target or path
     current = memory._read_text(actual) if actual.exists() else None
     if current == updated:
         return
-    operation = "delete" if updated is None else "modify" if current is not None else "add"
+    operation = (
+        "delete" if updated is None else "modify" if current is not None else "add"
+    )
     result.change(
-        operation, path, reason, target=actual, tool=tool,
-        shared=actual != path, source=actual if current is not None else None,
+        operation,
+        path,
+        reason,
+        target=actual,
+        tool=tool,
+        shared=actual != path,
+        source=actual if current is not None else None,
     )
 
 
@@ -64,14 +88,20 @@ def _ignore_change(result: MemoryPlan) -> None:
 
 def _index_and_link(result: MemoryPlan) -> None:
     if not memory.index_path().is_file():
-        _text_change(result, memory.index_path(), memory.INDEX_TEMPLATE, "建立共用記憶索引")
+        _text_change(
+            result, memory.index_path(), memory.INDEX_TEMPLATE, "建立共用記憶索引"
+        )
         topics = memory.memory_dir() / memory.TOPICS_NAME
         if not topics.exists():
             result.change("mkdir", topics, "建立全域主題目錄")
     if memory.link_state()[0] == "missing":
         result.change(
-            "link", memory.MEMORY_LINK, "三個工具共用的記憶入口",
-            source=memory.memory_dir(), target=memory.memory_dir(), shared=True,
+            "link",
+            memory.MEMORY_LINK,
+            "三個工具共用的記憶入口",
+            source=memory.memory_dir(),
+            target=memory.memory_dir(),
+            shared=True,
         )
 
 
@@ -84,13 +114,21 @@ def _journal_config(result: MemoryPlan, *, remove: bool = False) -> None:
         if state != "ours":
             return
         config.pop("data_dir", None)
-        updated = json.dumps(config, ensure_ascii=False, indent=2) + "\n" if config else None
+        updated = (
+            json.dumps(config, ensure_ascii=False, indent=2) + "\n" if config else None
+        )
     else:
         if state == "ours":
             return
         config["data_dir"] = memory.JOURNAL_TEMPLATE
         updated = json.dumps(config, ensure_ascii=False, indent=2) + "\n"
-    _text_change(result, memory.REMEMBER_USER_CONFIG, updated, "更新 remember data_dir", tool="claude")
+    _text_change(
+        result,
+        memory.REMEMBER_USER_CONFIG,
+        updated,
+        "更新 remember data_dir",
+        tool="claude",
+    )
 
 
 def _rules(result: MemoryPlan, *, enabling: bool) -> None:
@@ -105,7 +143,13 @@ def _rules(result: MemoryPlan, *, enabling: bool) -> None:
             updated = memory.without_block(current)
             if path == memory.agy_rules_path() and not updated.strip():
                 updated = None
-        tool = "agy" if path == memory.agy_rules_path() else "codex" if path.name == "AGENTS.md" else "claude"
+        tool = (
+            "agy"
+            if path == memory.agy_rules_path()
+            else "codex"
+            if path.name == "AGENTS.md"
+            else "claude"
+        )
         reason = "安裝 acg 管理規則" if enabling else "移除 acg 管理規則，保留其他內容"
         if target != path:
             reason += "；此檔案亦由 Claude 使用"
@@ -119,8 +163,8 @@ def _journal(result: MemoryPlan) -> None:
     root = result.project
     link = memory.journal_link(root)
     target = memory.project_journal_dir(memory.project_key(root))
-    legacy = root / ".remember"
-    result.relevant_paths.extend([link, target, legacy])
+    legacy = memory.legacy_journal_dir(root)
+    result.relevant_paths.extend(p for p in (link, target, legacy) if p is not None)
     state, detail = memory.journal_state(root)
     if state == "foreign":
         raise RuntimeError(f"日誌連結已指向別處:{detail}")
@@ -132,13 +176,21 @@ def _journal(result: MemoryPlan) -> None:
         result.change("mkdir", link, "日誌改存本機普通目錄")
         if target.exists():
             for entry in sorted(target.iterdir()):
-                result.change("move", link / entry.name, "搬回本機；資料庫產生 Git 刪除差異", source=entry)
-        result.warnings.append("後續提交並同步會移除資料庫日誌；其他機器既有連結將受 pull 影響。Git 歷史保留。")
+                result.change(
+                    "move",
+                    link / entry.name,
+                    "搬回本機；資料庫產生 Git 刪除差異",
+                    source=entry,
+                )
+        result.warnings.append(
+            "後續提交並同步會移除資料庫日誌；其他機器既有連結將受 pull 影響。Git 歷史保留。"
+        )
         return
     if state == "adopted":
         return
     memory._check_journal_tree(link)
-    memory._check_journal_tree(legacy)
+    if legacy is not None:
+        memory._check_journal_tree(legacy)
     if not target.exists():
         result.change("mkdir", target, "建立可同步的專案日誌")
     # Track virtual destinations so later sources get exactly the same collision
@@ -154,7 +206,11 @@ def _journal(result: MemoryPlan) -> None:
         return target / candidate
 
     sources = [link] if state == "local" else []
-    migrate = legacy.is_dir() and not (legacy / memory.MIGRATED_NOTE).is_file()
+    migrate = (
+        legacy is not None
+        and legacy.is_dir()
+        and not (legacy / memory.MIGRATED_NOTE).is_file()
+    )
     if migrate:
         sources.append(legacy)
     for source in sources:
@@ -163,12 +219,22 @@ def _journal(result: MemoryPlan) -> None:
                 continue
             dest = destination(entry.name, source.parent.name)
             occupied[dest.name] = entry
-            result.change("move", dest, "搬入可同步日誌；同名版本保留" if dest.name != entry.name else "搬入可同步日誌", source=entry)
+            result.change(
+                "move",
+                dest,
+                "搬入可同步日誌；同名版本保留"
+                if dest.name != entry.name
+                else "搬入可同步日誌",
+                source=entry,
+            )
         if source == link:
             result.change("rmdir", link, "移除搬空的本機日誌目錄")
     ignore = target / ".gitignore"
     prior_ignore = occupied.get(".gitignore")
-    if prior_ignore is not None and prior_ignore.read_bytes() != memory.JOURNAL_GITIGNORE.encode():
+    if (
+        prior_ignore is not None
+        and prior_ignore.read_bytes() != memory.JOURNAL_GITIGNORE.encode()
+    ):
         dest = destination(".gitignore", "journal")
         result.change("move", dest, "保留原日誌忽略設定", source=ignore)
         result.change("add", ignore, "寫入日誌同步忽略設定")
@@ -179,7 +245,13 @@ def _journal(result: MemoryPlan) -> None:
         note = legacy / memory.MIGRATED_NOTE
         text = f"Memory data migrated to:\n  {target}\nThis directory is now empty; you may delete it.\n"
         _text_change(result, note, text, "記錄舊日誌搬移目的地")
-    result.change("link", link, "remember 繼續透過本機入口寫入專案日誌", source=target, target=target)
+    result.change(
+        "link",
+        link,
+        "remember 繼續透過本機入口寫入專案日誌",
+        source=target,
+        target=target,
+    )
 
 
 def plan(action: str, project: Path | None = None) -> MemoryPlan:
@@ -207,12 +279,18 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
     result = MemoryPlan(action, project)
     result.relevant_values = {"remember_installed": memory.remember_installed()}
     result.relevant_paths = [
-        memory.memory_dir(), memory.MEMORY_LINK,
-        *memory.instruction_paths(), memory.source_rules_path(),
-        memory.SCRIPT_DIR / "codex" / "AGENTS.md", memory.agy_rules_path(),
-        memory.codex_override_path(), memory.REMEMBER_USER_CONFIG,
+        memory.memory_dir(),
+        memory.MEMORY_LINK,
+        *memory.instruction_paths(),
+        memory.source_rules_path(),
+        memory.SCRIPT_DIR / "codex" / "AGENTS.md",
+        memory.agy_rules_path(),
+        memory.codex_override_path(),
+        memory.REMEMBER_USER_CONFIG,
     ]
-    result.relevant_paths.extend(memory.rules_target(path) for path in memory.instruction_paths())
+    result.relevant_paths.extend(
+        memory.rules_target(path) for path in memory.instruction_paths()
+    )
     if action == "enable":
         _index_and_link(result)
         _rules(result, enabling=True)
@@ -221,7 +299,9 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
             _journal_config(result)
         else:
             result.warnings.append("remember 未安裝；不變更日誌設定，也不安裝外掛。")
-        result.warnings.append("規則已安裝後，請開新會話驗證；agy CLI 載入仍須實際驗收。")
+        result.warnings.append(
+            "規則已安裝後，請開新會話驗證；agy CLI 載入仍須實際驗收。"
+        )
         if memory.codex_override_path().is_file():
             result.warnings.append("AGENTS.override.md 會遮蔽 Codex 的共用規則。")
         if not memory.source_rules_path().is_file():
@@ -229,7 +309,13 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
     elif action == "disable":
         _rules(result, enabling=False)
         if state == "ok":
-            result.change("unlink", memory.MEMORY_LINK, "移除共用入口，保留資料", target=memory.memory_dir(), shared=True)
+            result.change(
+                "unlink",
+                memory.MEMORY_LINK,
+                "移除共用入口，保留資料",
+                target=memory.memory_dir(),
+                shared=True,
+            )
         _journal_config(result, remove=True)
         result.warnings.append("記憶內容保留；已搬移的日誌不搬回本機。")
     else:
