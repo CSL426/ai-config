@@ -161,6 +161,8 @@ def _run_in_project(repo_dir: Path, home_dir: Path, project: Path, *args: str):
     env = os.environ.copy()
     env["HOME"] = str(home_dir)
     env["AI_CONFIG_REPO"] = str(repo_dir)
+    # CI 沒有安裝套件,子行程要靠 PYTHONPATH 才找得到 ai_config
+    env["PYTHONPATH"] = str(repo_dir)
     return subprocess.run(
         [sys.executable, "-m", "ai_config", *args],
         cwd=project,

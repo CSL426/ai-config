@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import ai_config.__main__ as cli
+from ai_config.applyplan import StalePreview
 from ai_config.commands.gui import GuiApi
 
 
@@ -107,7 +108,9 @@ def test_management_api_rejects_bad_tokens_and_arguments(api: GuiApi) -> None:
     assert api.open_memory_location("nope")["error"] == "INVALID_ARGUMENT"
     result = api.preview_apply("vim", "all")
     assert result["code"] == 1 and result["token"] == ""
-    assert api.preview_memory("adopt")["error"] == "STALE_PREVIEW"
+    # 專案 token 的驗證不依賴資料庫是否已設定
+    with pytest.raises(StalePreview):
+        api._project_path("bogus")
 
 
 def test_new_push_preview_discards_pending_apply_preview(api: GuiApi) -> None:
