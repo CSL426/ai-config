@@ -53,14 +53,23 @@ def bash_completion() -> str:
     memory_commands = " ".join(MEMORY_COMMANDS)
     shells = " ".join(SHELLS)
     return f"""_ai_config_completion() {{
-    local current command
+    local current command previous
+    COMPREPLY=()
     current="${{COMP_WORDS[COMP_CWORD]}}"
     if (( COMP_CWORD == 1 )); then
         COMPREPLY=( $(compgen -W '{commands}' -- "$current") )
         return
     fi
     command="${{COMP_WORDS[1]}}"
+    previous="${{COMP_WORDS[COMP_CWORD-1]}}"
     case "$command" in
+        apply)
+            if [[ "$previous" == --category ]]; then
+                COMPREPLY=( $(compgen -W 'settings skills all' -- "$current") )
+            else
+                COMPREPLY=( $(compgen -W '{tools} --category' -- "$current") )
+            fi
+            ;;
         {tool_commands})
             if (( COMP_CWORD == 2 )); then
                 COMPREPLY=( $(compgen -W '{tools}' -- "$current") )
@@ -119,7 +128,21 @@ def powershell_completion() -> str:
     }}
     else {{
         $command = $arguments[0]
-        if ($toolCommands -contains $command) {{
+        if ($command -eq 'apply') {{
+            if ($arguments[-1] -eq $wordToComplete) {{
+                $previousArgument = $arguments[-2]
+            }}
+            else {{
+                $previousArgument = $arguments[-1]
+            }}
+            if ($previousArgument -eq '--category') {{
+                $candidates = @('settings', 'skills', 'all')
+            }}
+            else {{
+                $candidates = $tools + @('--category')
+            }}
+        }}
+        elseif ($toolCommands -contains $command) {{
             if (
                 $arguments.Count -eq 1 -or
                 ($arguments.Count -eq 2 -and $arguments[-1] -eq $wordToComplete)

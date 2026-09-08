@@ -1,5 +1,7 @@
 """Atomic, owned backup snapshots for apply-managed paths."""
 
+import json
+import os
 import re
 import shutil
 import time
@@ -7,6 +9,7 @@ import uuid
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from .categories import includes, selected_paths
 from .console import log_info, log_warn
 from .fsops import mirror_dir
 from .paths import (
@@ -21,7 +24,11 @@ from .paths import (
     CODEX_LEGACY_SKILLS,
     tool_home,
 )
-from .safety import assert_root_not_reparse, is_reparse_point
+from .safety import (
+    assert_root_not_reparse,
+    codex_agents_shared_target,
+    is_reparse_point,
+)
 
 BACKUP_MARKER = ".ai-config-backup-owned"
 BACKUP_MARKER_VALUE = "ai-config-backup-v1"
@@ -74,11 +81,13 @@ def _skills_source(tool: str) -> Path:
 def _managed_sources(
     tools: Iterable[str],
     stages: Mapping[str, Path],
+    *,
+    category: str = "all",
 ) -> list[tuple[str, str, Path]]:
     sources = []
     for tool in tools:
         home = tool_home(tool)
-        for relative_path in _BACKUP_PATHS[tool]:
+        for relative_path in selected_paths(_BACKUP_PATHS[tool], category):
             staged_path = stages[tool] / relative_path
             reconciled_skills = tool in _SKILLS_PATHS and relative_path == "skills"
             if not staged_path.exists() and not reconciled_skills:
@@ -90,6 +99,46 @@ def _managed_sources(
             if source.exists():
                 sources.append((tool, relative_path, source))
     return sources
+
+
+def managed_destinations(
+    tools: Iterable[str],
+    stages: Mapping[str, Path],
+    *,
+    category: str = "all",
+) -> list[tuple[str, str, Path]]:
+    """Affected live roots, including absent paths, links, and ownership state.
+
+    Labels are stable snapshot-relative names. Canonical skill directories own
+    their manifest, migration and unmanaged-baseline markers. Legacy skill roots
+    are read for migration but never changed, so they are not write destinations.
+    """
+    result = []
+    for tool in tools:
+        home = tool_home(tool)
+        for relative in selected_paths(_BACKUP_PATHS[tool], category):
+            if relative == "skills" and tool in _SKILLS_PATHS:
+                canonical, _ = _SKILLS_PATHS[tool]
+                result.append((tool, "canonical-skills", canonical))
+                if tool == "agy":
+                    result.append((tool, "skills", home / "skills"))
+                continue
+            if not (stages[tool] / relative).exists():
+                continue
+            destination = home / relative
+            result.append((tool, relative, destination))
+            if tool == "codex" and relative == "AGENTS.md":
+                target = codex_agents_shared_target(destination)
+                if target is not None:
+                    result.append((tool, "shared-CLAUDE.md", target))
+        if tool == "agy" and includes(category, "skills"):
+            from .links import AGY_MARKER, AGY_STATE
+            from .paths import WINDOWS_MODE
+
+            if WINDOWS_MODE:
+                for name in (AGY_MARKER, AGY_STATE):
+                    result.append((tool, name, home / name))
+    return result
 
 
 def _copy_source(source: Path, destination: Path, *, allow_internal_symlinks: bool) -> None:
@@ -107,8 +156,18 @@ def _copy_source(source: Path, destination: Path, *, allow_internal_symlinks: bo
 def create_backup(
     tools: Iterable[str],
     stages: Mapping[str, Path],
+    *,
+    category: str = "all",
 ) -> "Path | None":
-    sources = _managed_sources(tools, stages)
+    tools = list(tools)
+    sources = _managed_sources(tools, stages, category=category)
+    destinations = managed_destinations(tools, stages, category=category)
+    for tool, relative, source in destinations:
+        if (
+            source.exists() and not is_reparse_point(source)
+            and (tool, relative, source) not in sources
+        ):
+            sources.append((tool, relative, source))
     if not sources:
         return None
     assert_root_not_reparse(BACKUP_BASE, "backup root")
@@ -123,6 +182,20 @@ def create_backup(
                 temporary / tool / relative_path,
                 allow_internal_symlinks=(tool == "agy" and relative_path == "plugins"),
             )
+        state = []
+        for tool, relative, destination in destinations:
+            entry = {
+                "tool": tool,
+                "path": relative,
+                "destination": str(destination),
+                "exists": destination.exists() or is_reparse_point(destination),
+            }
+            if is_reparse_point(destination):
+                entry["link_target"] = os.readlink(destination)
+            state.append(entry)
+        (temporary / "destinations.json").write_text(
+            json.dumps(state, indent=2) + "\n", encoding="utf-8"
+        )
         (temporary / BACKUP_MARKER).write_text(
             BACKUP_MARKER_VALUE + "\n", encoding="utf-8", newline="\n"
         )

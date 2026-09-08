@@ -223,11 +223,61 @@
           <button class="btn hero-secondary" data-cmd="apply">套用設定</button>
         </div>
 
-        <p class="command-hint">下載：取得雲端設定並套用 · 上傳：保存工具設定到雲端 · 套用：使用本機保存的設定</p>
+        <p class="command-hint">設定與獨立技能下載後可選擇套用；共用記憶會立即更新。</p>
         <div class="hero-links">
+          <button class="link-btn" id="memory-open">共用記憶與專案日誌</button>
           <button class="link-btn" id="package-open">分享與準備 AI 技能</button>
           <button class="link-btn" id="output-toggle">查看詳細輸出</button>
         </div>
+      </section>
+
+      <section class="management-panel" id="apply-panel" hidden aria-labelledby="apply-title">
+        <div class="panel-head">
+          <button class="btn btn-ghost" id="apply-back">‹ 返回</button>
+          <h2 id="apply-title">選擇套用內容</h2>
+        </div>
+        <p id="apply-scope"></p>
+        <fieldset class="category-options">
+          <legend>本次套用類別</legend>
+          <label><input type="checkbox" id="category-settings" /><span>設定<small>含規則、指令、MCP 與工具管理的外掛設定</small></span></label>
+          <label><input type="checkbox" id="category-skills" /><span>獨立技能<small>僅獨立技能；外掛內附技能隨外掛設定管理</small></span></label>
+        </fieldset>
+        <p class="package-hint">選擇至少一個類別，再檢閱真正受影響的檔案。關閉面板後清除選取。</p>
+        <button class="btn btn-primary" id="apply-preview" disabled>預覽可套用變更</button>
+      </section>
+
+      <section class="management-panel" id="memory-panel" hidden aria-labelledby="memory-title">
+        <div class="panel-head">
+          <button class="btn btn-ghost" id="memory-back">‹ 返回</button>
+          <h2 id="memory-title">共用記憶與專案日誌</h2>
+          <button class="btn btn-ghost" id="memory-refresh">重新整理</button>
+        </div>
+        <p class="feedback" id="memory-feedback" role="status" hidden></p>
+        <section class="memory-section" aria-labelledby="memory-global-title">
+          <h3 id="memory-global-title">全域記憶</h3>
+          <div id="memory-data"></div>
+          <div id="memory-entries"></div>
+          <div class="package-buttons">
+            <button class="btn" data-memory-action="enable">啟用共用記憶</button>
+            <button class="btn btn-ghost" data-memory-action="disable">停用共用記憶</button>
+            <button class="btn" id="memory-push">上傳記憶</button>
+          </div>
+          <p class="package-hint" id="memory-global-reasons"></p>
+        </section>
+        <section class="memory-section" aria-labelledby="memory-project-title">
+          <h3 id="memory-project-title">專案日誌</h3>
+          <button class="btn" id="memory-select-project">選擇本機專案資料夾</button>
+          <div id="memory-project">尚未選擇專案。</div>
+          <div class="package-buttons">
+            <button class="btn" data-memory-action="adopt" disabled>同步此專案日誌</button>
+            <button class="btn btn-ghost" data-memory-action="release" disabled>日誌改存本機</button>
+          </div>
+          <p class="package-hint" id="memory-project-reasons"></p>
+        </section>
+        <section class="memory-section" aria-label="記憶資料夾">
+          <h3>開啟資料夾</h3>
+          <div id="memory-locations"></div>
+        </section>
       </section>
 
       <section class="package" id="package" hidden aria-labelledby="skills-title">
@@ -282,8 +332,10 @@
             <span class="line-placeholder">還沒有輸出 — 從上面選一個動作開始。</span>
           </div>
         </div>
-        <div class="confirm" id="confirm" hidden>
-          <p class="confirm-text">請檢閱變更內容後確認上傳。離開此頁會取消確認；內容變動時需要重新預覽。</p>
+        <div class="preview-changes" id="preview-changes" hidden></div>
+        <button class="btn" id="pull-apply" hidden>檢視可套用變更</button>
+        <div class="confirm" id="confirm" role="dialog" aria-label="確認變更" hidden>
+          <p class="confirm-text" id="confirm-text" tabindex="-1">請檢閱變更內容後確認上傳。離開此頁會取消確認；內容變動時需要重新預覽。</p>
           <div class="confirm-buttons">
             <button class="btn btn-primary" id="confirm-yes">確定上傳</button>
             <button class="btn btn-ghost" id="confirm-no">取消</button>

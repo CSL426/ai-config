@@ -1487,3 +1487,19 @@ summary:focus-visible,
   font-weight: 700;
   letter-spacing: 0.12em;
 }
+
+/* 記憶與套用沿用既有工具面板，長路徑保持完整且可換行。 */
+.management-panel { display: flex; flex-direction: column; gap: var(--space-md); flex: 1 0 auto; }
+.management-panel p, .preview-changes p { margin: 0; overflow-wrap: anywhere; }
+.management-panel h3 { margin: 0; font-size: 1rem; }
+.category-options { display: flex; flex-direction: column; gap: var(--space-md); border: 1px solid var(--color-paper-3); border-radius: var(--radius-sm); padding: var(--space-md); }
+.category-options label { display: flex; align-items: baseline; gap: var(--space-sm); cursor: pointer; }
+.category-options small { display: block; color: var(--color-ink-soft); }
+.memory-section { display: flex; flex-direction: column; gap: var(--space-sm); padding-block: var(--space-md); border-top: 1px solid var(--color-paper-3); }
+.memory-entry, .preview-change { padding-block: var(--space-sm); border-bottom: 1px solid var(--color-paper-3); }
+.memory-location { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
+.memory-location span { overflow-wrap: anywhere; flex: 1 1 60%; }
+.preview-changes { flex: 0 0 auto; overflow-wrap: anywhere; }
+.confirm-text:focus-visible { outline: 0.125rem solid var(--color-focus); outline-offset: 0.125rem; }
+
+.management-panel[hidden], .preview-changes[hidden] { display: none; }

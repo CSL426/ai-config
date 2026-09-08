@@ -5,6 +5,7 @@ import stat
 from collections.abc import Mapping
 from pathlib import Path
 
+from .categories import includes, selected_paths
 from .paths import (
     AGY_CANONICAL_SKILLS,
     AGY_HOME,
@@ -13,6 +14,7 @@ from .paths import (
     CODEX_CANONICAL_SKILLS,
     CODEX_HOME,
     CODEX_LEGACY_SKILLS,
+    SCRIPT_DIR,
     WINDOWS_MODE,
 )
 
@@ -168,38 +170,54 @@ def _assert_expected_legacy_path(
 def assert_tool_destinations_safe(
     tools: list[str],
     stages: "Mapping[str, Path] | None" = None,
+    *,
+    category: str = "all",
 ) -> None:
+    settings = includes(category, "settings")
+    skills = includes(category, "skills")
     for tool in tools:
         if tool == "claude":
             assert_managed_paths_safe(
                 CLAUDE_HOME,
-                ("CLAUDE.md", "mcp.json", "settings.json", "statusline.sh"),
-                ("rules", "agents", "commands", "skills"),
+                tuple(selected_paths(
+                    ("CLAUDE.md", "mcp.json", "settings.json", "statusline.sh"),
+                    category,
+                )),
+                tuple(selected_paths(("rules", "agents", "commands", "skills"), category)),
             )
         elif tool == "codex":
             assert_managed_paths_safe(
                 CODEX_HOME,
-                ("config.toml",),
-                ("rules",),
+                ("config.toml",) if settings else (),
+                ("rules",) if settings else (),
             )
-            assert_no_symlinks(CODEX_CANONICAL_SKILLS)
-            _assert_expected_legacy_path(
-                CODEX_LEGACY_SKILLS,
-                CODEX_CANONICAL_SKILLS,
-                "Codex",
-            )
-            codex_agents_shared_target()
+            if settings:
+                shared_target = codex_agents_shared_target()
+                if shared_target is not None and (SCRIPT_DIR / "codex/AGENTS.md").is_file():
+                    raise RuntimeError(
+                        "Refusing to apply Codex-specific AGENTS.md through the "
+                        "shared Claude instructions link"
+                    )
+            if skills:
+                assert_root_not_reparse(CODEX_CANONICAL_SKILLS.parent)
+                assert_no_symlinks(CODEX_CANONICAL_SKILLS)
+                _assert_expected_legacy_path(
+                    CODEX_LEGACY_SKILLS, CODEX_CANONICAL_SKILLS, "Codex"
+                )
         elif tool == "agy":
             assert_root_not_reparse(AGY_HOME, "Antigravity CLI root")
-            for name in ("mcp_config.json", "settings.json"):
-                assert_safe_write_target(AGY_HOME / name)
-            if stages is None or (stages[tool] / "plugins").is_dir():
-                assert_internal_symlinks(AGY_HOME / "plugins")
-            assert_no_symlinks(AGY_CANONICAL_SKILLS)
-            _assert_expected_legacy_path(
-                AGY_LEGACY_SKILLS,
-                AGY_CANONICAL_SKILLS,
-                "Antigravity",
-            )
-            if not WINDOWS_MODE:
-                _assert_expected_agy_link()
+            assert_root_not_reparse(AGY_HOME.parent, "Antigravity root")
+            if settings:
+                for name in ("mcp_config.json", "settings.json"):
+                    assert_safe_write_target(AGY_HOME / name)
+                if stages is None or (stages[tool] / "plugins").is_dir():
+                    assert_internal_symlinks(AGY_HOME / "plugins")
+            if skills:
+                assert_root_not_reparse(AGY_CANONICAL_SKILLS.parent)
+                assert_root_not_reparse(AGY_LEGACY_SKILLS.parent)
+                assert_no_symlinks(AGY_CANONICAL_SKILLS)
+                _assert_expected_legacy_path(
+                    AGY_LEGACY_SKILLS, AGY_CANONICAL_SKILLS, "Antigravity"
+                )
+                if not WINDOWS_MODE:
+                    _assert_expected_agy_link()

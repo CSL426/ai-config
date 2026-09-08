@@ -1,67 +1,56 @@
-# acg GUI 規劃(Draft)
+# acg GUI 規劃
 
-> 狀態:**Draft** — 尚未經使用者確認為 Done。
+狀態：**Draft**。只有使用者明確確認後才改為 Done。
 
-## 目標
+## 目標與規格入口
 
-給「會用 AI CLI 但不開終端機」的非工程師一個雙擊就能用的圖形介面,
-核心動作:看同步狀態 → 一鍵套用 → 一鍵下載/上傳。
-最終以 PyInstaller 打包為各平臺獨立執行檔(Windows 為 `.exe`)。
+讓使用者以圖形介面設定資料庫、檢查狀態、下載、套用與上傳，並
+分開管理技能與記憶。沿用既有介面，新增功能依下列文件實作：
 
-## 技術選型(已與使用者確認)
+- [共用記憶規格](shared-memory-spec.md)：儲存、Git、規則與日誌契約。
+- [GUI 記憶與類別套用](memory-gui-and-apply-spec.md)：畫面、CLI 選項、
+  bridge、預覽、確認與復原；是本輪 GUI 增量的實作依據。
+- [驗證計畫](memory-validation-plan.md)：自動測試、Windows 原生與
+  三個 AI 新會話的證據要求。
 
-| 層 | 選擇 | 理由 |
-|---|---|---|
-| 視窗殼 | pywebview(optional extra `ai-config[gui]`) | 用系統 WebView 渲染,體積小、外觀現代 |
-| 前端 | Vite + vanilla **TypeScript**(pnpm) | 型別安全的 bridge 契約;暫不引框架,之後要升 Preact/Vue 幾乎免費 |
-| 後端橋接 | pywebview `js_api` → in-process 呼叫 `ai_config.__main__.main()` 並攔截 stdout/stderr | 雛形階段不重構 1750 行 CLI;輸出轉結構化留待下一階段 |
-| 打包 | 沿用 PyInstaller;CI 先 `pnpm build` 再打包 | 前端產物是純靜態檔,當資源塞進執行檔 |
+本文件是 GUI 架構總覽，不取代上述具體契約。主機設定組另見
+[host profiles](host-profiles-spec.md)，尚未實作且不納入本輪 GUI。
 
-## 目錄結構
+## 現有架構
 
-```
-ai-config/
-├─ gui/                     # 前端源碼(Vite + TS)
-│  ├─ package.json
-│  ├─ tsconfig.json
-│  ├─ vite.config.ts        # outDir → ../ai_config/gui_assets
-│  ├─ index.html
-│  └─ src/
-│     ├─ main.ts            # UI 邏輯
-│     ├─ bridge.d.ts        # Python js_api 的型別契約(前後端唯一介面)
-│     └─ style.css
-├─ ai_config/
-│  ├─ gui.py                # `acg gui` 進入點:pywebview 視窗 + Api 類別
-│  └─ gui_assets/           # pnpm build 產物(git-ignore,CI/本地建置產生)
-```
+| 層 | 選擇與位置 |
+| --- | --- |
+| 視窗 | pywebview，optional extra `ai-config[gui]` |
+| 前端 | Vite、vanilla TypeScript、pnpm，`gui/src/main.ts` 與 `style.css` |
+| Bridge | `gui/src/bridge.d.ts`；Python `ai_config/commands/gui.py` 的 GuiApi |
+| CLI 共用 | 部分操作 in-process 呼叫 CLI 並擷取輸出，部分回傳結構化資料 |
+| 打包 | PyInstaller 使用 `ai_config/gui_assets/`，先 pnpm build；各 OS 原生建置 |
+| 測試 | Python API 契約、mock bridge／Playwright、另加原生桌面 smoke |
 
-## 命令範圍(雛形)
+既有 stdout／stderr 顯示保留；新增狀態與變更預覽用結構化資料，
+不以行首圖示或翻譯後文字決定程式行為。
 
-GUI 只暴露安全、非互動的動作,白名單制:
+## 現況與增量
 
-| GUI 動作 | 對應 CLI | 互動處理 |
-|---|---|---|
-| 檢查狀態 | `status [tool]` | 無提示,直接跑 |
-| 套用設定 | `apply [tool]` | 無提示,直接跑 |
-| 下載更新 | `pull [tool]` | 無提示,直接跑 |
-| 上傳變更 | `push [tool]` | GUI 先跳自己的確認框,確認後以預填 `y` 的 stdin 執行 |
+| 功能 | 現況 | 本輪增量 |
+| --- | --- | --- |
+| 狀態與工具分頁 | 已有 | 套用類別與記憶各自呈現 |
+| 下載 | 已有 pull | 明示全 repo 更新及記憶立即生效 |
+| 套用 | 已有按工具 apply | settings／skills 範圍、預覽／確認、隔離與復原 |
+| 上傳 | 已有 preview_push／confirm_push token，重新檢視後才確認 | 新增 memory scope，完整範圍與過期檢查 |
+| 初次設定 | 已有 Git／Google Drive 設定與登入流程 | 沿用，不列成未來雛形 |
+| 技能 | 已有清單、分享、取消分享、打包 | 保持獨立，不混入 memory |
+| 記憶 | 尚無 GUI 操作 | 入口狀態、開資料夾、enable／disable、日誌 adopt／release、push |
+| 更新 | 已有檢查與執行更新 | 沿用版本與 build commit 資訊 |
 
-`reset` / `deploy` / `setup` 留在 CLI(破壞性或多步互動),之後再逐步 GUI 化。
+通用 `run` 使用命令白名單；目前已拒絕 raw push。新規格亦要求
+raw apply 改走預覽流程。GUI 不暴露任意 shell、秘密掃描略過或
+強制覆蓋選項。取消 push 預覽可能保留 gather 差異，不能宣稱所有
+預覽都完全唯讀。
 
-## 輸出呈現
+## 交付驗證
 
-CLI 輸出在非 TTY 下自動無色(`console.py` 的 `_COLOR`),後端再保險 strip ANSI。
-前端依行首符號上色:`✓` 綠、`⚠` 黃、`✗` 紅、`═══` 為區段標題。
-
-## 後續階段(不在本次雛形)
-
-1. **首次設定引導** — setup 流程 GUI 化:貼 token / OAuth,取代 SSH key。非工程師的最大門檻。
-2. **結構化狀態 API** — 把 `show_status` 重構為回傳資料的函式,GUI 直接畫表格而非解析文字。
-3. **打包與簽章** — CI 加 node/pnpm 步驟;Windows 評估 code signing 憑證或 Inno Setup 安裝檔以緩解 SmartScreen。
-4. **push 兩段式** — 先取得 diff 摘要顯示,確認後才真正 commit/push。
-
-## 驗收(雛形)
-
-- `pip install -e .[gui]` 後 `acg gui` 能開視窗,四個動作可用。
-- `pnpm build` 通過 TS 檢查;`pytest` 全綠(含 gui Api 層的攔截測試)。
-- 無 display 的環境(SSH)至少 Api 層測試可驗證。
+前端 `pnpm build` 與 `pnpm test`、Python API 與核心測試都需通過。
+Linux 的瀏覽器測試不替代 Windows WebView／onefile 實測；CLI
+記憶檔案測試不替代 AI 新會話載入。具體案例與放行條件統一記在
+[驗證計畫](memory-validation-plan.md)，不在此另維護第二份清單。

@@ -8,6 +8,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from .categories import includes
 from .console import log_success, log_warn
 from .fsops import merge_missing_tree, mirror_dir
 from .paths import (
@@ -252,8 +253,10 @@ def assert_agy_fallback_destination_safe() -> None:
     )
 
 
-def preflight_windows_links(tools: list[str]) -> None:
-    if not WINDOWS_MODE:
+def preflight_windows_links(
+    tools: list[str], *, category: str = "all"
+) -> None:
+    if not includes(category, "skills") or not WINDOWS_MODE:
         return
     if "agy" in tools:
         assert_agy_fallback_destination_safe()

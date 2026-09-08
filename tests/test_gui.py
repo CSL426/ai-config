@@ -58,8 +58,70 @@ def test_run_passes_command_and_tool(
         return 0
 
     monkeypatch.setattr(cli, "main", fake_main)
-    api.run("apply", tool="codex")
-    assert seen["argv"] == ["apply", "codex"]
+    api.run("pull", tool="codex")
+    assert seen["argv"] == ["pull", "codex"]
+
+
+def test_apply_requires_preview(api: GuiApi) -> None:
+    result = api.run("apply", tool="codex")
+    assert result["code"] == 1
+    assert "先預覽" in result["output"]
+
+
+def test_push_preview_memory_scope_uses_memory_push(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = []
+
+    def fake_main(argv):
+        seen.append(list(argv))
+        print("review: memory notes")
+        answer = input("Commit and push these changes? [y/N] ")
+        print("uploaded" if answer.strip() == "y" else "cancelled")
+        return 0
+
+    monkeypatch.setattr(cli, "main", fake_main)
+    monkeypatch.setattr(GuiApi, "_push_range", staticmethod(lambda scope: (["memory/MEMORY.md"], [])))
+    preview = api.preview_push("memory")
+    assert preview["code"] == 0 and preview["needs_confirmation"] is True
+    assert preview["scope"] == "memory"
+    assert preview["changed_paths"] == ["memory/MEMORY.md"]
+    assert seen[-1] == ["memory", "push"]
+
+    result = api.confirm_push("memory", preview["token"])
+    assert result["code"] == 0 and "uploaded" in result["output"]
+    assert seen[-1] == ["memory", "push"]
+
+
+def test_push_preview_rejects_unknown_scope(api: GuiApi) -> None:
+    result = api.preview_push("vim")
+    assert result["code"] == 1
+    assert result["error"] == "INVALID_ARGUMENT"
+
+
+def test_management_api_rejects_bad_tokens_and_arguments(api: GuiApi) -> None:
+    assert api.cancel_preview(123)["error"] == "INVALID_ARGUMENT"
+    assert api.cancel_preview("")["code"] == 0
+    assert api.confirm_apply("nope")["error"] == "STALE_PREVIEW"
+    assert api.confirm_memory("nope")["error"] == "STALE_PREVIEW"
+    assert api.open_memory_location("nope")["error"] == "INVALID_ARGUMENT"
+    result = api.preview_apply("vim", "all")
+    assert result["code"] == 1 and result["token"] == ""
+    assert api.preview_memory("adopt")["error"] == "STALE_PREVIEW"
+
+
+def test_new_push_preview_discards_pending_apply_preview(api: GuiApi) -> None:
+    closed = []
+
+    class FakePlan:
+        def close(self):
+            closed.append(True)
+
+    api._pending = {"kind": "apply", "token": "t", "plan": FakePlan()}
+    api.preview_push("vim")  # rejected before touching git, pending untouched
+    assert api._pending is not None
+    api._discard_previews()
+    assert api._pending is None and closed == [True]
 
 
 def test_run_reports_nonzero_exit(

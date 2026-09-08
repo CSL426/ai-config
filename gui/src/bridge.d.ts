@@ -1,4 +1,4 @@
-/** Python 端 GuiApi(ai_config/gui.py)的型別契約 — 前後端唯一介面。 */
+/** Python 端 GuiApi(ai_config/commands/gui.py)的型別契約 — 前後端唯一介面。 */
 
 export type AcgCommand = "status" | "apply" | "pull" | "push";
 
@@ -17,7 +17,82 @@ export interface RunResult {
   output: string;
 }
 
+export type ToolScope = "all" | "claude" | "codex" | "agy";
+export type ApplyCategory = "settings" | "skills" | "all";
+export type MemoryAction = "enable" | "disable" | "adopt" | "release";
+export type PushScope = ToolScope | "memory";
+export type ErrorCode = "INVALID_ARGUMENT" | "NOT_CONFIGURED" | "BUSY"
+  | "UNSAFE_PATH" | "CONFLICT" | "STALE_PREVIEW" | "GIT_BLOCKED"
+  | "IO_ERROR" | "ROLLBACK_FAILED";
+export interface OperationResult extends RunResult {
+  error: ErrorCode | null;
+  backup_path: string | null;
+  recovery_required: boolean;
+}
+export interface ProjectSelection extends RunResult {
+  error: ErrorCode | null;
+  cancelled: boolean;
+  project_token: string | null;
+  root: string | null;
+  key: string | null;
+  stable: boolean;
+}
+export interface MemoryLocation {
+  label: string;
+  path: string;
+  token: string;
+}
+export interface MemoryPermission { allowed: boolean; reason: string; }
+export interface MemoryInfo extends RunResult {
+  error: ErrorCode | null;
+  data_root: string;
+  shared_path: string;
+  shared_status: "missing" | "ok" | "conflict";
+  tracked: boolean;
+  git_status: "clean" | "dirty" | "untracked";
+  changed_paths: string[];
+  entries: {
+    tool: Exclude<ToolScope, "all">;
+    status: "missing" | "installed" | "blocked";
+    reason: string;
+    path: string;
+    cli_installed: boolean;
+  }[];
+  project: {
+    root: string;
+    key: string;
+    stable: boolean;
+    memory_path: string;
+    journal_path: string;
+    journal_status: string;
+    remember_installed: boolean;
+  } | null;
+  actions: Record<MemoryAction | "push", MemoryPermission>;
+  locations: MemoryLocation[];
+}
+export interface PreviewChange {
+  category: string;
+  tool: string;
+  operation: string;
+  source: string | null;
+  destination: string;
+  physical_target: string | null;
+  shared: boolean;
+  reason: string;
+}
+export interface ChangePreview extends RunResult {
+  error: ErrorCode | null;
+  token: string;
+  needs_confirmation: boolean;
+  scope: { tool?: ToolScope; category?: ApplyCategory; action?: MemoryAction; project_key?: string | null };
+  changes: PreviewChange[];
+  warnings: string[];
+}
 export interface PushPreview extends RunResult {
+  error: ErrorCode | null;
+  scope: PushScope;
+  changed_paths: string[];
+  outgoing_commits: string[];
   needs_confirmation: boolean;
   token: string;
 }
@@ -89,8 +164,16 @@ interface AcgApi {
   relogin_gdrive(): Promise<RunResult>;
   open_data_dir(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
-  preview_push(tool?: string): Promise<PushPreview>;
-  confirm_push(tool: string, token: string): Promise<RunResult>;
+  select_memory_project(): Promise<ProjectSelection>;
+  memory_info(projectToken?: string): Promise<MemoryInfo>;
+  open_memory_location(locationToken: string): Promise<OperationResult>;
+  preview_memory(action: MemoryAction, projectToken?: string): Promise<ChangePreview>;
+  confirm_memory(token: string): Promise<OperationResult>;
+  preview_apply(tool: ToolScope, category: ApplyCategory): Promise<ChangePreview>;
+  confirm_apply(token: string): Promise<OperationResult>;
+  cancel_preview(token: string): Promise<OperationResult>;
+  preview_push(scope?: PushScope): Promise<PushPreview>;
+  confirm_push(scope: PushScope, token: string): Promise<OperationResult>;
   list_skills(): Promise<SkillList>;
   package_skills(names: string[]): Promise<PackageResult>;
   share_skills(names: string[]): Promise<RunResult>;
