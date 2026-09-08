@@ -9,6 +9,7 @@ setup, update, deploy.
 import os
 import sys
 
+from .categories import validate_category
 from .commands.apply import _init_tools, apply_tools
 from .commands.maintenance import do_list, do_package, do_project, do_reset
 from .commands.push import do_push
@@ -36,6 +37,7 @@ def usage() -> None:
     print("  setup           Configure data repository and verify push access")
     print("  init [tool]     Gather configs from tool homes into the data repository")
     print("  apply [tool]    Deploy data repository configs to tool home directories")
+    print("                  --category settings|skills|all (default all)")
     print("  project [tool]  Project ~/.claude/ directly to other tool home dirs")
     print("  status [tool]   Show diff between the data repository and live configs")
     print("  pull [tool]     Safely fast-forward repo changes, then show status")
@@ -86,6 +88,12 @@ def resolve_tool(tool: str) -> str:
 
 def main(argv: "list[str] | None" = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == "_apply-preview-worker":
+        if len(args) != 2:
+            return 1
+        from .applyplan import worker_main
+
+        return worker_main(args[1])
     if not args:
         if (
             "PYTEST_CURRENT_TEST" not in os.environ
@@ -307,6 +315,33 @@ def main(argv: "list[str] | None" = None) -> int:
         log_error(f"Unexpected arguments: {' '.join(args[1:])}")
         return 1
 
+    category = "all"
+    if cmd == "apply":
+        remaining = iter(args[1:])
+        positional = []
+        category_seen = False
+        for token in remaining:
+            if token == "--category":
+                if category_seen:
+                    log_error("Repeated --category")
+                    return 1
+                category_seen = True
+                category = next(remaining, "")
+                try:
+                    validate_category(category)
+                except ValueError as exc:
+                    log_error(str(exc))
+                    return 1
+            elif token.startswith("-"):
+                log_error(f"Unknown apply option: {token}")
+                return 1
+            else:
+                positional.append(token)
+        if len(positional) > 1:
+            log_error("Only one apply tool is accepted")
+            return 1
+        args = [cmd, *positional]
+
     allow_secrets = False
     positional: list[str] = []
     for token in args[1:]:
@@ -331,7 +366,7 @@ def main(argv: "list[str] | None" = None) -> int:
         log_success(f"Init complete. Review with: {CYAN}{ENTRYPOINT} status{NC}")
     elif cmd == "apply":
         selected = [t for t in ALL_TOOLS if tool in ("all", t)]
-        if not apply_tools(selected):
+        if not apply_tools(selected, category=category):
             return 1
         print()
         log_success(f"Apply complete. Verify with: {CYAN}{ENTRYPOINT} status{NC}")

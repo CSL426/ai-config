@@ -17,7 +17,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..console import log_error, log_info, log_success
+from ..gui_management import ManagementApi
 from ..paths import ALL_TOOLS
+
+PUSH_SCOPES = (*ALL_TOOLS, "all", "memory")
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 # 白名單:GUI 只開放無互動提示的命令;push 的確認由前端對話框負責。
@@ -60,12 +63,13 @@ class _PromptInput(io.TextIOBase):
         return response if size < 0 else response[:size]
 
 
-class GuiApi:
+class GuiApi(ManagementApi):
     """Methods exposed to the frontend via pywebview's js_api."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._push_preview: tuple[str, str, str] | None = None
+        self._init_management()
 
     def get_info(self) -> dict:
         from ..config import configured_remote_provider
@@ -476,6 +480,12 @@ class GuiApi:
                 "code": 1,
                 "output": "✗ 請先預覽上傳內容,再確認上傳。",
             }
+        if cmd == "apply":
+            # 套用只走預覽／確認,不留免確認通道
+            return {
+                "code": 1,
+                "output": "✗ 請先預覽套用內容,再確認套用。",
+            }
         if not self._lock.acquire(blocking=False):
             return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
         try:
@@ -483,45 +493,83 @@ class GuiApi:
         finally:
             self._lock.release()
 
+    @staticmethod
+    def _push_argv(scope: str) -> list[str]:
+        return ["memory", "push"] if scope == "memory" else ["push", scope]
+
+    @staticmethod
+    def _push_range(scope: str) -> tuple[list[str], list[str]]:
+        """Uncommitted paths in scope, and every commit a push would carry."""
+        from .sync import _run_repo_git
+
+        try:
+            status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
+            log = _run_repo_git("log", "--oneline", "@{upstream}..HEAD")
+        except (OSError, subprocess.SubprocessError):
+            return [], []
+        changed = [
+            line[3:] for line in status.stdout.splitlines() if line.strip()
+        ] if status.returncode == 0 else []
+        if scope != "all":
+            changed = [path for path in changed if path.startswith(f"{scope}/")]
+        commits = log.stdout.splitlines() if log.returncode == 0 else []
+        return changed, commits
+
     def preview_push(self, tool: str = "all") -> dict:
-        """Prepare a non-destructive push review for the GUI confirmation step."""
-        if tool != "all" and tool not in ALL_TOOLS:
+        """Prepare a non-destructive push review for the GUI confirmation step.
+
+        ``tool`` is the push scope: a tool, ``all`` or ``memory``.
+        """
+        empty = {
+            "needs_confirmation": False,
+            "token": "",
+            "error": None,
+            "scope": tool,
+            "changed_paths": [],
+            "outgoing_commits": [],
+        }
+        if tool not in PUSH_SCOPES:
             return {
+                **empty,
                 "code": 1,
                 "output": f"✗ Unknown tool: {tool}",
-                "needs_confirmation": False,
-                "token": "",
+                "error": "INVALID_ARGUMENT",
             }
         if not self._lock.acquire(blocking=False):
             return {
+                **empty,
                 "code": 1,
                 "output": "⚠ 另一個動作正在執行中,請稍候再試。",
-                "needs_confirmation": False,
-                "token": "",
+                "error": "BUSY",
             }
         try:
-            self._push_preview = None
+            # 新預覽讓先前所有待確認的操作失效
+            self._discard_previews()
             reviews: list[str] = []
             result = self._run_captured(
-                ["push", tool],
+                self._push_argv(tool),
                 answer_prompt=lambda _review: "n",
                 prompt_reviews=reviews,
             )
             if result["code"] != 0 or not reviews:
                 return {
+                    **empty,
                     **result,
-                    "needs_confirmation": False,
-                    "token": "",
+                    "error": "GIT_BLOCKED" if result["code"] != 0 else None,
                 }
 
             token = secrets.token_urlsafe(24)
             review = reviews[0]
             self._push_preview = (token, tool, review)
+            changed, commits = self._push_range(tool)
             return {
+                **empty,
                 "code": 0,
                 "output": review,
                 "needs_confirmation": True,
                 "token": token,
+                "changed_paths": changed,
+                "outgoing_commits": commits,
             }
         finally:
             self._lock.release()
@@ -551,7 +599,7 @@ class GuiApi:
 
         try:
             result = self._run_captured(
-                ["push", tool],
+                self._push_argv(tool),
                 answer_prompt=confirm_if_unchanged,
                 prompt_reviews=reviews,
             )
@@ -825,14 +873,18 @@ def run_gui() -> int:
             )
 
     try:
-        webview.create_window(
+        api = GuiApi()
+        window = webview.create_window(
             WINDOW_TITLE,
             str(index),
-            js_api=GuiApi(),
+            js_api=api,
             width=880,
             height=680,
             min_size=(640, 480),
         )
+        # 視窗關閉時撤銷待確認的預覽並清掉暫存投影
+        with contextlib.suppress(AttributeError):
+            window.events.closed += api._discard_previews
         webview.start()
     except Exception as exc:  # noqa: BLE001 - pywebview 各平台丟的例外型別不一
         if hidden_console:

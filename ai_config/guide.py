@@ -28,7 +28,7 @@ project, status, pull, push, and sync.
 |---|---|
 | `status [tool]` | diff repo vs live config (read-only, safe anytime) |
 | `init [tool]` | gather live config from home dirs INTO the repo |
-| `apply [tool]` | deploy repo config OUT to home dirs (auto-backs up first) |
+| `apply [tool] [--category settings|skills|all]` | deploy selected config OUT to home dirs (auto-backs up first) |
 | `project [tool]` | project live ~/.claude/ straight to Codex/agy |
 | `pull [tool]` | fast-forward the data repo, then show status |
 | `sync [tool]` | alias for pull |
@@ -86,6 +86,14 @@ worth repeating can be saved with `--save-as <name>` and replayed later with
 - `apply` overwrites live config from the repo. If the machine has local edits
   worth keeping, `init` them first.
 
+`apply --category settings` includes rules, commands, MCP, and tool-managed
+plugin settings. `apply --category skills` includes standalone skills and
+agent-to-skill projections; plugin-bundled skills follow plugin settings.
+The option may precede or follow the tool. Omission means `all`, which includes
+settings and skills, but never memory. Settings apply preserves the local acg
+memory instruction block; use `memory enable` or `memory disable` to change it.
+Pull still downloads the entire repository, including shared memory.
+
 ## Gotchas
 
 - **`permissions`, `env`, `model`, `modelSettings`, and `autoMode` are
@@ -121,7 +129,7 @@ worth repeating can be saved with `--save-as <name>` and replayed later with
 `{entrypoint} memory enable` turns `<data-repo>/memory/` into a notebook every
 tool reads: it links `~/.claude/shared-memory` to it, appends an instruction
 block to `~/.claude/CLAUDE.md` (and to the data repo's copy so other machines
-get it on apply), and drops the same block into `~/.gemini/config/rules/` for
+manage it with memory enable), and drops the same block into `~/.gemini/config/rules/` for
 agy. Codex's own AGENTS.md also receives the block; an existing link to
 Claude's rules is preserved. The notebook has a global
 layer (`MEMORY.md`, `topics/`) and a per-project layer under

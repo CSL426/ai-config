@@ -4,6 +4,7 @@ Claude is the source of truth — init syncs everything, including deletions."""
 import shutil
 from pathlib import Path
 
+from ..categories import selected_paths
 from ..console import log_error, log_header, log_info, log_success
 from ..fsops import copy_file_to_stage, mirror_dir, overlay_dir_to_stage, safe_cp
 from ..localsettings import (
@@ -58,15 +59,15 @@ def _stage_filtered_settings(source: Path, destination: Path) -> None:
     )
 
 
-def stage_projection(dst: Path) -> None:
+def stage_projection(dst: Path, *, category: str = "all") -> None:
     src = claude_source_dir()
     dst.mkdir(parents=True, exist_ok=True)
-    for name in CLAUDE_MANAGED_FILES:
+    for name in selected_paths(CLAUDE_MANAGED_FILES, category):
         if name == "settings.json" and (src / name).is_file():
             _stage_filtered_settings(src / name, dst / name)
         else:
             copy_file_to_stage(src / name, dst / name)
-    for name in CLAUDE_MANAGED_DIRS:
+    for name in selected_paths(CLAUDE_MANAGED_DIRS, category):
         overlay_dir_to_stage(src / name, dst / name)
 
 
@@ -120,8 +121,8 @@ def init() -> bool:
     return True
 
 
-def apply_internal(src: Path, dst: Path) -> None:
-    for name in CLAUDE_MANAGED_FILES:
+def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
+    for name in selected_paths(CLAUDE_MANAGED_FILES, category):
         if not (src / name).is_file():
             continue
         if name == "settings.json":
@@ -149,7 +150,7 @@ def apply_internal(src: Path, dst: Path) -> None:
             safe_cp(src / name, dst / name)
             log_success(name)
 
-    for name in CLAUDE_MANAGED_DIRS:
+    for name in selected_paths(CLAUDE_MANAGED_DIRS, category):
         if (src / name).is_dir():
             mirror_dir(src / name, dst / name)
             log_success(f"{name}/")

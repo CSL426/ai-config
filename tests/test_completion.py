@@ -66,7 +66,10 @@ def test_bash_completion_all_tool_commands(
     executable: str,
     command: str,
 ) -> None:
-    assert _bash_candidates([executable, command, ""]) == list(TOOLS)
+    expected = list(TOOLS)
+    if command == "apply":
+        expected.append("--category")
+    assert _bash_candidates([executable, command, ""]) == expected
 
 
 def test_bash_completion_tools_setup_and_shells() -> None:

@@ -6,6 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
+from ..categories import includes
 from ..console import log_error, log_header, log_info, log_success, log_warn
 from ..fsops import (
     copy_file_to_stage,
@@ -150,24 +151,26 @@ def merge_codex_config(source_text: str, target_text: str) -> str:
     return _insert_top_level_statements(result + "\n", machine_local)
 
 
-def stage_projection(dst: Path) -> None:
+def stage_projection(dst: Path, *, category: str = "all") -> None:
     src = SCRIPT_DIR / "codex"
     claude_src = claude_source_dir()
     dst.mkdir(parents=True, exist_ok=True)
 
-    instruction_source = first_existing_file(src / "AGENTS.md", claude_src / "CLAUDE.md")
-    if instruction_source is not None:
-        copy_file_to_stage(instruction_source, dst / "AGENTS.md")
+    if includes(category, "settings"):
+        instruction_source = first_existing_file(src / "AGENTS.md", claude_src / "CLAUDE.md")
+        if instruction_source is not None:
+            copy_file_to_stage(instruction_source, dst / "AGENTS.md")
 
-    copy_file_to_stage(src / "config.toml", dst / "config.toml")
-    overlay_dir_to_stage(claude_src / "rules", dst / "rules")
-    overlay_dir_to_stage(src / "rules", dst / "rules")
-    project_agents_to_skills(claude_src / "agents", dst / "skills")
-    if (src / "skills").is_dir():
-        sync_skills(src / "skills", dst / "skills")
-    if (claude_src / "skills").is_dir():
-        sync_skills(claude_src / "skills", dst / "skills")
-    sync_shared_skills("codex", dst / "skills")
+        copy_file_to_stage(src / "config.toml", dst / "config.toml")
+        overlay_dir_to_stage(claude_src / "rules", dst / "rules")
+        overlay_dir_to_stage(src / "rules", dst / "rules")
+    if includes(category, "skills"):
+        project_agents_to_skills(claude_src / "agents", dst / "skills")
+        if (src / "skills").is_dir():
+            sync_skills(src / "skills", dst / "skills")
+        if (claude_src / "skills").is_dir():
+            sync_skills(claude_src / "skills", dst / "skills")
+        sync_shared_skills("codex", dst / "skills")
 
 
 def preflight_init() -> bool:
@@ -228,49 +231,52 @@ def prepare_codex_canonical_skills() -> None:
         log_warn(f"Migrated legacy Codex skills into: {canonical}")
 
 
-def apply_internal(src: Path, dst: Path) -> None:
-    prepare_codex_canonical_skills()
+def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
+    if includes(category, "skills"):
+        prepare_codex_canonical_skills()
 
-    if (src / "AGENTS.md").is_file():
-        agents_destination = dst / "AGENTS.md"
-        shared_target = codex_agents_shared_target(agents_destination)
-        if shared_target is not None:
-            if (SCRIPT_DIR / "codex" / "AGENTS.md").is_file():
-                raise RuntimeError(
-                    "Refusing to apply Codex-specific AGENTS.md through the "
-                    "shared Claude instructions link"
+    if includes(category, "settings"):
+        if (src / "AGENTS.md").is_file():
+            agents_destination = dst / "AGENTS.md"
+            shared_target = codex_agents_shared_target(agents_destination)
+            if shared_target is not None:
+                if (SCRIPT_DIR / "codex" / "AGENTS.md").is_file():
+                    raise RuntimeError(
+                        "Refusing to apply Codex-specific AGENTS.md through the "
+                        "shared Claude instructions link"
+                    )
+                shutil.copy2(src / "AGENTS.md", shared_target)
+                log_success("AGENTS.md (shared with ~/.claude/CLAUDE.md)")
+            else:
+                shutil.copy2(src / "AGENTS.md", agents_destination)
+                log_success("AGENTS.md")
+
+        if (src / "config.toml").is_file():
+            dst.mkdir(parents=True, exist_ok=True)
+            source = src / "config.toml"
+            target = dst / "config.toml"
+            source_stat = source.stat()
+            if target.is_file():
+                merged = merge_codex_config(
+                    source.read_text(encoding="utf-8"),
+                    target.read_text(encoding="utf-8"),
                 )
-            shutil.copy2(src / "AGENTS.md", shared_target)
-            log_success("AGENTS.md (shared with ~/.claude/CLAUDE.md)")
-        else:
-            shutil.copy2(src / "AGENTS.md", agents_destination)
-            log_success("AGENTS.md")
+                _write_config(target, merged, source_stat)
+                log_success(
+                    "config.toml (merged, preserved [projects.*] and Codex-managed plugins)"
+                )
+            else:
+                filtered = filter_codex_config(source.read_text(encoding="utf-8"))
+                _write_config(target, filtered, source_stat)
+                log_success("config.toml (fresh copy, filtered machine-local settings)")
 
-    if (src / "config.toml").is_file():
-        dst.mkdir(parents=True, exist_ok=True)
-        source = src / "config.toml"
-        target = dst / "config.toml"
-        source_stat = source.stat()
-        if target.is_file():
-            merged = merge_codex_config(
-                source.read_text(encoding="utf-8"),
-                target.read_text(encoding="utf-8"),
-            )
-            _write_config(target, merged, source_stat)
-            log_success(
-                "config.toml (merged, preserved [projects.*] and Codex-managed plugins)"
-            )
-        else:
-            filtered = filter_codex_config(source.read_text(encoding="utf-8"))
-            _write_config(target, filtered, source_stat)
-            log_success("config.toml (fresh copy, filtered machine-local settings)")
+        # rules/ merged overlay (rsync -aL, no deletion)
+        if (src / "rules").is_dir():
+            overlay_dir_to_stage(src / "rules", dst / "rules")
+            log_success("rules/")
 
-    # rules/ merged overlay (rsync -aL, no deletion)
-    if (src / "rules").is_dir():
-        overlay_dir_to_stage(src / "rules", dst / "rules")
-        log_success("rules/")
-
-    if (src / "skills").is_dir():
-        apply_managed_skills(src / "skills", CODEX_CANONICAL_SKILLS)
-        log_success("skills/")
-    reconcile_managed_skills(src / "skills", CODEX_CANONICAL_SKILLS)
+    if includes(category, "skills"):
+        if (src / "skills").is_dir():
+            apply_managed_skills(src / "skills", CODEX_CANONICAL_SKILLS)
+            log_success("skills/")
+        reconcile_managed_skills(src / "skills", CODEX_CANONICAL_SKILLS)

@@ -3,7 +3,8 @@
 import json
 import shutil
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass
 from pathlib import Path
 
 from .. import memory
@@ -27,18 +28,9 @@ def _run_memory(args: list[str]) -> int:
     rest = args[1:]
     if command == "status" and not rest:
         return _status()
-    if command == "enable" and not rest:
-        with _mutation(enabling=True):
-            return _enable()
-    if command == "disable" and not rest:
-        with _mutation(enabling=False):
-            return _disable()
-    if command == "adopt" and not rest:
-        with _mutation(enabling=False):
-            return _adopt()
-    if command == "release" and not rest:
-        with _mutation(enabling=False):
-            return _release()
+    if command in {"enable", "disable", "adopt", "release"} and not rest:
+        project = memory.project_root() if command in {"adopt", "release"} else None
+        return execute(command, project).code
     if command == "path" and set(rest) <= {"--global", "--project"}:
         return _path(rest)
     if command == "push":
@@ -152,13 +144,58 @@ def _backup(paths: list[Path]) -> Path | None:
     return folder
 
 
+@dataclass
+class MemoryExecutionResult:
+    code: int = 0
+    backup_path: str | None = None
+    recovery_required: bool = False
+
+
+class MemoryOperationError(RuntimeError):
+    def __init__(self, message: str, backup: Path | None, recovery: bool):
+        super().__init__(message)
+        self.backup_path = str(backup) if backup is not None else None
+        self.recovery_required = recovery
+
+
+def execute(
+    action: str, project: Path | None = None, *, lock_held: bool = False,
+) -> MemoryExecutionResult:
+    """Execute a validated lifecycle action; callers never change process cwd."""
+    from ..memory_plan import plan
+
+    operation = plan(action, project)
+    with _mutation(
+        enabling=action == "enable", action=action, project=project,
+        lock_held=lock_held,
+    ) as result:
+        if action == "enable":
+            result.code = _enable()
+        elif action == "disable":
+            result.code = _disable()
+        elif action == "adopt":
+            result.code = _adopt(operation.project)
+        else:
+            result.code = _release(operation.project)
+    return result
+
+
 @contextmanager
-def _mutation(*, enabling: bool):
+def _mutation(
+    *, enabling: bool, action: str | None = None,
+    project: Path | None = None, lock_held: bool = False,
+):
     # Preflight before creating the lock or snapshot: refused inputs stay intact.
     memory.preflight_memory()
     memory.preflight_rules(enabling=enabling)
     memory.assert_plain_path(BACKUP_BASE, directory=True)
-    with apply_lock():
+    with nullcontext() if lock_held else apply_lock():
+        if action is not None:
+            from ..memory_plan import plan
+
+            operation = plan(action, project)
+        else:
+            operation = None
         memory.preflight_memory()
         memory.preflight_rules(enabling=enabling)
         paths = [memory.rules_target(path) for path in memory.instruction_paths()]
@@ -173,27 +210,94 @@ def _mutation(*, enabling: bool):
             for path in paths
         }
         link_state, _ = memory.link_state()
-        snapshot = _backup(paths)
+        missing_directories = set()
+        if operation is not None:
+            for change in operation.changes:
+                destination = Path(change["destination"])
+                candidates = list(destination.parents)
+                if change["operation"] == "mkdir":
+                    candidates.append(destination)
+                for directory in candidates:
+                    if not directory.exists() and not memory.is_reparse_point(directory):
+                        missing_directories.add(directory)
+        backup_paths = list(paths)
+        if action in {"adopt", "release"} and project is not None:
+            root = memory.project_root(project)
+            journal_directories = [memory.project_journal_dir(memory.project_key(root))]
+            if action == "adopt":
+                journal_directories.extend([root / ".remember", memory.journal_link(root)])
+            for directory in journal_directories:
+                if memory.is_reparse_point(directory):
+                    continue
+                memory._check_journal_tree(directory)
+                if directory.exists():
+                    backup_paths.extend(p for p in directory.rglob("*") if p.is_file())
+        snapshot = _backup(backup_paths)
+        if snapshot is not None:
+            state = {"memory_link": link_state}
+            if project is not None:
+                root = memory.project_root(project)
+                state["journal"] = {
+                    "path": str(memory.journal_link(root)),
+                    "state": memory.journal_state(root),
+                }
+            (snapshot / "links.json").write_text(
+                json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        result = MemoryExecutionResult(backup_path=str(snapshot) if snapshot else None)
+        written: dict[Path, bytes | None] = {}
+        observer = memory.WRITE_OBSERVER.set(lambda path, content: written.__setitem__(path, content))
         try:
-            yield
-        except (OSError, RuntimeError, ValueError):
+            yield result
+        except (OSError, RuntimeError, ValueError) as failure:
+            errors = []
             for path, content in originals.items():
+                if path not in written:
+                    continue
                 try:
                     memory.assert_plain_path(path, directory=False)
+                    current = path.read_bytes() if path.exists() else None
+                    if current == content:
+                        continue
+                    if current != written[path]:
+                        raise RuntimeError("檔案已被外部修改，保留目前內容")
                     if content is None:
                         path.unlink(missing_ok=True)
                     else:
                         path.parent.mkdir(parents=True, exist_ok=True)
                         path.write_bytes(content)
                 except (OSError, RuntimeError) as exc:
-                    log_error(f"無法還原 {tilde(path)}:{exc}")
-            if link_state == "missing":
-                memory.remove_link()
-            elif link_state == "ok" and memory.link_state()[0] == "missing":
-                memory.create_link()
+                    errors.append(f"無法還原 {tilde(path)}:{exc}")
+            try:
+                current_link = memory.link_state()[0]
+                if current_link not in {"ok", "missing"}:
+                    raise RuntimeError("共用連結已被外部修改")
+                if link_state == "missing" and current_link == "ok":
+                    memory.remove_link()
+                elif link_state == "ok" and current_link == "missing":
+                    ok, detail = memory.create_link()
+                    if not ok:
+                        raise RuntimeError(detail)
+            except (OSError, RuntimeError) as exc:
+                errors.append(f"無法還原共用連結:{exc}")
+            for directory in sorted(missing_directories, key=lambda p: len(p.parts), reverse=True):
+                try:
+                    memory.assert_plain_path(directory, directory=True)
+                    if directory.exists():
+                        directory.rmdir()
+                except (OSError, RuntimeError) as exc:
+                    errors.append(f"保留操作建立的目錄 {directory}:{exc}")
             if snapshot:
                 log_warn(f"操作失敗,原始檔案備份:{tilde(snapshot)}")
-            raise
+            for error in errors:
+                log_error(error)
+            recovery = bool(errors) or bool(getattr(failure, "recovery_required", False))
+            message = str(failure)
+            if errors:
+                message += ";" + ";".join(errors)
+            raise MemoryOperationError(message, snapshot, recovery) from failure
+        finally:
+            memory.WRITE_OBSERVER.reset(observer)
 
 
 def _enable() -> int:
@@ -265,7 +369,7 @@ def _disable() -> int:
     return 0
 
 
-def _adopt() -> int:
+def _adopt(project: Path | None = None) -> int:
     log_header("Adopt project journal")
     if not memory.remember_installed():
         log_error("找不到 remember plugin,沒有日誌可以接管")
@@ -282,7 +386,7 @@ def _adopt() -> int:
         log_success(f"remember 日誌改存到 {memory.JOURNAL_TEMPLATE}")
     elif other:
         raise RuntimeError(f"remember 的 data_dir 已另外設定為 {other},先移除再重試")
-    root = memory.project_root()
+    root = memory.project_root(project)
     lines = memory.adopt_journal(root)
     if not lines:
         log_success("這個專案的日誌已經在共用記憶裡")
@@ -297,9 +401,9 @@ def _adopt() -> int:
     return 0
 
 
-def _release() -> int:
+def _release(project: Path | None = None) -> int:
     log_header("Release project journal")
-    lines = memory.release_journal(memory.project_root())
+    lines = memory.release_journal(memory.project_root(project))
     if not lines:
         log_info("這個專案的日誌本來就沒有接進共用記憶")
         return 0

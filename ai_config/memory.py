@@ -6,6 +6,7 @@ same short instruction block pointing at one link, ~/.claude/shared-memory,
 so the block is a constant that can itself be synced inside CLAUDE.md.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -13,6 +14,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +32,8 @@ from .paths import (
     claude_source_dir,
 )
 from .safety import codex_agents_shared_target, is_reparse_point
+
+WRITE_OBSERVER: ContextVar = ContextVar("memory_write_observer", default=None)
 
 INDEX_NAME = "MEMORY.md"
 TOPICS_NAME = "topics"
@@ -338,8 +342,19 @@ def _write_text_atomic(path: Path, content: str) -> None:
         if path.exists():
             shutil.copymode(path, temporary)
         os.replace(temporary, path)
+        observer = WRITE_OBSERVER.get()
+        if observer is not None:
+            observer(path, content.encode("utf-8"))
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _unlink_file(path: Path) -> None:
+    assert_plain_path(path, directory=False)
+    path.unlink()
+    observer = WRITE_OBSERVER.get()
+    if observer is not None:
+        observer(path, None)
 
 
 def _read_text(path: Path) -> str:
@@ -389,7 +404,7 @@ def remove_agy_rules() -> bool:
         return False
     remove_block(path)
     if not _read_text(path).strip():
-        path.unlink()
+        _unlink_file(path)
     return True
 
 
@@ -505,7 +520,7 @@ def remove_journal_config() -> bool:
             json.dumps(config, ensure_ascii=False, indent=2) + "\n",
         )
     else:
-        REMEMBER_USER_CONFIG.unlink()
+        _unlink_file(REMEMBER_USER_CONFIG)
     return True
 
 
@@ -557,9 +572,28 @@ def _journal_destination(destination: Path, name: str, origin: str) -> Path:
     return candidate
 
 
-def _restore_journal_moves(moves: list[tuple[Path, Path]]) -> list[str]:
+class JournalRecoveryError(RuntimeError):
+    recovery_required = True
+
+
+def _journal_fingerprint(path: Path) -> str:
+    """A content signature used to avoid undoing someone else's journal edit."""
+    _assert_tree(path)
+    digest = hashlib.sha256()
+    if not path.exists():
+        return "missing"
+    entries = [path, *sorted(path.rglob("*"))] if path.is_dir() else [path]
+    for entry in entries:
+        digest.update(str(entry.relative_to(path)).encode("utf-8"))
+        digest.update(b"directory" if entry.is_dir() else b"file")
+        if entry.is_file():
+            digest.update(entry.read_bytes())
+    return digest.hexdigest()
+
+
+def _restore_journal_moves(moves: list[tuple[Path, Path, str]]) -> list[str]:
     errors: list[str] = []
-    for source, destination in reversed(moves):
+    for source, destination, signature in reversed(moves):
         try:
             assert_plain_path(source)
             assert_plain_path(destination)
@@ -568,6 +602,9 @@ def _restore_journal_moves(moves: list[tuple[Path, Path]]) -> list[str]:
             if source.exists():
                 # A failed cross-device copy can leave both copies. Keep both.
                 errors.append(f"保留來源與搬移副本:{source} / {destination}")
+                continue
+            if _journal_fingerprint(destination) != signature:
+                errors.append(f"日誌已被外部修改，保留於 {destination}")
                 continue
             source.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -584,7 +621,7 @@ def _move_contents(
     destination: Path,
     *,
     include_metadata: bool = False,
-    moves: list[tuple[Path, Path]] | None = None,
+    moves: list[tuple[Path, Path, str]] | None = None,
 ) -> int:
     """Preserve collisions and retain enough information to undo later failures."""
     _check_journal_tree(source)
@@ -600,14 +637,14 @@ def _move_contents(
             if not include_metadata and entry.name in (".gitignore", MIGRATED_NOTE):
                 continue
             target = _journal_destination(destination, entry.name, source.parent.name)
-            records.append((entry, target))
+            records.append((entry, target, _journal_fingerprint(entry)))
             shutil.move(str(entry), str(target))
             count += 1
     except (OSError, RuntimeError) as exc:
         if own_moves:
             errors = _restore_journal_moves(records)
             if errors:
-                raise RuntimeError("日誌搬移失敗;" + ";".join(errors)) from exc
+                raise JournalRecoveryError("日誌搬移失敗;" + ";".join(errors)) from exc
         raise
     return count
 
@@ -677,13 +714,21 @@ def adopt_journal(root: Path) -> list[str]:
     ignore = memory_dir() / ".gitignore"
     assert_plain_path(ignore, directory=False)
     migrate_legacy = legacy.is_dir() and not (legacy / MIGRATED_NOTE).is_file()
-    moves: list[tuple[Path, Path]] = []
+    moves: list[tuple[Path, Path, str]] = []
     originals: dict[Path, bytes | None] = {}
+    written: dict[Path, bytes | None] = {}
+    outer_observer = WRITE_OBSERVER.get()
+
+    def observe(path: Path, content: bytes | None) -> None:
+        written[path] = content
+        if outer_observer is not None:
+            outer_observer(path, content)
 
     def remember_file(path: Path) -> None:
         assert_plain_path(path, directory=False)
         originals[path] = path.read_bytes() if path.exists() else None
 
+    observer_token = WRITE_OBSERVER.set(observe)
     try:
         target.mkdir(parents=True, exist_ok=True)
         if state == "local":
@@ -697,7 +742,7 @@ def adopt_journal(root: Path) -> list[str]:
         target_ignore = target / ".gitignore"
         if target_ignore.exists() and target_ignore.read_bytes() != JOURNAL_GITIGNORE.encode():
             backup = _journal_destination(target, ".gitignore", "journal")
-            moves.append((target_ignore, backup))
+            moves.append((target_ignore, backup, _journal_fingerprint(target_ignore)))
             shutil.move(str(target_ignore), str(backup))
         remember_file(target_ignore)
         _write_text_atomic(target_ignore, JOURNAL_GITIGNORE)
@@ -722,6 +767,11 @@ def adopt_journal(root: Path) -> list[str]:
         for path, content in reversed(list(originals.items())):
             try:
                 assert_plain_path(path, directory=False)
+                current = path.read_bytes() if path.exists() else None
+                if current == content:
+                    continue
+                if path not in written or current != written[path]:
+                    raise RuntimeError("日誌 metadata 已被外部修改，保留目前內容")
                 if content is None:
                     path.unlink(missing_ok=True)
                 else:
@@ -736,8 +786,10 @@ def adopt_journal(root: Path) -> list[str]:
             except (OSError, RuntimeError) as restore_exc:
                 errors.append(str(restore_exc))
         if errors:
-            raise RuntimeError("日誌收編失敗;" + ";".join(errors)) from exc
+            raise JournalRecoveryError("日誌收編失敗;" + ";".join(errors)) from exc
         raise
+    finally:
+        WRITE_OBSERVER.reset(observer_token)
     lines.append(f"連結 {link.name} -> {target}")
     return lines
 
@@ -751,7 +803,7 @@ def release_journal(root: Path) -> list[str]:
     target = Path(detail)
     _check_journal_tree(target)
     assert_plain_path(link.parent, directory=True)
-    moves: list[tuple[Path, Path]] = []
+    moves: list[tuple[Path, Path, str]] = []
     try:
         _remove_journal_link(link, target)
         moved = _move_contents(target, link, include_metadata=True, moves=moves)
@@ -766,7 +818,7 @@ def release_journal(root: Path) -> list[str]:
         except (OSError, RuntimeError) as restore_exc:
             errors.append(f"無法還原日誌連結 {link}:{restore_exc}")
         if errors:
-            raise RuntimeError("日誌移出失敗;" + ";".join(errors)) from exc
+            raise JournalRecoveryError("日誌移出失敗;" + ";".join(errors)) from exc
         raise
     return [f"日誌改回本機目錄 {link},搬回 {moved} 項"]
 
@@ -873,3 +925,26 @@ def inspect(cwd: "Path | None" = None) -> MemoryStatus:
         journal=journal,
         journal_detail=journal_detail,
     )
+
+
+def entry_status(path: Path) -> dict:
+    """Inspect a rule entry without following unknown links or malformed blocks."""
+    target = path
+    try:
+        target = rules_target(path)
+        text = _read_text(target)
+        _validate_block(text)
+        installed = has_block(text)
+        reason = "規則已安裝，請開新會話驗證" if installed else "尚未安裝 acg 記憶規則"
+        status = "installed" if installed else "missing"
+        if path == codex_rules_path() and codex_override_path().is_file():
+            status = "blocked"
+            reason = "AGENTS.override.md 會遮蔽共用規則"
+        if path == agy_rules_path() and target.exists() and not installed:
+            status, reason = "blocked", "既有 agy 規則未由 acg 管理"
+    except (OSError, RuntimeError, ValueError) as exc:
+        status, reason = "blocked", str(exc)
+    return {
+        "path": str(path), "target": str(target),
+        "status": status, "reason": reason,
+    }

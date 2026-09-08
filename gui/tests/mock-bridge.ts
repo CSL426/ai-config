@@ -20,7 +20,7 @@ export const skills = Array.from({ length: 36 }, (_, index) => ({
 
 export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
   await page.addInitScript(({ entries, overrides }) => {
-    const success = { code: 0, output: "✓ 完成" };
+    const success = { code: 0, output: "✓ 完成", error: null, backup_path: null, recovery_required: false };
     const defaults: Record<string, Reply> = {
       get_info: {
         version: "1.0.0", repo: "/tmp/acg-test-data", provider: "gdrive",
@@ -42,6 +42,43 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
         needs_confirmation: true, token: "preview-first",
       },
       confirm_push: success,
+      cancel_preview: success,
+      preview_apply: {
+        ...success, token: "apply-first", needs_confirmation: true,
+        scope: { tool: "codex", category: "settings" }, warnings: [],
+        changes: [{ category: "settings", tool: "codex", operation: "modify",
+          source: "/tmp/data/AGENTS.md", destination: "/tmp/tools/AGENTS.md",
+          physical_target: "/tmp/tools/CLAUDE.md", shared: true, reason: "共用規則" }],
+      },
+      confirm_apply: success,
+      preview_memory: {
+        ...success, token: "memory-first", needs_confirmation: true,
+        scope: { action: "enable" }, warnings: [],
+        changes: [{ category: "memory", tool: "claude", operation: "create",
+          source: null, destination: "/tmp/tools/CLAUDE.md",
+          physical_target: null, shared: false, reason: "新增記憶入口" }],
+      },
+      confirm_memory: success,
+      memory_info: {
+        ...success, data_root: "/tmp/data/memory", shared_path: "/tmp/shared-memory",
+        shared_status: "ok", tracked: true, git_status: "dirty", changed_paths: ["memory/MEMORY.md"],
+        entries: [
+          { tool: "claude", status: "installed", reason: "", path: "/tmp/CLAUDE.md", cli_installed: true },
+          { tool: "codex", status: "blocked", reason: "override 遮蔽入口", path: "/tmp/AGENTS.md", cli_installed: false },
+          { tool: "agy", status: "missing", reason: "", path: "/tmp/GEMINI.md", cli_installed: true },
+        ],
+        project: null,
+        actions: {
+          enable: { allowed: true, reason: "" }, disable: { allowed: true, reason: "" },
+          adopt: { allowed: false, reason: "請先選擇專案" }, release: { allowed: false, reason: "請先選擇專案" },
+          push: { allowed: true, reason: "" },
+        },
+        locations: [{ label: "全域記憶", path: "/tmp/data/memory", token: "location-global" }],
+      },
+      select_memory_project: {
+        ...success, cancelled: true, project_token: null, root: null, key: null, stable: false,
+      },
+      open_memory_location: success,
       package_skills: { ...success, zips: ["/tmp/acg-test-output/skill.zip"] },
       share_skills: success,
       unshare_skills: success,

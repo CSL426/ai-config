@@ -5,6 +5,7 @@ import os
 import shutil
 from pathlib import Path
 
+from ..categories import includes
 from ..console import log_header, log_info, log_success, log_warn
 from ..fsops import copy_file_to_stage, first_existing_file, mirror_dir
 from ..links import ensure_agy_shared_links, prepare_agy_canonical_skills
@@ -69,31 +70,33 @@ def _replace_json_path(value: object, source: str, destination: str) -> object:
     return value
 
 
-def stage_projection(dst: Path) -> None:
+def stage_projection(dst: Path, *, category: str = "all") -> None:
     src = SCRIPT_DIR / "agy"
     claude_src = claude_source_dir()
     dst.mkdir(parents=True, exist_ok=True)
 
-    mcp_source = first_existing_file(src / "mcp_config.json", claude_src / "mcp.json")
-    if mcp_source is not None:
-        copy_file_to_stage(mcp_source, dst / "mcp_config.json")
+    if includes(category, "settings"):
+        mcp_source = first_existing_file(src / "mcp_config.json", claude_src / "mcp.json")
+        if mcp_source is not None:
+            copy_file_to_stage(mcp_source, dst / "mcp_config.json")
 
-    settings = src / "settings.json"
-    if settings.is_file():
-        write_settings(
-            settings,
-            dst / "settings.json",
-            filter_agy_settings(read_settings(settings)),
-        )
+        settings = src / "settings.json"
+        if settings.is_file():
+            write_settings(
+                settings,
+                dst / "settings.json",
+                filter_agy_settings(read_settings(settings)),
+            )
 
-    project_agents_to_skills(claude_src / "agents", dst / "skills")
-    if (src / "skills").is_dir():
-        sync_skills(src / "skills", dst / "skills")
-    if (claude_src / "skills").is_dir():
-        sync_skills(claude_src / "skills", dst / "skills")
-    sync_shared_skills("agy", dst / "skills")
+    if includes(category, "skills"):
+        project_agents_to_skills(claude_src / "agents", dst / "skills")
+        if (src / "skills").is_dir():
+            sync_skills(src / "skills", dst / "skills")
+        if (claude_src / "skills").is_dir():
+            sync_skills(claude_src / "skills", dst / "skills")
+        sync_shared_skills("agy", dst / "skills")
 
-    if (claude_src / "plugins").is_dir():
+    if includes(category, "settings") and (claude_src / "plugins").is_dir():
         mirror_dir(
             claude_src / "plugins",
             dst / "plugins",
@@ -156,44 +159,47 @@ def init() -> bool:
     return True
 
 
-def apply_internal(src: Path, dst: Path) -> None:
-    prepare_agy_canonical_skills()
+def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
+    if includes(category, "skills"):
+        prepare_agy_canonical_skills()
 
-    if (src / "mcp_config.json").is_file():
-        shutil.copy2(src / "mcp_config.json", dst / "mcp_config.json")
-        log_success("mcp_config.json")
+    if includes(category, "settings"):
+        if (src / "mcp_config.json").is_file():
+            shutil.copy2(src / "mcp_config.json", dst / "mcp_config.json")
+            log_success("mcp_config.json")
 
-    if (src / "settings.json").is_file():
-        source = src / "settings.json"
-        destination = dst / "settings.json"
-        if destination.is_file():
-            merged = merge_agy_settings(
-                read_settings(source),
-                read_settings(destination),
-            )
-            write_settings(source, destination, merged)
-            log_success("settings.json (merged, preserved machine-local settings)")
-        else:
-            write_settings(
-                source,
-                destination,
-                filter_agy_settings(read_settings(source)),
-            )
-            log_success("settings.json (fresh copy, machine-local settings excluded)")
+        if (src / "settings.json").is_file():
+            source = src / "settings.json"
+            destination = dst / "settings.json"
+            if destination.is_file():
+                merged = merge_agy_settings(
+                    read_settings(source),
+                    read_settings(destination),
+                )
+                write_settings(source, destination, merged)
+                log_success("settings.json (merged, preserved machine-local settings)")
+            else:
+                write_settings(
+                    source,
+                    destination,
+                    filter_agy_settings(read_settings(source)),
+                )
+                log_success("settings.json (fresh copy, machine-local settings excluded)")
 
-    skill_destination = AGY_CANONICAL_SKILLS if WINDOWS_MODE else dst / "skills"
-    if (src / "skills").is_dir():
-        if WINDOWS_MODE:
-            skill_destination.mkdir(parents=True, exist_ok=True)
-        else:
+    if includes(category, "skills"):
+        skill_destination = AGY_CANONICAL_SKILLS if WINDOWS_MODE else dst / "skills"
+        if not WINDOWS_MODE:
             ensure_agy_shared_links()
-        apply_managed_skills(src / "skills", skill_destination)
-        log_success("skills/")
-    reconcile_managed_skills(src / "skills", skill_destination)
-    if WINDOWS_MODE and skill_destination.is_dir():
-        ensure_agy_shared_links()
+        if (src / "skills").is_dir():
+            if WINDOWS_MODE:
+                skill_destination.mkdir(parents=True, exist_ok=True)
+            apply_managed_skills(src / "skills", skill_destination)
+            log_success("skills/")
+        reconcile_managed_skills(src / "skills", skill_destination)
+        if WINDOWS_MODE and skill_destination.is_dir():
+            ensure_agy_shared_links()
 
-    if (src / "plugins").is_dir():
+    if includes(category, "settings") and (src / "plugins").is_dir():
         mirror_dir(
             src / "plugins",
             dst / "plugins",
