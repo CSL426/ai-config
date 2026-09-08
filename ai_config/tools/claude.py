@@ -23,14 +23,17 @@ from ..paths import (
 from ..safety import assert_managed_paths_safe
 
 # Values that are per-machine by nature: permission allowlists grow locally,
-# statusLine embeds an absolute script path, and env carries paths like
-# CODEX_HOME that name a specific home directory. Claude Code sets env vars
-# without a shell, so "~" is not expanded and a portable form does not exist.
-# model and modelSettings are switched freely in the UI, so syncing them would
-# undo the user's current choice on every apply; they are left to each machine
-# and kept out of the repository.
+# and env carries paths like CODEX_HOME that name a specific home directory.
+# Claude Code sets env vars without a shell, so "~" is not expanded and a
+# portable form does not exist. model and modelSettings are switched freely
+# in the UI, so syncing them would undo the user's current choice on every
+# apply; they are left to each machine and kept out of the repository.
+# autoMode holds the environment description auto mode learns on this
+# machine: internal hosts, private repository names, where secrets live.
+# statusLine is synced: the script it names travels with the repository and
+# the command is written with "~", which the status line runs through a shell.
 _MACHINE_LOCAL_SETTINGS = frozenset(
-    {"permissions", "statusLine", "env", "model", "modelSettings"}
+    {"permissions", "env", "model", "modelSettings", "autoMode"}
 )
 _SETTINGS_LABEL = "Claude settings.json"
 

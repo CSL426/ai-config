@@ -19,14 +19,20 @@ def test_filter_drops_every_machine_local_key() -> None:
             "modelSettings": {"opus": {"effortLevel": "high"}},
             "theme": "dark",
             "permissions": {"allow": ["Bash"]},
-            "statusLine": {"command": "bash /home/one/statusline.sh"},
+            "statusLine": {"command": "bash ~/.claude/statusline.sh"},
             "env": {"CODEX_HOME": "/home/one/.codex"},
+            # auto mode 在這台學到的環境描述:內網主機、私有 repo,不能出去
+            "autoMode": {"environment": ["NAS at 10.0.0.1"]},
         }
     )
 
     filtered = json.loads(filter_claude_settings(text))
 
-    assert filtered == {"theme": "dark"}
+    # statusLine 跟著同步的腳本走,寫法用 ~ 所以不綁機器
+    assert filtered == {
+        "theme": "dark",
+        "statusLine": {"command": "bash ~/.claude/statusline.sh"},
+    }
 
 
 def test_merge_keeps_the_model_the_machine_is_using() -> None:
@@ -44,14 +50,14 @@ def test_merge_keeps_the_target_machine_values() -> None:
     source = json.dumps(
         {
             "theme": "dark",
-            "statusLine": {"command": "bash /home/one/statusline.sh"},
+            "permissions": {"allow": ["Read"]},
             "env": {"CODEX_HOME": "/home/one/.codex"},
         }
     )
     target = json.dumps(
         {
             "theme": "light",
-            "statusLine": {"command": "bash /home/two/other.sh"},
+            "permissions": {"allow": ["Bash"]},
             "env": {"CODEX_HOME": "/home/two/.codex"},
         }
     )
@@ -60,7 +66,7 @@ def test_merge_keeps_the_target_machine_values() -> None:
 
     # Shared preferences follow the repo; machine-local ones stay put.
     assert merged["theme"] == "dark"
-    assert merged["statusLine"] == {"command": "bash /home/two/other.sh"}
+    assert merged["permissions"] == {"allow": ["Bash"]}
     assert merged["env"] == {"CODEX_HOME": "/home/two/.codex"}
 
 
@@ -78,14 +84,14 @@ def test_merge_does_not_introduce_keys_the_machine_lacks() -> None:
     assert merged["theme"] == "dark"
 
 
-def test_apply_preserves_live_statusline_and_env(tmp_path: Path) -> None:
+def test_apply_syncs_statusline_but_preserves_env(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     write(
         repo_dir / "claude/settings.json",
         json.dumps(
             {
                 "theme": "dark",
-                "statusLine": {"command": "bash /home/one/statusline.sh"},
+                "statusLine": {"command": "bash ~/.claude/statusline.sh"},
                 "env": {"CODEX_HOME": "/home/one/.codex"},
             }
         )
@@ -108,5 +114,6 @@ def test_apply_preserves_live_statusline_and_env(tmp_path: Path) -> None:
 
     applied = json.loads(live.read_text(encoding="utf-8"))
     assert applied["theme"] == "dark"
-    assert applied["statusLine"] == {"command": "bash /home/two/local.sh"}
+    # 腳本跟著 repo 走,指向它的設定也跟著走;新機器 apply 完狀態列就會亮
+    assert applied["statusLine"] == {"command": "bash ~/.claude/statusline.sh"}
     assert "env" not in applied
