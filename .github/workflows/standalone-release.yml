@@ -226,6 +226,54 @@ jobs:
           print(result.stdout)
           raise SystemExit(result.returncode)
 
+      # 用真的執行檔當 git 的 credential helper 跑一遍:python.exe 測不到
+      # onefile 主控台判斷之類只有打包後才會發生的事
+      - name: Verify the executable as a git credential helper
+        env:
+          ASSET: ${{ matrix.asset }}
+        shell: python
+        run: |
+          import os
+          import shlex
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          executable = (Path("dist") / os.environ["ASSET"]).resolve()
+          work = Path(tempfile.mkdtemp())
+          repo = work / "repo"
+          repo.mkdir()
+          subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+          fake_bin = work / "bin"
+          fake_bin.mkdir()
+          if os.name == "nt":
+              (fake_bin / "gh.cmd").write_text("@echo off\r\necho gho_fake_token\r\n")
+              helper_path = executable.as_posix()
+          else:
+              script = fake_bin / "gh"
+              script.write_text("#!/bin/sh\necho gho_fake_token\n")
+              script.chmod(0o755)
+              helper_path = str(executable)
+          helper = "!" + shlex.quote(helper_path) + " __git-credential CSL426"
+          subprocess.run(["git", "-C", str(repo), "config", "--local", "--replace-all", "credential.helper", ""], check=True)
+          subprocess.run(["git", "-C", str(repo), "config", "--local", "--add", "credential.helper", helper], check=True)
+          env = {**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"], "GIT_TERMINAL_PROMPT": "0"}
+          result = subprocess.run(
+              ["git", "-C", str(repo), "credential", "fill"],
+              input="protocol=https\nhost=github.com\n\n",
+              capture_output=True,
+              text=True,
+              env=env,
+              timeout=180,
+          )
+          print(result.stdout.replace("gho_fake_token", "***"))
+          print(result.stderr, file=sys.stderr)
+          if result.returncode != 0 or "password=gho_fake_token" not in result.stdout:
+              raise SystemExit("credential helper smoke test failed")
+          if result.stdout.strip().splitlines()[-1] != "password=gho_fake_token":
+              raise SystemExit("helper wrote extra lines after the credential")
+
       - name: Upload standalone artifact
         uses: actions/upload-artifact@v4
         with:

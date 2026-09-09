@@ -14,7 +14,9 @@ import pytest
 from ai_config import cli
 
 
-def test_double_click_pauses_before_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_double_click_pauses_before_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
     prompts: list[str] = []
     monkeypatch.setattr(cli, "launched_by_double_click", lambda: True)
     monkeypatch.setattr(cli, "gui_assets_bundled", lambda: False)
@@ -23,7 +25,32 @@ def test_double_click_pauses_before_exit(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(cli.sys, "argv", ["ai-config.exe"])
 
     assert cli.standalone_main() == 3
-    assert prompts and "Enter" in prompts[0]
+    assert prompts == [""]
+    captured = capsys.readouterr()
+    # 提示走 stderr:stdout 可能是別的程式在讀的管線
+    assert "Enter" in captured.err
+    assert "Enter" not in captured.out
+
+
+def test_credential_helper_call_never_pauses_or_prints(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    # git 從沒有主控台的 Desktop 叫起 exe 時,Windows 會配一個新主控台,
+    # 看起來像雙擊;helper 的 stdout 是憑證協定,一個字都不能多印
+    monkeypatch.setattr(cli, "launched_by_double_click", lambda: True)
+    monkeypatch.setattr(cli, "gui_assets_bundled", lambda: True)
+    monkeypatch.setattr(cli, "console_main", lambda: 0)
+    monkeypatch.setattr(
+        cli.sys, "argv", ["acg.exe", "__git-credential", "CSL426", "get"]
+    )
+
+    def no_input(prompt: str = "") -> str:
+        raise AssertionError("input() must not be called")
+
+    monkeypatch.setattr(builtins, "input", no_input)
+    assert cli.standalone_main() == 0
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == ""
 
 
 def test_shell_launch_does_not_pause(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -246,9 +273,7 @@ def test_detach_stays_foreground_without_assets(
     assert gui_module.detach_and_run_gui() is False
 
 
-def test_detach_starts_a_new_session(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_detach_starts_a_new_session(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from ai_config.commands import gui as gui_module
 
     monkeypatch.setenv("DISPLAY", ":test")
@@ -493,7 +518,9 @@ def test_gui_restores_console_when_window_creation_fails(tmp_path, monkeypatch) 
 
 
 def test_gui_reports_missing_display_before_starting_native_backend(
-    tmp_path, monkeypatch, capsys,
+    tmp_path,
+    monkeypatch,
+    capsys,
 ):
     from ai_config.commands import gui as gui_module
 
@@ -512,7 +539,9 @@ def test_gui_reports_missing_display_before_starting_native_backend(
 
 
 def test_installed_gui_missing_assets_does_not_suggest_building_another_checkout(
-    tmp_path, monkeypatch, capsys,
+    tmp_path,
+    monkeypatch,
+    capsys,
 ):
     from ai_config.commands import gui as gui_module
 
