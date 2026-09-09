@@ -820,3 +820,38 @@ def test_git_obtains_credentials_through_the_bound_helper(
     )
     assert "username=CSL426" in result.stdout
     assert "password=gho_fake_token" in result.stdout
+
+
+def test_helper_self_test_distinguishes_a_working_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args, 0, stdout="username=x\npassword=y\n", stderr=""
+        )
+
+    monkeypatch.setattr(ghauth.subprocess, "run", fake_run)
+    assert "正常" in ghauth.helper_self_test("x")
+
+    def failing(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args, 1, stdout="", stderr="acg credential helper: gh 沒有回傳 token\n"
+        )
+
+    monkeypatch.setattr(ghauth.subprocess, "run", failing)
+    assert "gh 沒有回傳 token" in ghauth.helper_self_test("x")
+
+
+def test_helper_explains_a_missing_token_on_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    import io
+
+    monkeypatch.setattr(ghauth, "account_token", lambda account: "")
+    monkeypatch.setattr(
+        ghauth.sys, "stdin", io.StringIO("protocol=https\nhost=github.com\n\n")
+    )
+    assert ghauth.credential_helper_main(["CSL426", "get"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "gh auth login" in captured.err and "CSL426" in captured.err
