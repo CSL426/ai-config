@@ -161,6 +161,7 @@ interface AcgApi {
   settings_info(): Promise<SettingsInfo>;
   github_access(): Promise<GithubAccess>;
   github_start_login(): Promise<GithubLoginStart>;
+  github_terminal_login(): Promise<RunResult>;
   github_poll_login(deviceCode: string, interval: number): Promise<GithubLoginPoll>;
   github_use_account(account: string): Promise<RunResult>;
   relogin_gdrive(): Promise<RunResult>;
@@ -182,7 +183,7 @@ interface AcgApi {
   unshare_skills(names: string[]): Promise<RunResult>;
   check_update(): Promise<UpdateCheck>;
   run_update(): Promise<RunResult>;
-  setup_repo(repoUrl: string, dataDir?: string): Promise<RunResult>;
+  setup_repo(repoUrl: string, dataDir?: string, account?: string): Promise<RunResult>;
   setup_gdrive(
     dataDir?: string,
     gdriveFolder?: string,

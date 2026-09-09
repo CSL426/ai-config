@@ -90,6 +90,10 @@
           <div class="package-buttons" id="github-actions" hidden>
             <button class="btn btn-primary" id="github-login">用瀏覽器登入 GitHub</button>
           </div>
+          <div class="package-buttons" id="github-fallback" hidden>
+            <button class="btn btn-primary" id="github-terminal-login">用 GitHub CLI 登入</button>
+            <button class="btn btn-ghost" id="github-recheck">重新檢查</button>
+          </div>
           <div class="github-code" id="github-code" hidden>
             <p class="settings-note">請在瀏覽器輸入這組驗證碼：</p>
             <div class="github-code-row">
@@ -139,10 +143,14 @@
             <input id="setup-url" data-field="repo-url" type="text" placeholder="git@github.com:you/my-config.git" spellcheck="false" />
           </label>
           <details class="setup-advanced">
-          <summary>進階設定：本機位置</summary>
+          <summary>進階設定：本機位置與帳號</summary>
           <label class="setup-field">
             <span>本機保存位置（通常不用改）</span>
             <input id="setup-dir" data-field="data-dir" type="text" spellcheck="false" />
+          </label>
+          <label class="setup-field">
+            <span>GitHub 帳號（私有儲存庫才需要，須先在此機 gh auth login）</span>
+            <input id="setup-account" data-field="account" type="text" spellcheck="false" autocomplete="off" />
           </label>
           </details>
           <div class="package-buttons">
