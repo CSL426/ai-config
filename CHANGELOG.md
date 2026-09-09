@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Desktop 的「用瀏覽器登入 GitHub」在所有版本都可用了:acg 現在有自己註冊的
+  GitHub OAuth App,client ID 內建在程式裡,不再需要 CI secret 或環境變數。
+  按下去開瀏覽器、顯示一組碼、網頁確認後自動綁定帳號,不用開終端機。
+- 綁定用的 credential helper 在 Windows 改寫成正斜線路徑;先前 git 透過 sh 執行
+  時反斜線被當成跳脫字元,找不到 acg,回「could not read Username」。
 - `acg setup --account <帳號>`:私有 HTTPS 儲存庫第一次 clone 就用 gh 已登入的帳號,
   clone 完成即綁定。clone 被拒絕時列出 gh 記得的帳號並給出完整指令,而不是只回
   「Repository not found」。Desktop 的首次設定表單多一個選填的 GitHub 帳號欄位。
