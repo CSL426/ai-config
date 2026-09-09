@@ -289,10 +289,9 @@ def plan(tools: list[str], category: str) -> ApplyPlan:
             else:
                 operation = "modify"
 
-            is_skills = (
-                any(part == "skills" for part in path_obj.parts)
-                or path_obj.name.startswith(".ai-config-skills")
-            )
+            is_skills = any(
+                part == "skills" for part in path_obj.parts
+            ) or path_obj.name.startswith(".ai-config-skills")
             changes.append(
                 {
                     "category": "skills" if is_skills else "settings",
@@ -325,16 +324,31 @@ def plan(tools: list[str], category: str) -> ApplyPlan:
         raise
 
 
+def _same_place(left: Path, right: Path) -> bool:
+    """Compare paths as the filesystem sees them.
+
+    On Windows the temp directory is often spelled with an 8.3 short name
+    (RUNNER~1) while a resolved path uses the long form; a plain string
+    comparison then rejects the worker's own home.
+    """
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:
+        return False
+
+
 def worker_main(filename: str) -> int:
     manifest = Path(filename).resolve(strict=True)
     base = manifest.parent
     value = json.loads(manifest.read_text(encoding="utf-8"))
     home = Path(value["home"])
+    # SCRIPT_DIR 可能還不存在,resolve 不會展開它;比對存在的上層目錄
     if (
         not base.name.startswith("acg-apply-review-")
-        or home != base / "home"
-        or home != paths.HOME
-        or paths.SCRIPT_DIR != base / "data"
+        or not _same_place(home, base / "home")
+        or not _same_place(home, paths.HOME)
+        or paths.SCRIPT_DIR.name != "data"
+        or not _same_place(paths.SCRIPT_DIR.parent, base)
     ):
         raise ValueError("Invalid preview worker home")
     if value["category"] not in ("settings", "skills", "all"):
@@ -349,7 +363,7 @@ def worker_main(filename: str) -> int:
         if tool not in _TOOLS:
             raise ValueError("Invalid tool")
         stage = Path(value["stages"][tool])
-        if stage != base / "stages" / tool or is_reparse_point(stage):
+        if not _same_place(stage, base / "stages" / tool) or is_reparse_point(stage):
             raise ValueError("Invalid worker stage")
         destination = paths.tool_home(tool)
         destination.mkdir(parents=True, exist_ok=True)
@@ -361,9 +375,7 @@ def _put(path: Path, record: dict, content: Path | None) -> None:
     _plain_parents(path)
     current = review.node(path)
     kind = record["kind"]
-    if current["kind"] != "missing" and not (
-        current["kind"] == kind == "file"
-    ):
+    if current["kind"] != "missing" and not (current["kind"] == kind == "file"):
         if current["kind"] in ("directory", "junction"):
             path.rmdir()
         else:
