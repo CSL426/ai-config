@@ -38,8 +38,9 @@ GITHUB_CLIENT_ID = "Ov23likUtXAKeAHe9IFf"
 DEVICE_CODE_URL = "https://github.com/login/device/code"
 ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 DEVICE_VERIFY_URL = "https://github.com/login/device"
-# repo 涵蓋私有儲存庫的讀寫,這是推送設定所需的最小範圍
-DEVICE_SCOPE = "repo"
+# repo 涵蓋私有儲存庫的讀寫;read:org 是 gh 收下 token 時要求的最低範圍,
+# 少了它 gh 會拒收:「missing required scope read:org」
+DEVICE_SCOPE = "repo read:org"
 
 
 class GhAuthError(RuntimeError):
