@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.39 - 2026-09-09
+
+- `acg login` 只綁定資料儲存庫,不再切換 gh 的作用中帳號。先前 `login <帳號>`
+  會把整台機器的 gh 換成那個帳號,其他 repo 跟著變。現在綁定寫在資料儲存庫的
+  本地 git 設定裡:git 需要憑證時由 acg 向 gh 拿綁定帳號的 token,gh 本身和
+  其他 repo 維持原樣。`login --unbind` 解除。Desktop 的「改用 <帳號>」與瀏覽器
+  登入也改成同樣的綁定方式。
+- login 的判斷先看 git 實際推不推得動(dry-run push):SSH 金鑰本來就有寫入權的
+  機器,不會因為 gh 登的是別的帳號被說成「沒有寫入權」。
+- GitHub helper 僅回應 HTTPS GitHub 憑證請求,綁定前檢查實際推送 URL;
+  解綁還原原本 helper。登入後還原 gh 原帳號失敗會回報錯誤並停止綁定。
+- Desktop 的套用預覽在 Windows 不再報「Link outside managed home」:Junction 目標
+  被讀成 `\\?\C:\...` 的延伸格式,被誤判為指到家目錄外。同時把預覽用的影子目錄
+  改成先複製所有目錄再建連結,agy 的 `antigravity-cli/skills` 連結才不會因為目標
+  目錄還沒複製而失敗。
+- `acg memory adopt` 之後,專案裡的 `.remember/` 直接連到共用目錄裡的那份日誌,
+  打開就看得到同一份資料;先前搬完只留一張「已搬移」的通知。`release` 改指回
+  本機那份。已經搬過的專案再跑一次 `adopt` 就會補上連結。連結會寫進專案的
+  `.git/info/exclude`,不會出現在 git status,也不會被 commit。
+- Desktop 的 Esc 一次只退一層:先關下拉選單或設定,再取消預覽,最後回到上一頁,
+  焦點交還給進來的那顆按鈕。下拉選單改為可用鍵盤操作的自訂選單。記憶頁分成
+  共用位置、各工具入口、專案記憶與日誌三區。
+
 ## 1.0.38 - 2026-09-08
 
 - 新增共用記憶:Claude Code、Codex 與 agy 讀寫同一本筆記,放在資料儲存庫的
