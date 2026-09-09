@@ -251,6 +251,7 @@ def test_detach_starts_a_new_session(
 ) -> None:
     from ai_config.commands import gui as gui_module
 
+    monkeypatch.setenv("DISPLAY", ":test")
     index = tmp_path / "index.html"
     index.write_text("<h1>x</h1>", encoding="utf-8")
     monkeypatch.delenv(gui_module._DETACH_ENV, raising=False)
@@ -305,6 +306,7 @@ def test_detach_hides_the_console_before_exiting(
 ) -> None:
     from ai_config.commands import gui as gui_module
 
+    monkeypatch.setenv("DISPLAY", ":test")
     index = tmp_path / "index.html"
     index.write_text("<h1>x</h1>", encoding="utf-8")
     monkeypatch.delenv(gui_module._DETACH_ENV, raising=False)
@@ -472,6 +474,7 @@ def test_native_console_recognizes_same_executable_parent(tmp_path) -> None:
 def test_gui_restores_console_when_window_creation_fails(tmp_path, monkeypatch) -> None:
     from ai_config.commands import gui as gui_module
 
+    monkeypatch.setenv("DISPLAY", ":test")
     index = tmp_path / "index.html"
     index.touch()
     monkeypatch.setattr(gui_module, "gui_index_path", lambda: index)
@@ -487,6 +490,39 @@ def test_gui_restores_console_when_window_creation_fails(tmp_path, monkeypatch) 
     assert gui_module.run_gui() == 1
     show.assert_called_once_with()
     webview.start.assert_not_called()
+
+
+def test_gui_reports_missing_display_before_starting_native_backend(
+    tmp_path, monkeypatch, capsys,
+):
+    from ai_config.commands import gui as gui_module
+
+    index = tmp_path / "index.html"
+    index.touch()
+    monkeypatch.setattr(gui_module, "gui_index_path", lambda: index)
+    monkeypatch.setattr(sys, "platform", "linux")
+    for name in ("DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM"):
+        monkeypatch.delenv(name, raising=False)
+    webview = SimpleNamespace(create_window=Mock(), start=Mock())
+    monkeypatch.setitem(sys.modules, "webview", webview)
+    assert gui_module.detach_and_run_gui() is False
+    assert gui_module.run_gui() == 1
+    webview.create_window.assert_not_called()
+    assert "沒有可用的桌面連線" in capsys.readouterr().err
+
+
+def test_installed_gui_missing_assets_does_not_suggest_building_another_checkout(
+    tmp_path, monkeypatch, capsys,
+):
+    from ai_config.commands import gui as gui_module
+
+    monkeypatch.setattr(gui_module, "__file__", str(tmp_path / "pkg/commands/gui.py"))
+    monkeypatch.setattr(gui_module, "gui_index_path", lambda: tmp_path / "missing")
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    assert gui_module.run_gui() == 1
+    output = capsys.readouterr()
+    assert "未包含 Desktop" in output.err
+    assert "pnpm build" not in output.err + output.out
 
 
 @pytest.mark.parametrize("error", [ImportError("missing"), RuntimeError("native")])
