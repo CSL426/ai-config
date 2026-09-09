@@ -94,11 +94,12 @@ class GuiApi(ManagementApi):
         Called on demand rather than at window open: it shells out to gh
         and asks GitHub, which is too slow to sit in the startup path.
         """
-        from ..ghauth import check_push_access, describe
+        from ..ghauth import check_push_access, describe, device_login_available
         from ..paths import SCRIPT_DIR
 
         status = check_push_access(self._redacted_remote(), SCRIPT_DIR)
         return {
+            "device_login": device_login_available(),
             "repository": status.repository,
             "installed": status.installed,
             "logged_in": status.logged_in,
@@ -114,8 +115,19 @@ class GuiApi(ManagementApi):
         """Begin the device flow and open GitHub in the browser."""
         import webbrowser
 
-        from ..ghauth import GhAuthError, start_device_login
+        from ..ghauth import (
+            TERMINAL_LOGIN_HINT,
+            GhAuthError,
+            device_login_available,
+            start_device_login,
+        )
 
+        if not device_login_available():
+            # 正式建置才會注入 client ID;沒有的話講替代做法,不丟環境變數名稱
+            return {
+                "code": 1,
+                "output": f"✗ 這個版本沒有內建瀏覽器登入。{TERMINAL_LOGIN_HINT}",
+            }
         try:
             flow = start_device_login()
         except GhAuthError as exc:
@@ -745,6 +757,15 @@ def create_desktop_shortcut() -> int:
 _DETACH_ENV = "AI_CONFIG_GUI_DETACHED"
 
 
+def _missing_display() -> bool:
+    return (
+        sys.platform.startswith("linux")
+        and not os.environ.get("DISPLAY")
+        and not os.environ.get("WAYLAND_DISPLAY")
+        and os.environ.get("QT_QPA_PLATFORM") not in {"offscreen", "minimal"}
+    )
+
+
 def detach_and_run_gui() -> bool:
     """Relaunch this command detached, so a terminal is not held hostage.
 
@@ -756,7 +777,7 @@ def detach_and_run_gui() -> bool:
     """
     if os.environ.get(_DETACH_ENV) == "1":
         return False
-    if not gui_index_path().is_file():
+    if not gui_index_path().is_file() or _missing_display():
         # 開不起來的話留在前景,才看得到原因
         return False
 
@@ -845,11 +866,15 @@ def run_gui() -> int:
                 "這個平台的執行檔沒有內建 Desktop 介面(目前只有 Windows 版有)。"
             )
             log_info('改用 pip 安裝即可使用:pip install "ai-config[gui]"')
-        else:
+        elif (Path(__file__).resolve().parents[2] / "gui/package.json").is_file():
             log_error(
                 "找不到 Desktop 介面的檔案,請先建置:\n"
                 "  cd gui && pnpm install && pnpm build"
             )
+        else:
+            log_error("目前安裝的套件未包含 Desktop 介面資源。")
+            log_info(f"缺少:{index}")
+            log_info("請安裝含 GUI 資源的套件；在其他 checkout 建置不會更新這份套件。")
         return 1
     # 在 import webview 之前就藏:打包版載入 pywebview 要好幾秒,
     # 藏在後面的話那個黑視窗會杵在畫面上直到視窗開啟。
@@ -867,6 +892,11 @@ def run_gui() -> int:
         if hidden_console:
             show_console()
         log_error(f"無法載入桌面介面:{type(exc).__name__}: {exc}")
+        return 1
+
+    if _missing_display():
+        log_error("沒有可用的桌面連線(DISPLAY／WAYLAND_DISPLAY 未設定)。")
+        log_info("請在圖形桌面的終端機執行 acg gui，或使用已設定圖形轉送的 SSH。")
         return 1
 
     # Windows: 分離工作列群組,避免顯示預設 Python 圖示

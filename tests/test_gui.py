@@ -82,7 +82,9 @@ def test_push_preview_memory_scope_uses_memory_push(
         return 0
 
     monkeypatch.setattr(cli, "main", fake_main)
-    monkeypatch.setattr(GuiApi, "_push_range", staticmethod(lambda scope: (["memory/MEMORY.md"], [])))
+    monkeypatch.setattr(
+        GuiApi, "_push_range", staticmethod(lambda scope: (["memory/MEMORY.md"], []))
+    )
     preview = api.preview_push("memory")
     assert preview["code"] == 0 and preview["needs_confirmation"] is True
     assert preview["scope"] == "memory"
@@ -127,9 +129,7 @@ def test_new_push_preview_discards_pending_apply_preview(api: GuiApi) -> None:
     assert api._pending is None and closed == [True]
 
 
-def test_run_reports_nonzero_exit(
-    api: GuiApi, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_reports_nonzero_exit(api: GuiApi, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "main", lambda argv: 3)
     assert api.run("pull")["code"] == 3
 
@@ -302,9 +302,7 @@ def test_list_skills_reports_shared_and_shareable(
     import ai_config.package as package_mod
 
     monkeypatch.setattr(package_mod, "available_skills", lambda: ["wiki"])
-    monkeypatch.setattr(
-        share_mod, "shareable_skill_names", lambda: ["eli5", "wiki"]
-    )
+    monkeypatch.setattr(share_mod, "shareable_skill_names", lambda: ["eli5", "wiki"])
     result = api.list_skills()
     assert result["skills"] == [
         {"name": "eli5", "shared": False, "shareable": True},
@@ -526,11 +524,17 @@ def test_relogin_only_replaces_token_after_successful_authorization(
     def exchange(request, timeout):
         if outcome == "exchange_failure":
             raise urllib.error.URLError("offline")
-        return io.BytesIO(json.dumps({
-            "access_token": "" if outcome == "missing_token" else "new-token",
-            "refresh_token": "new-refresh",
-            "scope": "other-scope" if outcome == "missing_scope" else wanted_scope,
-        }).encode())
+        return io.BytesIO(
+            json.dumps(
+                {
+                    "access_token": "" if outcome == "missing_token" else "new-token",
+                    "refresh_token": "new-refresh",
+                    "scope": "other-scope"
+                    if outcome == "missing_scope"
+                    else wanted_scope,
+                }
+            ).encode()
+        )
 
     monkeypatch.setattr(gdrive, "get_client_id", lambda environ: "test-client")
     monkeypatch.setattr(gdrive, "get_client_secret", lambda environ: "")
@@ -538,6 +542,7 @@ def test_relogin_only_replaces_token_after_successful_authorization(
     monkeypatch.setattr(gdrive.webbrowser, "open", opened.append)
     monkeypatch.setattr(gdrive.urllib.request, "urlopen", exchange)
     if outcome == "save_failure":
+
         def fail_replace(*args):
             raise OSError("disk full")
 
@@ -746,3 +751,17 @@ def test_settings_info_redacts_remote_credentials(
     remote = GuiApi._redacted_remote()
     assert "secret" not in remote
     assert remote.endswith("example.com/me/cfg.git")
+
+
+def test_browser_login_without_client_id_points_at_gh(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config import ghauth
+
+    monkeypatch.delenv("AI_CONFIG_GITHUB_CLIENT_ID", raising=False)
+    monkeypatch.setattr(ghauth, "GITHUB_CLIENT_ID", "")
+    result = api.github_start_login()
+    assert result["code"] == 1
+    # 講替代做法,不丟環境變數名稱
+    assert "gh auth login" in result["output"]
+    assert "AI_CONFIG_GITHUB_CLIENT_ID" not in result["output"]

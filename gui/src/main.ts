@@ -950,7 +950,11 @@ async function loadGithubAccess(): Promise<void> {
     }
     githubAccounts.hidden = false;
   }
-  githubActions.hidden = !access.installed;
+  githubActions.hidden = !access.installed || !access.device_login;
+  if (access.installed && !access.device_login) {
+    githubState.textContent +=
+      " 這個版本沒有內建瀏覽器登入：請在終端機執行 gh auth login 登入有權限的帳號，再回來重新開啟設定並選「改用 <帳號>」。";
+  }
 }
 
 async function useGithubAccount(account: string): Promise<void> {

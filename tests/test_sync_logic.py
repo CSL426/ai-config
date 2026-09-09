@@ -39,7 +39,9 @@ def test_agent_without_frontmatter_gets_synthesized_frontmatter(tmp_path: Path) 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    skill = (home_dir / ".agents/skills/bare-agent/SKILL.md").read_text(encoding="utf-8")
+    skill = (home_dir / ".agents/skills/bare-agent/SKILL.md").read_text(
+        encoding="utf-8"
+    )
     assert skill.startswith("---\n")
     assert "name: 'Bare Agent'\n" in skill
     assert "description: >-\n" in skill
@@ -57,7 +59,9 @@ def test_description_with_colon_is_rewritten_as_block_scalar(tmp_path: Path) -> 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    skill = (home_dir / ".agents/skills/colon-agent/SKILL.md").read_text(encoding="utf-8")
+    skill = (home_dir / ".agents/skills/colon-agent/SKILL.md").read_text(
+        encoding="utf-8"
+    )
     assert "description: >-\n  Use when: things break\n" in skill
     assert "short-description: " in skill
 
@@ -87,7 +91,9 @@ def test_existing_metadata_block_is_preserved(tmp_path: Path) -> None:
 # ─── reconcile_managed_skills (orphan pruning) ────────────────
 
 
-def test_removed_shared_skill_is_pruned_but_hand_installed_survives(tmp_path: Path) -> None:
+def test_removed_shared_skill_is_pruned_but_hand_installed_survives(
+    tmp_path: Path,
+) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     shared_skill = repo_dir / "claude/shared/both/skill-a/SKILL.md"
     write(shared_skill, "---\nname: skill-a\ndescription: A.\n---\nA body.\n")
@@ -95,7 +101,9 @@ def test_removed_shared_skill_is_pruned_but_hand_installed_survives(tmp_path: Pa
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
     assert result.returncode == 0, result.stderr + result.stdout
     assert (home_dir / ".agents/skills/skill-a/SKILL.md").is_file()
-    manifest = (home_dir / ".agents/skills/.ai-config-managed").read_text(encoding="utf-8")
+    manifest = (home_dir / ".agents/skills/.ai-config-managed").read_text(
+        encoding="utf-8"
+    )
     assert "skill-a" in manifest
 
     # Hand-installed skill we never managed
@@ -112,7 +120,9 @@ def test_removed_shared_skill_is_pruned_but_hand_installed_survives(tmp_path: Pa
     assert result.returncode == 0, result.stderr + result.stdout
     assert not (home_dir / ".agents/skills/skill-a").exists()
     assert (home_dir / ".agents/skills/manual-skill/SKILL.md").is_file()
-    manifest = (home_dir / ".agents/skills/.ai-config-managed").read_text(encoding="utf-8")
+    manifest = (home_dir / ".agents/skills/.ai-config-managed").read_text(
+        encoding="utf-8"
+    )
     assert "skill-a" not in manifest
     assert "manual-skill" not in manifest
 
@@ -225,9 +235,9 @@ def test_commands_dir_is_applied_to_claude_home(tmp_path: Path) -> None:
     result = run_ai_config(repo_dir, home_dir, "apply", "claude")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert (
-        home_dir / ".claude/commands/commit.md"
-    ).read_text(encoding="utf-8") == "---\ndescription: x\n---\nbody\n"
+    assert (home_dir / ".claude/commands/commit.md").read_text(
+        encoding="utf-8"
+    ) == "---\ndescription: x\n---\nbody\n"
 
 
 # ─── skills/ projection ───────────────────────────────────────
@@ -297,7 +307,9 @@ def test_status_warns_when_agy_has_plugin_claude_dropped(tmp_path: Path) -> None
     result = run_ai_config(repo_dir, home_dir, "status")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert "agy has plugin not tracked in claude/settings.json: ghost@mp" in result.stdout
+    assert (
+        "agy has plugin not tracked in claude/settings.json: ghost@mp" in result.stdout
+    )
     assert "keep@mp" not in result.stdout.replace("ghost@mp", "")
     assert "disabled@mp\n" not in result.stdout
 
@@ -356,7 +368,7 @@ def test_quoted_description_yields_valid_short_description(tmp_path: Path) -> No
     repo_dir, home_dir = make_repo(tmp_path)
     write(
         repo_dir / "claude/agents/quoted-agent.md",
-        '---\nname: quoted-agent\n'
+        "---\nname: quoted-agent\n"
         'description: "Anti-slop skill for pages. Use when building."\n'
         "---\nBody.\n",
     )
@@ -364,7 +376,9 @@ def test_quoted_description_yields_valid_short_description(tmp_path: Path) -> No
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    skill = (home_dir / ".agents/skills/quoted-agent/SKILL.md").read_text(encoding="utf-8")
+    skill = (home_dir / ".agents/skills/quoted-agent/SKILL.md").read_text(
+        encoding="utf-8"
+    )
     assert "  short-description: 'Anti-slop skill for pages'\n" in skill
 
 
@@ -383,3 +397,28 @@ def test_status_does_not_report_agy_plugins_apply_will_not_touch(
     # live tree is left alone, so status must not announce it as a deletion.
     assert "apply removes" not in result.stdout
     assert live_plugin.is_file()
+
+
+def test_refused_fetch_explains_how_to_log_in(capsys) -> None:
+    import subprocess
+
+    from ai_config.commands import sync
+
+    refused = subprocess.CompletedProcess(
+        ["git"],
+        128,
+        stdout="",
+        stderr="remote: Repository not found.\nfatal: repository 'x' not found\n",
+    )
+    sync._hint_remote_access(refused)
+    out = capsys.readouterr().out
+    assert "login" in out and "私有" in out
+
+    unrelated = subprocess.CompletedProcess(
+        ["git"],
+        1,
+        stdout="",
+        stderr="fatal: unable to access: Could not resolve host\n",
+    )
+    sync._hint_remote_access(unrelated)
+    assert capsys.readouterr().out == ""

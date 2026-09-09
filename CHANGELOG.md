@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- pull／push 被私有儲存庫拒絕時(remote 回「Repository not found」或認證失敗),
+  直接說明這台還沒有能讀取它的帳號憑證,並指出 `acg login <帳號>` 或 Desktop 設定
+  裡的帳號選擇;先前只有一行 git 錯誤。
+- Desktop 沒有內建瀏覽器登入的版本(正式建置才有 client ID)不再顯示那顆按鈕,
+  改為說明在終端機 `gh auth login` 後回來選帳號;先前按下去會丟出環境變數名稱。
+- `acg memory adopt`／`release` 沒有事要做時不再建立備份目錄。
+- Desktop 缺少資源時區分 checkout 與已安裝套件；Linux 沒有桌面連線時在
+  前景顯示原因，不再分離到背景後無聲失敗。
+- `acg update` 支援 uv tool 安裝：辨識安裝記錄，透過 uv 更新到正式 release
+  tag，保留 Python、工具目錄及指令位置；最新版不重裝，也支援指定版本。
+  不再將 pip／uv 的 Python 啟動器誤認為 standalone 並反覆轉交。
+
 ## 1.0.39 - 2026-09-09
 
 - `acg login` 只綁定資料儲存庫,不再切換 gh 的作用中帳號。先前 `login <帳號>`

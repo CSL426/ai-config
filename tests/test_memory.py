@@ -266,6 +266,8 @@ def test_readopt_repairs_a_migrated_remember_folder(tmp_path: Path) -> None:
 
     third = _run_in_project(repo_dir, home_dir, project, "memory", "adopt")
     assert "已經在共用記憶裡" in third.stdout
+    # 沒事可做就不建備份
+    assert "已備份到" not in third.stdout
 
 
 def test_foreign_remember_link_is_left_alone(tmp_path: Path) -> None:
