@@ -9,11 +9,17 @@ the desktop app can say which one it is, and offer the matching fix.
 `gh` is used rather than a token of our own: it already owns the login
 flow, stores the credential where git looks for it, and refreshes it.
 Adding a second credential store would mean two things to keep in sync.
+
+The account is bound to the data repository alone. gh's active account
+is never switched: other repositories on the machine keep whatever they
+were using. The binding is a repo-local git credential helper that asks
+gh for the bound account's token whenever git needs one.
 """
 
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -22,6 +28,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from .safety import is_reparse_point
 
 # GitHub OAuth app 的 client ID。開放原始碼儲存庫中為空字串,正式建置由
 # GitHub secret 注入,本機開發用 AI_CONFIG_GITHUB_CLIENT_ID 環境變數。
@@ -60,6 +68,9 @@ _GITHUB_ALIAS = re.compile(
 )
 
 
+HELPER_MARKER = "__git-credential"
+
+
 @dataclass
 class GhStatus:
     """What is known about pushing to this remote, and what would fix it."""
@@ -69,8 +80,11 @@ class GhStatus:
     account: str = ""
     repository: str = ""
     can_push: "bool | None" = None
+    account_can_push: "bool | None" = None
     accounts: list[str] = field(default_factory=list)
     detail: str = ""
+    # 綁在資料庫上的帳號;空字串表示沿用 gh 的作用中帳號或既有金鑰
+    bound: str = ""
 
     @property
     def actionable(self) -> bool:
@@ -87,7 +101,11 @@ def parse_github_repository(remote_url: str) -> str:
     return f"{match['owner']}/{match['repo']}"
 
 
-def _run_gh(*args: str, timeout: float = 20.0) -> subprocess.CompletedProcess:
+def _run_gh(
+    *args: str, timeout: float = 20.0, token: str = ""
+) -> subprocess.CompletedProcess:
+    # GH_TOKEN 讓 gh 以指定帳號行事,不用切換作用中帳號
+    env = {**os.environ, "GH_TOKEN": token} if token else None
     return subprocess.run(
         ["gh", *args],
         capture_output=True,
@@ -96,12 +114,230 @@ def _run_gh(*args: str, timeout: float = 20.0) -> subprocess.CompletedProcess:
         errors="replace",
         check=False,
         timeout=timeout,
+        env=env,
     )
+
+
+def _run_git(repo_dir: Path, *args: str, timeout: float = 30.0) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(repo_dir), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=timeout,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+
+
+# ─── repo-local binding ───────────────────────────────────────
+
+
+def _acg_command() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    return [sys.executable, "-m", "ai_config"]
+
+
+def helper_value(account: str) -> str:
+    """The credential.helper entry that hands git this account's token.
+
+    git runs a helper starting with ``!`` through the shell, so the
+    executable path is quoted; the entry is machine-specific and lives
+    only in the repository's local config, never in the synced data.
+    """
+    parts = [shlex.quote(part) for part in _acg_command()]
+    return "!" + " ".join([*parts, HELPER_MARKER, account])
+
+
+_BOUND = re.compile(re.escape(HELPER_MARKER) + r" (\S+)\s*$")
+
+
+def bound_account(repo_dir: "Path | None") -> str:
+    if repo_dir is None:
+        return ""
+    result = _run_git(repo_dir, "config", "--local", "--get-all", "credential.helper")
+    if result.returncode != 0:
+        return ""
+    for line in result.stdout.splitlines():
+        match = _BOUND.search(line)
+        if match:
+            return match[1]
+    return ""
+
+
+_HELPERS_BACKUP = "acg.previousCredentialHelpers"
+
+
+def _change_binding(repo_dir: Path, account: "str | None") -> bool:
+    """Publish helper changes together, using the same lock as git config."""
+    location = _run_git(repo_dir, "rev-parse", "--git-path", "config")
+    if location.returncode:
+        raise GhAuthError((location.stderr or location.stdout).strip())
+    config = Path(location.stdout.strip())
+    if not config.is_absolute():
+        config = repo_dir / config
+    if is_reparse_point(config) or not config.is_file():
+        raise GhAuthError("git config 不是一般檔案,無法安全修改綁定")
+    lock = config.with_name(config.name + ".lock")
+    # An exclusive lock also prevents overwriting another git config writer.
+    descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    stream = os.fdopen(descriptor, "wb")
+    try:
+        with stream:
+            stream.write(config.read_bytes())
+
+        def edit(*args: str, missing_ok: bool = False) -> str:
+            result = _run_git(
+                repo_dir, "config", "--file", str(lock.absolute()),
+                "--no-includes", *args,
+            )
+            if result.returncode and not (
+                missing_ok and result.returncode in (1, 5)
+            ):
+                raise GhAuthError(
+                    (result.stderr or result.stdout).strip()
+                    or "無法修改 git 憑證設定"
+                )
+            return result.stdout
+
+        raw = edit("--null", "--get-all", "credential.helper", missing_ok=True)
+        helpers = raw[:-1].split("\0") if raw else []
+        saved = edit("--get", _HELPERS_BACKUP, missing_ok=True)
+        if saved:
+            original = json.loads(saved)
+            if not isinstance(original, list) or any(
+                not isinstance(value, str) for value in original
+            ):
+                raise GhAuthError("憑證備份格式不正確,保留目前設定")
+        else:
+            original = helpers.copy()
+            # Earlier bindings had no backup. Remove only their helper/reset;
+            # credentials already lost by that version cannot be reconstructed.
+            for index in range(len(original) - 1, -1, -1):
+                if _BOUND.search(original[index]):
+                    original.pop(index)
+                    if index and original[index - 1] == "":
+                        original.pop(index - 1)
+        if account is None and not any(_BOUND.search(v) for v in helpers):
+            return False
+        if account is not None and not saved:
+            edit("--replace-all", _HELPERS_BACKUP, json.dumps(original))
+        edit("--unset-all", "credential.helper", missing_ok=True)
+        for helper in (["", helper_value(account)] if account else original):
+            edit("--add", "credential.helper", helper)
+        if account is None:
+            edit("--unset-all", _HELPERS_BACKUP, missing_ok=True)
+        shutil.copymode(config, lock)
+        os.replace(lock, config)
+        return True
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def bind_account(repo_dir: Path, account: str) -> tuple[bool, str]:
+    """Bind locally, preserving the original helpers until explicit unbind."""
+    if not re.fullmatch(r"[A-Za-z0-9-]+", account):
+        return False, f"帳號名稱不合法:{account}"
+    try:
+        remote = _run_git(repo_dir, "remote", "get-url", "--push", "--all", "origin")
+        if remote.returncode == 0 and any(
+            not url.startswith("https://github.com/")
+            for url in remote.stdout.splitlines()
+        ):
+            return False, (
+                "帳號綁定需要 GitHub HTTPS 推送遠端;"
+                "SSH 使用既有金鑰,請先調整 origin 的推送 URL"
+            )
+        _change_binding(repo_dir, account)
+    except (OSError, subprocess.SubprocessError, GhAuthError, ValueError) as exc:
+        return False, str(exc)
+    return True, ""
+
+
+def unbind_account(repo_dir: Path) -> bool:
+    """Restore the original local helpers; failures leave config untouched."""
+    try:
+        return _change_binding(repo_dir, None)
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        raise GhAuthError(f"無法解除綁定:{exc}") from exc
+
+
+def account_token(account: str) -> str:
+    try:
+        result = _run_gh("auth", "token", "--hostname", "github.com", "--user", account)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def credential_helper_main(argv: list[str]) -> int:
+    """Entry point git calls: ``acg __git-credential <account> <operation>``."""
+    if len(argv) != 2:
+        return 1
+    account, operation = argv
+    if operation != "get":
+        return 0
+    if sys.stdin.isatty():
+        return 0
+    request: dict[str, str] = {}
+    for line in sys.stdin:
+        line = line.rstrip("\r\n")
+        if not line:
+            break
+        key, separator, value = line.partition("=")
+        if not separator or key in request:
+            return 0
+        request[key] = value
+    # A repo-local helper can also be asked about other remotes in that repo.
+    if request.get("protocol") != "https" or request.get("host") != "github.com":
+        return 0
+    if not re.fullmatch(r"[A-Za-z0-9-]+", account):
+        return 1
+    token = account_token(account)
+    if not token:
+        return 1
+    sys.stdout.write(f"username={account}\npassword={token}\n")
+    return 0
+
+
+_AUTH_REFUSAL_MARKERS = (
+    "denied",
+    "permission",
+    "403",
+    "401",
+    "unauthorized",
+    "not found",
+    "read-only",
+    "authentication",
+)
+
+
+def git_can_push(repo_dir: Path) -> "bool | None":
+    """Whether git itself can push right now; None when it cannot tell.
+
+    A dry-run push sends no objects and creates no ref. It is the only
+    check that sees the whole picture: SSH keys, bound accounts and
+    stored credentials alike.
+    """
+    try:
+        result = _run_git(
+            repo_dir, "push", "--dry-run", "--porcelain", "origin", "HEAD:refs/heads/main"
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode == 0:
+        return True
+    detail = (result.stderr + result.stdout).lower()
+    if any(marker in detail for marker in _AUTH_REFUSAL_MARKERS):
+        return False
+    return None
 
 
 def _logged_in_accounts() -> "tuple[str, list[str]]":
     """The active account and every account gh knows, from its own status."""
-    result = _run_gh("auth", "status")
+    result = _run_gh("auth", "status", "--hostname", "github.com")
     if result.returncode != 0:
         return "", []
     text = result.stdout + result.stderr
@@ -117,33 +353,60 @@ def _logged_in_accounts() -> "tuple[str, list[str]]":
     return active, accounts
 
 
-def check_push_access(remote_url: str) -> GhStatus:
-    """Diagnose why a push would be refused, without attempting one."""
+def check_push_access(remote_url: str, repo_dir: "Path | None" = None) -> GhStatus:
+    """Diagnose why a push would be refused, without attempting one.
+
+    With ``repo_dir`` the answer starts from what git can actually do:
+    a machine whose SSH key already has write access is fine whatever
+    gh thinks, and a bound account is judged as itself.
+    """
     status = GhStatus(repository=parse_github_repository(remote_url))
     if not status.repository:
         status.detail = "遠端不是 GitHub,無法用 gh 處理登入"
         return status
-    if shutil.which("gh") is None:
+    status.bound = bound_account(repo_dir)
+    git_access = git_can_push(repo_dir) if repo_dir is not None else None
+    status.can_push = git_access
+    status.installed = shutil.which("gh") is not None
+    active = ""
+    if status.installed:
+        try:
+            active, status.accounts = _logged_in_accounts()
+        except (OSError, subprocess.SubprocessError) as exc:
+            status.detail = f"無法讀取 gh 登入狀態:{exc}"
+    status.account = status.bound or active
+    status.logged_in = bool(status.account)
+    if git_access is True:
+        # A successful push does not identify which credential was used;
+        # SSH and URL-specific settings can bypass the bound HTTPS helper.
+        status.detail = f"git 已可推送到 {status.repository}(依目前遠端與憑證設定)"
+        return status
+    if not status.installed:
         status.detail = "找不到 GitHub CLI (gh)"
         return status
-
-    status.installed = True
-    try:
-        status.account, status.accounts = _logged_in_accounts()
-    except (OSError, subprocess.SubprocessError) as exc:
-        status.detail = f"無法讀取 gh 登入狀態:{exc}"
-        return status
     if not status.account:
-        status.detail = "gh 尚未登入任何 GitHub 帳號"
+        if not status.detail:
+            status.detail = "gh 尚未登入任何 GitHub 帳號"
         return status
 
     status.logged_in = True
+    token = ""
+    if status.bound:
+        token = account_token(status.bound)
+        if not token:
+            if repo_dir is None:
+                status.can_push = False
+            status.detail = f"gh 沒有 {status.bound} 的登入紀錄,資料庫的綁定失效"
+            return status
     try:
         result = _run_gh(
             "api",
             f"repos/{status.repository}",
             "--jq",
             ".permissions.push",
+            "--hostname",
+            "github.com",
+            token=token,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         status.detail = f"無法查詢儲存庫權限:{exc}"
@@ -152,13 +415,22 @@ def check_push_access(remote_url: str) -> GhStatus:
     answer = result.stdout.strip().lower()
     if result.returncode != 0:
         # 404 也可能是私有 repo 但這個帳號看不到,對使用者是同一件事
-        status.can_push = False
+        if repo_dir is None:
+            status.can_push = False
         status.detail = f"{status.account} 看不到或無法寫入 {status.repository}"
         return status
-    status.can_push = answer == "true"
+    status.account_can_push = answer == "true"
+    if repo_dir is not None and status.account_can_push:
+        status.detail = (
+            f"{status.account} 有儲存庫寫入權,但 "
+            + ("git 憑證驗證失敗" if git_access is False else "尚無法確認 git 可推送")
+        )
+        return status
+    if repo_dir is None:
+        status.can_push = status.account_can_push
     status.detail = (
         f"{status.account} 可以寫入 {status.repository}"
-        if status.can_push
+        if status.account_can_push
         else f"{status.account} 對 {status.repository} 沒有寫入權"
     )
     return status
@@ -168,6 +440,9 @@ def describe(status: GhStatus) -> list[str]:
     """Lines explaining the situation, ordered most useful first."""
     if not status.repository:
         return [status.detail]
+    # git 本來就推得動(SSH 金鑰、綁定帳號)時,gh 裝沒裝、登沒登入都不重要
+    if status.can_push and status.detail.startswith("git 已可推送"):
+        return [status.detail + "。"]
     if not status.installed:
         return [
             "找不到 GitHub CLI (gh),acg 無法代為登入。",
@@ -180,8 +455,11 @@ def describe(status: GhStatus) -> list[str]:
             f"gh 目前登入 {status.account},且可以寫入 {status.repository}。",
             "如果 push 仍失敗,git 可能還沒接上 gh 的憑證。",
         ]
+    if status.account_can_push:
+        return [status.detail + "。"]
     others = [name for name in status.accounts if name != status.account]
-    lines = [f"gh 目前登入 {status.account},但這個帳號對 {status.repository} 沒有寫入權。"]
+    who = f"資料庫綁定的帳號 {status.account}" if status.bound else f"gh 目前登入 {status.account}"
+    lines = [f"{who},但這個帳號對 {status.repository} 沒有寫入權。"]
     if others:
         lines.append(f"gh 也記得這些帳號:{', '.join(others)}")
     return lines
@@ -204,7 +482,11 @@ def setup_git_credentials(repository_dir: "Path | None" = None) -> tuple[bool, s
 
 
 def switch_account(account: str) -> tuple[bool, str]:
-    """Make an already-known gh account the active one."""
+    """Make an already-known gh account the active one (machine-wide).
+
+    Login flows use this to restore the original active account after gh
+    stores a new login. Repository account selection uses binding instead.
+    """
     try:
         result = _run_gh("auth", "switch", "--user", account)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -288,14 +570,24 @@ def poll_device_login(
     raise GhAuthError(str(data.get("error_description") or error or data))
 
 
-def store_token(token: str) -> tuple[bool, str]:
-    """Hand the token to gh, which validates it and stores it for git.
+def active_account() -> str:
+    try:
+        return _logged_in_accounts()[0]
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
-    gh rejects an invalid token without disturbing the existing login, so
-    a mistyped or expired one cannot lock the user out of what worked.
+
+def store_token(token: str) -> tuple[bool, str]:
+    """Hand the token to gh, which validates it and stores it.
+
+    Returns the account name on success. gh makes a freshly stored
+    account active, which would silently change every other repository
+    on the machine, so the previously active account is restored.
+    gh rejects an invalid token without disturbing the existing login.
     """
     if shutil.which("gh") is None:
         return False, "找不到 GitHub CLI (gh)"
+    previous = active_account()
     try:
         result = subprocess.run(
             ["gh", "auth", "login", "--hostname", "github.com", "--with-token"],
@@ -306,11 +598,23 @@ def store_token(token: str) -> tuple[bool, str]:
             timeout=60,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return False, str(exc)
-    combined = (result.stderr + result.stdout).strip()
-    if result.returncode != 0 or "error" in combined.lower():
-        return False, combined or "gh 拒絕了這個 token"
-    return True, ""
+        failure = str(exc)
+    else:
+        combined = (result.stderr + result.stdout).strip()
+        if result.returncode != 0 or "error" in combined.lower():
+            failure = combined or "gh 拒絕了這個 token"
+        else:
+            failure = ""
+    account = active_account()
+    if previous and previous != account:
+        restored, detail = switch_account(previous)
+        if not restored:
+            return False, f"無法還原 gh 原本的作用中帳號 {previous}:{detail}"
+    if failure:
+        return False, failure
+    if not account:
+        return False, "無法確認新登入的 GitHub 帳號"
+    return True, account
 
 
 def login_command() -> list[str]:
