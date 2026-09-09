@@ -41,6 +41,7 @@ def gui_index_path() -> Path:
             return bundled
     return _ASSETS_DIR / "index.html"
 
+
 WINDOW_TITLE = "acg — AI 設定同步"
 
 
@@ -143,6 +144,65 @@ class GuiApi(ManagementApi):
             "output": "",
         }
 
+    def github_terminal_login(self) -> dict:
+        """Open a terminal window already running gh's browser login.
+
+        The fallback for builds without a client ID: gh needs a terminal
+        for its login, so give it one instead of telling people to type.
+        """
+        import shlex
+        import shutil
+
+        from ..ghauth import login_command
+
+        if shutil.which("gh") is None:
+            return {
+                "code": 1,
+                "output": "✗ 找不到 GitHub CLI (gh),請先安裝:https://cli.github.com",
+            }
+        command = login_command()
+        try:
+            if sys.platform == "win32":
+                subprocess.Popen(
+                    ["cmd", "/c", "start", "acg GitHub 登入", "cmd", "/k", *command],
+                    creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+                )
+            elif sys.platform == "darwin":
+                script = " ".join(shlex.quote(part) for part in command)
+                subprocess.Popen(
+                    [
+                        "osascript",
+                        "-e",
+                        f'tell application "Terminal" to do script "{script}"',
+                    ]
+                )
+            else:
+                script = " ".join(shlex.quote(part) for part in command)
+                for terminal in (
+                    "x-terminal-emulator",
+                    "gnome-terminal",
+                    "konsole",
+                    "xfce4-terminal",
+                    "xterm",
+                ):
+                    if shutil.which(terminal):
+                        subprocess.Popen(
+                            [
+                                terminal,
+                                "-e",
+                                f"bash -c {shlex.quote(script + '; exec bash')}",
+                            ]
+                        )
+                        break
+                else:
+                    return {"code": 1, "output": "✗ 找不到可開啟的終端機程式"}
+        except OSError as exc:
+            return {"code": 1, "output": f"✗ 無法開啟終端機:{exc}"}
+        return {
+            "code": 0,
+            "output": "已開啟終端機並啟動 GitHub 登入;完成後回到這裡按「重新檢查」,再選「改用 <帳號>」。",
+        }
+
     def github_poll_login(self, device_code: str = "", interval: int = 5) -> dict:
         """One poll step; the page decides how long to keep waiting."""
         from ..ghauth import (
@@ -233,9 +293,7 @@ class GuiApi(ManagementApi):
                 folder = configured_gdrive_folder()
                 folder_id = configured_gdrive_folder_id()
                 if folder_id and space == "visible":
-                    folder_url = (
-                        f"https://drive.google.com/drive/folders/{folder_id}"
-                    )
+                    folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
             except ConfigError:
                 pass
 
@@ -303,26 +361,21 @@ class GuiApi(ManagementApi):
         finally:
             self._lock.release()
 
-    def setup_repo(self, repo_url: str, data_dir: str = "") -> dict:
+    def setup_repo(self, repo_url: str, data_dir: str = "", account: str = "") -> dict:
         from ..config import default_data_repo
 
         if not isinstance(repo_url, str) or not repo_url.strip():
             return {"code": 1, "output": "✗ 請貼上資料儲存庫的 Git URL"}
-        if not isinstance(data_dir, str):
+        if not isinstance(data_dir, str) or not isinstance(account, str):
             return {"code": 1, "output": "✗ 無效的本機目錄"}
         target = data_dir.strip() or str(default_data_repo())
         if not self._lock.acquire(blocking=False):
             return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
         try:
-            return self._run_captured(
-                [
-                    "setup",
-                    "--data-dir",
-                    target,
-                    "--repo-url",
-                    repo_url.strip(),
-                ]
-            )
+            argv = ["setup", "--data-dir", target, "--repo-url", repo_url.strip()]
+            if account.strip():
+                argv += ["--account", account.strip()]
+            return self._run_captured(argv)
         finally:
             self._lock.release()
 
@@ -413,9 +466,7 @@ class GuiApi(ManagementApi):
         }
 
     def share_skills(self, names: "list[str]") -> dict:
-        if not isinstance(names, list) or not all(
-            isinstance(n, str) for n in names
-        ):
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
             return {"code": 1, "output": "✗ 無效的技能清單"}
         if not names:
             return {"code": 1, "output": "⚠ 還沒有勾選任何技能"}
@@ -433,9 +484,7 @@ class GuiApi(ManagementApi):
             self._lock.release()
 
     def unshare_skills(self, names: "list[str]") -> dict:
-        if not isinstance(names, list) or not all(
-            isinstance(n, str) for n in names
-        ):
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
             return {"code": 1, "output": "✗ 無效的技能清單"}
         if not names:
             return {"code": 1, "output": "⚠ 還沒有勾選任何技能"}
@@ -455,9 +504,7 @@ class GuiApi(ManagementApi):
     def package_skills(self, names: "list[str]") -> dict:
         from ..package import SkillNotFoundError, package_skill
 
-        if not isinstance(names, list) or not all(
-            isinstance(n, str) for n in names
-        ):
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
             return {"code": 1, "output": "✗ 無效的技能清單", "zips": []}
         if not names:
             return {"code": 1, "output": "⚠ 還沒有勾選任何技能", "zips": []}
@@ -525,9 +572,11 @@ class GuiApi(ManagementApi):
             log = _run_repo_git("log", "--oneline", "@{upstream}..HEAD")
         except (OSError, subprocess.SubprocessError):
             return [], []
-        changed = [
-            line[3:] for line in status.stdout.splitlines() if line.strip()
-        ] if status.returncode == 0 else []
+        changed = (
+            [line[3:] for line in status.stdout.splitlines() if line.strip()]
+            if status.returncode == 0
+            else []
+        )
         if scope != "all":
             changed = [path for path in changed if path.startswith(f"{scope}/")]
         commits = log.stdout.splitlines() if log.returncode == 0 else []
@@ -594,11 +643,7 @@ class GuiApi(ManagementApi):
 
     def confirm_push(self, tool: str, token: str) -> dict:
         """Push only when the fresh CLI review matches the preview exactly."""
-        if (
-            not isinstance(token, str)
-            or not token
-            or self._push_preview is None
-        ):
+        if not isinstance(token, str) or not token or self._push_preview is None:
             return {"code": 1, "output": "✗ 上傳預覽已失效,請重新預覽。"}
         expected_token, expected_tool, expected_review = self._push_preview
         if tool != expected_tool or not secrets.compare_digest(token, expected_token):
@@ -628,8 +673,7 @@ class GuiApi(ManagementApi):
             return {
                 "code": 1,
                 "output": (
-                    result["output"]
-                    + "✗ 內容在預覽後已有變動,尚未上傳。請重新預覽。\n"
+                    result["output"] + "✗ 內容在預覽後已有變動,尚未上傳。請重新預覽。\n"
                 ),
             }
         return result
@@ -862,9 +906,7 @@ def run_gui() -> int:
     if not index.is_file():
         if getattr(sys, "_MEIPASS", ""):
             # 打包版沒有原始碼可以 build,叫使用者 pnpm build 是無效的指示
-            log_error(
-                "這個平台的執行檔沒有內建 Desktop 介面(目前只有 Windows 版有)。"
-            )
+            log_error("這個平台的執行檔沒有內建 Desktop 介面(目前只有 Windows 版有)。")
             log_info('改用 pip 安裝即可使用:pip install "ai-config[gui]"')
         elif (Path(__file__).resolve().parents[2] / "gui/package.json").is_file():
             log_error(
@@ -928,10 +970,7 @@ def run_gui() -> int:
         log_error(f"無法開啟視窗:{type(exc).__name__}: {exc}")
         if sys.platform == "win32":
             # Windows 10 較舊的版本沒有預裝 WebView2,pywebview 就開不起來
-            log_info(
-                "Windows 需要 Microsoft Edge WebView2 執行期,"
-                "可從以下網址安裝:"
-            )
+            log_info("Windows 需要 Microsoft Edge WebView2 執行期,可從以下網址安裝:")
             log_info("https://developer.microsoft.com/microsoft-edge/webview2/")
         else:
             log_info(

@@ -765,3 +765,32 @@ def test_browser_login_without_client_id_points_at_gh(
     # 講替代做法,不丟環境變數名稱
     assert "gh auth login" in result["output"]
     assert "AI_CONFIG_GITHUB_CLIENT_ID" not in result["output"]
+
+
+def test_terminal_login_opens_a_terminal_running_gh(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config.commands import gui as gui_module
+
+    monkeypatch.setattr(gui_module.sys, "platform", "linux")
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+    launched = {}
+
+    def fake_popen(args, **kwargs):
+        launched["args"] = args
+        return object()
+
+    monkeypatch.setattr(gui_module.subprocess, "Popen", fake_popen)
+    result = api.github_terminal_login()
+    assert result["code"] == 0, result
+    assert "重新檢查" in result["output"]
+    assert launched["args"][0] == "x-terminal-emulator"
+    assert "gh auth login" in " ".join(launched["args"])
+
+
+def test_terminal_login_without_gh_says_to_install_it(
+    api: GuiApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    result = api.github_terminal_login()
+    assert result["code"] == 1 and "cli.github.com" in result["output"]

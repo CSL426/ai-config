@@ -309,14 +309,18 @@ def test_credential_helper_answers_get_with_the_bound_token(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
     monkeypatch.setattr(ghauth, "account_token", lambda account: f"tok-{account}")
-    monkeypatch.setattr(ghauth.sys, "stdin", io.StringIO("protocol=https\nhost=github.com\n\n"))
+    monkeypatch.setattr(
+        ghauth.sys, "stdin", io.StringIO("protocol=https\nhost=github.com\n\n")
+    )
     assert ghauth.credential_helper_main(["CSL426", "get"]) == 0
     assert capsys.readouterr().out == "username=CSL426\npassword=tok-CSL426\n"
     # store / erase 不做事,也不印
     assert ghauth.credential_helper_main(["CSL426", "erase"]) == 0
     assert capsys.readouterr().out == ""
     monkeypatch.setattr(ghauth, "account_token", lambda account: "")
-    monkeypatch.setattr(ghauth.sys, "stdin", io.StringIO("protocol=https\nhost=github.com\n\n"))
+    monkeypatch.setattr(
+        ghauth.sys, "stdin", io.StringIO("protocol=https\nhost=github.com\n\n")
+    )
     assert ghauth.credential_helper_main(["CSL426", "get"]) == 1
 
 
@@ -327,7 +331,9 @@ def test_git_that_can_already_push_wins_over_gh(
     monkeypatch.setattr(ghauth, "git_can_push", lambda repo_dir: True)
     monkeypatch.setattr(ghauth, "bound_account", lambda repo_dir: "")
     monkeypatch.setattr(ghauth.shutil, "which", lambda name: "/usr/bin/gh")
-    monkeypatch.setattr(ghauth, "_logged_in_accounts", lambda: ("first", ["first", "second"]))
+    monkeypatch.setattr(
+        ghauth, "_logged_in_accounts", lambda: ("first", ["first", "second"])
+    )
     status = ghauth.check_push_access("git@github.com:o/r.git", tmp_path)
     assert status.accounts == ["first", "second"]
     assert status.can_push is True and status.actionable is False
@@ -365,17 +371,21 @@ def test_bound_account_is_judged_as_itself(
     assert seen["token"] == "tok-second"
 
 
-@pytest.mark.parametrize("credential_request", [
-    "protocol=https\nhost=untrusted.example\n\n",
-    "protocol=http\nhost=github.com\n\n",
-    "protocol=https\nhost=github.com.evil.example\n\n",
-    "protocol=https\nhost=github.com:8443\n\n",
-    "protocol=https\nhost=github.com\nhost=untrusted.example\n\n",
-    "protocol=https\n\n",
-    "",
-])
+@pytest.mark.parametrize(
+    "credential_request",
+    [
+        "protocol=https\nhost=untrusted.example\n\n",
+        "protocol=http\nhost=github.com\n\n",
+        "protocol=https\nhost=github.com.evil.example\n\n",
+        "protocol=https\nhost=github.com:8443\n\n",
+        "protocol=https\nhost=github.com\nhost=untrusted.example\n\n",
+        "protocol=https\n\n",
+        "",
+    ],
+)
 def test_helper_refuses_untrusted_requests_without_reading_token(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
     credential_request: str,
 ) -> None:
     monkeypatch.setattr(ghauth.sys, "stdin", io.StringIO(credential_request))
@@ -394,7 +404,10 @@ def test_rebinding_preserves_original_helpers_and_other_config(
     assert _git(tmp_path, "init", "-q").returncode == 0
     original = ["", "cache --timeout=999", '!printf "line one\\nline two"']
     for helper in original:
-        assert _git(tmp_path, "config", "--add", "credential.helper", helper).returncode == 0
+        assert (
+            _git(tmp_path, "config", "--add", "credential.helper", helper).returncode
+            == 0
+        )
     _git(tmp_path, "config", "example.preserved", "untouched")
     assert ghauth.bind_account(tmp_path, "first")[0]
     assert ghauth.bind_account(tmp_path, "second")[0]
@@ -402,15 +415,22 @@ def test_rebinding_preserves_original_helpers_and_other_config(
     saved = _git(tmp_path, "config", "--get", ghauth._HELPERS_BACKUP).stdout
     assert json.loads(saved) == original
     assert ghauth.unbind_account(tmp_path)
-    restored = _git(tmp_path, "config", "--local", "--null", "--get-all", "credential.helper").stdout
+    restored = _git(
+        tmp_path, "config", "--local", "--null", "--get-all", "credential.helper"
+    ).stdout
     assert restored[:-1].split("\0") == original
-    assert _git(tmp_path, "config", "--get", "example.preserved").stdout.strip() == "untouched"
+    assert (
+        _git(tmp_path, "config", "--get", "example.preserved").stdout.strip()
+        == "untouched"
+    )
     assert _git(tmp_path, "config", "--get", ghauth._HELPERS_BACKUP).returncode == 1
 
 
 @pytest.mark.parametrize("operation", ["bind", "rebind", "unbind"])
 def test_binding_write_failure_preserves_config_bytes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, operation: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    operation: str,
 ) -> None:
     assert _git(tmp_path, "init", "-q").returncode == 0
     _git(tmp_path, "config", "credential.helper", "cache")
@@ -422,7 +442,9 @@ def test_binding_write_failure_preserves_config_bytes(
 
     def fail_add(repo: Path, *args: str, **kwargs):
         if "--add" in args:
-            return subprocess.CompletedProcess(args, 1, stdout="", stderr="injected failure")
+            return subprocess.CompletedProcess(
+                args, 1, stdout="", stderr="injected failure"
+            )
         return real_run(repo, *args, **kwargs)
 
     monkeypatch.setattr(ghauth, "_run_git", fail_add)
@@ -457,7 +479,9 @@ def test_helper_shell_quotes_executable_without_expansion(
     monkeypatch.setattr(ghauth, "_acg_command", lambda: ["printf", "%s\\n", executable])
     result = subprocess.run(
         [shell, "-c", ghauth.helper_value("demo")[1:]],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
         env={**os.environ, "HOME": "expanded"},
     )
     assert result.stdout.splitlines() == [executable, "__git-credential", "demo"]
@@ -467,13 +491,22 @@ def _mock_login_account(monkeypatch: pytest.MonkeyPatch, repo: Path) -> None:
     monkeypatch.setattr(login, "SCRIPT_DIR", repo)
     monkeypatch.setattr(login, "_remote_url", lambda: "https://github.com/o/r.git")
     monkeypatch.setattr(ghauth.shutil, "which", lambda name: "/fake/gh")
-    monkeypatch.setattr(ghauth, "_logged_in_accounts", lambda: ("first", ["first", "second"]))
+    monkeypatch.setattr(
+        ghauth, "_logged_in_accounts", lambda: ("first", ["first", "second"])
+    )
     monkeypatch.setattr(ghauth, "account_token", lambda account: f"fake-{account}")
-    monkeypatch.setattr(ghauth, "_run_gh", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, stdout="true", stderr=""))
+    monkeypatch.setattr(
+        ghauth,
+        "_run_gh",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args, 0, stdout="true", stderr=""
+        ),
+    )
 
 
 def test_login_can_rebind_when_git_already_pushes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     assert _git(tmp_path, "init", "-q").returncode == 0
     _mock_login_account(monkeypatch, tmp_path)
@@ -484,7 +517,9 @@ def test_login_can_rebind_when_git_already_pushes(
 
 @pytest.mark.parametrize("after", [True, False, None])
 def test_login_binds_existing_account_then_requires_git_verification(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, after: "bool | None",
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    after: "bool | None",
 ) -> None:
     assert _git(tmp_path, "init", "-q").returncode == 0
     _mock_login_account(monkeypatch, tmp_path)
@@ -501,7 +536,8 @@ def test_login_binds_existing_account_then_requires_git_verification(
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 def test_binding_lock_is_private_before_copying_config(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     assert _git(tmp_path, "init", "-q").returncode == 0
     config = tmp_path / ".git" / "config"
@@ -511,7 +547,9 @@ def test_binding_lock_is_private_before_copying_config(
 
     def inspect_mode(path: Path) -> bytes:
         if path == config:
-            observed_modes.append(stat.S_IMODE(config.with_name("config.lock").stat().st_mode))
+            observed_modes.append(
+                stat.S_IMODE(config.with_name("config.lock").stat().st_mode)
+            )
         return original_read(path)
 
     monkeypatch.setattr(Path, "read_bytes", inspect_mode)
@@ -536,16 +574,21 @@ def test_malformed_helper_backup_leaves_binding_untouched(tmp_path: Path) -> Non
 @pytest.mark.parametrize("login_succeeds", [True, False])
 @pytest.mark.parametrize("restore_succeeds", [True, False])
 def test_store_token_restores_account_even_after_login_failure(
-    monkeypatch: pytest.MonkeyPatch, login_succeeds: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    login_succeeds: bool,
     restore_succeeds: bool,
 ) -> None:
     monkeypatch.setattr(ghauth.shutil, "which", lambda name: "/fake/gh")
     accounts = iter(["first", "second"])
     monkeypatch.setattr(ghauth, "active_account", lambda: next(accounts))
     monkeypatch.setattr(
-        ghauth.subprocess, "run",
+        ghauth.subprocess,
+        "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
-            [], 0 if login_succeeds else 1, stdout="", stderr="",
+            [],
+            0 if login_succeeds else 1,
+            stdout="",
+            stderr="",
         ),
     )
     restored = []
@@ -564,13 +607,23 @@ def test_store_token_restores_account_even_after_login_failure(
 
 @pytest.mark.parametrize("login_succeeds", [True, False])
 def test_login_does_not_bind_when_previous_account_restore_fails(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, login_succeeds: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    login_succeeds: bool,
 ) -> None:
     _mock_login_account(monkeypatch, tmp_path)
-    monkeypatch.setattr(login, "check_push_access", lambda *args: ghauth.GhStatus(
-        installed=True, logged_in=True, account="first", repository="o/r",
-        can_push=False, accounts=["first"],
-    ))
+    monkeypatch.setattr(
+        login,
+        "check_push_access",
+        lambda *args: ghauth.GhStatus(
+            installed=True,
+            logged_in=True,
+            account="first",
+            repository="o/r",
+            can_push=False,
+            accounts=["first"],
+        ),
+    )
     accounts = iter(["first", "second"])
     monkeypatch.setattr(login, "active_account", lambda: next(accounts))
     monkeypatch.setattr(login, "run_interactive_login", lambda: (login_succeeds, ""))
@@ -591,7 +644,8 @@ def test_login_does_not_bind_when_previous_account_restore_fails(
 
 
 def test_ssh_push_success_does_not_claim_to_use_bound_https_account(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     _mock_login_account(monkeypatch, tmp_path)
     monkeypatch.setattr(ghauth, "bound_account", lambda repo: "second")
@@ -605,14 +659,21 @@ def test_ssh_push_success_does_not_claim_to_use_bound_https_account(
 
 @pytest.mark.parametrize("api_returncode", [0, 1])
 def test_api_denial_preserves_unknown_git_push_access(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, api_returncode: int,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    api_returncode: int,
 ) -> None:
     _mock_login_account(monkeypatch, tmp_path)
     monkeypatch.setattr(ghauth, "bound_account", lambda repo: "")
     monkeypatch.setattr(ghauth, "git_can_push", lambda repo: None)
     monkeypatch.setattr(
-        ghauth, "_run_gh", lambda *args, **kwargs: subprocess.CompletedProcess(
-            [], api_returncode, stdout="false", stderr="",
+        ghauth,
+        "_run_gh",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            [],
+            api_returncode,
+            stdout="false",
+            stderr="",
         ),
     )
     status = ghauth.check_push_access("git@github.com:o/r.git", tmp_path)
@@ -620,11 +681,16 @@ def test_api_denial_preserves_unknown_git_push_access(
     assert status.account_can_push is (False if api_returncode == 0 else None)
 
 
-@pytest.mark.parametrize("push_url", [
-    "git@github.com:o/r.git", "https://untrusted.example/o/r.git",
-])
+@pytest.mark.parametrize(
+    "push_url",
+    [
+        "git@github.com:o/r.git",
+        "https://untrusted.example/o/r.git",
+    ],
+)
 def test_binding_rejects_push_urls_that_bypass_the_https_helper(
-    tmp_path: Path, push_url: str,
+    tmp_path: Path,
+    push_url: str,
 ) -> None:
     assert _git(tmp_path, "init", "-q").returncode == 0
     _git(tmp_path, "remote", "add", "origin", "https://github.com/o/r.git")
@@ -635,3 +701,59 @@ def test_binding_rejects_push_urls_that_bypass_the_https_helper(
     assert not ok
     assert "HTTPS" in detail
     assert config.read_bytes() == before
+
+
+def test_push_probe_reports_gits_own_words(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args,
+            128,
+            stdout="",
+            stderr="fatal: could not read Username for 'https://github.com': terminal prompts disabled\n",
+        )
+
+    monkeypatch.setattr(ghauth.subprocess, "run", fake_run)
+    verdict, detail = ghauth.git_push_probe(tmp_path)
+    assert verdict is None
+    assert "could not read Username" in detail
+
+
+def test_binding_twice_keeps_one_helper_and_survives_a_clone_time_binding(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "data"
+    repo.mkdir()
+    assert _git(repo, "init", "-q").returncode == 0
+    # 模擬 clone -c 直接寫入的綁定:沒有備份記錄
+    assert (
+        _git(repo, "config", "--local", "--add", "credential.helper", "").returncode
+        == 0
+    )
+    assert (
+        _git(
+            repo,
+            "config",
+            "--local",
+            "--add",
+            "credential.helper",
+            ghauth.helper_value("CSL426"),
+        ).returncode
+        == 0
+    )
+
+    ok, detail = ghauth.bind_account(repo, "CSL426")
+    assert ok, detail
+    helpers = _git(
+        repo, "config", "--local", "--get-all", "credential.helper"
+    ).stdout.splitlines()
+    assert helpers == ["", ghauth.helper_value("CSL426")]
+
+    ok, detail = ghauth.bind_account(repo, "other")
+    assert ok, detail
+    assert ghauth.bound_account(repo) == "other"
+    assert ghauth.unbind_account(repo) is True
+    assert (
+        _git(repo, "config", "--local", "--get-all", "credential.helper").stdout == ""
+    )

@@ -28,6 +28,7 @@ const githubState = $("#github-state");
 const githubAccounts = $("#github-accounts");
 const githubActions = $("#github-actions");
 const githubLoginBtn = $<HTMLButtonElement>("#github-login");
+const githubFallback = $("#github-fallback");
 const githubCode = $("#github-code");
 const githubCodeValue = $("#github-code-value");
 const githubCodeCopy = $<HTMLButtonElement>("#github-code-copy");
@@ -439,11 +440,57 @@ function setHero(mark: "ok" | "pending" | "fail" | "none", title: string, sub: s
 }
 
 function invalidateToolStates(label = "需重新檢查"): void {
+  lastStatus = null;
+  stopHeroClock();
   for (const row of toolRows) {
     row.className = "tool-row";
     row.querySelector<HTMLElement>(".tool-state")!.textContent = label;
   }
   setHero("none", "尚待確認", "設定可能已改變，請重新檢查工具與本機保存設定是否一致。");
+}
+
+// ── 上次檢查的時間 ─────────────────────
+// 檢查過的結果不該一按別的按鈕就被清成「需重新檢查」；保留結果，標上多久以前，
+// 有操作可能改變它時再加一句建議。
+
+let lastStatus: { at: number; mark: "ok" | "pending"; title: string; sub: string; stale: string } | null = null;
+let heroClock: number | null = null;
+
+function formatAgo(since: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - since) / 1000));
+  if (seconds < 10) return "剛剛";
+  if (seconds < 60) return `${seconds} 秒前`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} 分鐘前`;
+  const hours = Math.round(minutes / 60);
+  return hours < 24 ? `${hours} 小時前` : `${Math.round(hours / 24)} 天前`;
+}
+
+function stopHeroClock(): void {
+  if (heroClock !== null) { window.clearInterval(heroClock); heroClock = null; }
+}
+
+function renderHeroClock(): void {
+  if (!lastStatus) return;
+  const when = `${formatAgo(lastStatus.at)}檢查`;
+  if (lastStatus.stale) {
+    setHero("none", lastStatus.title, `${when}；${lastStatus.stale}，結果可能已改變，建議重新檢查。`);
+  } else {
+    setHero(lastStatus.mark, lastStatus.title, `${lastStatus.sub}（${when}）`);
+  }
+}
+
+function rememberStatus(mark: "ok" | "pending", title: string, sub: string): void {
+  lastStatus = { at: Date.now(), mark, title, sub, stale: "" };
+  stopHeroClock();
+  heroClock = window.setInterval(renderHeroClock, 15000);
+  renderHeroClock();
+}
+
+function markStale(reason: string): void {
+  if (!lastStatus) { invalidateToolStates(); return; }
+  lastStatus.stale = reason;
+  renderHeroClock();
 }
 
 function updateStatus(result: RunResult, tool: string): void {
@@ -487,11 +534,11 @@ function updateStatus(result: RunResult, tool: string): void {
   }
   const scope = toolLabel(tool);
   if (unknown) {
-    setHero("pending", `${scope}尚未全部確認`, "有工具缺少設定或未取得檢查結果，請查看詳細輸出。");
+    rememberStatus("pending", `${scope}尚未全部確認`, "有工具缺少設定或未取得檢查結果，請查看詳細輸出。");
   } else if (pending) {
-    setHero("pending", `${pending} 個工具有差異`, "比較的是工具設定與本機保存設定；請查看差異再決定如何同步。");
+    rememberStatus("pending", `${pending} 個工具有差異`, "比較的是工具設定與本機保存設定；請查看差異再決定如何同步。");
   } else {
-    setHero("ok", `${scope}設定一致`, "與本機保存的設定一致；尚未檢查雲端是否有新版本。");
+    rememberStatus("ok", `${scope}設定一致`, "與本機保存的設定一致；尚未檢查雲端是否有新版本。");
   }
 }
 
@@ -500,18 +547,19 @@ async function runCommand(cmd: AcgCommand): Promise<void> {
   if (!bridge || running || !configured || pendingPreview || restartRequired) return;
   if (cmd === "apply") { openApply(); return; }
   const tool = cmd === "pull" ? "all" : selectedTool;
-  invalidateToolStates(cmd === "status" ? "檢查中…" : "需重新檢查");
+  if (cmd === "status") invalidateToolStates("檢查中…");
   setHero("none", `${COMMAND_LABELS[cmd]}中…`, `操作範圍：${toolLabel(tool)}`);
   const result = await perform(`${COMMAND_LABELS[cmd]}（${toolLabel(tool)}）`,
     () => bridge.run(cmd, tool), cmd !== "status");
   if (!result) return;
   if (cmd === "status") updateStatus(result, tool);
   else {
-    invalidateToolStates();
+    markStale(`剛執行${COMMAND_LABELS[cmd]}`);
     if (result.code !== 0) setHero("fail", "操作未完成", firstErrorLine(result.output));
   }
   if (cmd === "pull") {
     await refreshMemory();
+    if (result.code !== 0) offerLogin(result.output);
     if (result.code === 0) {
       const status = await bridge.run("status", selectedTool);
       updateStatus(status, selectedTool);
@@ -539,6 +587,7 @@ async function previewPush(scope: PushScope = selectedTool): Promise<void> {
   previewOpener = document.activeElement as HTMLElement | null;
   const label = scope === "memory" ? "上傳記憶" : `上傳變更（${toolLabel(scope)}）`;
   const result = await perform(`${label}前預覽`, () => bridge.preview_push(scope));
+  if (result && result.code !== 0) offerLogin(result.output);
   if (!result || result.code !== 0) return;
   if (!("needs_confirmation" in result) || !result.needs_confirmation) {
     outputState.textContent = "沒有待上傳內容";
@@ -600,7 +649,7 @@ confirmYes.addEventListener("click", async () => {
   if (!bridge || !pending || running || currentView !== "output") return;
   pendingPreview = null;
   confirmBox.hidden = true;
-  invalidateToolStates();
+  markStale(pending.label);
   const result = await perform(pending.label, () => pending.kind === "push"
     ? bridge.confirm_push(pending.scope, pending.token)
     : pending.kind === "apply" ? bridge.confirm_apply(pending.token)
@@ -740,7 +789,7 @@ async function skillAction(action: "share" | "unshare" | "package"): Promise<voi
       res = await bridge.unshare_skills(names);
     }
     if (action !== "package") {
-      invalidateToolStates();
+      markStale("技能已變更");
       await loadSkills();
     }
     return res;
@@ -837,12 +886,16 @@ async function submitSetup(provider: string, panel: HTMLElement, switching = fal
   panel.querySelector('[aria-invalid="true"]')?.removeAttribute("aria-invalid");
   const dataDir = field(panel, "data-dir").value;
   const repoUrl = provider === "git" ? field(panel, "repo-url").value : "";
+  // 私有 HTTPS 儲存庫需要綁一個 gh 已登入的帳號;切換表單是複製來的,欄位可能不存在
+  const account = provider === "git"
+    ? (panel.querySelector<HTMLInputElement>('[data-field="account"]')?.value ?? "")
+    : "";
   const folder = provider === "gdrive" ? field(panel, "gdrive-folder").value : "";
   const space = panel.querySelector<HTMLInputElement>('[data-field="gdrive-space"]:checked')?.value ?? "visible";
   if (switching) showSettings(false);
   const task = () =>
     provider === "git"
-      ? bridge.setup_repo(repoUrl, dataDir)
+      ? bridge.setup_repo(repoUrl, dataDir, account)
       : bridge.setup_gdrive(dataDir, folder, space);
   const result = await perform(switching ? "切換同步方式" : "首次設定", task);
   if (result?.code === 0) {
@@ -884,6 +937,19 @@ async function loadInfo(): Promise<void> {
   }
 }
 $("#info-retry").addEventListener("click", () => { void boot(); });
+
+// 後端在 pull／push 被私有儲存庫拒絕時會印出這句;看到就給一顆直接去登入的按鈕
+const REFUSED_MARKER = "遠端拒絕存取";
+
+function offerLogin(output: string): void {
+  if (!output.includes(REFUSED_MARKER)) return;
+  feedback(appNotice, "遠端拒絕存取：這台還沒有能讀取資料儲存庫的帳號。", true);
+  const button = document.createElement("button");
+  button.className = "btn btn-primary";
+  button.textContent = "前往設定登入";
+  button.addEventListener("click", () => { showSettings(true); });
+  appNotice.append(document.createTextNode(" "), button);
+}
 
 function providerLabel(provider: string): string {
   return provider === "gdrive" ? "Google Drive" : "私人 Git 儲存庫";
@@ -951,10 +1017,16 @@ async function loadGithubAccess(): Promise<void> {
     githubAccounts.hidden = false;
   }
   githubActions.hidden = !access.installed || !access.device_login;
-  if (access.installed && !access.device_login) {
-    githubState.textContent +=
-      " 這個版本沒有內建瀏覽器登入：請在終端機執行 gh auth login 登入有權限的帳號，再回來重新開啟設定並選「改用 <帳號>」。";
-  }
+  // 沒有內建瀏覽器登入的版本:給一顆真的按鈕,替使用者開終端機跑 gh 的登入
+  githubFallback.hidden = !access.installed || access.device_login;
+}
+
+async function terminalGithubLogin(): Promise<void> {
+  const bridge = api();
+  if (!bridge) return;
+  githubState.textContent = "正在開啟終端機…";
+  const result = await bridge.github_terminal_login();
+  githubState.textContent = result.output;
 }
 
 async function useGithubAccount(account: string): Promise<void> {
@@ -1007,6 +1079,8 @@ async function startGithubLogin(): Promise<void> {
 }
 
 githubLoginBtn.addEventListener("click", () => void startGithubLogin());
+$("#github-terminal-login").addEventListener("click", () => void terminalGithubLogin());
+$("#github-recheck").addEventListener("click", () => void loadGithubAccess());
 
 githubCodeCopy.addEventListener("click", async () => {
   const ok = await copyText(githubCodeValue.textContent ?? "");
