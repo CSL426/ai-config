@@ -165,6 +165,15 @@ def execute(
     from ..memory_plan import plan
 
     operation = plan(action, project)
+    if action in {"adopt", "release"} and not operation.changes:
+        # 沒有事要做就不要建備份;預覽已經證明什麼都不會改
+        for warning in operation.warnings:
+            log_warn(warning)
+        if action == "adopt":
+            log_success("這個專案的日誌已經在共用記憶裡")
+        else:
+            log_info("這個專案的日誌本來就沒有接進共用記憶")
+        return MemoryExecutionResult(code=0)
     with _mutation(
         enabling=action == "enable", action=action, project=project,
         lock_held=lock_held,

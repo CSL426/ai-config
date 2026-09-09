@@ -86,6 +86,7 @@ def _pull_preflight() -> "tuple[int, int] | None":
     fetch = _run_repo_git("fetch", "--quiet")
     if fetch.returncode != 0:
         _git_failure("Fetching repository updates", fetch)
+        _hint_remote_access(fetch)
         return None
 
     counts = _run_repo_git(
@@ -185,6 +186,32 @@ def _remote_is_read_only() -> bool:
     return any(
         marker in detail
         for marker in ("denied", "permission", "403", "unauthorized", "read-only")
+    )
+
+
+_REMOTE_REFUSED = (
+    "repository not found",
+    "authentication failed",
+    "could not read username",
+    "permission denied",
+    "403",
+    "publickey",
+)
+
+
+def _hint_remote_access(result: subprocess.CompletedProcess[str]) -> None:
+    """After a refused fetch, say what to do instead of only what failed.
+
+    A private repository answers an anonymous or wrong-account request
+    with "not found", which reads like a typo rather than a login problem.
+    """
+    detail = (result.stderr + result.stdout).lower()
+    if not any(marker in detail for marker in _REMOTE_REFUSED):
+        return
+    log_info("遠端拒絕存取:資料儲存庫可能是私有的,這台還沒有能讀取它的帳號憑證。")
+    log_info(
+        f"執行 {ENTRYPOINT} login <GitHub 帳號> 把帳號綁到資料儲存庫,"
+        "或在 Desktop 的設定裡選擇帳號。"
     )
 
 

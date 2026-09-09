@@ -27,6 +27,7 @@ from ..paths import (
 from .apply import _init_tools, _selected_tools
 from .sync import (
     _git_failure,
+    _hint_remote_access,
     _remote_is_read_only,
     _repository_operation,
     _run_repo_git,
@@ -231,6 +232,7 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
     fetch = _run_repo_git("fetch", "--quiet")
     if fetch.returncode != 0:
         _git_failure("Fetching repository updates", fetch)
+        _hint_remote_access(fetch)
         return None
 
     upstream = _run_repo_git(

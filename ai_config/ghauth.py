@@ -46,6 +46,22 @@ class GhAuthError(RuntimeError):
     """Raised when a device-flow login cannot be completed."""
 
 
+# 沒有內建瀏覽器登入時,使用者能做的事;CLI 與 Desktop 共用同一句
+TERMINAL_LOGIN_HINT = (
+    "請在終端機執行 gh auth login 登入有權限的帳號,"
+    "再回到這裡重新開啟設定並選「改用 <帳號>」。"
+)
+
+
+def device_login_available(environ: "dict[str, str] | None" = None) -> bool:
+    """Whether this build can run the browser login at all."""
+    try:
+        get_client_id(environ)
+    except GhAuthError:
+        return False
+    return True
+
+
 def get_client_id(environ: "dict[str, str] | None" = None) -> str:
     environment = os.environ if environ is None else environ
     client_id = environment.get("AI_CONFIG_GITHUB_CLIENT_ID") or GITHUB_CLIENT_ID

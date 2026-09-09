@@ -132,6 +132,8 @@ export interface SettingsInfo {
 }
 
 export interface GithubAccess {
+  /** 正式建置才有瀏覽器登入;沒有時只能用 gh 已登入的帳號 */
+  device_login: boolean;
   repository: string;
   installed: boolean;
   logged_in: boolean;
