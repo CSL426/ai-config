@@ -39,9 +39,7 @@ def _pull_preflight() -> "tuple[int, int] | None":
     operation = _repository_operation()
     if operation is not None:
         if operation != "<invalid>":
-            log_error(
-                f"Data repository has a {operation} in progress; pull cancelled."
-            )
+            log_error(f"Data repository has a {operation} in progress; pull cancelled.")
         return None
 
     # 只看已追蹤檔案的改動:fast-forward 不會碰到未追蹤的新檔,
@@ -50,17 +48,11 @@ def _pull_preflight() -> "tuple[int, int] | None":
     if status.returncode != 0:
         _git_failure("Reading repository status", status)
         return None
-    if status.stdout.strip():
-        log_error("Data repository has uncommitted changes; pull cancelled.")
-        print(status.stdout.rstrip())
-        dirty = [line[3:] for line in status.stdout.splitlines() if line.strip()]
-        if all(path.startswith(f"{MEMORY_DIR_NAME}/") for path in dirty):
-            log_info(f"這些是尚未保存的記憶,先執行 {ENTRYPOINT} memory push")
-        return None
+    # 已追蹤檔案有修改也不先擋:git 的 fast-forward 只在遠端動到同一批檔案時
+    # 才會拒絕,而且拒絕時本機修改原封不動。讓 git 判斷,重疊時再解釋。
+    report_dirty_tracked(status.stdout)
 
-    untracked = _run_repo_git(
-        "ls-files", "--others", "--exclude-standard"
-    )
+    untracked = _run_repo_git("ls-files", "--others", "--exclude-standard")
     if untracked.returncode == 0 and untracked.stdout.strip():
         count = len(untracked.stdout.strip().splitlines())
         log_info(
@@ -141,7 +133,8 @@ def do_sync(tool: str) -> int:
     if behind:
         fast_forward = _run_repo_git("merge", "--ff-only", "@{upstream}")
         if fast_forward.returncode != 0:
-            _git_failure("Fast-forwarding repository updates", fast_forward)
+            if not explain_merge_refusal(fast_forward):
+                _git_failure("Fast-forwarding repository updates", fast_forward)
             return 1
         log_success(
             f"Data repository fast-forwarded by {behind} "
@@ -156,6 +149,7 @@ def do_sync(tool: str) -> int:
     print()
     log_info(f"Run {ENTRYPOINT} apply to deploy")
     return 0
+
 
 def _run_repo_git(
     *args: str,
@@ -213,6 +207,50 @@ def _hint_remote_access(result: subprocess.CompletedProcess[str]) -> None:
         f"執行 {ENTRYPOINT} login <GitHub 帳號> 把帳號綁到資料儲存庫,"
         "或在 Desktop 的設定裡選擇帳號。"
     )
+
+
+def report_dirty_tracked(porcelain: str) -> list[str]:
+    """Tell the user which tracked files carry unsaved changes; return them."""
+    dirty = [line[3:] for line in porcelain.splitlines() if line.strip()]
+    if not dirty:
+        return dirty
+    log_info(f"有 {len(dirty)} 個尚未保存的修改;遠端沒有動到同一批檔案時 pull 照常進行")
+    for path in dirty[:8]:
+        print(f"  {path}")
+    if len(dirty) > 8:
+        print(f"  … 另有 {len(dirty) - 8} 個")
+    return dirty
+
+
+_OVERWRITE_MARKERS = (
+    "would be overwritten by merge",
+    "would be overwritten by checkout",
+    "please commit your changes or stash them",
+)
+
+
+def explain_merge_refusal(result: subprocess.CompletedProcess[str]) -> bool:
+    """After a refused fast-forward, say which local edits collided and what to do.
+
+    git already kept the working tree intact; the job here is to turn its
+    message into the next command rather than leave people at 'cancelled'.
+    """
+    text = result.stderr + result.stdout
+    if not any(marker in text.lower() for marker in _OVERWRITE_MARKERS):
+        return False
+    files = [
+        line.strip()
+        for line in text.splitlines()
+        if line.startswith(("\t", "    ")) and line.strip()
+    ]
+    log_error("遠端也改了這些本機尚未保存的檔案,pull 取消,本機修改保留:")
+    for path in files:
+        print(f"  {path}")
+    if files and all(path.startswith(f"{MEMORY_DIR_NAME}/") for path in files):
+        log_info(f"先執行 {ENTRYPOINT} memory push 保存記憶,再 pull")
+    else:
+        log_info(f"先執行 {ENTRYPOINT} push 保存本機修改,再 pull;或放棄修改後重試")
+    return True
 
 
 def _git_failure(action: str, result: subprocess.CompletedProcess[str]) -> None:
