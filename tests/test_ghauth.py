@@ -797,7 +797,19 @@ def test_git_obtains_credentials_through_the_bound_helper(
         check=False,
         timeout=60,
     )
-    assert result.returncode == 0, result.stderr
+    helper_probe = subprocess.run(
+        [sys.executable, "-m", "ai_config", "__git-credential", "CSL426", "get"],
+        input="protocol=https\nhost=github.com\n\n",
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+        timeout=60,
+    )
+    assert helper_probe.returncode == 0, helper_probe.stderr
+    assert "password=gho_fake_token" in helper_probe.stdout
+    assert result.returncode == 0, (
+        f"{result.stderr}\nhelper={ghauth.helper_value('CSL426')}"
+    )
     assert "username=CSL426" in result.stdout
     assert "password=gho_fake_token" in result.stdout
-    assert sys.executable  # 上面的 helper 用的就是這個直譯器
