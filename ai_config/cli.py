@@ -85,9 +85,7 @@ def _parent_uses_same_executable() -> bool:
     try:
         path = ctypes.create_unicode_buffer(32768)
         size = wintypes.DWORD(len(path))
-        if not kernel.QueryFullProcessImageNameW(
-            process, 0, path, ctypes.byref(size)
-        ):
+        if not kernel.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(size)):
             return False
         return os.path.samefile(path.value, sys.executable)
     finally:
@@ -116,6 +114,11 @@ def standalone_main() -> int:
     open when this process owns the console, since that console dies with
     the process and would take the output with it.
     """
+    if sys.argv[1:2] == ["__git-credential"]:
+        # git 把我們當 credential helper 呼叫:stdout 是憑證協定的通道,
+        # 不能印任何提示;從沒有主控台的 Desktop 叫起來時 Windows 會配一個新
+        # 主控台,看起來像雙擊,若照一般流程就會往 stdout 印「按 Enter 關閉」
+        return console_main()
     no_arguments = len(sys.argv) <= 1
     if no_arguments and gui_assets_bundled():
         code = _run_gui_guarded()
@@ -133,7 +136,10 @@ def standalone_main() -> int:
         print()
     code = console_main()
     gui_launch = sys.argv[1:] in (
-        ["gui"], ["desktop"], ["gui", "--wait"], ["desktop", "--wait"]
+        ["gui"],
+        ["desktop"],
+        ["gui", "--wait"],
+        ["desktop", "--wait"],
     )
     if keep_window and (not gui_launch or code != 0):
         _pause_before_closing()
@@ -156,8 +162,11 @@ def _run_gui_guarded() -> int:
 
 
 def _pause_before_closing() -> None:
-    print()
+    # 提示走 stderr:stdout 可能是別的程式在讀的管線
+    print(file=sys.stderr)
     try:
-        input("按 Enter 關閉視窗…")
+        sys.stderr.write("按 Enter 關閉視窗…")
+        sys.stderr.flush()
+        input()
     except (EOFError, KeyboardInterrupt):
         pass
