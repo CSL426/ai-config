@@ -310,6 +310,7 @@ def credential_helper_main(argv: list[str]) -> int:
     if operation != "get":
         return 0
     if sys.stdin.isatty():
+        sys.stderr.write("acg credential helper: 沒有收到 git 的請求(stdin 是終端機)\n")
         return 0
     request: dict[str, str] = {}
     for line in sys.stdin:
@@ -327,6 +328,12 @@ def credential_helper_main(argv: list[str]) -> int:
         return 1
     token = account_token(account)
     if not token:
+        # git 會把 helper 的 stderr 原樣轉給使用者;說清楚是哪一步沒拿到
+        located = shutil.which("gh") or "(PATH 裡找不到 gh)"
+        sys.stderr.write(
+            f"acg credential helper: gh auth token --user {account} 沒有回傳 token"
+            f"(gh={located});請先在這台 gh auth login 登入 {account}\n"
+        )
         return 1
     # 走 buffer:Windows 的文字模式會把 \n 換成 \r\n,憑證協定要的是純 LF
     sys.stdout.buffer.write(f"username={account}\npassword={token}\n".encode())
@@ -344,6 +351,40 @@ _AUTH_REFUSAL_MARKERS = (
     "read-only",
     "authentication",
 )
+
+
+def helper_self_test(account: str) -> str:
+    """Run the bound helper the way git would and describe the outcome.
+
+    When git says 'could not read Username', this is the step that tells
+    whether acg itself failed to start, gh had no token, or the helper
+    answered fine and the problem lies in git's own configuration.
+    """
+    command = [*_acg_command(), HELPER_MARKER, account, "get"]
+    try:
+        result = subprocess.run(
+            command,
+            input="protocol=https\nhost=github.com\n\n",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"helper 無法啟動:{exc}"
+    if result.returncode == 0 and "password=" in result.stdout:
+        return "helper 直接執行正常,問題出在 git 呼叫 helper 的設定"
+    first = next(
+        (
+            line
+            for line in (result.stderr or result.stdout).splitlines()
+            if line.strip()
+        ),
+        f"exit {result.returncode}",
+    )
+    return f"helper 失敗:{first}"
 
 
 def git_push_probe(repo_dir: Path) -> "tuple[bool | None, str]":
@@ -476,12 +517,15 @@ def check_push_access(remote_url: str, repo_dir: "Path | None" = None) -> GhStat
         return status
     status.account_can_push = answer == "true"
     if repo_dir is not None and status.account_can_push:
-        # 說出 git 自己的錯誤,不然使用者只看到「無法確認」不知道要做什麼
+        # 說出 git 自己的錯誤,不然使用者只看到「無法確認」不知道要做什麼;
+        # 綁定帳號時再親自跑一次 helper,分辨是 acg、gh 還是 git 設定的問題
         why = f":{git_detail}" if git_detail else ""
+        probe = f";{helper_self_test(status.bound)}" if status.bound else ""
         status.detail = (
             f"{status.account} 有儲存庫寫入權,但 "
             + ("git 憑證驗證失敗" if git_access is False else "git 推送測試沒有成功")
             + why
+            + probe
         )
         return status
     if repo_dir is None:
