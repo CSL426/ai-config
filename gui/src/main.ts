@@ -1,4 +1,5 @@
 import "./style.css";
+import { closeActiveSelect, initializeSelects } from "./select";
 
 import type {
   AcgApi, AcgCommand, ApplyCategory, ChangePreview, GithubAccess, MemoryAction,
@@ -210,6 +211,7 @@ function showView(view: MainView, focus = true): void {
     return;
   }
   if (currentView === "apply" && view !== "output" && view !== "apply") resetCategories();
+  closeActiveSelect();
   currentView = view;
   $("#hero").hidden = view !== "status" || !configured;
   setupBox.hidden = view !== "status" || configured;
@@ -224,6 +226,41 @@ function showView(view: MainView, focus = true): void {
     target.tabIndex = -1;
     target.focus({ preventScroll: true });
   }
+}
+
+function goBack(): void {
+  if (running) return;
+  if (pendingPreview) {
+    void closePreview();
+    return;
+  }
+  const previous = currentView;
+  if (previous === "status") return;
+
+  let target: MainView = "status";
+  if (previous === "output") {
+    target = outputReturn;
+  } else if (previous === "export") {
+    target = "skills";
+  }
+  showView(target);
+
+  let opener: HTMLElement | null = null;
+  switch (previous) {
+    case "memory":
+      opener = $("#memory-open");
+      break;
+    case "skills":
+      opener = $("#package-open");
+      break;
+    case "apply":
+      opener = $("[data-cmd=apply]");
+      break;
+    case "export":
+      opener = $("#skill-package");
+      break;
+  }
+  opener?.focus({ preventScroll: true });
 }
 
 function openOutput(): void {
@@ -589,9 +626,6 @@ async function closePreview(): Promise<void> {
   }
 }
 $("#confirm-no").addEventListener("click", () => { void closePreview(); });
-confirmBox.addEventListener("keydown", event => {
-  if (event.key === "Escape" && !running) { event.preventDefault(); void closePreview(); }
-});
 
 function matchesSkillFilter(skill: SkillEntry, filter: string): boolean {
   if (filter === "shared") return skill.shared;
@@ -1047,11 +1081,16 @@ settingsBox.addEventListener("click", event => {
   if (event.target === settingsBox) showSettings(false);
 });
 document.addEventListener("keydown", event => {
-  if (settingsBox.hidden) return;
+  if (event.defaultPrevented || event.isComposing) return;
   if (event.key === "Escape") {
     event.preventDefault();
-    showSettings(false);
-  } else if (event.key === "Tab") {
+    if (event.repeat || closeActiveSelect()) return;
+    if (!settingsBox.hidden) showSettings(false);
+    else goBack();
+    return;
+  }
+  if (settingsBox.hidden) return;
+  if (event.key === "Tab") {
     const focusable = Array.from(settingsBox.querySelectorAll<HTMLElement>(
       'button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]',
     )).filter(element => element.getClientRects().length > 0);
@@ -1122,11 +1161,11 @@ for (const radio of settingsBox.querySelectorAll<HTMLInputElement>('input[name="
 }
 
 $("#package-open").addEventListener("click", () => { showView("skills"); });
-$("#package-back").addEventListener("click", () => { showView("status"); });
+$("#package-back").addEventListener("click", goBack);
 $("#output-toggle").addEventListener("click", openOutput);
 $("#skill-output").addEventListener("click", openOutput);
-$("#output-back").addEventListener("click", () => { showView(outputReturn); });
-$("#export-back").addEventListener("click", () => { showView("skills"); });
+$("#output-back").addEventListener("click", goBack);
+$("#export-back").addEventListener("click", goBack);
 
 const MEMORY_LABELS: Record<MemoryAction, string> = {
   enable: "啟用共用記憶", disable: "停用共用記憶",
@@ -1209,6 +1248,9 @@ async function refreshMemory(): Promise<void> {
   memoryLoading = true;
   memoryInfo = null;
   feedback($("#memory-feedback"), "讀取記憶狀態中…");
+  $("#memory-status").textContent = "讀取中…";
+  $("#memory-status").dataset.state = "loading";
+  $("#memory-summary").textContent = "正在確認共用位置與版本管理狀態…";
   syncControls();
   try {
     const info = await bridge.memory_info(projectToken ?? undefined);
@@ -1218,6 +1260,27 @@ async function refreshMemory(): Promise<void> {
     }
     memoryInfo = info;
     feedback($("#memory-feedback"), "");
+    const status = $("#memory-status");
+    let statusText: string;
+    if (info.shared_status === "ok") {
+      statusText = "共用位置已連結";
+    } else if (info.shared_status === "conflict") {
+      statusText = "共用位置需處理";
+    } else {
+      statusText = "尚未啟用連結";
+    }
+    status.textContent = statusText;
+    status.dataset.state = info.shared_status === "ok" ? "success" : "warning";
+
+    let summaryText: string;
+    if (!info.tracked) {
+      summaryText = "記憶尚未納入 Git；上傳前可先預覽將納管的檔案。";
+    } else if (info.git_status === "clean") {
+      summaryText = "記憶已納入 Git，目前沒有本機檔案變更。";
+    } else {
+      summaryText = `記憶已納入 Git，有 ${info.changed_paths.length} 個檔案變更，準備好後可預覽上傳。`;
+    }
+    $("#memory-summary").textContent = summaryText;
     const data = $("#memory-data");
     data.replaceChildren();
     textRow(data, "資料根", info.data_root);
@@ -1230,10 +1293,29 @@ async function refreshMemory(): Promise<void> {
     for (const entry of info.entries) {
       const item = document.createElement("div");
       item.className = "memory-entry";
-      textRow(item, toolLabel(entry.tool), entry.status === "installed"
-        ? "規則已安裝，請開新會話驗證" : entry.status === "blocked" ? "入口受阻" : "規則未安裝");
+      item.dataset.state = entry.status;
+      const heading = document.createElement("strong");
+      heading.textContent = toolLabel(entry.tool);
+      const state = document.createElement("span");
+      state.className = "memory-entry-state";
+      let stateLabel: string;
+      if (entry.status === "installed") {
+        stateLabel = "規則已安裝，請開新會話驗證";
+      } else if (entry.status === "blocked") {
+        stateLabel = "入口受阻";
+      } else {
+        stateLabel = "規則未安裝";
+      }
+      state.textContent = stateLabel;
+      item.append(heading, state);
       textRow(item, "CLI", entry.cli_installed ? "已安裝" : "未安裝");
-      textRow(item, "規則位置", entry.path);
+      const details = document.createElement("details");
+      details.className = "memory-details";
+      const summary = document.createElement("summary");
+      summary.textContent = "規則位置";
+      details.append(summary);
+      textRow(details, "", entry.path);
+      item.append(details);
       if (entry.reason) textRow(item, "原因", entry.reason);
       entries.append(item);
     }
@@ -1270,17 +1352,25 @@ async function refreshMemory(): Promise<void> {
       locations.append(row);
     }
   } catch (error) { feedback($("#memory-feedback"), `無法讀取記憶狀態：${String(error)}`, true); }
-  finally { memoryLoading = false; syncControls(); }
+  finally {
+    memoryLoading = false;
+    if (!memoryInfo) {
+      $("#memory-status").textContent = "讀取失敗";
+      $("#memory-status").dataset.state = "error";
+      $("#memory-summary").textContent = "目前無法確認記憶狀態，請重新整理。";
+    }
+    syncControls();
+  }
 }
 
-$("#apply-back").addEventListener("click", () => { showView("status"); });
+$("#apply-back").addEventListener("click", goBack);
 $("#pull-apply").addEventListener("click", openApply);
 $("#apply-preview").addEventListener("click", () => { void previewChange("apply"); });
 for (const id of ["#category-settings", "#category-skills"]) {
   $(id).addEventListener("change", syncControls);
 }
 $("#memory-open").addEventListener("click", () => { showView("memory"); void refreshMemory(); });
-$("#memory-back").addEventListener("click", () => { showView("status"); });
+$("#memory-back").addEventListener("click", goBack);
 $("#memory-refresh").addEventListener("click", () => { void refreshMemory(); });
 $("#memory-push").addEventListener("click", () => { void previewPush("memory"); });
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-memory-action]")) {
@@ -1305,6 +1395,10 @@ async function boot(): Promise<void> {
   syncControls();
   await loadInfo();
   if (connected && configured) await loadSkills();
+}
+initializeSelects();
+for (const button of document.querySelectorAll<HTMLElement>("[id$='-back'], #settings-close, #confirm-no")) {
+  button.title = `${button.textContent?.trim()}（Esc）`;
 }
 if (window.pywebview) void boot();
 else {

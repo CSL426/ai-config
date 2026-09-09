@@ -181,6 +181,16 @@
       </section>
 
       <section class="hero" id="hero" aria-label="同步狀態">
+        <nav class="resource-nav" aria-label="內容管理">
+          <button class="resource-entry resource-memory" id="memory-open" aria-label="記憶管理">
+            <span class="resource-name">記憶管理 <span aria-hidden="true">›</span></span>
+            <span class="resource-description">共用知識 · 專案日誌</span>
+          </button>
+          <button class="resource-entry" id="package-open" aria-label="技能管理">
+            <span class="resource-name">技能管理 <span aria-hidden="true">›</span></span>
+            <span class="resource-description">分享技能 · 匯出安裝</span>
+          </button>
+        </nav>
         <div class="hero-state" id="hero-state" role="status">
           <span class="hero-mark" id="hero-mark" aria-hidden="true"></span>
           <h2 class="hero-title" id="hero-title">尚未檢查</h2>
@@ -225,8 +235,6 @@
 
         <p class="command-hint">設定與獨立技能下載後可選擇套用；共用記憶會立即更新。</p>
         <div class="hero-links">
-          <button class="link-btn" id="memory-open">共用記憶與專案日誌</button>
-          <button class="link-btn" id="package-open">分享與準備 AI 技能</button>
           <button class="link-btn" id="output-toggle">查看詳細輸出</button>
         </div>
       </section>
@@ -248,25 +256,48 @@
 
       <section class="management-panel" id="memory-panel" hidden aria-labelledby="memory-title">
         <div class="panel-head">
-          <button class="btn btn-ghost" id="memory-back">‹ 返回</button>
-          <h2 id="memory-title">共用記憶與專案日誌</h2>
+          <button class="btn btn-ghost" id="memory-back" title="返回（Esc）">‹ 返回</button>
+          <h2 id="memory-title">記憶管理</h2>
           <button class="btn btn-ghost" id="memory-refresh">重新整理</button>
         </div>
+        <p class="memory-intro">設定、技能、記憶存放在同一份資料庫，分開管理。</p>
         <p class="feedback" id="memory-feedback" role="status" hidden></p>
-        <section class="memory-section" aria-labelledby="memory-global-title">
-          <h3 id="memory-global-title">全域記憶</h3>
-          <div id="memory-data"></div>
-          <div id="memory-entries"></div>
+        <section class="memory-overview" aria-labelledby="memory-global-title">
+          <div class="memory-section-head">
+            <div>
+              <h3 id="memory-global-title">共用記憶</h3>
+              <p>讓 Claude Code、Codex 與 Antigravity 讀取同一份知識。</p>
+            </div>
+            <span class="memory-badge" id="memory-status" role="status">尚未讀取</span>
+          </div>
+          <p id="memory-summary">正在確認共用位置與版本管理狀態…</p>
           <div class="package-buttons">
-            <button class="btn" data-memory-action="enable">啟用共用記憶</button>
-            <button class="btn btn-ghost" data-memory-action="disable">停用共用記憶</button>
+            <button class="btn btn-primary" data-memory-action="enable">啟用共用記憶</button>
             <button class="btn" id="memory-push">上傳記憶</button>
+            <button class="btn btn-ghost" data-memory-action="disable">停用共用記憶</button>
           </div>
           <p class="package-hint" id="memory-global-reasons"></p>
+          <p class="memory-sync-note">記憶下載後立即更新；設定與技能可另外選擇是否套用。</p>
+          <details class="memory-details">
+            <summary>儲存位置與檔案變更</summary>
+            <div id="memory-data"></div>
+          </details>
         </section>
-        <section class="memory-section" aria-labelledby="memory-project-title">
-          <h3 id="memory-project-title">專案日誌</h3>
-          <button class="btn" id="memory-select-project">選擇本機專案資料夾</button>
+        <section class="memory-section" aria-labelledby="memory-tools-title">
+          <div class="memory-section-head">
+            <h3 id="memory-tools-title">工具讀取入口</h3>
+            <span class="package-hint">安裝規則後，請開新會話驗證</span>
+          </div>
+          <div id="memory-entries"></div>
+        </section>
+        <section class="memory-section memory-project-section" aria-labelledby="memory-project-title">
+          <div class="memory-section-head">
+            <div>
+              <h3 id="memory-project-title">專案記憶與日誌</h3>
+              <p>選擇專案，檢視專屬記憶，決定工作日誌是否跨機器同步。</p>
+            </div>
+            <button class="btn" id="memory-select-project">選擇專案</button>
+          </div>
           <div id="memory-project">尚未選擇專案。</div>
           <div class="package-buttons">
             <button class="btn" data-memory-action="adopt" disabled>同步此專案日誌</button>
@@ -275,7 +306,7 @@
           <p class="package-hint" id="memory-project-reasons"></p>
         </section>
         <section class="memory-section" aria-label="記憶資料夾">
-          <h3>開啟資料夾</h3>
+          <h3>開啟記憶資料夾</h3>
           <div id="memory-locations"></div>
         </section>
       </section>

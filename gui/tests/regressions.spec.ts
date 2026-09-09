@@ -165,7 +165,8 @@ test("技能搜尋與篩選保留選取，計數隨操作更新", async ({ page 
   await page.locator("#skill-list").getByRole("checkbox").check();
   await expect(page.locator("#skill-selection")).toContainText(/已選(?:取)?\s*1(?:\s|個|項|$)/);
   await page.locator("#skill-search").fill("");
-  await page.locator("#skill-filter").selectOption("shared");
+  await page.locator(".acg-select-trigger").click();
+  await page.getByRole("option", { name: "已分享", exact: true }).click();
   await expect(page.locator("#skill-list").getByRole("checkbox")).toHaveCount(18);
   await expect(page.locator("#skill-list").getByRole("checkbox").first()).toBeChecked();
   await page.locator("#skill-package").click();
