@@ -95,8 +95,9 @@ class GuiApi(ManagementApi):
         and asks GitHub, which is too slow to sit in the startup path.
         """
         from ..ghauth import check_push_access, describe
+        from ..paths import SCRIPT_DIR
 
-        status = check_push_access(self._redacted_remote())
+        status = check_push_access(self._redacted_remote(), SCRIPT_DIR)
         return {
             "repository": status.repository,
             "installed": status.installed,
@@ -105,6 +106,7 @@ class GuiApi(ManagementApi):
             "accounts": status.accounts,
             "can_push": status.can_push,
             "actionable": status.actionable,
+            "bound": status.bound,
             "lines": describe(status),
         }
 
@@ -133,11 +135,12 @@ class GuiApi(ManagementApi):
         """One poll step; the page decides how long to keep waiting."""
         from ..ghauth import (
             GhAuthError,
+            bind_account,
             check_push_access,
             poll_device_login,
-            setup_git_credentials,
             store_token,
         )
+        from ..paths import SCRIPT_DIR
 
         if not isinstance(device_code, str) or not device_code:
             return {"code": 1, "status": "error", "output": "✗ 沒有登入請求"}
@@ -151,40 +154,43 @@ class GuiApi(ManagementApi):
         stored, detail = store_token(token)
         if not stored:
             return {"code": 1, "status": "error", "output": f"✗ {detail}"}
-        setup_git_credentials()
-        status = check_push_access(self._redacted_remote())
+        # detail 是登入的帳號名;只綁在資料庫上,不動 gh 其他用途
+        bound, why = bind_account(SCRIPT_DIR, detail)
+        if not bound:
+            return {"code": 1, "status": "error", "output": f"✗ 綁定帳號失敗:{why}"}
+        status = check_push_access(self._redacted_remote(), SCRIPT_DIR)
         if status.can_push:
             return {
                 "code": 0,
                 "status": "done",
-                "output": f"✓ 已連結 {status.account},現在可以上傳",
+                "output": f"✓ 資料庫已綁定 {status.account},現在可以上傳",
             }
         return {
             "code": 1,
             "status": "error",
-            "output": f"✗ {status.account} 對 {status.repository} 沒有寫入權",
+            "output": f"✗ {status.detail}",
         }
 
     def github_use_account(self, account: str = "") -> dict:
-        """Switch to an account gh already knows, then reconnect git."""
-        from ..ghauth import check_push_access, setup_git_credentials, switch_account
+        """Bind an account gh already knows to the data repository."""
+        from ..ghauth import bind_account, check_push_access
+        from ..paths import SCRIPT_DIR
 
         if not isinstance(account, str) or not account.strip():
             return {"code": 1, "output": "✗ 沒有指定帳號"}
         if not self._lock.acquire(blocking=False):
             return {"code": 1, "output": "⚠ 另一個動作正在執行中,請稍候再試。"}
         try:
-            ok, detail = switch_account(account.strip())
+            ok, detail = bind_account(SCRIPT_DIR, account.strip())
             if not ok:
-                return {"code": 1, "output": f"✗ 切換帳號失敗:{detail}"}
-            setup_git_credentials()
-            status = check_push_access(self._redacted_remote())
+                return {"code": 1, "output": f"✗ 綁定帳號失敗:{detail}"}
+            status = check_push_access(self._redacted_remote(), SCRIPT_DIR)
             if not status.can_push:
                 return {
                     "code": 1,
-                    "output": f"✗ {account} 仍然無法寫入 {status.repository}",
+                    "output": f"✗ {status.detail}",
                 }
-            return {"code": 0, "output": f"✓ 已切換到 {account},現在可以上傳"}
+            return {"code": 0, "output": f"✓ 資料庫已綁定 {account},現在可以上傳"}
         finally:
             self._lock.release()
 
