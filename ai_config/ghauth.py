@@ -122,8 +122,10 @@ def _run_gh(
 ) -> subprocess.CompletedProcess:
     # GH_TOKEN 讓 gh 以指定帳號行事,不用切換作用中帳號
     env = {**os.environ, "GH_TOKEN": token} if token else None
+    # Windows 的 CreateProcess 只找 .exe;gh 若是 .cmd 包裝(scoop、npm)要先解析
+    executable = shutil.which("gh") or "gh"
     return subprocess.run(
-        ["gh", *args],
+        [executable, *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -649,7 +651,14 @@ def store_token(token: str) -> tuple[bool, str]:
     previous = active_account()
     try:
         result = subprocess.run(
-            ["gh", "auth", "login", "--hostname", "github.com", "--with-token"],
+            [
+                shutil.which("gh") or "gh",
+                "auth",
+                "login",
+                "--hostname",
+                "github.com",
+                "--with-token",
+            ],
             input=token,
             capture_output=True,
             text=True,
