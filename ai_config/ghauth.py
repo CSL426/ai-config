@@ -31,10 +31,10 @@ from pathlib import Path
 
 from .safety import is_reparse_point
 
-# GitHub OAuth app 的 client ID。開放原始碼儲存庫中為空字串,正式建置由
-# GitHub secret 注入,本機開發用 AI_CONFIG_GITHUB_CLIENT_ID 環境變數。
-# device flow 不需要 client secret,所以這裡沒有對應的機密。
-GITHUB_CLIENT_ID = ""
+# acg 在 GitHub 註冊的 OAuth App(CSL426 帳號下,名稱 acg)的 client ID。
+# device flow 只用 client ID,不需要 client secret;ID 本身不是機密,gh 也是
+# 把自己的寫死在原始碼裡。AI_CONFIG_GITHUB_CLIENT_ID 環境變數可覆蓋。
+GITHUB_CLIENT_ID = "Ov23likUtXAKeAHe9IFf"
 DEVICE_CODE_URL = "https://github.com/login/device/code"
 ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 DEVICE_VERIFY_URL = "https://github.com/login/device"

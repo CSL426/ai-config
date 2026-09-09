@@ -155,19 +155,26 @@ def test_interactive_login_refuses_without_a_terminal(
     assert "終端機" in detail
 
 
-def test_client_id_constant_is_empty_in_source() -> None:
-    # 和 Google Drive 一樣:公開儲存庫裡不放 client ID,由建置注入
-    assert ghauth.GITHUB_CLIENT_ID == ""
+def test_client_id_is_acgs_own_oauth_app() -> None:
+    # device flow 只用 client ID,不是機密;跟 gh 一樣寫死在原始碼,每個建置都能登入
+    assert ghauth.GITHUB_CLIENT_ID.startswith("Ov23li")
+    assert len(ghauth.GITHUB_CLIENT_ID) == 20
+    assert ghauth.get_client_id({}) == ghauth.GITHUB_CLIENT_ID
+    assert ghauth.device_login_available({}) is True
 
 
 def test_get_client_id_reads_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ghauth.get_client_id({"AI_CONFIG_GITHUB_CLIENT_ID": "abc"}) == "abc"
 
 
-def test_get_client_id_explains_a_build_without_login() -> None:
+def test_get_client_id_explains_a_build_without_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ghauth, "GITHUB_CLIENT_ID", "")
     with pytest.raises(ghauth.GhAuthError) as excinfo:
         ghauth.get_client_id({})
     assert "GITHUB_CLIENT_ID" in str(excinfo.value)
+    assert ghauth.device_login_available({}) is False
 
 
 def _fake_urlopen(monkeypatch: pytest.MonkeyPatch, payload: dict) -> None:
