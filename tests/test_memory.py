@@ -207,8 +207,15 @@ def test_adopt_moves_journal_into_project_memory_and_release_undoes(
     assert not (target / "logs" / ".gitignore").exists()
     link = repo_dir / "memory/journal" / memory.session_slug(project)
     assert is_reparse_point(link) and link.resolve() == target.resolve()
-    assert (project / ".remember/MIGRATED-TO.txt").is_file()
-    assert not (project / ".remember/recent.md").exists()
+    # 專案內的 .remember 變成指向共用日誌的連結,打開就看得到同一份資料
+    entry = project / ".remember"
+    assert is_reparse_point(entry) and entry.resolve() == target.resolve()
+    assert (entry / "recent.md").read_text(
+        encoding="utf-8"
+    ) == "# Recent\n- did things\n"
+    exclude = _git(project, "rev-parse", "--git-path", "info/exclude").stdout.strip()
+    assert ".remember" in (project / exclude).read_text(encoding="utf-8").splitlines()
+    assert _git(project, "status", "--short").stdout.strip() == ""
     assert "journal/" in (repo_dir / "memory/.gitignore").read_text(encoding="utf-8")
     # 使用者全域設定:加了 data_dir,原本的鍵保留
     config = (home_dir / ".remember/config.json").read_text(encoding="utf-8")
@@ -222,6 +229,60 @@ def test_adopt_moves_journal_into_project_memory_and_release_undoes(
     assert not is_reparse_point(link) and link.is_dir()
     assert (link / "recent.md").is_file()
     assert not (target / "recent.md").exists()
+    # release 之後 .remember 改指本機那份
+    assert is_reparse_point(entry) and entry.resolve() == link.resolve()
+    assert (entry / "recent.md").is_file()
+
+
+def test_readopt_repairs_a_migrated_remember_folder(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    (home_dir / ".claude/plugins/cache/claude-plugins-official/remember/0.25.0").mkdir(
+        parents=True
+    )
+    project = tmp_path / "proj"
+    project.mkdir()
+    assert _git(project, "init", "-q").returncode == 0
+    assert (
+        _git(project, "remote", "add", "origin", "git@github.com:o/r.git").returncode
+        == 0
+    )
+    write(project / ".remember/recent.md", "# Recent\n")
+    assert (
+        _run_in_project(repo_dir, home_dir, project, "memory", "adopt").returncode == 0
+    )
+
+    # 模擬舊版留下的狀態:搬完只剩通知與 .gitignore 的普通目錄
+    entry = project / ".remember"
+    entry.unlink()
+    entry.mkdir()
+    write(entry / "MIGRATED-TO.txt", "Memory data migrated to:\n  somewhere\n")
+    write(entry / ".gitignore", "*\n")
+
+    again = _run_in_project(repo_dir, home_dir, project, "memory", "adopt")
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert ".remember ->" in again.stdout
+    target = repo_dir / "memory/projects/o--r/journal"
+    assert is_reparse_point(entry) and entry.resolve() == target.resolve()
+
+    third = _run_in_project(repo_dir, home_dir, project, "memory", "adopt")
+    assert "已經在共用記憶裡" in third.stdout
+
+
+def test_foreign_remember_link_is_left_alone(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    (home_dir / ".claude/plugins/cache/claude-plugins-official/remember/0.25.0").mkdir(
+        parents=True
+    )
+    project = tmp_path / "proj"
+    project.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (project / ".remember").symlink_to(elsewhere)
+
+    result = _run_in_project(repo_dir, home_dir, project, "memory", "adopt")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "指向別處" in result.stdout
+    assert (project / ".remember").resolve() == elsewhere.resolve()
 
 
 def test_adopt_refuses_to_override_a_custom_data_dir(tmp_path: Path) -> None:
