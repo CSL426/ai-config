@@ -35,6 +35,7 @@ def usage() -> None:
     print()
     print(f"{BOLD}Commands:{NC}")
     print("  setup           Configure data repository and verify push access")
+    print("                  --account <name> bind a gh account (private HTTPS repos)")
     print("  init [tool]     Gather configs from tool homes into the data repository")
     print("  apply [tool]    Deploy data repository configs to tool home directories")
     print("                  --category settings|skills|all (default all)")
