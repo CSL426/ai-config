@@ -182,14 +182,18 @@ def _journal(result: MemoryPlan) -> None:
                     "搬回本機；資料庫產生 Git 刪除差異",
                     source=entry,
                 )
+        _entry_changes(result, root, link)
         result.warnings.append(
             "後續提交並同步會移除資料庫日誌；其他機器既有連結將受 pull 影響。Git 歷史保留。"
         )
         return
     if state == "adopted":
+        # 已收編:只剩專案內的 .remember 入口可能要補
+        _entry_changes(result, root, target)
         return
     memory._check_journal_tree(link)
-    if legacy is not None:
+    migrate = memory._is_legacy_journal(legacy)
+    if migrate:
         memory._check_journal_tree(legacy)
     if not target.exists():
         result.change("mkdir", target, "建立可同步的專案日誌")
@@ -206,11 +210,6 @@ def _journal(result: MemoryPlan) -> None:
         return target / candidate
 
     sources = [link] if state == "local" else []
-    migrate = (
-        legacy is not None
-        and legacy.is_dir()
-        and not (legacy / memory.MIGRATED_NOTE).is_file()
-    )
     if migrate:
         sources.append(legacy)
     for source in sources:
@@ -252,6 +251,37 @@ def _journal(result: MemoryPlan) -> None:
         source=target,
         target=target,
     )
+    _entry_changes(result, root, target, migrating=migrate)
+
+
+def _entry_changes(
+    result: MemoryPlan, root: Path, target: Path, *, migrating: bool = False
+) -> None:
+    """<project>/.remember becomes a link to the journal shown to people."""
+    entry = memory.project_entry(root)
+    if entry is None:
+        return
+    result.relevant_paths.append(entry)
+    state, detail = memory.project_entry_state(root, target)
+    if state == "ok":
+        return
+    if state == "foreign":
+        result.warnings.append(f"專案的 .remember 指向別處,不會更動:{detail}")
+        return
+    if state == "stale":
+        result.change("unlink", entry, "移除舊的 .remember 連結", target=Path(detail))
+    elif state == "plain":
+        leftovers = [] if migrating else memory._entry_leftovers(entry)
+        if leftovers:
+            raise RuntimeError(
+                ".remember 仍有未搬移的內容:" + ", ".join(p.name for p in leftovers[:5])
+            )
+        result.change("rmdir", entry, "移除只剩搬移通知的 .remember 目錄")
+    result.change("link", entry, "專案內直接看到日誌", source=target, target=target)
+    exclude = memory.project_git_exclude(root)
+    if exclude is not None:
+        path, text = exclude
+        _text_change(result, path, text, "專案的 git 不再列出 .remember")
 
 
 def plan(action: str, project: Path | None = None) -> MemoryPlan:

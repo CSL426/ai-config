@@ -683,6 +683,121 @@ def legacy_journal_dir(root: Path) -> "Path | None":
     return root / ".remember"
 
 
+def _is_legacy_journal(legacy: "Path | None") -> bool:
+    """A plain .remember folder the plugin filled before adopt.
+
+    A linked .remember is acg's own entry (or somebody else's link), never
+    content to migrate.
+    """
+    return (
+        legacy is not None
+        and legacy.is_dir()
+        and not (legacy.is_symlink() or is_reparse_point(legacy))
+        and not (legacy / MIGRATED_NOTE).is_file()
+    )
+
+
+# ─── project entry: <project>/.remember shows the journal ─────
+
+
+def project_entry(root: Path) -> "Path | None":
+    """The folder people open to read a project's journal.
+
+    After adopt the data lives in the shared notebook, so the folder is a
+    link to it; after release it links to the local journal instead. It
+    is the same path the plugin used before acg, so nothing else changes.
+    """
+    return legacy_journal_dir(root)
+
+
+def project_entry_state(root: Path, expected: Path) -> tuple[str, str]:
+    """ok / missing / plain / stale / foreign / none, with a detail."""
+    entry = project_entry(root)
+    if entry is None:
+        return "none", ""
+    if entry.is_symlink() or is_reparse_point(entry):
+        try:
+            current = _reparse_target(entry)
+        except RuntimeError as exc:
+            return "foreign", str(exc)
+        if _path_identity(current, expected):
+            return "ok", ""
+        # 指向本機日誌或共用日誌的另一邊:是 acg 自己建的,可以改指
+        ours = (journal_link(root), project_journal_dir(project_key(root)))
+        if any(_path_identity(current, candidate) for candidate in ours):
+            return "stale", str(current)
+        return "foreign", str(current)
+    if entry.exists():
+        return "plain", ""
+    return "missing", ""
+
+
+def _entry_leftovers(entry: Path) -> list[Path]:
+    return [p for p in entry.iterdir() if p.name not in (".gitignore", MIGRATED_NOTE)]
+
+
+def project_git_exclude(root: Path) -> "tuple[Path, str] | None":
+    """The exclude file and its updated text, or None when nothing to do.
+
+    A linked .remember would otherwise show up as untracked in the
+    project's own git status; info/exclude is local and never committed.
+    """
+    ignored = subprocess.run(
+        ["git", "-C", str(root), "check-ignore", "-q", ".remember"],
+        capture_output=True,
+        check=False,
+        timeout=10,
+    )
+    if ignored.returncode == 0:
+        return None
+    exclude = _git_output(root, "rev-parse", "--git-path", "info/exclude")
+    if not exclude:
+        return None
+    path = Path(exclude)
+    if not path.is_absolute():
+        path = root / path
+    current = _read_text(path) if path.is_file() else ""
+    if ".remember" in current.splitlines():
+        return None
+    body = current.rstrip("\n") + "\n" if current.strip() else ""
+    return path, body + ".remember\n"
+
+
+def point_project_entry(root: Path, target: Path) -> list[str]:
+    """Make <project>/.remember show the journal at ``target``.
+
+    Returns lines describing what changed; a foreign link is reported
+    and left alone rather than replaced.
+    """
+    entry = project_entry(root)
+    if entry is None:
+        return []
+    state, detail = project_entry_state(root, target)
+    if state in ("none", "ok"):
+        return []
+    if state == "foreign":
+        return [f"專案的 .remember 指向別處,未更動:{detail}"]
+    if state == "stale":
+        _remove_journal_link(entry, Path(detail))
+    elif state == "plain":
+        leftovers = _entry_leftovers(entry)
+        if leftovers:
+            names = ", ".join(p.name for p in leftovers[:5])
+            raise RuntimeError(f".remember 仍有未搬移的內容:{names}")
+        for name in (".gitignore", MIGRATED_NOTE):
+            (entry / name).unlink(missing_ok=True)
+        os.rmdir(entry)
+    _create_journal_link(target, entry)
+    lines = [f"專案的 .remember -> {target}"]
+    exclude = project_git_exclude(root)
+    if exclude is not None:
+        path, text = exclude
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_text_atomic(path, text)
+        lines.append("已寫入專案的 .git/info/exclude,git status 不會列出 .remember")
+    return lines
+
+
 def journal_state(root: Path) -> tuple[str, str]:
     """adopted / local / legacy / none / foreign for one project."""
     link = journal_link(root)
@@ -699,11 +814,7 @@ def journal_state(root: Path) -> tuple[str, str]:
     if link.is_dir():
         return "local", str(link)
     legacy = legacy_journal_dir(root)
-    if (
-        legacy is not None
-        and legacy.is_dir()
-        and not (legacy / MIGRATED_NOTE).is_file()
-    ):
+    if _is_legacy_journal(legacy):
         return "legacy", str(legacy)
     return "none", ""
 
@@ -716,26 +827,23 @@ def adopt_journal(root: Path) -> list[str]:
     legacy .remember content is moved here instead, the same way it does it.
     """
     state, detail = journal_state(root)
-    if state == "adopted":
-        return []
-    if state == "foreign":
-        raise RuntimeError(f"日誌連結已指向別處:{detail}")
     key = project_key(root)
     target = project_journal_dir(key)
+    if state == "adopted":
+        # 已收編過:只補專案內的 .remember 入口(舊版搬完只留一張通知)
+        return point_project_entry(root, target)
+    if state == "foreign":
+        raise RuntimeError(f"日誌連結已指向別處:{detail}")
     link = journal_link(root)
     lines: list[str] = []
     legacy = legacy_journal_dir(root)
+    migrate_legacy = _is_legacy_journal(legacy)
     _check_journal_tree(target)
     _check_journal_tree(link)
-    if legacy is not None:
+    if migrate_legacy:
         _check_journal_tree(legacy)
     ignore = memory_dir() / ".gitignore"
     assert_plain_path(ignore, directory=False)
-    migrate_legacy = (
-        legacy is not None
-        and legacy.is_dir()
-        and not (legacy / MIGRATED_NOTE).is_file()
-    )
     moves: list[tuple[Path, Path, str]] = []
     originals: dict[Path, bytes | None] = {}
     written: dict[Path, bytes | None] = {}
@@ -816,6 +924,11 @@ def adopt_journal(root: Path) -> list[str]:
     finally:
         WRITE_OBSERVER.reset(observer_token)
     lines.append(f"連結 {link.name} -> {target}")
+    # 收編已完成;專案入口是給人看的,建不起來只回報,不撤銷收編
+    try:
+        lines.extend(point_project_entry(root, target))
+    except (OSError, RuntimeError) as exc:
+        lines.append(f"專案的 .remember 入口未建立:{exc}")
     return lines
 
 
@@ -845,7 +958,12 @@ def release_journal(root: Path) -> list[str]:
         if errors:
             raise JournalRecoveryError("日誌移出失敗;" + ";".join(errors)) from exc
         raise
-    return [f"日誌改回本機目錄 {link},搬回 {moved} 項"]
+    lines = [f"日誌改回本機目錄 {link},搬回 {moved} 項"]
+    try:
+        lines.extend(point_project_entry(root, link))
+    except (OSError, RuntimeError) as exc:
+        lines.append(f"專案的 .remember 入口未更新:{exc}")
+    return lines
 
 
 # ─── index and git ────────────────────────────────────────────
