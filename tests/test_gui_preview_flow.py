@@ -80,7 +80,9 @@ def test_apply_preview_is_read_only_and_confirm_applies_with_backup(
         ],
     )
     preview = out["preview_apply"]
-    assert preview["code"] == 0 and preview["needs_confirmation"] is True, preview
+    assert preview["code"] == 0 and preview["needs_confirmation"] is True, (
+        f"{preview.get('error')}: {str(preview.get('output'))[:800]}"
+    )
     assert preview["scope"] == {"tool": "claude", "category": "settings"}
     destinations = {
         Path(c["destination"]).name: c["operation"] for c in preview["changes"]
@@ -134,7 +136,9 @@ def test_memory_enable_preview_then_confirm_installs_entries(tmp_path: Path) -> 
         ],
     )
     preview = out["preview_memory"]
-    assert preview["code"] == 0 and preview["needs_confirmation"] is True, preview
+    assert preview["code"] == 0 and preview["needs_confirmation"] is True, (
+        f"{preview.get('error')}: {str(preview.get('output'))[:800]}"
+    )
     assert {c["operation"] for c in preview["changes"]} >= {"link", "modify", "add"}
     assert out["read_live"]["text"] == "live rules\n"
     assert out["confirm_memory"]["code"] == 0, out["confirm_memory"]
@@ -212,7 +216,9 @@ def test_first_agy_skills_preview_then_confirm(tmp_path: Path) -> None:
             ["confirm_apply", "preview_apply"],
         ],
     )
-    assert out["preview_apply"]["code"] == 0, out["preview_apply"]
+    assert out["preview_apply"]["code"] == 0, (
+        f"{out['preview_apply'].get('error')}: {str(out['preview_apply'].get('output'))[:800]}"
+    )
     assert out["confirm_apply"]["code"] == 0, out["confirm_apply"]
     canonical = home_dir / ".gemini/config/skills"
     alias = home_dir / ".gemini/antigravity-cli/skills"
@@ -224,7 +230,9 @@ def test_first_agy_skills_preview_then_confirm(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("fail_junction", [False, True])
 def test_junction_apply_orders_targets_and_rolls_back_new_parents(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_junction: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_junction: bool,
 ) -> None:
     from ai_config import applyplan, links, review
 
@@ -273,7 +281,9 @@ def test_junction_apply_orders_targets_and_rolls_back_new_parents(
 
     monkeypatch.setattr(links, "_try_create_junction", create_junction)
     if fail_junction:
-        with pytest.raises(applyplan.ApplyFailure, match="Cannot create Junction") as error:
+        with pytest.raises(
+            applyplan.ApplyFailure, match="Cannot create Junction"
+        ) as error:
             applyplan.execute(candidate)
         assert error.value.recovery_required is False
         assert list(home.iterdir()) == []
@@ -286,7 +296,8 @@ def test_junction_apply_orders_targets_and_rolls_back_new_parents(
 
 
 def test_failed_junction_does_not_create_its_target(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from ai_config import applyplan, links
 
@@ -294,7 +305,8 @@ def test_failed_junction_does_not_create_its_target(
     monkeypatch.setattr(links, "_try_create_junction", lambda *_: False)
     with pytest.raises(OSError, match="Cannot create Junction"):
         applyplan._link(
-            tmp_path / "alias", {"kind": "junction", "target": str(target)},
+            tmp_path / "alias",
+            {"kind": "junction", "target": str(target)},
         )
     assert list(tmp_path.iterdir()) == []
 
@@ -309,10 +321,16 @@ def single_apply_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     def make(destination: Path, desired: dict, content: Path | None = None):
         name = str(destination)
         candidate = applyplan.ApplyPlan(
-            tmp_path, ["agy"], "skills",
-            {name: review.node(destination)}, {name: desired},
+            tmp_path,
+            ["agy"],
+            "skills",
+            {name: review.node(destination)},
+            {name: desired},
             {name: content} if content is not None else {},
-            [{"destination": name}], [destination], "", [],
+            [{"destination": name}],
+            [destination],
+            "",
+            [],
         )
         candidate.identity = candidate.current_identity()
         return candidate
@@ -321,7 +339,9 @@ def single_apply_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_apply_copy_failure_preserves_existing_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, single_apply_plan,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    single_apply_plan,
 ) -> None:
     from ai_config import applyplan, review
 
@@ -349,8 +369,11 @@ def test_apply_copy_failure_preserves_existing_file(
 @pytest.mark.parametrize("original_kind", ["file", "link"])
 @pytest.mark.parametrize("recovery", ["restored", "external", "blocked"])
 def test_failed_link_write_restores_or_reports_recovery(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, single_apply_plan,
-    original_kind: str, recovery: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    single_apply_plan,
+    original_kind: str,
+    recovery: str,
 ) -> None:
     from ai_config import applyplan, review
 
@@ -366,7 +389,8 @@ def test_failed_link_write_restores_or_reports_recovery(
         write(destination, "original\n")
     original = review.node(destination)
     candidate = single_apply_plan(
-        destination, {"kind": kind, "target": str(new_target)},
+        destination,
+        {"kind": kind, "target": str(new_target)},
     )
     original_link, original_copy = applyplan._link, applyplan.shutil.copy2
 
@@ -380,7 +404,9 @@ def test_failed_link_write_restores_or_reports_recovery(
         return original_link(path, record)
 
     def fail_restore_copy(source, target):
-        if recovery == "blocked" and Path(source).parent.name.startswith("apply-review-"):
+        if recovery == "blocked" and Path(source).parent.name.startswith(
+            "apply-review-"
+        ):
             raise OSError("injected recovery failure")
         return original_copy(source, target)
 
