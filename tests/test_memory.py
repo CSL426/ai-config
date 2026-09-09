@@ -128,14 +128,35 @@ def test_only_memory_changes_detection(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_pull_blocked_by_unsaved_memory_points_at_memory_push(tmp_path: Path) -> None:
-    repo_dir, home_dir = make_full_repo(tmp_path)
-    write(repo_dir / "memory" / "MEMORY.md", "# notes\n")
-    assert _git(repo_dir, "init", "-q").returncode == 0
-    assert _git(repo_dir, "add", "-A").returncode == 0
-    assert _git(repo_dir, "commit", "-q", "-m", "base").returncode == 0
-    write(repo_dir / "memory" / "MEMORY.md", "# notes\n- remembered\n")
+    from test_packaging_and_sync import (
+        configure_git_identity,
+        create_data_remote,
+        run_data_cli,
+        run_git,
+    )
 
-    result = run_ai_config(repo_dir, home_dir, "pull")
+    remote, data_repo = create_data_remote(tmp_path)
+    # 遠端與本機都改了同一份記憶,fast-forward 才會被 git 拒絕
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", str(remote), str(other)], check=True, capture_output=True
+    )
+    configure_git_identity(other)
+    write(other / "memory" / "MEMORY.md", "# notes\n- from the other machine\n")
+    run_git(other, "add", ".")
+    run_git(other, "commit", "-m", "remote memory")
+    run_git(other, "push", "origin", "HEAD")
+    write(data_repo / "memory" / "MEMORY.md", "# notes\n")
+    run_git(data_repo, "add", ".")
+    run_git(data_repo, "commit", "-m", "local base")
+    # 讓本機先落後一個提交,再改同一份檔案而不提交
+    run_git(data_repo, "reset", "-q", "--hard", "HEAD~1")
+    run_git(data_repo, "fetch", "-q")
+    write(data_repo / "memory" / "MEMORY.md", "# notes\n- remembered here\n")
+    home = tmp_path / "home2"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull")
     assert result.returncode == 1
     assert "memory push" in result.stdout
 

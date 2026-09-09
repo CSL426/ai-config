@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- pull 不再因為本機有未保存的修改就整個取消:交給 git 判斷,遠端沒動到同一批
+  檔案時照常 fast-forward,本機修改保留。真的重疊時列出是哪些檔案,並指出先
+  `acg push`(記憶就是 `acg memory push`)再 pull。Google Drive 模式同樣處理。
+- 瀏覽器登入向 GitHub 要的 scope 加上 `read:org`,gh 收 token 時要求這個最低範圍,
+  先前會回「missing required scope read:org」。
 - Desktop 的「用瀏覽器登入 GitHub」在所有版本都可用了:acg 現在有自己註冊的
   GitHub OAuth App,client ID 內建在程式裡,不再需要 CI secret 或環境變數。
   按下去開瀏覽器、顯示一組碼、網頁確認後自動綁定帳號,不用開終端機。

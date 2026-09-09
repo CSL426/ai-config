@@ -704,7 +704,8 @@ def test_pull_refuses_dirty_conflicting_change_without_autostash(
     result = run_data_cli(data_repo, home, command, "claude")
 
     assert result.returncode != 0
-    assert "uncommitted changes" in result.stderr
+    # 由 git 判斷重疊後拒絕;acg 只負責把原因和下一步講清楚
+    assert "本機修改保留" in result.stderr
     assert run_git(data_repo, "rev-parse", "HEAD") == head_before
     assert run_git(data_repo, "status", "--short") == "M claude/settings.json"
     assert run_git(data_repo, "stash", "list") == ""
@@ -728,18 +729,63 @@ def test_pull_proceeds_with_untracked_files(tmp_path: Path) -> None:
     assert (data_repo / "notes.txt").read_text(encoding="utf-8") == "local notes\n"
 
 
-def test_pull_still_refuses_modified_tracked_files(tmp_path: Path) -> None:
-    _, data_repo = create_data_remote(tmp_path)
-    tracked = data_repo / "claude" / "settings.json"
-    tracked.write_text('{"changed": true}\n', encoding="utf-8")
+def _push_from_another_clone(
+    tmp_path: Path, remote: Path, relative: str, content: str
+) -> None:
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", str(remote), str(other)], check=True, capture_output=True
+    )
+    configure_git_identity(other)
+    target = other / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    run_git(other, "add", ".")
+    run_git(other, "commit", "-m", f"remote edits {relative}")
+    run_git(other, "push", "origin", "HEAD")
+
+
+def test_pull_fast_forwards_around_unrelated_local_changes(tmp_path: Path) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    _push_from_another_clone(tmp_path, remote, "claude/CLAUDE.md", "remote rules\n")
+    local = data_repo / "claude" / "settings.json"
+    local.write_text('{"changed": true}\n', encoding="utf-8")
     home = tmp_path / "home"
     home.mkdir()
 
     result = run_data_cli(data_repo, home, "pull", "claude")
 
-    # 已追蹤檔案的改動才是真的會被 merge 覆蓋的東西
+    # git 本來就允許:遠端沒動到本機修改的檔案,fast-forward 安全
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "尚未保存的修改" in result.stdout
+    assert (data_repo / "claude" / "CLAUDE.md").read_text(
+        encoding="utf-8"
+    ) == "remote rules\n"
+    assert local.read_text(encoding="utf-8") == '{"changed": true}\n'
+
+
+def test_pull_refuses_when_remote_touches_a_locally_modified_file(
+    tmp_path: Path,
+) -> None:
+    remote, data_repo = create_data_remote(tmp_path)
+    _push_from_another_clone(
+        tmp_path, remote, "claude/settings.json", '{"remote": 1}\n'
+    )
+    local = data_repo / "claude" / "settings.json"
+    local.write_text('{"changed": true}\n', encoding="utf-8")
+    head_before = run_git(data_repo, "rev-parse", "HEAD")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
     assert result.returncode != 0
-    assert "uncommitted changes" in result.stderr
+    assert "本機修改保留" in result.stderr
+    assert "claude/settings.json" in result.stdout
+    assert "push" in result.stdout
+    # git 拒絕時什麼都沒動
+    assert local.read_text(encoding="utf-8") == '{"changed": true}\n'
+    assert run_git(data_repo, "rev-parse", "HEAD") == head_before
 
 
 def test_pull_refuses_local_ahead_branch(tmp_path: Path) -> None:

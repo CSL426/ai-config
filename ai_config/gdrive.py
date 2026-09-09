@@ -52,6 +52,8 @@ FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 
 def scope_for_space(space: str) -> str:
     return SCOPE_HIDDEN if space == "hidden" else SCOPE_VISIBLE
+
+
 OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
@@ -80,9 +82,7 @@ def get_client_id(environ: "dict[str, str] | None" = None) -> str:
 
 def get_client_secret(environ: "dict[str, str] | None" = None) -> str:
     environment = os.environ if environ is None else environ
-    return (
-        environment.get("AI_CONFIG_GDRIVE_CLIENT_SECRET") or GDRIVE_CLIENT_SECRET
-    )
+    return environment.get("AI_CONFIG_GDRIVE_CLIENT_SECRET") or GDRIVE_CLIENT_SECRET
 
 
 def token_file_path(environ: "dict[str, str] | None" = None) -> Path:
@@ -144,11 +144,7 @@ def delete_token(environ: "dict[str, str] | None" = None) -> None:
 def generate_pkce() -> tuple[str, str]:
     verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
-    challenge = (
-        base64.urlsafe_b64encode(digest)
-        .decode("ascii")
-        .rstrip("=")
-    )
+    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
     return verifier, challenge
 
 
@@ -337,8 +333,7 @@ def refresh_access_token(
     if not isinstance(access_token, str) or not access_token:
         delete_token(environ)
         raise GDriveAuthError(
-            "Google Drive 授權已失效或過期,請重新登入 "
-            "(acg setup --provider gdrive)"
+            "Google Drive 授權已失效或過期,請重新登入 (acg setup --provider gdrive)"
         )
     previous = load_token(environ) or {}
     token_data = {
@@ -364,7 +359,9 @@ def get_valid_access_token(
 ) -> str:
     token_data = load_token(environ)
     if not token_data or "access_token" not in token_data:
-        raise GDriveAuthError("尚未登入 Google Drive,請先執行 acg setup --provider gdrive")
+        raise GDriveAuthError(
+            "尚未登入 Google Drive,請先執行 acg setup --provider gdrive"
+        )
     if not token_has_scope(token_data, environ):
         # 換儲存位置就換 scope,舊 token 對新位置的 API 一律 403
         delete_token(environ)
@@ -427,7 +424,9 @@ def make_drive_request(
                 if rf:
                     try:
                         new_token = refresh_access_token(rf, environ)
-                        req_headers["Authorization"] = f"Bearer {new_token['access_token']}"
+                        req_headers["Authorization"] = (
+                            f"Bearer {new_token['access_token']}"
+                        )
                         continue
                     except GDriveAuthError:
                         pass
@@ -460,9 +459,7 @@ def _escape_query_value(value: str) -> str:
 
 def _require_folder_id(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value:
-        raise GDriveError(
-            f"Google Drive did not return an id for folder {name!r}"
-        )
+        raise GDriveError(f"Google Drive did not return an id for folder {name!r}")
     return value
 
 
@@ -534,11 +531,13 @@ class GDriveClient:
         return self._create_folder(parent_id, name)
 
     def _create_folder(self, parent_id: str, name: str) -> str:
-        metadata = json.dumps({
-            "name": name,
-            "mimeType": FOLDER_MIME_TYPE,
-            "parents": [parent_id],
-        })
+        metadata = json.dumps(
+            {
+                "name": name,
+                "mimeType": FOLDER_MIME_TYPE,
+                "parents": [parent_id],
+            }
+        )
         url = f"{DRIVE_API_BASE}/files?fields=id"
         _, _, body = make_drive_request(
             url,
@@ -600,9 +599,11 @@ class GDriveClient:
         return files[0] if files else None
 
     def get_file_metadata(self, file_id: str) -> dict[str, Any]:
-        params = urllib.parse.urlencode({
-            "fields": "id,name,headRevisionId,modifiedTime",
-        })
+        params = urllib.parse.urlencode(
+            {
+                "fields": "id,name,headRevisionId,modifiedTime",
+            }
+        )
         url = f"{DRIVE_API_BASE}/files/{file_id}?{params}"
         _, _, body = make_drive_request(url, environ=self.environ)
         data = json.loads(body.decode("utf-8"))
@@ -731,7 +732,13 @@ class GDriveClient:
 def gdrive_pull(repo_dir: Path, tool: str) -> int:
     """§1.3 pull implementation for gdrive provider."""
     from .commands.status import show_status
-    from .commands.sync import _git_failure, _repository_operation, _run_repo_git
+    from .commands.sync import (
+        _git_failure,
+        _repository_operation,
+        _run_repo_git,
+        explain_merge_refusal,
+        report_dirty_tracked,
+    )
     from .console import log_header, log_success
 
     log_header("Sync repository changes (Google Drive)")
@@ -752,10 +759,7 @@ def gdrive_pull(repo_dir: Path, tool: str) -> int:
     if status.returncode != 0:
         _git_failure("Reading repository status", status)
         return 1
-    if status.stdout.strip():
-        log_error("Data repository has uncommitted changes; pull cancelled.")
-        print(status.stdout.rstrip())
-        return 1
+    report_dirty_tracked(status.stdout)
 
     branch = _run_repo_git(
         "symbolic-ref",
@@ -786,9 +790,7 @@ def gdrive_pull(repo_dir: Path, tool: str) -> int:
         repo_dir=repo_dir,
     )
     local_head = (
-        local_head_proc.stdout.strip()
-        if local_head_proc.returncode == 0
-        else None
+        local_head_proc.stdout.strip() if local_head_proc.returncode == 0 else None
     )
 
     if remote_commit == local_head:
@@ -839,11 +841,10 @@ def gdrive_pull(repo_dir: Path, tool: str) -> int:
                 return 1
 
         fetched_head = _run_repo_git("rev-parse", "FETCH_HEAD", repo_dir=repo_dir)
-        if (
-            fetched_head.returncode != 0
-            or fetched_head.stdout.strip() != remote_commit
-        ):
-            log_error("Google Drive repo.bundle does not match head.json; pull cancelled.")
+        if fetched_head.returncode != 0 or fetched_head.stdout.strip() != remote_commit:
+            log_error(
+                "Google Drive repo.bundle does not match head.json; pull cancelled."
+            )
             return 1
 
         merge_ff = _run_repo_git(
@@ -853,10 +854,11 @@ def gdrive_pull(repo_dir: Path, tool: str) -> int:
             repo_dir=repo_dir,
         )
         if merge_ff.returncode != 0:
-            log_error(
-                "Data repository is not safe to fast-forward; pull cancelled. "
-                "本機有未上傳的提交,先 push 或手動處理。"
-            )
+            if not explain_merge_refusal(merge_ff):
+                log_error(
+                    "Data repository is not safe to fast-forward; pull cancelled. "
+                    "本機有未上傳的提交,先 push 或手動處理。"
+                )
             return 1
 
         log_success("Data repository fast-forwarded from Google Drive")
@@ -944,7 +946,9 @@ def _gdrive_push_upload(repo_dir: Path) -> int:
         bundle_content = tmp_bundle_path.read_bytes()
 
         existing_bundle = client.find_file("repo.bundle")
-        old_revision = existing_bundle.get("headRevisionId") if existing_bundle else None
+        old_revision = (
+            existing_bundle.get("headRevisionId") if existing_bundle else None
+        )
 
         res = client.upload_file(
             "repo.bundle",
