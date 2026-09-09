@@ -19,6 +19,7 @@ gh for the bound account's token whenever git needs one.
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
