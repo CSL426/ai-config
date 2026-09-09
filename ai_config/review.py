@@ -11,6 +11,24 @@ from .paths import EXCLUDED_FILES
 from .safety import is_reparse_point
 
 
+def strip_extended_prefix(text: str) -> str:
+    """Drop Windows' ``\\\\?\\`` form so a Junction target compares like a path.
+
+    os.readlink reports Junction targets in the extended-length form. Left
+    alone, the target is no longer relative to the home it lives in and
+    every review of that home fails as "link outside managed home".
+    """
+    if text.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + text[8:]
+    if text.startswith(("\\\\?\\", "\\??\\")):
+        return text[4:]
+    return text
+
+
+def link_target(path: Path) -> str:
+    return strip_extended_prefix(os.readlink(path))
+
+
 def node(path: Path) -> dict:
     try:
         info = path.lstat()
@@ -19,7 +37,7 @@ def node(path: Path) -> dict:
     if is_reparse_point(path):
         return {
             "kind": "symlink" if path.is_symlink() else "junction",
-            "target": os.readlink(path),
+            "target": link_target(path),
         }
     if stat.S_ISDIR(info.st_mode):
         return {"kind": "directory"}
@@ -49,10 +67,12 @@ def digest(value: object) -> str:
 
 
 def fingerprint(paths: list[Path], values: object = None) -> str:
-    return digest({
-        "paths": {str(path): tree(path) for path in dict.fromkeys(paths)},
-        "values": values,
-    })
+    return digest(
+        {
+            "paths": {str(path): tree(path) for path in dict.fromkeys(paths)},
+            "values": values,
+        }
+    )
 
 
 def git_state(repo: Path) -> dict[str, str]:
@@ -72,7 +92,7 @@ def git_state(repo: Path) -> dict[str, str]:
             timeout=30,
             check=False,
         )
-        result[key] = f"{completed.returncode}:" + hashlib.sha256(
-            completed.stdout
-        ).hexdigest()
+        result[key] = (
+            f"{completed.returncode}:" + hashlib.sha256(completed.stdout).hexdigest()
+        )
     return result
