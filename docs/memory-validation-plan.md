@@ -10,8 +10,9 @@
 隔離 HOME 中的檔案測試、GUI mock 測試、原生桌面操作及 AI 新會話
 是不同層級的證據，不能互相替代。
 
-目前基線：已有 CLI 隔離測試與 Linux 安裝後測試；本計畫新增的
-category／GUI 契約尚未實作，Windows 記憶原生與三方新會話仍未完成。
+目前基線：CLI、category 與 GUI bridge 已有隔離測試；Linux 安裝後
+smoke 與 Chromium 互動測試已執行。Windows 完整原生驗收與三方
+AI 新會話仍未完成。
 已有 Windows workflow 不等於這批新增契約已通過 Windows 驗收。
 2026-09-08 的 CI 實測：記憶 enable 的預覽／確認在 Windows 通過（Junction）；
 apply 預覽 worker 在 Windows runner 回傳失敗，原因未查明，對應測試在
@@ -121,6 +122,9 @@ GUI screenshot 本身不能證明 backend 寫入或 Git 範圍正確。
 | U08 | 預覽過期、後端 BUSY、I/O 或復原失敗 | 顯示可讀原因；復原失敗保留備份位置，不自動重試寫入 |
 | U09 | 鍵盤、dialog 焦點、窄視窗、長路徑及多筆變更 | 操作可達，焦點回復、無橫向撐破；錯誤不只靠顏色 |
 | U10 | 偽造 scope／category／project token／location token | backend 拒絕，不能任意開路徑、執行 CLI 或改其他專案 |
+| U11 | Esc 返回、設定、預覽、執行中、IME 組字 | 一次關閉一層；取消先撤銷 token；busy 不跳頁；組字不誤觸導航 |
+| U12 | 自訂下拉選單的鍵盤、外部點擊、動態資料及 disabled | 值與篩選同步；焦點不困住；停用項不可選 |
+| U13 | 首頁記憶入口與 320／375／414／768 寬度 | 入口可見；記憶分區清楚；選單與主要操作不被水平裁切 |
 
 ## Windows 必測細節
 
