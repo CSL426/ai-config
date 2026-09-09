@@ -430,7 +430,9 @@ def test_setup_sets_upstream_for_existing_repo_without_remote(
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
     assert f"now tracks origin/{branch}" in output
-    assert run_git(local, "rev-parse", "--abbrev-ref", "@{upstream}") == f"origin/{branch}"
+    assert (
+        run_git(local, "rev-parse", "--abbrev-ref", "@{upstream}") == f"origin/{branch}"
+    )
 
 
 def test_setup_adopts_remote_branch_for_unborn_repo(tmp_path: Path) -> None:
@@ -453,7 +455,9 @@ def test_setup_adopts_remote_branch_for_unborn_repo(tmp_path: Path) -> None:
     assert result.returncode == 0, output
     assert "set it as upstream" in output
     assert run_git(local, "rev-parse", "HEAD") == run_git(seed, "rev-parse", "HEAD")
-    assert run_git(local, "rev-parse", "--abbrev-ref", "@{upstream}") == f"origin/{branch}"
+    assert (
+        run_git(local, "rev-parse", "--abbrev-ref", "@{upstream}") == f"origin/{branch}"
+    )
 
 
 def test_setup_leaves_unborn_repo_with_files_alone(tmp_path: Path) -> None:
@@ -864,9 +868,7 @@ def test_push_collects_commits_and_pushes_selected_tool(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
     assert "Configuration changes to commit" in result.stdout
     assert "Local configuration committed and pushed" in result.stdout
-    assert run_git(remote, "show", "HEAD:claude/settings.json") == (
-        '{"theme":"dark"}'
-    )
+    assert run_git(remote, "show", "HEAD:claude/settings.json") == ('{"theme":"dark"}')
     assert run_git(data_repo, "status", "--porcelain=v1") == ""
     assert run_git(data_repo, "log", "-1", "--pretty=%s") == (
         "chore: update claude settings"
@@ -1042,20 +1044,26 @@ def test_push_commit_message_uses_tools_and_changed_json_keys(
     monkeypatch.setattr(main_cli, "SCRIPT_DIR", data_repo)
     monkeypatch.setattr(sync_cli, "SCRIPT_DIR", data_repo)
 
-    assert main_cli._proposed_push_commit_message(
-        ["agy/settings.json", "claude/settings.json"]
-    ) == "chore: update claude and agy model settings"
+    assert (
+        main_cli._proposed_push_commit_message(
+            ["agy/settings.json", "claude/settings.json"]
+        )
+        == "chore: update claude and agy model settings"
+    )
 
 
 def test_push_commit_message_identifies_shared_skill() -> None:
     from ai_config.commands import push as main_cli
 
-    assert main_cli._proposed_push_commit_message(
-        [
-            "claude/shared/both/ci-check/SKILL.md",
-            "claude/shared/both/ci-check/scripts/check.py",
-        ]
-    ) == "chore: update ci-check shared skill"
+    assert (
+        main_cli._proposed_push_commit_message(
+            [
+                "claude/shared/both/ci-check/SKILL.md",
+                "claude/shared/both/ci-check/scripts/check.py",
+            ]
+        )
+        == "chore: update ci-check shared skill"
+    )
 
 
 def test_push_cancel_preserves_existing_changes_unstaged(tmp_path: Path) -> None:
@@ -1647,3 +1655,46 @@ def test_push_no_changes_does_not_create_commit(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
     assert "No local configuration changes to push" in result.stdout
     assert run_git(data_repo, "rev-parse", "HEAD") == head_before
+
+
+def test_refused_clone_explains_private_repository_and_accounts(monkeypatch) -> None:
+    import subprocess
+
+    from ai_config.commands import setup as setup_cli
+
+    refused = subprocess.CompletedProcess(
+        ["git"],
+        128,
+        stdout="",
+        stderr="remote: Repository not found.\nfatal: repository 'x' not found\n",
+    )
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        "ai_config.ghauth._logged_in_accounts", lambda: ("first", ["first", "second"])
+    )
+    message = setup_cli._explain_refused_clone(refused, "https://github.com/o/r.git")
+    assert "私有" in message and "--account" in message
+    assert "first, second" in message
+
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: None)
+    message = setup_cli._explain_refused_clone(refused, "https://github.com/o/r.git")
+    assert "winget install GitHub.cli" in message
+
+    plain = subprocess.CompletedProcess(
+        ["git"], 1, stdout="", stderr="fatal: Could not resolve host\n"
+    )
+    assert "私有" not in setup_cli._explain_refused_clone(
+        plain, "https://github.com/o/r.git"
+    )
+
+
+def test_clone_options_bind_the_account_from_the_first_fetch() -> None:
+    from ai_config.commands import setup as setup_cli
+
+    assert setup_cli._clone_options(None) == []
+    options = setup_cli._clone_options("CSL426")
+    # 先清掉全域 helper,再只加 acg 自己的
+    assert options[:2] == ["-c", "credential.helper="]
+    assert options[3].startswith("credential.helper=!") and options[3].endswith(
+        "__git-credential CSL426"
+    )

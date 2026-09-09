@@ -3,6 +3,7 @@
 import argparse
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -27,6 +28,7 @@ from ..console import (
     log_success,
     log_warn,
 )
+from ..paths import ENTRYPOINT
 
 
 class SetupError(RuntimeError):
@@ -110,9 +112,7 @@ def _repository_root(data_dir: Path) -> Path:
             os.path.abspath(data_dir)
         )
     if not same_directory:
-        raise SetupError(
-            f"Data directory must be the Git repository root: {data_dir}"
-        )
+        raise SetupError(f"Data directory must be the Git repository root: {data_dir}")
     return root
 
 
@@ -278,7 +278,9 @@ def _push_check_source(data_dir: Path, remote_name: str) -> str:
     fetched remote branch works just as well since only write access is
     being tested, not the content.
     """
-    head = _run_git("rev-parse", "--verify", "--quiet", "HEAD", cwd=data_dir, check=False)
+    head = _run_git(
+        "rev-parse", "--verify", "--quiet", "HEAD", cwd=data_dir, check=False
+    )
     if head.returncode == 0:
         return head.stdout.strip()
     branch = _run_git(
@@ -323,8 +325,7 @@ def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
         ).stdout.split()
         if len(remote_ref) < 2 or remote_ref[0] != local_head:
             verification_error = SetupError(
-                "Temporary verification ref was not created correctly: "
-                f"{check_ref}"
+                f"Temporary verification ref was not created correctly: {check_ref}"
             )
     finally:
         cleanup = _run_git(
@@ -353,21 +354,114 @@ def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
         raise verification_error
 
 
+_CLONE_REFUSED = (
+    "repository not found",
+    "authentication failed",
+    "could not read username",
+    "permission denied",
+    "403",
+    "publickey",
+)
+
+
+def _clone_options(account: "str | None") -> list[str]:
+    """Config written into the fresh clone so the first fetch already
+    uses the bound account; the empty first entry clears global helpers."""
+    if not account:
+        return []
+    from ..ghauth import helper_value
+
+    return [
+        "-c",
+        "credential.helper=",
+        "-c",
+        f"credential.helper={helper_value(account)}",
+    ]
+
+
+def _require_known_account(account: "str | None") -> None:
+    if not account:
+        return
+    from ..ghauth import _logged_in_accounts, account_token
+
+    if shutil.which("gh") is None:
+        raise SetupError("綁定帳號需要 GitHub CLI (gh),請先安裝並執行 gh auth login")
+    _active, accounts = _logged_in_accounts()
+    if account not in accounts or not account_token(account):
+        known = ", ".join(accounts) or "(none)"
+        raise SetupError(
+            f"gh 沒有 {account} 的登入紀錄(已知帳號:{known});"
+            f"先執行 gh auth login 登入它,再重跑 setup"
+        )
+
+
+def _explain_refused_clone(
+    result: "subprocess.CompletedProcess[str]", repo_url: str
+) -> str:
+    """A private repository answers a clone without credentials with
+    'not found'; say how to get credentials instead of echoing git."""
+    detail = _git_error_detail(result, "unknown Git error")
+    lowered = detail.lower()
+    if not any(marker in lowered for marker in _CLONE_REFUSED):
+        return f"Git command failed: {detail}"
+    lines = [
+        f"無法讀取 {repo_url}:{detail}",
+        "儲存庫可能是私有的,這台還沒有能讀取它的帳號憑證。",
+    ]
+    if shutil.which("gh") is None:
+        lines.append(
+            "請先安裝 GitHub CLI 並登入(https://cli.github.com;"
+            "Windows 可用 winget install GitHub.cli),再重跑 setup 並加上 --account <帳號>"
+        )
+        return "\n".join(lines)
+    from ..ghauth import _logged_in_accounts
+
+    try:
+        _active, accounts = _logged_in_accounts()
+    except (OSError, subprocess.SubprocessError):
+        accounts = []
+    if accounts:
+        lines.append(
+            f"gh 記得這些帳號:{', '.join(accounts)}。"
+            f"用有權限的那個重跑:{ENTRYPOINT} setup --repo-url <URL> --account <帳號>"
+        )
+    else:
+        lines.append(
+            f"先執行 gh auth login,再重跑:{ENTRYPOINT} setup --repo-url <URL> --account <帳號>"
+        )
+    return "\n".join(lines)
+
+
+def _clone(
+    repo_url: str, data_dir: Path, remote_name: str, account: "str | None"
+) -> None:
+    _require_known_account(account)
+    result = _run_git(
+        "clone",
+        *_clone_options(account),
+        "--origin",
+        remote_name,
+        repo_url,
+        str(data_dir),
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SetupError(_explain_refused_clone(result, repo_url))
+
+
 def _clone_or_open(
     data_dir: Path,
     repo_url: "str | None",
     remote_name: str,
+    account: "str | None" = None,
 ) -> Path:
     if data_dir.exists():
         if _is_reparse_point(data_dir):
             raise SetupError(
-                "Data repository root cannot be a symlink or junction: "
-                f"{data_dir}"
+                f"Data repository root cannot be a symlink or junction: {data_dir}"
             )
         if not data_dir.is_dir():
-            raise SetupError(
-                f"Data repository path is not a directory: {data_dir}"
-            )
+            raise SetupError(f"Data repository path is not a directory: {data_dir}")
         probe = _run_git(
             "rev-parse",
             "--show-toplevel",
@@ -378,17 +472,16 @@ def _clone_or_open(
             return _repository_root(data_dir)
         if repo_url is not None and not any(data_dir.iterdir()):
             _reject_embedded_http_credentials(repo_url)
-            _run_git("clone", "--origin", remote_name, repo_url, str(data_dir))
+            _clone(repo_url, data_dir, remote_name, account)
             return _repository_root(data_dir)
         raise SetupError(f"Data directory is not a Git repository: {data_dir}")
     if repo_url is None:
         raise SetupError(
-            "The data directory does not exist. "
-            "Provide --repo-url to clone it."
+            "The data directory does not exist. Provide --repo-url to clone it."
         )
     _reject_embedded_http_credentials(repo_url)
     data_dir.parent.mkdir(parents=True, exist_ok=True)
-    _run_git("clone", "--origin", remote_name, repo_url, str(data_dir))
+    _clone(repo_url, data_dir, remote_name, account)
     return _repository_root(data_dir)
 
 
@@ -411,10 +504,20 @@ def setup_repository(
     repo_url: "str | None" = None,
     remote_name: str = "origin",
     replace_remote: bool = False,
+    account: "str | None" = None,
 ) -> Path:
     data_dir = data_dir.expanduser().absolute()
     read_only = False
-    repository = _clone_or_open(data_dir, repo_url, remote_name)
+    repository = _clone_or_open(data_dir, repo_url, remote_name, account)
+    if account:
+        # 既有 checkout 也能綁:clone 時 -c 寫入的設定,對已存在的 repo 重寫一次
+        from ..ghauth import bind_account
+
+        _require_known_account(account)
+        bound, detail = bind_account(repository, account)
+        if not bound:
+            raise SetupError(f"綁定帳號失敗:{detail}")
+        log_success(f"資料儲存庫已綁定 GitHub 帳號 {account}(只影響這個儲存庫)")
     previous_remote = _remote_url(repository, remote_name)
     remote_changed = repo_url is not None and previous_remote != repo_url
     try:
@@ -432,7 +535,15 @@ def setup_repository(
                 f"{repository}"
             )
         log_info(f"Verifying access to remote {remote_name!r}")
-        verify_read_access(repository, remote_name)
+        try:
+            verify_read_access(repository, remote_name)
+        except SetupError as exc:
+            if account or not any(m in str(exc).lower() for m in _CLONE_REFUSED):
+                raise
+            raise SetupError(
+                f"{exc}\n儲存庫可能是私有的;用有權限的 GitHub 帳號重跑:"
+                f"{ENTRYPOINT} setup --account <帳號>(需先 gh auth login)"
+            ) from exc
         log_success("Read access verified")
         _ensure_upstream(repository, remote_name)
         try:
@@ -626,6 +737,13 @@ def _parser() -> argparse.ArgumentParser:
         help="Explicitly replace a different existing remote URL",
     )
     parser.add_argument(
+        "--account",
+        help=(
+            "GitHub account (already logged in with gh) to bind to the data "
+            "repository; needed for private HTTPS repositories"
+        ),
+    )
+    parser.add_argument(
         "--provider",
         choices=["git", "gdrive"],
         default="git",
@@ -695,11 +813,7 @@ def run_setup(argv: "list[str] | None" = None) -> int:
             gdrive_space = normalize_gdrive_space(gdrive_space)
 
             gdrive_folder = args.gdrive_folder
-            if (
-                gdrive_space == "visible"
-                and gdrive_folder is None
-                and interactive
-            ):
+            if gdrive_space == "visible" and gdrive_folder is None and interactive:
                 gdrive_folder = _prompt(
                     "Google Drive 資料夾(相對於「我的雲端硬碟」)",
                     GDRIVE_FOLDER_DEFAULT,
@@ -707,9 +821,13 @@ def run_setup(argv: "list[str] | None" = None) -> int:
             setup_gdrive_repository(data_dir, gdrive_folder, gdrive_space)
             return 0
 
-        if not repo_url and interactive and not _has_usable_remote(
-            data_dir,
-            args.remote_name,
+        if (
+            not repo_url
+            and interactive
+            and not _has_usable_remote(
+                data_dir,
+                args.remote_name,
+            )
         ):
             repo_url = _prompt("Data repository Git URL")
         setup_repository(
@@ -717,6 +835,7 @@ def run_setup(argv: "list[str] | None" = None) -> int:
             repo_url=repo_url or None,
             remote_name=args.remote_name,
             replace_remote=args.replace_remote,
+            account=(args.account or "").strip() or None,
         )
     except SetupCancelled:
         log_info("Cancelled; nothing was changed")
