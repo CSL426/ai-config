@@ -63,14 +63,6 @@ def _drive(repo_dir: Path, home_dir: Path, steps: list) -> dict:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-# applyplan 的預覽 worker 在 Windows runner 上回傳 code 1,原因尚未查明;
-# 規格第四階段的 Windows 原生驗收本來就未完成,先明確標記而不是假裝通過。
-_APPLY_WORKER_UNVERIFIED_ON_WINDOWS = pytest.mark.skipif(
-    os.name == "nt", reason="apply preview worker not yet verified on native Windows"
-)
-
-
-@_APPLY_WORKER_UNVERIFIED_ON_WINDOWS
 def test_apply_preview_is_read_only_and_confirm_applies_with_backup(
     tmp_path: Path,
 ) -> None:
@@ -105,7 +97,6 @@ def test_apply_preview_is_read_only_and_confirm_applies_with_backup(
     assert live.read_text(encoding="utf-8") == "repo instructions\n"
 
 
-@_APPLY_WORKER_UNVERIFIED_ON_WINDOWS
 def test_apply_confirm_refuses_when_live_changed_after_preview(tmp_path: Path) -> None:
     repo_dir, home_dir = make_full_repo(tmp_path)
     write(home_dir / ".claude/CLAUDE.md", "live rules\n")
@@ -168,3 +159,243 @@ def test_preview_memory_adopt_without_project_is_stale(tmp_path: Path) -> None:
     out = _drive(repo_dir, home_dir, [["preview_memory", ["adopt", "bogus"]]])
     assert out["preview_memory"]["error"] == "STALE_PREVIEW"
     assert not (home_dir / ".claude/shared-memory").exists()
+
+
+def test_extended_prefix_is_stripped_from_link_targets() -> None:
+    from ai_config.review import strip_extended_prefix
+
+    assert (
+        strip_extended_prefix(r"\\?\C:\Users\me\.gemini\config\skills")
+        == r"C:\Users\me\.gemini\config\skills"
+    )
+    assert strip_extended_prefix(r"\\?\UNC\server\share\dir") == r"\\server\share\dir"
+    assert strip_extended_prefix("/home/me/x") == "/home/me/x"
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="symlink creation needs privileges on Windows"
+)
+def test_shadow_copy_creates_links_after_their_targets(tmp_path: Path) -> None:
+    from ai_config.applyplan import _copy_tree, _link
+
+    home = tmp_path / "home"
+    (home / "config" / "skills").mkdir(parents=True)
+    (home / "config" / "skills" / "a.md").write_text("x", encoding="utf-8")
+    # 連結名稱排在目標目錄前面
+    (home / "cli").mkdir()
+    (home / "cli" / "skills").symlink_to(home / "config" / "skills")
+    shadow = tmp_path / "shadow"
+    shadow.mkdir()
+    deferred: list = []
+    for root in ("cli", "config"):
+        _copy_tree(home / root, shadow / root, home, shadow, deferred)
+    assert len(deferred) == 1 and not (shadow / "cli" / "skills").exists()
+    for path, record in deferred:
+        _link(path, record)
+    link = shadow / "cli" / "skills"
+    assert link.is_symlink()
+    assert link.resolve() == (shadow / "config" / "skills").resolve()
+    assert (link / "a.md").read_text(encoding="utf-8") == "x"
+
+
+def test_first_agy_skills_preview_then_confirm(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_full_repo(tmp_path)
+    write(
+        repo_dir / "claude/skills/sample/SKILL.md",
+        "---\nname: sample\ndescription: Sample skill\n---\nSample\n",
+    )
+    out = _drive(
+        repo_dir,
+        home_dir,
+        [
+            ["preview_apply", ["agy", "skills"]],
+            ["confirm_apply", "preview_apply"],
+        ],
+    )
+    assert out["preview_apply"]["code"] == 0, out["preview_apply"]
+    assert out["confirm_apply"]["code"] == 0, out["confirm_apply"]
+    canonical = home_dir / ".gemini/config/skills"
+    alias = home_dir / ".gemini/antigravity-cli/skills"
+    assert (canonical / "sample/SKILL.md").is_file()
+    assert (alias / "sample/SKILL.md").read_bytes() == (
+        canonical / "sample/SKILL.md"
+    ).read_bytes()
+
+
+@pytest.mark.parametrize("fail_junction", [False, True])
+def test_junction_apply_orders_targets_and_rolls_back_new_parents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_junction: bool,
+) -> None:
+    from ai_config import applyplan, links, review
+
+    home = tmp_path / "home"
+    home.mkdir()
+    alias = home / ".gemini/antigravity-cli/skills"
+    target = home / ".gemini/config/skills"
+    skill = target / "sample/SKILL.md"
+    content = tmp_path / "sample.md"
+    content.write_text("sample\n", encoding="utf-8")
+    monkeypatch.setattr(applyplan.paths, "SCRIPT_DIR", tmp_path / "data")
+    monkeypatch.setattr(applyplan.paths, "BACKUP_BASE", tmp_path / "backups")
+    after = {
+        str(alias): {"kind": "junction", "target": str(target)},
+        str(target): {"kind": "directory"},
+        str(skill.parent): {"kind": "directory"},
+        str(skill): review.node(content),
+    }
+    relevant = [alias, target]
+    candidate = applyplan.ApplyPlan(
+        tmp_path,
+        ["agy"],
+        "skills",
+        {str(p): {"kind": "missing"} for p in relevant},
+        after,
+        {str(skill): content},
+        [{"destination": name} for name in sorted(after)],
+        relevant,
+        "",
+        [],
+    )
+    candidate.identity = candidate.current_identity()
+    calls = []
+
+    def create_junction(source: Path, destination: Path) -> bool:
+        calls.append((source, destination))
+        assert source == target
+        assert destination == alias
+        assert skill.read_bytes() == content.read_bytes()
+        if fail_junction:
+            return False
+        # This test covers replay order without requiring Windows privileges.
+        # The end-to-end test above uses the platform's actual adapter.
+        destination.mkdir()
+        return True
+
+    monkeypatch.setattr(links, "_try_create_junction", create_junction)
+    if fail_junction:
+        with pytest.raises(applyplan.ApplyFailure, match="Cannot create Junction") as error:
+            applyplan.execute(candidate)
+        assert error.value.recovery_required is False
+        assert list(home.iterdir()) == []
+        assert (error.value.backup_path / "manifest.json").is_file()
+    else:
+        applyplan.execute(candidate)
+        assert skill.read_bytes() == content.read_bytes()
+        assert alias.is_dir()
+    assert calls == [(target, alias)]
+
+
+def test_failed_junction_does_not_create_its_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import applyplan, links
+
+    target = tmp_path / "missing/target"
+    monkeypatch.setattr(links, "_try_create_junction", lambda *_: False)
+    with pytest.raises(OSError, match="Cannot create Junction"):
+        applyplan._link(
+            tmp_path / "alias", {"kind": "junction", "target": str(target)},
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.fixture
+def single_apply_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from ai_config import applyplan, review
+
+    monkeypatch.setattr(applyplan.paths, "SCRIPT_DIR", tmp_path / "data")
+    monkeypatch.setattr(applyplan.paths, "BACKUP_BASE", tmp_path / "backups")
+
+    def make(destination: Path, desired: dict, content: Path | None = None):
+        name = str(destination)
+        candidate = applyplan.ApplyPlan(
+            tmp_path, ["agy"], "skills",
+            {name: review.node(destination)}, {name: desired},
+            {name: content} if content is not None else {},
+            [{"destination": name}], [destination], "", [],
+        )
+        candidate.identity = candidate.current_identity()
+        return candidate
+
+    return make
+
+
+def test_apply_copy_failure_preserves_existing_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, single_apply_plan,
+) -> None:
+    from ai_config import applyplan, review
+
+    destination = tmp_path / "home/settings.json"
+    write(destination, "original\n")
+    content = tmp_path / "incoming"
+    write(content, "replacement\n")
+    candidate = single_apply_plan(destination, review.node(content), content)
+    original_copy = applyplan.shutil.copy2
+
+    def fail_copy(source, target):
+        if Path(source) == content:
+            Path(target).write_text("partial", encoding="utf-8")
+            raise OSError("injected copy failure")
+        return original_copy(source, target)
+
+    monkeypatch.setattr(applyplan.shutil, "copy2", fail_copy)
+    with pytest.raises(applyplan.ApplyFailure, match="injected copy failure") as error:
+        applyplan.execute(candidate)
+    assert destination.read_text(encoding="utf-8") == "original\n"
+    assert list(destination.parent.iterdir()) == [destination]
+    assert error.value.recovery_required is False
+
+
+@pytest.mark.parametrize("original_kind", ["file", "link"])
+@pytest.mark.parametrize("recovery", ["restored", "external", "blocked"])
+def test_failed_link_write_restores_or_reports_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, single_apply_plan,
+    original_kind: str, recovery: str,
+) -> None:
+    from ai_config import applyplan, review
+
+    destination = tmp_path / "home/entry"
+    destination.parent.mkdir()
+    old_target, new_target = tmp_path / "old", tmp_path / "new"
+    old_target.mkdir()
+    new_target.mkdir()
+    kind = "junction" if os.name == "nt" else "symlink"
+    if original_kind == "link":
+        applyplan._link(destination, {"kind": kind, "target": str(old_target)})
+    else:
+        write(destination, "original\n")
+    original = review.node(destination)
+    candidate = single_apply_plan(
+        destination, {"kind": kind, "target": str(new_target)},
+    )
+    original_link, original_copy = applyplan._link, applyplan.shutil.copy2
+
+    def fail_link(path, record):
+        if record["target"] == str(new_target):
+            if recovery == "external":
+                write(path, "external writer\n")
+            raise OSError("injected link failure")
+        if recovery == "blocked":
+            raise OSError("injected recovery failure")
+        return original_link(path, record)
+
+    def fail_restore_copy(source, target):
+        if recovery == "blocked" and Path(source).parent.name.startswith("apply-review-"):
+            raise OSError("injected recovery failure")
+        return original_copy(source, target)
+
+    monkeypatch.setattr(applyplan, "_link", fail_link)
+    monkeypatch.setattr(applyplan.shutil, "copy2", fail_restore_copy)
+    with pytest.raises(applyplan.ApplyFailure, match="injected link failure") as error:
+        applyplan.execute(candidate)
+    if recovery == "restored":
+        assert review.node(destination) == original
+        assert error.value.recovery_required is False
+    elif recovery == "external":
+        assert destination.read_text(encoding="utf-8") == "external writer\n"
+        assert error.value.recovery_required is True
+    else:
+        assert review.node(destination) == {"kind": "missing"}
+        assert error.value.recovery_required is True
+        assert "injected recovery failure" in str(error.value)
+    assert (error.value.backup_path / "manifest.json").is_file()
