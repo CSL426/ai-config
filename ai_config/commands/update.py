@@ -8,9 +8,12 @@ truth for install logic.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
+import zipfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -102,6 +105,17 @@ def _delegate_source_update(tag: "str | None" = None) -> "int | None":
     try:
         if candidate.resolve() == Path(sys.argv[0]).resolve():
             return None
+        # pip/uv entry points are scripts (or zip-app launchers on Windows),
+        # even when they occupy the installer's usual executable path.
+        with candidate.open("rb") as stream:
+            magic = stream.read(4)
+        if magic not in (
+            b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf",
+            b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",
+        ) and not magic.startswith(b"MZ"):
+            return None
+        if zipfile.is_zipfile(candidate):
+            return None
     except OSError:
         return None
 
@@ -114,6 +128,74 @@ def _delegate_source_update(tag: "str | None" = None) -> "int | None":
         check=False,
     )
     return completed.returncode
+
+
+def _uv_installation() -> dict | None:
+    """Recognize the running uv tool, not a similarly named PATH entry."""
+    prefix = Path(sys.prefix)
+    if not Path(__file__).resolve().is_relative_to(prefix.resolve()):
+        return None
+    receipt = prefix / "uv-receipt.toml"
+    if not receipt.is_file():
+        return None
+    with receipt.open("rb") as stream:
+        tool = tomllib.load(stream)["tool"]
+    requirements = tool.get("requirements", [])
+    if len(requirements) != 1 or requirements[0].get("name") != "ai-config":
+        raise RuntimeError("此 uv 安裝含自訂依賴，請使用 uv tool upgrade ai-config 更新")
+    requirement = requirements[0]
+    if "editable" in requirement or "path" in requirement:
+        raise RuntimeError("此 uv 安裝來自本機原始碼，請更新原本的 checkout")
+    source = requirement.get("git", "").split("?", 1)[0].removesuffix(".git")
+    if source and source != f"https://github.com/{_repository()}":
+        raise RuntimeError("此 uv 安裝使用不同來源，請使用 uv 更新原本的來源")
+    if "url" in requirement:
+        raise RuntimeError("此 uv 安裝使用自訂 URL，請使用 uv 更新原本的來源")
+    bins = {
+        Path(entry["install-path"]).parent
+        for entry in tool.get("entrypoints", [])
+        if entry.get("name") in {"acg", "ai-config"}
+    }
+    if len(bins) != 1:
+        raise RuntimeError("無法確認 uv 的指令安裝位置")
+    uv = shutil.which("uv")
+    if uv is None:
+        fallback = next(iter(bins)) / ("uv.exe" if NATIVE_WINDOWS else "uv")
+        if fallback.is_file():
+            uv = str(fallback)
+    if uv is None:
+        raise RuntimeError("這是 uv tool 安裝，但找不到 uv 執行檔")
+    extras = requirement.get("extras", [])
+    if any(not re.fullmatch(r"[A-Za-z0-9_-]+", extra) for extra in extras):
+        raise RuntimeError("uv 安裝記錄含不合法的 extras")
+    return {"uv": uv, "prefix": prefix, "bin": bins.pop(), "extras": extras}
+
+
+def _update_uv(installation: dict, tag: str) -> int:
+    """Replace a pinned release through the manager that owns the launchers."""
+    extras = installation["extras"]
+    package = "ai-config" + (f"[{','.join(extras)}]" if extras else "")
+    requirement = f"{package} @ git+https://github.com/{_repository()}@{tag}"
+    environment = {
+        **os.environ,
+        "UV_TOOL_DIR": str(installation["prefix"].parent),
+        "UV_TOOL_BIN_DIR": str(installation["bin"]),
+    }
+    log_info(f"透過 uv 更新 ai-config 至 {tag}")
+    try:
+        result = subprocess.run(
+            [installation["uv"], "tool", "install", "--reinstall",
+             "--python", sys.executable, requirement],
+            env=environment, check=False,
+        )
+    except OSError as exc:
+        log_error(f"無法執行 uv 更新:{exc}")
+        return 1
+    if result.returncode:
+        log_error("uv 更新失敗，請查看上方錯誤")
+    else:
+        log_success(f"ai-config 已透過 uv 更新至 {tag}")
+    return result.returncode
 
 
 def _powershell_literal(value: str) -> str:
@@ -229,18 +311,25 @@ def run_update(requested_version: "str | None" = None) -> int:
             log_info("Expected a release version such as 1.0.13 or v1.0.13")
             return 1
 
+    uv_installation = None
     if not getattr(sys, "frozen", False):
-        delegated = _delegate_source_update(tag)
-        if delegated is not None:
-            return delegated
-        log_error(
-            "This ai-config runs from source, not a standalone release."
-        )
-        log_info(
-            "Update the checkout with: git pull "
-            "(then `pip install -e .` if the package metadata changed)"
-        )
-        return 1
+        try:
+            uv_installation = _uv_installation()
+        except (OSError, ValueError, KeyError, RuntimeError) as exc:
+            log_error(f"無法更新 uv 安裝:{exc}")
+            return 1
+        if uv_installation is None:
+            delegated = _delegate_source_update(tag)
+            if delegated is not None:
+                return delegated
+            log_error(
+                "This ai-config runs from source, not a standalone release."
+            )
+            log_info(
+                "Update the checkout with: git pull "
+                "(then `pip install -e .` if the package metadata changed)"
+            )
+            return 1
 
     _warn_if_updating_a_different_copy()
 
@@ -256,13 +345,15 @@ def run_update(requested_version: "str | None" = None) -> int:
             log_error(f"Could not check the latest release version: {exc}")
             return 1
         if current is None:
-            log_warn("Current standalone version is unavailable; updating once")
+            log_warn("Current version is unavailable; updating once")
         else:
             log_info(f"Current version: {current}; latest release: {latest}")
             if _is_up_to_date(current, latest):
                 log_success("ai-config is already up to date")
                 return 0
 
+    if uv_installation is not None:
+        return _update_uv(uv_installation, tag or f"v{latest}")
     if NATIVE_WINDOWS:
         return _launch_windows_update(tag)
 

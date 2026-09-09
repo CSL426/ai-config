@@ -89,6 +89,11 @@ curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | 
 Set `AI_CONFIG_VERSION` to install a specific release tag. `AI_CONFIG_BIN_DIR`
 overrides the binary destination.
 
+For a GitHub release installed with `uv tool install`, `acg update` uses uv
+to install the latest release tag while keeping the tool and executable
+directories. `acg update 1.0.39` installs that specific release, including a
+downgrade. This does not update or apply the private configuration repository.
+
 ### Development install
 
 Contributors working from a source checkout may still use an editable Python
@@ -243,16 +248,22 @@ On Windows the released executable already contains it: download
 `acg gui --shortcut` adds a Start-menu entry. Windows 10 builds without
 Microsoft Edge WebView2 need that runtime installed first.
 
-Elsewhere, and when working from a source checkout:
+Elsewhere, build and install from the same source checkout:
 
 ```bash
-pip install "ai-config[gui]"        # pywebview
 cd gui && pnpm install && pnpm build # frontend → ai_config/gui_assets/
+cd ..
+python -m pip install -e ".[gui]"    # this checkout, including its built assets
 acg gui
 ```
 
-On Linux pywebview also needs system packages for the web view, such as
-`gir1.2-webkit2-4.1` and `python3-gi` on Debian and Ubuntu.
+On Linux install `pywebview[qt]` in the same Python environment, or provide
+the GTK backend's system packages (`gir1.2-webkit2-4.1` and `python3-gi` on
+Debian and Ubuntu). Launch from a graphical desktop terminal; a plain SSH
+session without X11 or Wayland cannot display the window.
+
+A uv installation from Git does not include the ignored frontend build
+output. Building in a separate checkout does not change that installed copy.
 
 Roadmap and design notes: [docs/gui-plan.md](docs/gui-plan.md).
 

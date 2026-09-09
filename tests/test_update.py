@@ -34,7 +34,7 @@ def test_update_from_source_delegates_to_standalone(
 
     standalone = tmp_path / "bin" / "ai-config"
     standalone.parent.mkdir()
-    standalone.write_text("standalone\n", encoding="utf-8")
+    standalone.write_bytes(b"\x7fELFstandalone\n")
     standalone.chmod(0o755)
     calls = {}
 
@@ -382,3 +382,104 @@ def test_maybe_notify_update_prints_hint_and_respects_optout(
     capsys.readouterr()
     update.maybe_notify_update()
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("content", [b"#!/usr/bin/python\n", b"#!/bin/sh\n"])
+def test_update_does_not_delegate_to_python_or_shell_launcher(
+    tmp_path, monkeypatch, content,
+):
+    from ai_config.commands import update
+
+    candidate = tmp_path / "ai-config"
+    candidate.write_bytes(content)
+    candidate.chmod(0o755)
+    monkeypatch.setattr(update, "_standalone_candidate", lambda: candidate)
+    monkeypatch.delenv("AI_CONFIG_UPDATE_DELEGATED", raising=False)
+    assert update._delegate_source_update() is None
+
+
+@pytest.fixture
+def uv_installation(tmp_path, monkeypatch):
+    from ai_config.commands import update
+
+    prefix = tmp_path / "tools/ai-config"
+    prefix.mkdir(parents=True)
+    module = prefix / "lib/site-packages/ai_config/commands/update.py"
+    module.parent.mkdir(parents=True)
+    module.touch()
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(
+        '[tool]\nrequirements = [{ name = "ai-config", '
+        'git = "https://github.com/CSL426/ai-config?rev=v1.0.39" }]\n'
+        'entrypoints = [{ name = "acg", install-path = "'
+        + (tmp_path / 'bin/acg').as_posix() + '" }]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "prefix", str(prefix))
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(update, "__file__", str(module))
+    monkeypatch.setattr(update.shutil, "which", lambda _: "uv")
+    return prefix, receipt
+
+
+def test_uv_receipt_recognizes_installed_package_but_not_checkout(
+    uv_installation, tmp_path, monkeypatch,
+):
+    from ai_config.commands import update
+
+    assert update._uv_installation()["prefix"] == uv_installation[0]
+    monkeypatch.setattr(update, "__file__", str(tmp_path / "checkout/update.py"))
+    assert update._uv_installation() is None
+
+
+@pytest.mark.parametrize("current,latest,pin,expected", [
+    ("1.0.39", "1.0.39", None, None),
+    ("1.0.39", "1.0.40", None, "v1.0.40"),
+    ("1.0.39", "1.0.40", "1.0.38", "v1.0.38"),
+])
+def test_uv_update_handles_current_newer_and_pinned_release(
+    uv_installation, monkeypatch, current, latest, pin, expected,
+):
+    from ai_config.commands import update
+
+    monkeypatch.setattr(update, "current_version", lambda: current)
+    monkeypatch.setattr(update, "_latest_release_version", lambda: latest)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(update.subprocess, "run", run)
+    assert update.run_update(pin) == 0
+    if expected is None:
+        assert not calls
+    else:
+        command, kwargs = calls.pop()
+        assert command[:4] == ["uv", "tool", "install", "--reinstall"]
+        assert command[-1].endswith("@" + expected)
+        assert command[4:6] == ["--python", sys.executable]
+        assert kwargs["env"]["UV_TOOL_DIR"] == str(uv_installation[0].parent)
+        assert not calls
+
+
+def test_uv_update_reports_install_failure(uv_installation, monkeypatch, capsys):
+    from ai_config.commands import update
+
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.39")
+    monkeypatch.setattr(update.subprocess, "run", lambda *a, **kw: type(
+        "Result", (), {"returncode": 7},
+    )())
+    assert update.run_update("1.0.40") == 7
+    assert "uv 更新失敗" in capsys.readouterr().err
+
+
+def test_uv_update_refuses_foreign_source(uv_installation, monkeypatch):
+    from ai_config.commands import update
+
+    receipt = uv_installation[1]
+    receipt.write_text(receipt.read_text().replace("CSL426", "other"))
+    monkeypatch.setattr(update, "_latest_release_version", lambda: pytest.fail(
+        "must not query releases for another installation source",
+    ))
+    assert update.run_update() == 1
