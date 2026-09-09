@@ -19,7 +19,6 @@ gh for the bound account's token whenever git needs one.
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -153,9 +152,14 @@ def _run_git(
 
 
 def _acg_command() -> list[str]:
+    executable = sys.executable
+    if os.name == "nt":
+        # git 在 Windows 用它自帶的 sh 執行 helper;反斜線在 sh 裡是跳脫字元,
+        # 正斜線的 Windows 路徑兩邊都認得
+        executable = Path(executable).as_posix()
     if getattr(sys, "frozen", False):
-        return [sys.executable]
-    return [sys.executable, "-m", "ai_config"]
+        return [executable]
+    return [executable, "-m", "ai_config"]
 
 
 def helper_value(account: str) -> str:
@@ -165,6 +169,7 @@ def helper_value(account: str) -> str:
     executable path is quoted; the entry is machine-specific and lives
     only in the repository's local config, never in the synced data.
     """
+    # 單引號:sh 不展開 $、反引號與反斜線;Windows 路徑已改成正斜線
     parts = [shlex.quote(part) for part in _acg_command()]
     return "!" + " ".join([*parts, HELPER_MARKER, account])
 
@@ -319,7 +324,9 @@ def credential_helper_main(argv: list[str]) -> int:
     token = account_token(account)
     if not token:
         return 1
-    sys.stdout.write(f"username={account}\npassword={token}\n")
+    # 走 buffer:Windows 的文字模式會把 \n 換成 \r\n,憑證協定要的是純 LF
+    sys.stdout.buffer.write(f"username={account}\npassword={token}\n".encode())
+    sys.stdout.buffer.flush()
     return 0
 
 

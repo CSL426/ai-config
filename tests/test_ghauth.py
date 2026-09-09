@@ -757,3 +757,47 @@ def test_binding_twice_keeps_one_helper_and_survives_a_clone_time_binding(
     assert (
         _git(repo, "config", "--local", "--get-all", "credential.helper").stdout == ""
     )
+
+
+def test_git_obtains_credentials_through_the_bound_helper(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """git → sh → acg __git-credential → gh; the whole chain, on every OS the CI runs."""
+    import os
+    import sys
+
+    repo = tmp_path / "data"
+    repo.mkdir()
+    assert _git(repo, "init", "-q").returncode == 0
+    ok, detail = ghauth.bind_account(repo, "CSL426")
+    assert ok, detail
+
+    # 假的 gh:只回應 auth token --user
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    if os.name == "nt":
+        (fake_bin / "gh.cmd").write_text(
+            "@echo off\r\necho gho_fake_token\r\n", encoding="utf-8"
+        )
+    else:
+        script = fake_bin / "gh"
+        script.write_text("#!/bin/sh\necho gho_fake_token\n", encoding="utf-8")
+        script.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = str(fake_bin) + os.pathsep + env.get("PATH", "")
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+    env["GIT_TERMINAL_PROMPT"] = "0"
+
+    result = subprocess.run(
+        ["git", "-C", str(repo), "credential", "fill"],
+        input="protocol=https\nhost=github.com\n\n",
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "username=CSL426" in result.stdout
+    assert "password=gho_fake_token" in result.stdout
+    assert sys.executable  # 上面的 helper 用的就是這個直譯器
