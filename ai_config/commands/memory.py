@@ -7,7 +7,7 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import memory
+from .. import memory, memory_hooks
 from ..console import log_error, log_header, log_info, log_success, log_warn
 from ..locking import apply_lock
 from ..paths import BACKUP_BASE, ENTRYPOINT, MEMORY_LINK, tilde
@@ -214,6 +214,8 @@ def _mutation(
             memory.index_path(),
             memory.memory_dir() / ".gitignore",
         ])
+        if action in {"enable", "disable"}:
+            paths.append(memory_hooks.settings_path())
         originals = {
             path: path.read_bytes() if path.is_file() else None
             for path in paths
@@ -344,6 +346,7 @@ def _enable() -> int:
         log_success("memory/.gitignore 排除本機的日誌連結")
     if memory.remember_installed():
         changed, other = memory.install_journal_config()
+        memory_hooks.install(enabling=True)
         if changed:
             log_success(f"remember 日誌改存到 {memory.JOURNAL_TEMPLATE}")
             log_info(
@@ -362,6 +365,7 @@ def _enable() -> int:
 
 def _disable() -> int:
     log_header("Disable shared memory")
+    memory_hooks.install(enabling=False)
     for path in memory.instruction_paths():
         if memory.remove_block(path):
             log_success(f"移除規則區塊 {tilde(path)}")

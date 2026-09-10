@@ -1,6 +1,7 @@
 """Claude Code: staging projection, init, apply.
 Claude is the source of truth — init syncs everything, including deletions."""
 
+import json
 import shutil
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from ..localsettings import (
     shared_settings,
     write_settings,
 )
+from ..memory_hooks import preserve_hooks, without_hooks
 from ..paths import (
     CLAUDE_HOME,
     CLAUDE_MANAGED_DIRS,
@@ -40,17 +42,29 @@ _SETTINGS_LABEL = "Claude settings.json"
 
 
 def filter_claude_settings(text: str) -> str:
-    return filter_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
+    filtered = filter_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
+    document = json.loads(filtered)
+    cleaned = without_hooks(document)
+    return (
+        filtered if cleaned == document
+        else json.dumps(cleaned, ensure_ascii=False, indent=2) + "\n"
+    )
 
 
 def merge_claude_settings(source_text: str, target_text: str) -> str:
-    return merge_settings(
+    merged = merge_settings(
         source_text, target_text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL
+    )
+    document = json.loads(merged)
+    preserved = preserve_hooks(document, json.loads(target_text.lstrip("\ufeff")))
+    return (
+        merged if preserved == document
+        else json.dumps(preserved, ensure_ascii=False, indent=2) + "\n"
     )
 
 
 def shared_claude_settings(text: str) -> dict[str, object]:
-    return shared_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
+    return without_hooks(shared_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL))
 
 
 def _stage_filtered_settings(source: Path, destination: Path) -> None:

@@ -104,6 +104,25 @@ remember 日誌與整理過的記憶分開：日誌是唯讀的進度參考，�
 維護；只有 adopt 後的專案日誌跟隨 Git。enable 不自動 adopt 全部
 專案、不安裝 remember、不接管外掛已有的其他 `data_dir`。
 
+### 專案內的本機日誌入口（Draft）
+
+啟用記憶時，acg 安裝本機 Claude SessionStart／UserPromptSubmit hook。
+remember 完成搬移後，hook 將缺少或只剩有效搬移通知的 `<project>/.remember`
+改為指向實際日誌的 symlink／Windows Junction。保留本機日誌的 Git
+排除規則，不為了建立入口而 adopt 或上傳。UserPromptSubmit 補足
+SessionStart hooks 並行時 remember 尚未完成初始化的情況。
+
+hook 只在 acg 記憶仍啟用、data_dir 仍由 acg 管理且目的地存在時執行；
+不搬日誌、不建立新的日誌資料、不碰 HOME 的 `.remember` 設定目錄。
+原目錄有其他內容、通知指向不同目的地、未知連結或父路徑不安全時，
+保留原狀並回報。入口建立失敗時還原原通知目錄。停用移除 acg 自己的
+hook，保留專案入口及資料；入口使用實際資料路徑，不依賴共用別名。
+
+hook 的執行檔路徑屬本機設定：init／status 排除，settings apply 保留
+本機版本，其他 hooks 照常同步。規則與入口是否在新會話生效另行驗證。
+使用 Claude 的 [exec-form hook](https://code.claude.com/docs/en/hooks#exec-form-and-shell-form)，
+以 command／args 直接啟動執行檔，避免不同 shell 對空白與特殊字元的解讀。
+
 ## 規則入口與讀寫歸屬
 
 Claude 使用 acg 的 `HOME/.claude/CLAUDE.md`；Codex 使用 acg 的

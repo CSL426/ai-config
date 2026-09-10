@@ -7,7 +7,7 @@ against temporary paths: journal collision names depend on the real directory.
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import memory
+from . import memory, memory_hooks
 
 ACTIONS = frozenset({"enable", "disable", "adopt", "release"})
 
@@ -318,6 +318,8 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
         memory.codex_override_path(),
         memory.REMEMBER_USER_CONFIG,
     ]
+    if action in {"enable", "disable"}:
+        result.relevant_paths.append(memory_hooks.settings_path())
     result.relevant_paths.extend(
         memory.rules_target(path) for path in memory.instruction_paths()
     )
@@ -327,6 +329,11 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
         _ignore_change(result)
         if memory.remember_installed():
             _journal_config(result)
+            _text_change(
+                result, memory_hooks.settings_path(),
+                memory_hooks.settings_text(enabling=True),
+                "安裝本機日誌入口 hook，搬移後仍能從專案內查看", tool="claude",
+            )
         else:
             result.warnings.append("remember 未安裝；不變更日誌設定，也不安裝外掛。")
         result.warnings.append(
@@ -337,6 +344,11 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
         if not memory.source_rules_path().is_file():
             result.warnings.append("資料庫沒有 claude/CLAUDE.md，無法同步該規則來源。")
     elif action == "disable":
+        _text_change(
+            result, memory_hooks.settings_path(),
+            memory_hooks.settings_text(enabling=False),
+            "移除 acg 的本機日誌入口 hook，保留其他 hooks", tool="claude",
+        )
         _rules(result, enabling=False)
         if state == "ok":
             result.change(

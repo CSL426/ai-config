@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 記憶啟用後安裝本機日誌入口 hook：remember 搬移完成時，自動讓專案內的
+  `.remember` 指向日誌，未 adopt 的本機日誌也能直接查看。未知內容與外部
+  連結保留；停用移除 hook、保留資料。同步設定不攜帶這台的 hook 執行路徑。
+
 - pull 不再因為本機有未保存的修改就整個取消:交給 git 判斷,遠端沒動到同一批
   檔案時照常 fast-forward,本機修改保留。真的重疊時列出是哪些檔案,並指出先
   `acg push`(記憶就是 `acg memory push`)再 pull。Google Drive 模式同樣處理。

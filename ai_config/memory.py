@@ -756,6 +756,7 @@ def project_git_exclude(root: Path) -> "tuple[Path, str] | None":
     path = Path(exclude)
     if not path.is_absolute():
         path = root / path
+    assert_plain_path(path, directory=False)
     current = _read_text(path) if path.is_file() else ""
     if ".remember" in current.splitlines():
         return None
