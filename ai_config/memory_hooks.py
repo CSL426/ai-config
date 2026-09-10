@@ -120,6 +120,17 @@ def install(*, enabling: bool) -> None:
         memory._write_text_atomic(path, text)
 
 
+def _notice_points_at(spelled: Path, target: Path) -> bool:
+    """The plugin spells the journal through ~/.claude/shared-memory; acg
+    knows the same directory by the real path behind that link."""
+    if memory._path_identity(spelled, target):
+        return True
+    try:
+        return os.path.samefile(spelled, target)
+    except OSError:
+        return False
+
+
 def repair_entry(root: Path) -> bool:
     """Repair only a completed migration; the plugin owns the actual move."""
     root = memory.project_root(root)
@@ -154,12 +165,9 @@ def repair_entry(root: Path) -> bool:
             len(lines) != 3
             or lines[0] != "Memory data migrated to:"
             or lines[2] != "This directory is now empty; you may delete it."
-            or not memory._path_identity(Path(lines[1].strip()), target)
+            or not _notice_points_at(Path(lines[1].strip()), target)
         ):
             raise RuntimeError(f"專案日誌搬移通知不符目的地：{entry}")
-    exclude = memory.project_git_exclude(root)
-    if exclude is not None:
-        memory.assert_plain_path(exclude[0], directory=False)
     parked = None
     linked = False
     try:
@@ -170,7 +178,11 @@ def repair_entry(root: Path) -> bool:
                 raise RuntimeError("專案日誌在修復時已有變動")
         memory._create_journal_link(target, entry)
         linked = True
+        # 要在連結建好後才問 git:專案 .gitignore 常寫 `.remember/`,
+        # 只忽略目錄,換成連結後就不再命中
+        exclude = memory.project_git_exclude(root)
         if exclude is not None:
+            memory.assert_plain_path(exclude[0], directory=False)
             memory._write_text_atomic(*exclude)
     except (OSError, RuntimeError, ValueError) as failure:
         try:
