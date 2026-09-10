@@ -67,8 +67,15 @@ def test_directory_only_gitignore_pattern_still_gets_exclude(migrated):
         ["git", "-C", str(root), "check-ignore", "-q", ".remember"], check=False
     )
     assert ignored.returncode == 0
-    exclude = root / ".git/info/exclude"
-    assert ".remember" in exclude.read_text().splitlines()
+    # Windows 的 junction 對 git 就是目錄,`.remember/` 直接命中;其他平台靠
+    # exclude 接手。要的是同一個結果:git status 不列出入口
+    status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert ".remember" not in status.stdout
 
 
 @pytest.mark.parametrize("conflict", ["content", "bad_notice"])
