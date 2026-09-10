@@ -1,6 +1,6 @@
 # 本機日誌的專案入口驗收
 
-狀態：**Draft**。基底為 `02b9f10`，修正留在工作目錄，未提交或發佈。
+狀態：**Draft**。基底為 `02b9f10`，已提交為 `69877a8` 並推上 main，未發佈。
 
 ## 行為
 
@@ -23,4 +23,11 @@
 - Linux ARM64 隔離環境使用本次來源：實際執行註冊的 command／args，
   入口可讀、重複執行成功、維持 local，停用後仍可讀日誌。
 - 隔離測試沒有修改該機正式安裝、記憶資料或 Claude 會話。
-- Windows 原生 hook／Junction 及真實 Claude 新會話仍待實測。
+- 2026-09-10 gb10（Linux aarch64）正式安裝實測，使用 `69877a8` 的 Standalone
+  Release 產物：`memory enable` 寫入兩筆 hook；`Breeze-ASR-360` 原本缺少
+  `.remember`，以 `claude -p` 開真實會話後成為指向本機日誌的 symlink，
+  維持 local，Git exclude 已含 `.remember`；再開一次會話不重複建立；已
+  adopt 的 `VoxCPM360` 入口不變。`status`／`init` 沒有把 hook 寫進資料庫，
+  `apply` 保留 hook；`disable` 移除 hook、保留入口與日誌；重新 `enable`
+  後 hook 回來。
+- Windows 原生 hook／Junction 仍待實測。
