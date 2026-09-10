@@ -42,6 +42,35 @@ def test_migrated_local_journal_gets_idempotent_project_entry(migrated):
     assert not list(root.glob(".remember.acg-*"))
 
 
+def test_notice_spelled_through_shared_memory_link_is_accepted(migrated):
+    root, entry, target = migrated
+    assert memory.create_link()[0]
+    spelled = memory.MEMORY_LINK / memory.JOURNAL_DIR_NAME / target.name
+    assert str(spelled) != str(target)
+    (entry / memory.MIGRATED_NOTE).write_text(
+        f"Memory data migrated to:\n  {spelled}\n"
+        "This directory is now empty; you may delete it.\n"
+    )
+    assert memory_hooks.repair_entry(root)
+    assert memory.is_reparse_point(entry)
+    assert (entry / "recent.md").read_text() == "original history\n"
+    assert memory.journal_state(root)[0] == "local"
+
+
+def test_directory_only_gitignore_pattern_still_gets_exclude(migrated):
+    root, entry, _target = migrated
+    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+    (root / ".gitignore").write_text(".remember/\n")
+    assert memory_hooks.repair_entry(root)
+    assert memory.is_reparse_point(entry)
+    ignored = subprocess.run(
+        ["git", "-C", str(root), "check-ignore", "-q", ".remember"], check=False
+    )
+    assert ignored.returncode == 0
+    exclude = root / ".git/info/exclude"
+    assert ".remember" in exclude.read_text().splitlines()
+
+
 @pytest.mark.parametrize("conflict", ["content", "bad_notice"])
 def test_repair_refuses_ambiguous_old_directory(migrated, conflict):
     root, entry, target = migrated
