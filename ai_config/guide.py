@@ -146,7 +146,10 @@ never leaves the machine. `enable` points the plugin at
 tells every tool to read the journal's `recent.md`. Run `{entrypoint} memory
 adopt` inside a project to move that project's journal to
 `projects/<owner--repo>/journal/` so it syncs with the notebook; `release`
-undoes it.
+undoes it. Local hooks restore the project's `.remember` entry after migration,
+so the journal remains visible inside the project without enabling Git sync.
+They only replace a missing entry or a verified migration notice; other content
+is preserved. Disable removes these hooks and keeps existing entries and data.
 
 ## Installing on a new machine
 

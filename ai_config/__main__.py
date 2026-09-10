@@ -90,6 +90,10 @@ def resolve_tool(tool: str) -> str:
 
 def main(argv: "list[str] | None" = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == "__memory-project-entry":
+        from .memory_hooks import run
+
+        return run(args[1:])
     if args and args[0] == "__git-credential":
         # 隱藏命令:git 的 credential helper 進入點,由 acg login 寫進資料庫的
         # 本地 git 設定;向 gh 拿綁定帳號的 token

@@ -114,7 +114,7 @@ def standalone_main() -> int:
     open when this process owns the console, since that console dies with
     the process and would take the output with it.
     """
-    if sys.argv[1:2] == ["__git-credential"]:
+    if sys.argv[1:2] in (["__git-credential"], ["__memory-project-entry"]):
         # git 把我們當 credential helper 呼叫:stdout 是憑證協定的通道,
         # 不能印任何提示;從沒有主控台的 Desktop 叫起來時 Windows 會配一個新
         # 主控台,看起來像雙擊,若照一般流程就會往 stdout 印「按 Enter 關閉」
