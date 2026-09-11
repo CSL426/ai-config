@@ -535,6 +535,10 @@ def _mock_login_account(monkeypatch: pytest.MonkeyPatch, repo: Path) -> None:
             args, 0, stdout="true", stderr=""
         ),
     )
+    # 自我檢查會真的跑 git credential fill,碰到開發機的全域 helper;這裡不測它
+    monkeypatch.setattr(
+        ghauth, "helper_self_test", lambda account, repo_dir=None: "helper 略過"
+    )
 
 
 def test_login_can_rebind_when_git_already_pushes(
@@ -734,6 +738,26 @@ def test_binding_rejects_push_urls_that_bypass_the_https_helper(
     assert not ok
     assert "HTTPS" in detail
     assert config.read_bytes() == before
+
+
+def test_push_probe_treats_a_stale_local_branch_as_authenticated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 遠端能回「fetch first」代表憑證與寫入權都過了,只是本機落後
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args,
+            1,
+            stdout="",
+            stderr=(
+                "To https://github.com/o/r\n"
+                " ! [rejected]        HEAD -> main (fetch first)\n"
+                "error: failed to push some refs to 'https://github.com/o/r'\n"
+            ),
+        )
+
+    monkeypatch.setattr(ghauth.subprocess, "run", fake_run)
+    assert ghauth.git_push_probe(tmp_path) == (True, "")
 
 
 def test_push_probe_reports_gits_own_words(

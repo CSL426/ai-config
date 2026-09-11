@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- 推送檢查不再把「fetch first」的拒絕當成失敗:遠端能回這句代表憑證和寫入權都通過,
+  只是本機落後;先前資料儲存庫一落後,Desktop 和 `login` 就一直說推送測試沒有成功。
+
 ## 1.0.41 - 2026-09-11
 
 - 綁定帳號後在 git 2.46 以上推送失敗,回「could not read Username」:git-remote-https 會送

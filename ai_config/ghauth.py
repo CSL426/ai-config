@@ -473,6 +473,12 @@ def git_push_probe(repo_dir: Path) -> "tuple[bool | None, str]":
     if result.returncode == 0:
         return True, ""
     text = (result.stderr or result.stdout).strip()
+    # 遠端已經回覆 ref 狀態才會拒絕 non-fast-forward:憑證與寫入權都通過了,
+    # 只是本機落後,那是 pull 的事,不是登入的事
+    if "[rejected]" in text and (
+        "fetch first" in text or "non-fast-forward" in text
+    ):
+        return True, ""
     first = next((line for line in text.splitlines() if line.strip()), "git push 失敗")
     if any(marker in text.lower() for marker in _AUTH_REFUSAL_MARKERS):
         return False, first
