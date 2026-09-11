@@ -29,6 +29,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .paths import standalone_install_path
 from .safety import is_reparse_point
 
 # acg 在 GitHub 註冊的 OAuth App(CSL426 帳號下,名稱 acg)的 client ID。
@@ -155,8 +156,28 @@ def _run_git(
 # ─── repo-local binding ───────────────────────────────────────
 
 
+def helper_executable() -> "tuple[Path, Path | None]":
+    """The executable git should call, and the running copy if it differs.
+
+    A standalone exe is often run once from the download folder before
+    the installer copies it to ~/.local/bin. The binding must outlive
+    that copy, so it points at the installed executable whenever one
+    exists; the second value names the running copy when it was not used.
+    """
+    running = Path(sys.executable)
+    if not getattr(sys, "frozen", False):
+        return running, None
+    installed = standalone_install_path()
+    try:
+        if installed.is_file() and not installed.samefile(running):
+            return installed, running
+    except OSError:
+        pass
+    return running, None
+
+
 def _acg_command() -> list[str]:
-    executable = sys.executable
+    executable = str(helper_executable()[0])
     if os.name == "nt":
         # git 在 Windows 用它自帶的 sh 執行 helper;反斜線在 sh 裡是跳脫字元,
         # 正斜線的 Windows 路徑兩邊都認得
@@ -181,17 +202,40 @@ def helper_value(account: str) -> str:
 _BOUND = re.compile(re.escape(HELPER_MARKER) + r" (\S+)\s*$")
 
 
-def bound_account(repo_dir: "Path | None") -> str:
+def bound_helper(repo_dir: "Path | None") -> str:
+    """The credential.helper line acg wrote, or "" when not bound."""
     if repo_dir is None:
         return ""
     result = _run_git(repo_dir, "config", "--local", "--get-all", "credential.helper")
     if result.returncode != 0:
         return ""
     for line in result.stdout.splitlines():
-        match = _BOUND.search(line)
-        if match:
-            return match[1]
+        if _BOUND.search(line):
+            return line
     return ""
+
+
+def bound_account(repo_dir: "Path | None") -> str:
+    match = _BOUND.search(bound_helper(repo_dir))
+    return match[1] if match else ""
+
+
+def refresh_binding(repo_dir: "Path | None") -> bool:
+    """Re-point a binding that names a different acg than the one to use.
+
+    The helper line carries an absolute path; the exe the user bound
+    from may since have been installed, updated or removed. Any check
+    that is about to run git first makes the line current, so git tests
+    the same acg the user is running. Returns whether it changed.
+    """
+    current = bound_helper(repo_dir)
+    account = bound_account(repo_dir)
+    if not account or current == helper_value(account):
+        return False
+    try:
+        return _change_binding(repo_dir, account)
+    except (OSError, subprocess.SubprocessError, GhAuthError, ValueError):
+        return False
 
 
 _HELPERS_BACKUP = "acg.previousCredentialHelpers"
@@ -283,6 +327,9 @@ def bind_account(repo_dir: Path, account: str) -> tuple[bool, str]:
         _change_binding(repo_dir, account)
     except (OSError, subprocess.SubprocessError, GhAuthError, ValueError) as exc:
         return False, str(exc)
+    bound, running = helper_executable()
+    if running is not None:
+        return True, f"綁定指向安裝位置 {bound},不是目前執行的 {running}"
     return True, ""
 
 
@@ -318,7 +365,9 @@ def credential_helper_main(argv: list[str]) -> int:
         if not line:
             break
         key, separator, value = line.partition("=")
-        if not separator or key in request:
+        # git 2.46 起推送時會送多行 capability[]、wwwauth[];`[]` 結尾的鍵本來就
+        # 允許重複,其他鍵重複才是壞掉的請求
+        if not separator or (key in request and not key.endswith("[]")):
             return 0
         request[key] = value
     # A repo-local helper can also be asked about other remotes in that repo.
@@ -353,28 +402,43 @@ _AUTH_REFUSAL_MARKERS = (
 )
 
 
-def helper_self_test(account: str) -> str:
+def helper_self_test(account: str, repo_dir: "Path | None" = None) -> str:
     """Run the bound helper the way git would and describe the outcome.
 
     When git says 'could not read Username', this is the step that tells
     whether acg itself failed to start, gh had no token, or the helper
-    answered fine and the problem lies in git's own configuration.
+    answered fine and the problem lies elsewhere. With ``repo_dir`` the
+    request goes through ``git credential fill`` in that repository, so
+    it exercises the very command line git has in its config rather
+    than the copy of acg that happens to be running.
     """
-    command = [*_acg_command(), HELPER_MARKER, account, "get"]
+    # 照 git 2.46+ 推送時的請求形狀餵,含重複的 capability[] 行
+    request = (
+        "capability[]=authtype\ncapability[]=state\n"
+        "protocol=https\nhost=github.com\n"
+        'wwwauth[]=Basic realm="GitHub"\n\n'
+    )
+    if repo_dir is not None:
+        command = ["git", "-C", str(repo_dir), "credential", "fill"]
+    else:
+        command = [*_acg_command(), HELPER_MARKER, account, "get"]
     try:
         result = subprocess.run(
             command,
-            input="protocol=https\nhost=github.com\n\n",
+            input=request,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             check=False,
             timeout=60,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return f"helper 無法啟動:{exc}"
     if result.returncode == 0 and "password=" in result.stdout:
+        if repo_dir is not None:
+            return "git 經設定的 helper 取得憑證正常,問題出在推送本身的設定"
         return "helper 直接執行正常,問題出在 git 呼叫 helper 的設定"
     first = next(
         (
@@ -457,6 +521,8 @@ def check_push_access(remote_url: str, repo_dir: "Path | None" = None) -> GhStat
     if not status.repository:
         status.detail = "遠端不是 GitHub,無法用 gh 處理登入"
         return status
+    # 綁定的路徑可能還指著下載目錄那顆 exe;先改指目前的 acg 再讓 git 試
+    refresh_binding(repo_dir)
     status.bound = bound_account(repo_dir)
     global _last_push_detail
     _last_push_detail = ""
@@ -520,7 +586,9 @@ def check_push_access(remote_url: str, repo_dir: "Path | None" = None) -> GhStat
         # 說出 git 自己的錯誤,不然使用者只看到「無法確認」不知道要做什麼;
         # 綁定帳號時再親自跑一次 helper,分辨是 acg、gh 還是 git 設定的問題
         why = f":{git_detail}" if git_detail else ""
-        probe = f";{helper_self_test(status.bound)}" if status.bound else ""
+        probe = (
+            f";{helper_self_test(status.bound, repo_dir)}" if status.bound else ""
+        )
         status.detail = (
             f"{status.account} 有儲存庫寫入權,但 "
             + ("git 憑證驗證失敗" if git_access is False else "git 推送測試沒有成功")

@@ -139,3 +139,10 @@ def tilde(path: "Path | str") -> str:
     if text.startswith(home):
         return "~" + text[len(home):]
     return text
+
+
+def standalone_install_path() -> Path:
+    """Where the installer and `update` keep the standalone executable."""
+    executable = "ai-config.exe" if NATIVE_WINDOWS else "ai-config"
+    default_bin = Path.home() / ".local" / "bin"
+    return Path(os.environ.get("AI_CONFIG_BIN_DIR", default_bin)) / executable

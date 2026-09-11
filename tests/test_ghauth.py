@@ -378,6 +378,32 @@ def test_bound_account_is_judged_as_itself(
     assert seen["token"] == "tok-second"
 
 
+def test_helper_answers_the_request_shape_git_sends_on_push(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    # git 2.46+ 的 git-remote-https 會送重複的 capability[] 與 wwwauth[] 行;
+    # `git credential fill` 不送,所以 fill 正常、push 卻拿不到憑證
+    monkeypatch.setattr(ghauth, "account_token", lambda account: "tok")
+    monkeypatch.setattr(
+        ghauth.sys,
+        "stdin",
+        io.StringIO(
+            "capability[]=authtype\ncapability[]=state\n"
+            "protocol=https\nhost=github.com\n"
+            'wwwauth[]=Basic realm="GitHub"\n\n'
+        ),
+    )
+    assert ghauth.credential_helper_main(["CSL426", "get"]) == 0
+    assert capsys.readouterr().out == "username=CSL426\npassword=tok\n"
+
+    # 一般鍵重複仍視為壞掉的請求
+    monkeypatch.setattr(
+        ghauth.sys, "stdin", io.StringIO("protocol=https\nprotocol=https\nhost=github.com\n\n")
+    )
+    assert ghauth.credential_helper_main(["CSL426", "get"]) == 0
+    assert capsys.readouterr().out == ""
+
+
 @pytest.mark.parametrize(
     "credential_request",
     [
@@ -820,6 +846,74 @@ def test_git_obtains_credentials_through_the_bound_helper(
     )
     assert "username=CSL426" in result.stdout
     assert "password=gho_fake_token" in result.stdout
+
+
+def test_binding_prefers_the_installed_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config import paths
+
+    downloaded = tmp_path / "Downloads" / "acg"
+    installed = tmp_path / ".local" / "bin" / "ai-config"
+    downloaded.parent.mkdir()
+    downloaded.write_text("")
+    monkeypatch.setattr(ghauth.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(ghauth.sys, "executable", str(downloaded))
+    monkeypatch.setattr(ghauth, "standalone_install_path", lambda: installed)
+    monkeypatch.setattr(paths, "standalone_install_path", lambda: installed)
+
+    # 還沒安裝:只能指向手上這一份
+    assert ghauth.helper_executable() == (downloaded, None)
+
+    installed.parent.mkdir(parents=True)
+    installed.write_text("")
+    assert ghauth.helper_executable() == (installed, downloaded)
+    assert ghauth._acg_command() == [str(installed)]
+
+
+def test_stale_binding_is_repointed_before_git_is_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "data"
+    repo.mkdir()
+    assert _git(repo, "init", "-q").returncode == 0
+    monkeypatch.setattr(ghauth, "_acg_command", lambda: ["/downloads/acg"])
+    ok, detail = ghauth.bind_account(repo, "CSL426")
+    assert ok, detail
+    stale = ghauth.helper_value("CSL426")
+    assert ghauth.refresh_binding(repo) is False
+
+    # exe 之後裝到安裝位置:綁定要跟著改指,備份的原始 helper 清單不動
+    monkeypatch.setattr(ghauth, "_acg_command", lambda: ["/installed/ai-config"])
+    assert ghauth.refresh_binding(repo) is True
+    helpers = _git(
+        repo, "config", "--local", "--get-all", "credential.helper"
+    ).stdout.splitlines()
+    assert helpers == ["", ghauth.helper_value("CSL426")]
+    assert stale not in helpers
+    assert _git(repo, "config", "--local", ghauth._HELPERS_BACKUP).stdout.strip() == "[]"
+    assert ghauth.refresh_binding(repo) is False
+    assert ghauth.unbind_account(repo) is True
+    assert (
+        _git(repo, "config", "--local", "--get-all", "credential.helper").stdout == ""
+    )
+
+
+def test_helper_self_test_goes_through_git_for_a_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        seen.append(list(args))
+        return subprocess.CompletedProcess(
+            args, 0, stdout="username=x\npassword=y\n", stderr=""
+        )
+
+    monkeypatch.setattr(ghauth.subprocess, "run", fake_run)
+    verdict = ghauth.helper_self_test("x", tmp_path)
+    assert seen == [["git", "-C", str(tmp_path), "credential", "fill"]]
+    assert "正常" in verdict
 
 
 def test_helper_self_test_distinguishes_a_working_helper(
