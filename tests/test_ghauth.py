@@ -868,7 +868,8 @@ def test_binding_prefers_the_installed_executable(
     installed.parent.mkdir(parents=True)
     installed.write_text("")
     assert ghauth.helper_executable() == (installed, downloaded)
-    assert ghauth._acg_command() == [str(installed)]
+    # Windows 上會轉成正斜線給 git 的 sh 用;Linux 的 as_posix 就是原字串
+    assert ghauth._acg_command() == [installed.as_posix()]
 
 
 def test_stale_binding_is_repointed_before_git_is_asked(
