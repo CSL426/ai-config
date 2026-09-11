@@ -90,6 +90,8 @@ def run_login(account: "str | None" = None) -> int:
         log_error(f"綁定帳號失敗:{detail}")
         return 1
     log_success(f"資料庫已綁定 {account}(只影響這個資料庫)")
+    if detail:
+        log_info(detail)
 
     after = check_push_access(remote, SCRIPT_DIR)
     for line in describe(after):

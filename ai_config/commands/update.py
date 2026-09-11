@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from ..console import log_error, log_info, log_success, log_warn
-from ..paths import ENTRYPOINT, NATIVE_WINDOWS
+from ..paths import ENTRYPOINT, NATIVE_WINDOWS, standalone_install_path
 from ..version import current_version
 
 _DEFAULT_REPOSITORY = "CSL426/ai-config"
@@ -70,9 +70,7 @@ def _is_up_to_date(current: str, latest: str) -> bool:
 
 
 def _standalone_candidate() -> Path:
-    executable = "ai-config.exe" if NATIVE_WINDOWS else "ai-config"
-    default_bin = Path.home() / ".local" / "bin"
-    return Path(os.environ.get("AI_CONFIG_BIN_DIR", default_bin)) / executable
+    return standalone_install_path()
 
 
 def _warn_if_updating_a_different_copy() -> None:

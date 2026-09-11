@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- 綁定帳號後在 git 2.46 以上推送失敗,回「could not read Username」:git-remote-https 會送
+  多行 `capability[]` 給 credential helper,acg 的 helper 把重複鍵當成壞掉的請求,什麼都
+  不回。`git credential fill` 不送這些行,所以自我檢查一直說正常。現在照協定接受 `[]`
+  結尾的可重複鍵,自我檢查也改餵推送時的請求形狀。
+- 綁定帳號時 credential helper 改指向安裝位置的執行檔(`~/.local/bin`),不再固化
+  當下啟動的那一份:從下載目錄直接執行 exe 綁定、隔天才安裝,git 會一直呼叫下載
+  目錄那顆舊 exe。尚未安裝時仍指向手上這份,`login` 會說明;每次推送檢查前若發現
+  綁定的路徑和目前的 acg 不同會自動改指。
+- 「helper 直接執行正常」的自我檢查改成透過 `git credential fill` 跑 git 設定裡的那
+  條命令列;先前跑的是目前這顆 acg,和 git 實際呼叫的不一定是同一份,訊息會誤導。
+
 ## 1.0.40 - 2026-09-10
 
 - 記憶啟用後安裝本機日誌入口 hook:remember 搬移完成時,自動讓專案內的
