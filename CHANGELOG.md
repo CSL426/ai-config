@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.41 - 2026-09-11
 
 - 綁定帳號後在 git 2.46 以上推送失敗,回「could not read Username」:git-remote-https 會送
   多行 `capability[]` 給 credential helper,acg 的 helper 把重複鍵當成壞掉的請求,什麼都
