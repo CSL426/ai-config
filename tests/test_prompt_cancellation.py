@@ -116,7 +116,7 @@ def test_reset_cancels_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(maintenance, "reset_tool", unexpected, raising=False)
 
-    assert maintenance.do_reset() is True
+    assert maintenance.do_reset() is False
     assert len(seen) == 2
 
 

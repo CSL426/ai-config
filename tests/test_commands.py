@@ -46,7 +46,8 @@ def test_reset_declined_keeps_everything(tmp_path: Path) -> None:
 
     result = run_ai_config(repo_dir, home_dir, "reset", input_text="n\n")
 
-    assert result.returncode == 0, result.stderr + result.stdout
+    # 沒拿到確認就沒刪:離開碼要讓腳本分得出來
+    assert result.returncode == 1, result.stderr + result.stdout
     assert (repo_dir / "claude/CLAUDE.md").exists()
     assert (repo_dir / "codex/config.toml").exists()
 
