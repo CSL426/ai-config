@@ -1209,8 +1209,9 @@ def do_push(tool: str, allow_secrets: bool = False) -> int:
 
     if not confirmed:
         if cleanup_succeeded:
+            # 非 0:呼叫端要分得出「推上去了」和「沒推」,--force 可跳過確認
             log_info("Cancelled; configuration changes remain unstaged")
-            return 0
+            return 1
         log_error("Cancellation failed to restore the staged configuration.")
         return 1
     if not ready_to_commit:

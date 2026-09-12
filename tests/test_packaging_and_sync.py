@@ -949,6 +949,35 @@ def test_push_commits_new_file_after_review(tmp_path: Path) -> None:
     assert run_git(data_repo, "status", "--porcelain=v1") == ""
 
 
+def test_push_force_skips_the_confirmation_without_a_terminal(
+    tmp_path: Path,
+) -> None:
+    # agent 與腳本沒有終端機:--force 讓確認自動通過,全程走得完
+    _remote, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{"theme":"local"}\n', encoding="utf-8")
+
+    result = run_data_cli(data_repo, home, "push", "claude", "--force")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "committed and pushed" in result.stdout
+    assert run_git(data_repo, "status", "--porcelain=v1") == ""
+
+
+def test_reset_is_not_forceable(tmp_path: Path) -> None:
+    # reset 會刪光設定檔,--force 不通過這一關
+    _remote, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "reset", "--force", input_text="")
+
+    assert "Cancelled" in result.stdout
+
+
 @pytest.mark.parametrize("input_text", ["n\n", ""])
 def test_push_cancel_leaves_collected_changes_unstaged(
     tmp_path: Path, input_text: str
@@ -968,7 +997,7 @@ def test_push_cancel_leaves_collected_changes_unstaged(
         input_text=input_text,
     )
 
-    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.returncode == 1, result.stderr + result.stdout
     assert "configuration changes remain unstaged" in result.stdout
     assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
     assert run_git(data_repo, "status", "--short") == "M claude/settings.json"
@@ -995,7 +1024,7 @@ def test_push_review_displays_new_file_content(tmp_path: Path) -> None:
         input_text="n\n",
     )
 
-    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.returncode == 1, result.stderr + result.stdout
     assert "new file mode" in result.stdout
     assert "+new instructions visible in review" in result.stdout
     assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
@@ -1018,7 +1047,7 @@ def test_acg_alias_runs_push_command(tmp_path: Path) -> None:
         input_text="n\n",
     )
 
-    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.returncode == 1, result.stderr + result.stdout
     assert "Commit and push these changes?" in result.stdout
     assert "configuration changes remain unstaged" in result.stdout
     assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
@@ -1127,7 +1156,7 @@ def test_push_cancel_preserves_existing_changes_unstaged(tmp_path: Path) -> None
         input_text="n\n",
     )
 
-    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.returncode == 1, result.stderr + result.stdout
     assert "configuration changes remain unstaged" in result.stdout
     assert run_git(data_repo, "diff", "--cached", "--name-only") == ""
     assert run_git(data_repo, "diff", "--name-only") == "claude/settings.json"

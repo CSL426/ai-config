@@ -3,11 +3,13 @@
 import copy
 import json
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
 
 from . import memory
+from .paths import WINDOWS_MODE
 
 COMMAND = "__memory-project-entry"
 MARKER = "acg：檢查專案日誌入口"
@@ -120,15 +122,39 @@ def install(*, enabling: bool) -> None:
         memory._write_text_atomic(path, text)
 
 
+def _from_msys_path(text: str) -> "str | None":
+    """``/c/Users/x`` -> ``c:\\Users\\x``, or None when it is not that shape.
+
+    The plugin writes the notice from Git Bash, where the journal is spelled
+    the MSYS way. Windows cannot open that spelling and normalises it to a
+    path on the current drive, so neither comparison below ever matches it.
+    """
+    match = re.fullmatch(r"/([A-Za-z])(/.*)?", text)
+    if not match:
+        return None
+    return f"{match[1]}:{match[2] or '/'}".replace("/", "\\")
+
+
 def _notice_points_at(spelled: Path, target: Path) -> bool:
-    """The plugin spells the journal through ~/.claude/shared-memory; acg
-    knows the same directory by the real path behind that link."""
-    if memory._path_identity(spelled, target):
-        return True
-    try:
-        return os.path.samefile(spelled, target)
-    except OSError:
-        return False
+    """Whether the notice names the journal, however it spells the path.
+
+    Three spellings reach this: the real path, the ~/.claude/shared-memory
+    link acg knows the directory behind, and the MSYS path Git Bash writes.
+    """
+    candidates = [spelled]
+    if WINDOWS_MODE:
+        translated = _from_msys_path(str(spelled))
+        if translated is not None:
+            candidates.append(Path(translated))
+    for candidate in candidates:
+        if memory._path_identity(candidate, target):
+            return True
+        try:
+            if os.path.samefile(candidate, target):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def repair_entry(root: Path) -> bool:

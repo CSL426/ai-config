@@ -58,7 +58,8 @@ def do_reset() -> bool:
     print(f"  This will {RED}delete all config files{NC} and leave empty directories.")
     print(f"  You can then run {CYAN}{ENTRYPOINT} init{NC} to pull your own configs.")
     print()
-    if not confirm_prompt("  Are you sure? [y/N] "):
+    # reset 會刪光設定檔,是唯一真正不可逆的指令;--force 不通過這一關
+    if not confirm_prompt("  Are you sure? [y/N] ", forceable=False):
         log_info("Cancelled")
         return True
 

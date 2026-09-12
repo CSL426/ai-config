@@ -78,6 +78,35 @@ def test_directory_only_gitignore_pattern_still_gets_exclude(migrated):
     assert ".remember" not in status.stdout
 
 
+def test_notice_spelled_the_msys_way_is_accepted(migrated, monkeypatch):
+    # Git Bash 下外掛寫的是 /c/Users/...;Windows 打不開這種寫法,正規化後
+    # 會變成目前磁碟機上的 \c\Users\...,和原生路徑永遠不相等
+    root, entry, target = migrated
+    monkeypatch.setattr(memory_hooks, "WINDOWS_MODE", True)
+    drive, _, rest = str(target).partition(":")
+    if not rest:  # 這台是 Linux:用 target 自己組一個等價的 MSYS 寫法
+        spelled = "/" + str(target).lstrip("/")
+        monkeypatch.setattr(
+            memory_hooks, "_from_msys_path", lambda text: str(target)
+        )
+    else:
+        spelled = f"/{drive.lower()}{rest}".replace("\\", "/")
+    (entry / memory.MIGRATED_NOTE).write_text(
+        f"Memory data migrated to:\n  {spelled}\n"
+        "This directory is now empty; you may delete it.\n"
+    )
+    assert memory_hooks.repair_entry(root)
+    assert memory.is_reparse_point(entry)
+    assert (entry / "recent.md").read_text() == "original history\n"
+
+
+def test_msys_translation_leaves_other_shapes_alone():
+    translate = memory_hooks._from_msys_path
+    assert translate("/c/Users/x") == r"c:\Users\x"
+    for untouched in ("/home/human/ai-config", r"C:\Users\x", "/cd/Users/x", "/"):
+        assert translate(untouched) is None
+
+
 @pytest.mark.parametrize("conflict", ["content", "bad_notice"])
 def test_repair_refuses_ambiguous_old_directory(migrated, conflict):
     root, entry, target = migrated
