@@ -23,6 +23,7 @@ from .console import (
     log_error,
     log_info,
     log_success,
+    set_force,
 )
 from .paths import ALL_TOOLS, CONFIG_ERROR, ENTRYPOINT, SCRIPT_DIR
 
@@ -117,6 +118,14 @@ def main(argv: "list[str] | None" = None) -> int:
             return run_setup([])
         usage()
         return 0
+
+    # --force/-f 對所有指令一致,在各指令自己解析參數之前就吃掉
+    if any(token in ("--force", "-f") for token in args):
+        set_force(True)
+        args = [token for token in args if token not in ("--force", "-f")]
+        if not args:
+            usage()
+            return 0
 
     cmd = args[0]
     if cmd in ("help", "--help", "-h"):

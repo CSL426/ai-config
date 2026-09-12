@@ -80,7 +80,29 @@ def ask(prompt: str) -> "str | None":
             print("再按一次 Ctrl+C 取消", file=sys.stderr)
 
 
-def confirm(prompt: str) -> bool:
+# --force:每個確認都當成同意。模組層級而非參數,因為確認點散在各指令裡,
+# 讓它們各自傳遞一個旗標只會讓每個呼叫端都有機會漏掉。
+_FORCE = False
+
+
+def set_force(value: bool) -> None:
+    global _FORCE
+    _FORCE = value
+
+
+def forced() -> bool:
+    return _FORCE
+
+
+def confirm(prompt: str, *, forceable: bool = True) -> bool:
+    """Ask a yes/no question; EOF and a bare Enter both mean no.
+
+    ``forceable=False`` keeps a question out of --force's reach: a
+    destructive step still has to be answered by whoever is running it.
+    """
+    if forceable and _FORCE:
+        print(f"{prompt}y")
+        return True
     answer = ask(prompt)
     if answer is None:
         return False

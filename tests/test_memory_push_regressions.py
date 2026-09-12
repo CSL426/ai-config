@@ -69,7 +69,8 @@ def test_push_all_without_optional_directories_can_review_and_cancel(
         return False
 
     monkeypatch.setattr(push, "confirm_prompt", decline)
-    assert push.do_push("all") == 0
+    # 沒拿到確認就沒推,離開碼要讓呼叫端分得出來
+    assert push.do_push("all") == 1
     assert reviewed == ["claude/settings.json"]
     assert git(data_repo, "diff", "--cached", "--name-only") == ""
     assert git(data_repo, "diff", "--name-only") == "claude/settings.json"

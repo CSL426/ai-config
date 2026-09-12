@@ -111,8 +111,13 @@ requiring PATH or pyenv cleanup first.
 ## CLI usage
 
 ```bash
-ai-config <command> [tool]
+ai-config <command> [tool] [--force]
 ```
+
+`--force` (`-f`) answers every `[y/N]` confirmation with yes, so an agent or a
+script with no terminal can run `pull`, `apply` and `push` end to end. `reset`
+ignores it: deleting every config file still has to be confirmed by a person.
+A command that stops because it never got its confirmation exits non-zero.
 
 - `init [tool]` — Gather local configs into the data repository.
 - `apply [tool]` — Deploy configuration from the data repository.
