@@ -84,13 +84,10 @@ def test_notice_spelled_the_msys_way_is_accepted(migrated, monkeypatch):
     root, entry, target = migrated
     monkeypatch.setattr(memory_hooks, "WINDOWS_MODE", True)
     drive, _, rest = str(target).partition(":")
-    if not rest:  # 這台是 Linux:用 target 自己組一個等價的 MSYS 寫法
-        spelled = "/" + str(target).lstrip("/")
-        monkeypatch.setattr(
-            memory_hooks, "_from_msys_path", lambda text: str(target)
-        )
-    else:
+    if rest:  # Windows:C:\x -> /c/x,外掛在 Git Bash 下寫的就是這個形狀
         spelled = f"/{drive.lower()}{rest}".replace("\\", "/")
+    else:  # POSIX:沒有磁碟機代號可翻,通知本來就是原生寫法
+        spelled = str(target)
     (entry / memory.MIGRATED_NOTE).write_text(
         f"Memory data migrated to:\n  {spelled}\n"
         "This directory is now empty; you may delete it.\n"
