@@ -32,11 +32,28 @@ def usage() -> None:
     print(f"{BOLD}{ENTRYPOINT}{NC} — Cross-AI tool configuration manager")
     print()
     print(f"{BOLD}Usage:{NC}")
-    print(f"  {ENTRYPOINT} <command> [tool]")
+    print(f"  {ENTRYPOINT} <command> [tool] [--force]")
+    print()
+    print(f"{BOLD}Global options:{NC}")
+    print("  --force, -f     Answer every [y/N] confirmation with yes, so a")
+    print("                  script or agent with no terminal runs unattended.")
+    print("                  It fills in the answer; the prompt is still shown.")
+    print("                  Confirmations live in: push, deploy, skill remove.")
+    print("                  reset ignores it on purpose: deleting every config")
+    print("                  file always has to be confirmed by a person.")
+    print("                  A command that stops for want of a confirmation")
+    print("                  exits non-zero; having nothing to do exits zero.")
     print()
     print(f"{BOLD}Commands:{NC}")
     print("  setup           Configure data repository and verify push access")
     print("                  --account <name> bind a gh account (private HTTPS repos)")
+    print("                  --data-dir <path> where the data repository lives")
+    print("                  --repo-url <url> clone from, or point the remote at, this")
+    print("                  --remote-name <name> git remote to use (default origin)")
+    print("                  --replace-remote overwrite a different existing remote")
+    print("                  --provider git|gdrive sync transport (default git)")
+    print("                  --gdrive-folder <path> Drive folder, nested like A/B")
+    print("                  --gdrive-space visible|hidden where Drive files live")
     print("  init [tool]     Gather configs from tool homes into the data repository")
     print("  apply [tool]    Deploy data repository configs to tool home directories")
     print("                  --category settings|skills|all (default all)")
@@ -63,11 +80,20 @@ def usage() -> None:
     print("                  --unbind drop the binding (gh's own account is never switched)")
     print("  memory <status|enable|disable|adopt|release|path|push>")
     print("                  Shared notebook that every AI tool reads and writes")
+    print("                  path --global|--project print one of the two roots")
+    print("                  push --allow-secrets skip the credential-content check")
     print("  desktop         Launch the desktop app (bundled on Windows)")
     print("                  --shortcut add a Start-menu entry (Windows)")
     print("                  --wait stay in the foreground (shows errors)")
     print("  gui             Alias for desktop")
     print("  skill           Print the acg usage guide (written for AI agents)")
+    print("  skill guide     Alias for the guide; works before setup")
+    print("  skill add <dir> Install a local skill into the repo and Claude home")
+    print("                  Refuses overwrite; apply --category skills for Codex/agy")
+    print("  skill remove <name>")
+    print("                  Confirm removal of all standalone sources and mirrors")
+    print("                  Includes legacy stores; --force accepts confirmation")
+    print("                  For shared copies only, use unshare then apply")
     print("  completion      Print Bash or PowerShell completion script")
     print("  update [version] Install the latest release, or a specific version")
     print("  version         Show the installed version")
@@ -168,10 +194,7 @@ def main(argv: "list[str] | None" = None) -> int:
             return 1
         print(render_completion(args[1]), end="")
         return 0
-    if cmd == "skill":
-        if len(args) != 1:
-            log_error(f"Usage: {ENTRYPOINT} skill")
-            return 1
+    if cmd == "skill" and args[1:] in ([], ["guide"]):
         from .guide import render_guide
 
         print(render_guide(), end="")
@@ -214,6 +237,11 @@ def main(argv: "list[str] | None" = None) -> int:
             f"Run {ENTRYPOINT} setup to configure and verify your data repository."
         )
         return 1
+
+    if cmd == "skill":
+        from .commands.skill import run_skill
+
+        return run_skill(args[1:])
 
     if cmd == "share":
         share_usage = f"Usage: {ENTRYPOINT} share <skill> [--to both|codex|agy]"
