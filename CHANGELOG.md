@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.43 - 2026-09-12
 
 - 新增全域 `--force` / `-f`:所有 [y/N] 確認都當成同意,沒有終端機的 agent 和腳本
   因此走得完 pull → apply → push 全程。`reset` 例外,它會刪光設定檔,仍然要人回答。
