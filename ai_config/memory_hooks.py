@@ -129,10 +129,12 @@ def _from_msys_path(text: str) -> "str | None":
     the MSYS way. Windows cannot open that spelling and normalises it to a
     path on the current drive, so neither comparison below ever matches it.
     """
-    match = re.fullmatch(r"/([A-Za-z])(/.*)?", text)
+    # Windows 的 Path() 會先把 / 換成 \,所以兩種分隔符都要認得
+    match = re.fullmatch(r"[/\\]([A-Za-z])([/\\].*)?", text)
     if not match:
         return None
-    return f"{match[1]}:{match[2] or '/'}".replace("/", "\\")
+    rest = match[2] or "\\"
+    return f"{match[1]}:{rest}".replace("/", "\\")
 
 
 def _notice_points_at(spelled: Path, target: Path) -> bool:
