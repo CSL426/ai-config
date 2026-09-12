@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- 新增 `acg skill add <本機目錄>`:依 SKILL.md 名稱安裝到資料儲存庫與 Claude
+  家目錄,排除憑證及 Git／acg 索引,不執行腳本、不覆寫既有技能;其他工具用
+  `apply --category skills` 部署。`acg skill` 仍印指南,也可用 `skill guide`。
+- 新增 `acg skill remove <名稱>`:列出同名獨立技能的來源、新舊鏡像及索引,
+  確認後一併移除,支援 `--force`。拒絕不安全路徑、連結與會讓技能重生的同名
+  agent;保留外掛與專案技能。只取消分享仍用 `unshare`。
+- 補齊 CLI help 與 AI 指南,修正 Claude skills 已會投影至其他工具的說明。
+
 ## 1.0.44 - 2026-09-12
 
 - `push` 在暫存後沒有實質差異時回 0,不再回 1。換行符正規化這類變動會讓 git status

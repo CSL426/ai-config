@@ -32,7 +32,7 @@ project, status, pull, push, and sync.
 | `project [tool]` | project live ~/.claude/ straight to Codex/agy |
 | `pull [tool]` | fast-forward the data repo, then show status |
 | `sync [tool]` | alias for pull |
-| `push [tool]` | gather, review, commit, and push (see guards below) |
+| `push [tool]` | gather, review, commit, and push (see guards below); confirms first |
 | `deploy [dir]` | copy managed Claude config into a project's `.claude/` (interactive) |
 | `deploy --profile <name>` | replay a saved selection without prompting |
 | `deploy --save-as <name>` | deploy interactively, then remember the selection |
@@ -41,8 +41,14 @@ project, status, pull, push, and sync.
 | `setup` | configure the data repo remote and verify push access |
 | `update [version]` | install the latest release, or a pinned one (also downgrades) |
 | `skill` | print this guide |
+| `skill guide` | explicit alias for this guide; works before setup |
+| `skill add <local-directory>` | install into data repo and Claude home; refuses overwrite |
+| `skill remove <name>` | confirm full removal of standalone sources and mirrors; accepts --force |
+| `share <name> [--to both\\|codex\\|agy]` | copy an existing Claude/plugin skill into shared sources |
+| `unshare <name> [--from both\\|codex\\|agy]` | remove shared sources only; apply updates mirrors |
 | `completion` | print the Bash or PowerShell completion script |
-| `reset` | wipe configs to an empty skeleton (confirms first) |
+| `reset` | wipe configs to an empty skeleton; always confirms, and `--force` does NOT pass it |
+| `--force` / `-f` | global: answer every [y/N] with yes (push, deploy, skill remove). Not reset. |
 
 ## What syncs where
 
@@ -55,17 +61,57 @@ project, status, pull, push, and sync.
 For Claude, the managed set is `CLAUDE.md`, `settings.json`, `mcp.json`,
 `statusline.sh`, and the `rules/ agents/ commands/ skills/` directories.
 
-Skills have two separate mechanisms. `claude/skills/` mirrors verbatim to
-Claude Code. `claude/shared/{{both,codex,agy}}/` projects to the other CLIs with
-frontmatter normalized for their stricter parsers. A skill wanted everywhere
-needs a copy in both. The `shared/` copy is authoritative — deleting it there
-removes the mirror on the next apply.
+`claude/skills/` mirrors verbatim to Claude Code and also projects to Codex/agy
+with frontmatter normalized for their stricter parsers. Tool-specific
+`codex/skills/` and `agy/skills/` are also sources. Projection precedence is
+Claude agents, tool-specific skills, Claude skills, shared/both, shared/tool
+(later sources win). Shared-only skills need `claude/shared/{{both,codex,agy}}/`.
+Projection copies `SKILL.md`, `examples/`, `references/`, `scripts/`, and
+`agents/`; other resources remain in the Claude copy.
 
 `status` also lists skill directories that exist in a tool's live skills
 directory but were never deployed by ai-config (hand-installed skills, or
 leftovers from an earlier migration). They are reported only: `apply` never
 prunes them, because deleting a skill the user installed themselves would be
-worse than leaving a stale one. Remove any you no longer want by hand.
+worse than leaving a stale one. Explicitly remove an unwanted standalone skill
+with `skill remove <name>` after reviewing its listed paths.
+
+## Installing and removing skills
+
+`{entrypoint} skill add ./my-skill` accepts a local directory containing
+`SKILL.md` with `name` and `description` frontmatter fields. The name is a plain
+or quoted string of 1-64 ASCII letters, digits, hyphens, or underscores,
+starting with a letter or digit; Windows device names are rejected.
+Descriptions support plain/quoted text and YAML literal/folded blocks.
+The frontmatter name determines the installed directory name.
+
+Add copies the complete directory into `<data-repo>/claude/skills/<name>` and
+`~/.claude/skills/<name>`, excluding credential filenames, `.git`, and acg
+index files at any depth. Existing destinations are refused even with --force.
+It does not download Git URLs/archives or execute scripts. Review local content
+before installing: AI tools may follow its instructions or use scripts later.
+Then run `status` and `apply --category skills` to deploy to Codex/agy.
+
+`{entrypoint} skill remove my-skill` lists and permanently removes that exact
+name from all standalone data sources (`claude/skills`, `codex/skills`,
+`agy/skills`, and all three `claude/shared` targets), plus Claude's live store,
+Codex's `~/.agents/skills` and legacy `~/.codex/skills`, and Antigravity's
+`~/.gemini/config/skills`, `~/.gemini/antigravity-cli/skills`, and
+`~/.gemini/antigravity/skills`. It also clears that name from local skill
+indexes. This includes unmanaged copies. It leaves plugins, project-local
+skills, backups, and other names intact. It refuses removal if a same-name
+Claude agent would regenerate the skill; handle that agent separately first.
+Missing skills are a successful no-op; declining confirmation or EOF exits 1.
+
+Removal uses the standard confirmation and honors `--force` because it targets
+one explicitly named skill, unlike reset's whole-configuration wipe. Force
+never bypasses path safety checks. Symlinks/Junctions and special files are
+refused, except verified legacy store links to known canonical stores.
+Paths are validated before mutation and checked again after confirmation.
+An I/O failure exits non-zero; consult printed removals for partial progress.
+For shared-only removal, keep using `unshare <name>` then `apply`; standalone
+sources remain, so a same-name standalone skill will still be projected.
+These commands do not commit or push; review the data repo changes separately.
 
 `apply` targets the user home directories. `deploy` targets one project's
 `.claude/` instead, for handing a project to someone else or pinning its setup
@@ -82,6 +128,12 @@ worth repeating can be saved with `--save-as <name>` and replayed later with
 - **Run `status` first.** It is read-only and shows exactly what would change.
 - **Never commit or push without explicit user approval.** This includes
   `push`, which commits as part of its flow.
+- **With no terminal, add `--force`.** Confirmations read stdin, so EOF counts
+  as no and the command stops with a non-zero exit. `--force` answers them
+  instead, which is what lets `pull` -> `apply` -> `push` run unattended. It
+  does not reach `reset`, whose confirmation is deliberately out of its scope.
+  Exit codes tell the two apart: refused confirmation is non-zero, nothing to
+  do is zero.
 - **Do not guess the data repo URL or path.** They differ per person; ask.
 - `apply` overwrites live config from the repo. If the machine has local edits
   worth keeping, `init` them first.
@@ -163,7 +215,7 @@ hash -r
 
 Windows uses `irm https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 | iex`.
 Use an SSH URL; URLs with embedded HTTP credentials are rejected. Tracked skills
-arrive with `apply` — there is no separate skill install step.
+arrive with `apply`; use `skill add <local-directory>` to introduce a new one.
 
 `AI_CONFIG_REPO` overrides the saved data repo path at runtime.
 """
