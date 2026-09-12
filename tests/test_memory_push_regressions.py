@@ -77,6 +77,18 @@ def test_push_all_without_optional_directories_can_review_and_cancel(
     assert not (data_repo / "memory").exists()
 
 
+def test_nothing_to_push_is_a_no_op_not_a_failure(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """暫存後沒有實質差異(例如純換行變動)是 no-op,不是失敗。"""
+    settings = data_repo / "claude/settings.json"
+    settings.write_text('{"theme": "dark"}\n', encoding="utf-8")
+    # git status 看得到修改,但暫存差異是空的
+    monkeypatch.setattr(push, "_staged_diff", lambda: "")
+
+    assert push.do_push("claude") == 0
+
+
 @pytest.mark.parametrize("scope", ["memory", "all"])
 def test_missing_memory_root_refuses_push_before_staging(
     data_repo: Path, scope: str, capsys: pytest.CaptureFixture[str]

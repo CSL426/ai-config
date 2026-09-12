@@ -905,6 +905,11 @@ def _review_and_confirm_push(
     return confirm_prompt("Commit and push these changes? [y/N] ")
 
 
+# 「暫存後沒有任何實質差異」不是錯誤:換行符正規化這類變動會讓 git status
+# 看得到修改,但暫存差異是空的。呼叫端要分得出它和真正的失敗。
+NOTHING_TO_PUSH = "\0nothing-to-push"
+
+
 def _stage_push_changes(selected: list[str]) -> "str | None":
     working = _working_paths()
     if working is None or not _memory_root_available(selected, working):
@@ -923,10 +928,13 @@ def _stage_push_changes(selected: list[str]) -> "str | None":
         return None
 
     staged_diff = _staged_diff()
+    if staged_diff is None:
+        _unstage_tools(selected)
+        return None
     if not staged_diff:
         _unstage_tools(selected)
-        log_error("No staged configuration changes were found; push cancelled.")
-        return None
+        log_success("No configuration changes to push")
+        return NOTHING_TO_PUSH
     return staged_diff
 
 
@@ -1184,6 +1192,8 @@ def do_push(tool: str, allow_secrets: bool = False) -> int:
         return 0
 
     reviewed_diff = _stage_push_changes(selected)
+    if reviewed_diff is NOTHING_TO_PUSH:
+        return 0
     if reviewed_diff is None:
         return 1
     staged_paths = _staged_paths()

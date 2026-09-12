@@ -732,8 +732,9 @@ def test_reset_default_and_no_cancel_without_mutation(tmp_path: Path) -> None:
     default = run_script(repo_dir, home_dir, "reset", input_text="\n")
     no = run_script(repo_dir, home_dir, "reset", input_text="n\n")
 
-    assert default.returncode == 0, default.stderr + default.stdout
-    assert no.returncode == 0, no.stderr + no.stdout
+    # 沒拿到確認就沒重設:離開碼要讓腳本分得出來
+    assert default.returncode == 1, default.stderr + default.stdout
+    assert no.returncode == 1, no.stderr + no.stdout
     assert "cancelled" in (default.stderr + default.stdout).lower()
     assert "cancelled" in (no.stderr + no.stdout).lower()
     assert snapshot_tree(repo_dir) == before
