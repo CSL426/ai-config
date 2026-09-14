@@ -974,3 +974,51 @@ def test_helper_explains_a_missing_token_on_stderr(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "gh auth login" in captured.err and "CSL426" in captured.err
+
+
+def test_a_bound_repository_reports_its_own_account(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 綁定的帳號只屬於這個資料庫,不該退回 gh 全機器的作用中帳號
+    repo = tmp_path / "data"
+    repo.mkdir()
+    assert _git(repo, "init", "-q").returncode == 0
+    monkeypatch.setattr(ghauth, "_acg_command", lambda: ["/x/acg"])
+    assert ghauth.bind_account(repo, "bound-one")[0]
+
+    # 只替換 gh 與 git 的查詢,不動 subprocess 本身,否則讀不到綁定
+    monkeypatch.setattr(ghauth.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        ghauth, "_logged_in_accounts", lambda: ("machine-wide", ["machine-wide"])
+    )
+    monkeypatch.setattr(ghauth, "git_can_push", lambda repo_dir: True)
+
+    status = ghauth.check_push_access("https://github.com/o/r.git", repo)
+
+    assert status.bound == "bound-one"
+    assert status.account == "bound-one"
+    assert all("machine-wide" not in line for line in ghauth.describe(status))
+
+
+def test_an_unbound_repository_follows_the_machine_and_says_so(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo = tmp_path / "data"
+    repo.mkdir()
+    assert _git(repo, "init", "-q").returncode == 0
+    monkeypatch.setattr(ghauth.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        ghauth, "_logged_in_accounts", lambda: ("machine-wide", ["machine-wide"])
+    )
+    monkeypatch.setattr(ghauth, "git_can_push", lambda repo_dir: False)
+    monkeypatch.setattr(ghauth, "account_token", lambda account: "tok")
+    monkeypatch.setattr(
+        ghauth,
+        "_run_gh",
+        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="true", stderr=""),
+    )
+
+    status = ghauth.check_push_access("https://github.com/o/r.git", repo)
+
+    assert status.bound == ""
+    assert status.account == "machine-wide"
