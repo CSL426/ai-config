@@ -30,7 +30,11 @@ from .paths import (
     SCRIPT_DIR,
     claude_source_dir,
 )
-from .safety import codex_agents_shared_target, is_reparse_point
+from .safety import (
+    codex_agents_shared_target,
+    is_reparse_point,
+    looks_like_secret,
+)
 
 WRITE_OBSERVER: ContextVar = ContextVar("memory_write_observer", default=None)
 
@@ -983,6 +987,72 @@ def ensure_index() -> bool:
     return True
 
 
+_INDEX_LINK = re.compile(r"^\s*-\s*\[[^\]]*\]\(([^)]+)\)", re.MULTILINE)
+
+
+def index_drift(index: Path, subdir: str) -> tuple[list[str], list[str]]:
+    """Notes the index forgot, and index lines pointing at nothing.
+
+    The index is written by hand: its one-line summaries cannot be
+    regenerated from the notes themselves. So this reports the two
+    drifts instead of repairing them — a note nobody linked is invisible
+    to the next session, and a dead link wastes the reader's time.
+    """
+    root = index.parent / subdir
+    if not index.is_file():
+        return [], []
+    linked = set()
+    for target in _INDEX_LINK.findall(_read_text(index)):
+        # 外部網址要在切成檔名之前排除,否則 scheme 已經被切掉認不出來
+        if "://" in target or target.startswith("mailto:"):
+            continue
+        name = target.replace("\\", "/").split("/")[-1].split("#")[0]
+        if name:
+            linked.add(name)
+    present = set()
+    if root.is_dir():
+        present = {
+            item.name
+            for item in root.iterdir()
+            if item.is_file() and item.suffix == ".md"
+        }
+    return sorted(present - linked), sorted(linked - present)
+
+
+def secret_notes() -> list[str]:
+    """Notes carrying something that must not be committed.
+
+    acg never writes the notes itself — an AI session does, straight to
+    disk. push already refuses to commit a secret, but that is the last
+    gate; saying so at status time means the note can be fixed before
+    it is ever staged.
+    """
+    root = memory_dir()
+    if not root.is_dir():
+        return []
+    found = []
+    # 只看會同步出去的部分。本機日誌被 memory/.gitignore 排除,永遠不會
+    # 離開這台機器,把它報成外洩風險只會製造假警報
+    scanned = [root / INDEX_NAME, root / TOPICS_NAME, root / PROJECTS_NAME]
+    candidates = sorted(
+        path
+        for base in scanned
+        for path in ([base] if base.is_file() else base.rglob("*.md"))
+    )
+    for path in candidates:
+        if is_reparse_point(path) or not path.is_file():
+            continue
+        if JOURNAL_DIR_NAME in path.relative_to(root).parts:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if looks_like_secret(text):
+            found.append(path.relative_to(root).as_posix())
+    return found
+
+
 def git_changes() -> "list[str] | None":
     """Uncommitted paths under memory/, or None when the repo is not git."""
     try:
@@ -1035,6 +1105,9 @@ class MemoryStatus:
     journal_config_value: str
     journal: str
     journal_detail: str
+    index_unlisted: list[str]
+    index_dangling: list[str]
+    secret_notes: list[str]
 
     @property
     def enabled(self) -> bool:
@@ -1048,6 +1121,7 @@ def inspect(cwd: "Path | None" = None) -> MemoryStatus:
     root = project_root(cwd)
     config_state, config_value = journal_config_state()
     journal, journal_detail = journal_state(root)
+    unlisted, dangling = index_drift(index_path(), TOPICS_NAME)
     return MemoryStatus(
         directory=memory_dir(),
         index_exists=index_path().is_file(),
@@ -1068,6 +1142,9 @@ def inspect(cwd: "Path | None" = None) -> MemoryStatus:
         journal_config_value=config_value,
         journal=journal,
         journal_detail=journal_detail,
+        index_unlisted=unlisted,
+        index_dangling=dangling,
+        secret_notes=secret_notes(),
     )
 
 

@@ -51,6 +51,9 @@ export interface MemoryInfo extends RunResult {
   tracked: boolean;
   git_status: "clean" | "dirty" | "untracked";
   changed_paths: string[];
+  index_unlisted: string[];
+  index_dangling: string[];
+  secret_notes: string[];
   entries: {
     tool: Exclude<ToolScope, "all">;
     status: "missing" | "installed" | "blocked";

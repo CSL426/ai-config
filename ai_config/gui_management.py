@@ -153,6 +153,7 @@ class ManagementApi:
     def memory_info(self, project_token=None):
         empty = {"data_root": str(paths.SCRIPT_DIR), "shared_path": str(paths.MEMORY_LINK),
                  "shared_status": "missing", "tracked": False, "git_status": "untracked",
+                 "index_unlisted": [], "index_dangling": [], "secret_notes": [],
                  "changed_paths": [], "entries": [], "project": None, "locations": [],
                  "actions": {action: {"allowed": False, "reason": "請先設定資料庫"}
                              for action in ("enable", "disable", "adopt", "release", "push")}}
@@ -200,6 +201,9 @@ class ManagementApi:
                     "tracked": state.changes is not None,
                     "git_status": "untracked" if state.changes is None else "dirty" if state.changes else "clean",
                     "changed_paths": state.changes or [], "entries": entries, "actions": actions,
+                    "index_unlisted": state.index_unlisted,
+                    "index_dangling": state.index_dangling,
+                    "secret_notes": state.secret_notes,
                     "locations": locations,
                     "project": {"root": str(project), "key": state.project.key,
                                 "stable": state.project.stable, "memory_path": str(state.project_dir),

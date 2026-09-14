@@ -1,6 +1,7 @@
 """Path preflight checks for managed repository and live destinations."""
 
 import os
+import re
 import stat
 from collections.abc import Mapping
 from pathlib import Path
@@ -221,3 +222,24 @@ def assert_tool_destinations_safe(
                 )
                 if not WINDOWS_MODE:
                     _assert_expected_agy_link()
+
+
+# 憑證樣式:push 的最後一道關卡與記憶寫入的第一道關卡共用同一份定義,
+# 兩邊分頭維護遲早會漂移
+SECRET_PATTERN = re.compile(
+    rb"(?:[\"']?(?:password|secret|token|api[_-]?key|api[_-]?secret|"
+    rb"auth[_-]?token|access[_-]?token|private[_-]?key|database_url|"
+    rb"github_token|aws_(?:access_key_id|secret_access_key|session_token)|"
+    rb"stripe_(?:secret_key|api_key))[\"']?\s*[:=])|"
+    rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
+    rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
+    rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    rb"AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|"
+    rb"sk-(?:proj-)?[A-Za-z0-9_-]{20,})",
+    re.IGNORECASE,
+)
+
+
+def looks_like_secret(text: str) -> bool:
+    """Whether text carries something that must never reach the repository."""
+    return bool(SECRET_PATTERN.search(text.encode("utf-8", "surrogatepass")))

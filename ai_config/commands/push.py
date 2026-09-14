@@ -1,7 +1,6 @@
 """push command: gather, review, commit and push the data repository."""
 
 import json
-import re
 import subprocess
 from dataclasses import dataclass
 
@@ -24,6 +23,7 @@ from ..paths import (
     SCRIPT_DIR,
     tilde,
 )
+from ..safety import SECRET_PATTERN as _SECRET_PATTERN
 from .apply import _init_tools, _selected_tools
 from .sync import (
     _git_failure,
@@ -34,18 +34,6 @@ from .sync import (
 )
 
 _ALLOW_SECRET_PATHS = False
-_SECRET_PATTERN = re.compile(
-    rb"(?:[\"']?(?:password|secret|token|api[_-]?key|api[_-]?secret|"
-    rb"auth[_-]?token|access[_-]?token|private[_-]?key|database_url|"
-    rb"github_token|aws_(?:access_key_id|secret_access_key|session_token)|"
-    rb"stripe_(?:secret_key|api_key))[\"']?\s*[:=])|"
-    rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
-    rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
-    rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
-    rb"AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|"
-    rb"sk-(?:proj-)?[A-Za-z0-9_-]{20,})",
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True)
