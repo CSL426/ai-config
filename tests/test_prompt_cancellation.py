@@ -144,3 +144,43 @@ def test_interactive_setup_exits_quietly_on_interrupt(
     assert setup.run_setup([]) == 130
     # 兩次中斷取消掉第一個提示後,不會再往下追問 provider 或 URL
     assert len(seen) == 2
+
+
+def test_no_one_can_press_enter_without_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """排程給的 stdin 讀不到東西也不拋 EOFError,input() 會永遠等下去。"""
+    import io
+
+    from ai_config import cli
+
+    class Unreadable(io.StringIO):
+        def isatty(self) -> bool:
+            return False
+
+        def readline(self, *args: object) -> str:
+            raise AssertionError("沒有人可以回答時不該去讀 stdin")
+
+    monkeypatch.setattr(cli.sys, "stdin", Unreadable())
+
+    cli._pause_before_closing()
+
+    assert capsys.readouterr().err == ""
+
+
+def test_a_real_terminal_still_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from ai_config import cli
+
+    class Interactive(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(cli.sys, "stdin", Interactive())
+    asked = []
+    monkeypatch.setattr("builtins.input", lambda *a: asked.append(1) or "")
+
+    cli._pause_before_closing()
+
+    assert asked == [1]

@@ -162,11 +162,27 @@ def _run_gui_guarded() -> int:
 
 
 def _pause_before_closing() -> None:
+    # 沒有可讀的 stdin 就沒有人能按 Enter。工作排程器直接啟動 exe 時給的
+    # 標準控制代碼是無效的,input() 既讀不到東西也不會拋 EOFError,行程
+    # 會一直停在這裡;Windows 上實測卡了 12 分鐘只燒 0.3 秒 CPU
+    if not _stdin_can_answer():
+        return
     # 提示走 stderr:stdout 可能是別的程式在讀的管線
     print(file=sys.stderr)
     try:
         sys.stderr.write("按 Enter 關閉視窗…")
         sys.stderr.flush()
         input()
-    except (EOFError, KeyboardInterrupt):
+    except (EOFError, KeyboardInterrupt, OSError):
         pass
+
+
+def _stdin_can_answer() -> bool:
+    """Whether a person could actually type into this process."""
+    stream = getattr(sys, "stdin", None)
+    if stream is None:
+        return False
+    try:
+        return bool(stream.isatty())
+    except (AttributeError, OSError, ValueError):
+        return False

@@ -190,11 +190,18 @@ def _log_path() -> Path:
 
 
 def schtasks_argv(hour: int, stale_hours: float) -> list[str]:
-    """Windows: /F replaces an existing task so enable stays idempotent."""
+    """Windows: /F replaces an existing task so enable stays idempotent.
+
+    Run through cmd.exe rather than starting the exe directly. The task
+    scheduler hands a directly-started process standard handles a console
+    program cannot use, and the run then stalls before it does any work;
+    going through cmd gives it usable ones. Measured on Windows: direct
+    start hangs, the same command behind cmd finishes in 1.5 seconds.
+    """
     command = " ".join(_quote(part) for part in _run_args(stale_hours))
     return [
         "schtasks", "/Create", "/F", "/TN", _TASK, "/SC", "DAILY",
-        "/ST", f"{hour:02d}:00", "/TR", command,
+        "/ST", f"{hour:02d}:00", "/TR", f"cmd /c {command}",
     ]
 
 
