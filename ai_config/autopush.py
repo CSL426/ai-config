@@ -69,24 +69,45 @@ def _memory_has_changes() -> bool:
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
-def _behind_upstream() -> bool:
-    """Whether the remote moved ahead of us.
-
-    push refuses in that state and says to pull, which is right for a
-    person but wrong for a scheduler: being behind is ordinary, and a
-    non-zero exit every night would train the user to ignore the timer.
-    """
+def _git(*args: str, timeout: float = 120) -> "subprocess.CompletedProcess | None":
     try:
-        result = subprocess.run(
-            ["git", "-C", str(SCRIPT_DIR), "rev-list", "--count",
-             "HEAD..@{upstream}"],
-            capture_output=True, text=True, check=False, timeout=30,
+        return subprocess.run(
+            ["git", "-C", str(SCRIPT_DIR), *args],
+            capture_output=True, text=True, check=False, timeout=timeout,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
     except (OSError, subprocess.SubprocessError):
-        return False
-    if result.returncode != 0:
+        return None
+
+
+def _behind_upstream() -> bool:
+    """Whether the remote moved ahead of us, asking the remote itself.
+
+    Without a fetch this compares against whatever origin/main was cached,
+    which on a machine that has not pulled for days says "level" while the
+    remote has moved on. The scheduled push would then hit a rejection it
+    could have predicted.
+    """
+    _git("fetch", "--quiet")
+    result = _git("rev-list", "--count", "HEAD..@{upstream}", timeout=30)
+    if result is None or result.returncode != 0:
         return False
     return result.stdout.strip() not in ("", "0")
+
+
+def _catch_up() -> bool:
+    """Replay our memory commits on top of the remote. False if it conflicts.
+
+    Several machines pushing on the same schedule will each be behind by
+    the time they wake. Rebasing keeps them from rejecting each other; a
+    real conflict aborts and stays for a person, because resolving one
+    unattended could silently drop somebody's notes.
+    """
+    result = _git("rebase", "--autostash", "@{upstream}")
+    if result is not None and result.returncode == 0:
+        return True
+    _git("rebase", "--abort")
+    return False
 
 
 @dataclass
@@ -101,8 +122,8 @@ def decide(stale_hours: float = DEFAULT_STALE_HOURS) -> Decision:
         return Decision(False, "沒有記憶目錄")
     if not _memory_has_changes():
         return Decision(False, "記憶沒有變更")
-    if _behind_upstream():
-        return Decision(False, "落後遠端,要先 pull;自動推送不代為合併")
+    if _behind_upstream() and not _catch_up():
+        return Decision(False, "落後遠端且無法自動接上,請自己 acg pull 處理")
     last = _read_last_push()
     if last is not None:
         waited = datetime.now(UTC) - last

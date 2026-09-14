@@ -1,6 +1,7 @@
 """排程只是觸發器;要不要真的推,由這裡的判斷決定。"""
 
 import plistlib
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -160,14 +161,51 @@ def test_a_successful_push_is_recorded(notebook: Path) -> None:
     assert autopush.state_path().read_text(encoding="utf-8").startswith("2026-09-14")
 
 
-def test_being_behind_the_remote_is_not_a_failure(
+def test_being_behind_is_caught_up_automatically(
     notebook: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 落後是常態;每晚回非零會讓使用者學會忽略這個 timer
+    # 多台機器同一時間醒來,醒來時都落後;能接上就繼續推
     _changes(monkeypatch, True)
     monkeypatch.setattr(autopush, "_behind_upstream", lambda: True)
+    monkeypatch.setattr(autopush, "_catch_up", lambda: True)
+
+    assert autopush.decide().push is True
+
+
+def test_a_conflict_is_left_for_a_person(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 無人看管時解衝突可能默默丟掉別人的筆記,寧可停下
+    _changes(monkeypatch, True)
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: True)
+    monkeypatch.setattr(autopush, "_catch_up", lambda: False)
 
     decision = autopush.decide()
 
     assert decision.push is False
-    assert "pull" in decision.reason
+    assert "acg pull" in decision.reason
+
+
+def test_git_never_waits_for_a_password_when_nobody_is_there() -> None:
+    """排程沒有終端機;git 停下來問帳密就會靜止到工作被砍掉。
+
+    Windows 上實際發生過:行程活了 12 分鐘只燒 0.7 秒 CPU,其餘時間
+    都在等 stdin。要明確失敗,不要等。
+    """
+    from ai_config.commands import sync
+
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    original = sync.subprocess.run
+    sync.subprocess.run = fake_run
+    try:
+        sync._run_repo_git("status")
+    finally:
+        sync.subprocess.run = original
+
+    assert captured["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert captured["timeout"] > 0

@@ -1,5 +1,6 @@
 """pull / sync command and the shared data-repo Git helpers."""
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -162,6 +163,10 @@ def _run_repo_git(
         encoding="utf-8",
         errors="replace",
         check=False,
+        # 沒有終端機時要明確失敗,不要停在那裡等帳密。排程跑起來時
+        # 沒有人可以回答,git 會靜止到工作被砍掉為止
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        timeout=600,
     )
 
 
