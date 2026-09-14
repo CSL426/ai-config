@@ -50,6 +50,7 @@ const skillSearch = $<HTMLInputElement>("#skill-search");
 const skillFilter = $<HTMLSelectElement>("#skill-filter");
 const skillResult = $("#skill-result");
 const skillRetry = $<HTMLButtonElement>("#skill-retry");
+const skillSource = $("#skill-source");
 const packageMessage = $<HTMLTextAreaElement>("#package-message");
 const packageCopy = $<HTMLButtonElement>("#package-copy");
 const updateBtn = $<HTMLButtonElement>("#update-check");
@@ -80,6 +81,7 @@ let updateInstalled = false;
 let settingsInfo: SettingsInfo | null = null;
 let settingsOpener: HTMLElement | null = null;
 let skills: SkillEntry[] = [];
+let skillDirectory: string | null = null;
 const selectedSkills = new Set<string>();
 
 function api(): AcgApi | null {
@@ -129,6 +131,8 @@ function syncControls(): void {
   const canShare = hasSelection && selected.every((skill) => skill.shareable);
   const canUnshare = hasSelection && selected.every((skill) => skill.shared);
 
+  $<HTMLButtonElement>("#skill-pick").disabled = unavailable;
+  $<HTMLButtonElement>("#skill-add").disabled = unavailable || !skillDirectory;
   $<HTMLButtonElement>("#skill-share").disabled = unavailable || !canShare;
   $<HTMLButtonElement>("#skill-unshare").disabled = unavailable || !canUnshare;
   $<HTMLButtonElement>("#skill-package").disabled = unavailable || !hasSelection;
@@ -764,6 +768,49 @@ $("#skill-none").addEventListener("click", () => {
   renderSkills();
 });
 skillRetry.addEventListener("click", () => { void loadSkills(); });
+
+$("#skill-pick").addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running || pendingPreview || !configured || restartRequired) return;
+  skillDirectory = null;
+  skillSource.textContent = "尚未選擇資料夾";
+  feedback(skillResult, "");
+  setBusy(true, "選擇技能資料夾");
+  try {
+    const selection = await bridge.select_skill_directory();
+    if (selection.code !== 0) {
+      feedback(skillResult, firstErrorLine(selection.output), true);
+    } else if (!selection.cancelled && selection.path) {
+      skillDirectory = selection.path;
+      skillSource.textContent = selection.path;
+    }
+  } catch (error) {
+    feedback(skillResult, `無法選擇資料夾：${String(error)}`, true);
+  } finally {
+    setBusy(false);
+  }
+});
+
+$("#skill-add").addEventListener("click", async () => {
+  const bridge = api();
+  if (!bridge || running || pendingPreview || !configured || restartRequired || !skillDirectory) return;
+  const source = skillDirectory;
+  feedback(skillResult, "");
+  const result = await perform("安裝技能", async () => {
+    const installed = await bridge.add_skill(source);
+    if (installed.code === 0) {
+      skillDirectory = null;
+      skillSource.textContent = "尚未選擇資料夾";
+      markStale("技能已變更");
+      await loadSkills();
+    }
+    return installed;
+  }, false);
+  if (!result) return;
+  feedback(skillResult, result.code === 0
+    ? "安裝完成，已加入資料庫與 Claude Code。要部署至其他工具，請返回並套用「獨立技能」。"
+    : firstErrorLine(result.output), result.code !== 0);
+});
 
 const SKILL_ACTION_LABELS = {
   share: "分享技能",

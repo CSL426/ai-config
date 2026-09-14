@@ -112,6 +112,44 @@ class ManagementApi:
         finally:
             self._lock.release()
 
+    def select_skill_directory(self):
+        result = {"cancelled": False, "path": None}
+        if not self._lock.acquire(blocking=False):
+            return {**result, **outcome(1, "另一個動作正在執行", "BUSY")}
+        try:
+            import webview
+
+            self._ensure_configured()
+            if not webview.windows:
+                raise RuntimeError("沒有可用的原生視窗")
+            selected = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
+            if not selected:
+                return {**result, **outcome(), "cancelled": True}
+            # Keep links visible so the CLI can reject unsafe source paths.
+            chosen = Path(selected[0])
+            if not chosen.is_absolute() or not chosen.is_dir():
+                raise ValueError("請選擇技能資料夾")
+            return {**result, **outcome(), "path": str(chosen)}
+        except Exception as exc:  # noqa: BLE001 - native chooser errors vary by OS
+            return {**result, **failure(exc)}
+        finally:
+            self._lock.release()
+
+    def add_skill(self, source):
+        if (not isinstance(source, str) or not source.strip()
+                or "\0" in source or not Path(source).is_absolute()):
+            return outcome(1, "請選擇有效的技能資料夾完整路徑", "INVALID_ARGUMENT")
+        if not self._lock.acquire(blocking=False):
+            return outcome(1, "另一個動作正在執行", "BUSY")
+        try:
+            self._ensure_configured()
+            self._discard_previews()
+            return self._run_captured(["skill", "add", source])
+        except (OSError, RuntimeError, ValueError) as exc:
+            return failure(exc)
+        finally:
+            self._lock.release()
+
     def memory_info(self, project_token=None):
         empty = {"data_root": str(paths.SCRIPT_DIR), "shared_path": str(paths.MEMORY_LINK),
                  "shared_status": "missing", "tracked": False, "git_status": "untracked",

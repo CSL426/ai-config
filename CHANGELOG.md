@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Desktop 技能頁新增本機安裝：透過原生資料夾選擇器選取來源，檢視路徑後
+  按「安裝技能」，完成後更新清單。永久刪除仍限 CLI，避免誤刪跨工具副本。
 - 新增 `acg skill add <本機目錄>`:依 SKILL.md 名稱安裝到資料儲存庫與 Claude
   家目錄,排除憑證及 Git／acg 索引,不執行腳本、不覆寫既有技能;其他工具用
   `apply --category skills` 部署。`acg skill` 仍印指南,也可用 `skill guide`。

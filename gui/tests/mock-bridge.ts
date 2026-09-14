@@ -33,6 +33,8 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
         gdrive_folder_url: "https://example.invalid/folder", signed_in: true,
       },
       list_skills: { skills: entries },
+      select_skill_directory: { ...success, cancelled: false, path: "/tmp/local skills/example" },
+      add_skill: success,
       run: {
         code: 0,
         output: "═══ Status: codex ═══\n✓ No differences found",

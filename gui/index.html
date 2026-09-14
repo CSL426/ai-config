@@ -325,6 +325,15 @@
           <h2 id="skills-title">分享與準備 AI 技能</h2>
         </div>
         <div class="package-body">
+          <section class="skill-install" aria-labelledby="skill-install-title">
+            <h3 id="skill-install-title">安裝本機技能</h3>
+            <p class="package-hint" id="skill-install-hint">選擇含 SKILL.md 的資料夾，依其中的名稱安裝至資料庫與 Claude Code；不覆寫既有技能。</p>
+            <div class="skill-install-actions">
+              <button class="btn" id="skill-pick">選擇資料夾</button>
+              <span id="skill-source" aria-live="polite">尚未選擇資料夾</span>
+              <button class="btn btn-primary" id="skill-add" aria-describedby="skill-source skill-install-hint" disabled>安裝技能</button>
+            </div>
+          </section>
           <div class="skill-toolbar">
             <label class="setup-field"><span>搜尋技能</span><input id="skill-search" type="search" placeholder="輸入技能名稱" /></label>
             <label class="setup-field"><span>顯示</span><select id="skill-filter"><option value="all">全部技能</option><option value="shared">已分享</option><option value="unshared">未分享</option></select></label>
