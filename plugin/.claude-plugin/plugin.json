@@ -1,0 +1,16 @@
+{
+  "name": "acg",
+  "version": "1.0.45",
+  "description": "Cross-AI CLI configuration manager and sync engine for Claude Code, Codex and Antigravity.",
+  "author": {
+    "name": "CSL426"
+  },
+  "license": "MIT",
+  "keywords": [
+    "config",
+    "sync",
+    "memory",
+    "handoff",
+    "cross-tool"
+  ]
+}
