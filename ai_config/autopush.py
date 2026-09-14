@@ -69,6 +69,26 @@ def _memory_has_changes() -> bool:
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
+def _behind_upstream() -> bool:
+    """Whether the remote moved ahead of us.
+
+    push refuses in that state and says to pull, which is right for a
+    person but wrong for a scheduler: being behind is ordinary, and a
+    non-zero exit every night would train the user to ignore the timer.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(SCRIPT_DIR), "rev-list", "--count",
+             "HEAD..@{upstream}"],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0:
+        return False
+    return result.stdout.strip() not in ("", "0")
+
+
 @dataclass
 class Decision:
     push: bool
@@ -81,6 +101,8 @@ def decide(stale_hours: float = DEFAULT_STALE_HOURS) -> Decision:
         return Decision(False, "沒有記憶目錄")
     if not _memory_has_changes():
         return Decision(False, "記憶沒有變更")
+    if _behind_upstream():
+        return Decision(False, "落後遠端,要先 pull;自動推送不代為合併")
     last = _read_last_push()
     if last is not None:
         waited = datetime.now(UTC) - last
