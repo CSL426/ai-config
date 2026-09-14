@@ -176,6 +176,20 @@ Pull still downloads the entire repository, including shared memory.
 - Backups land in `~/.ai-config-backup/<timestamp>/` before every apply and
   project.
 
+## Saving memory unattended
+
+`{entrypoint} memory autopush enable [hour]` registers a daily run with the
+platform's own scheduler: a systemd user timer on Linux (with `Persistent=true`,
+so a machine that was off catches up), a LaunchAgent on macOS, a scheduled task
+on Windows. Default hour is 04:00. Everything it writes lives under the user's
+home and `autopush disable` removes it.
+
+The run calls `memory push --if-stale 12`, which stops before touching git when
+the notebook has not changed or when a push happened within the last 12 hours.
+Machines with no schedule get the same thing opportunistically at the end of any
+acg command; set `AI_CONFIG_NO_AUTOPUSH=1` to suppress that. Both paths skip the
+confirmation but keep the credential check, so a secret still blocks the push.
+
 ## Slash commands
 
 Installing this repository as a plugin (`claude plugin marketplace add

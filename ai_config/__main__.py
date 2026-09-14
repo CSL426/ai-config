@@ -78,9 +78,11 @@ def usage() -> None:
     print("  config          Show provider (git/gdrive), repo, and login state")
     print("  login [account] Bind a GitHub account that can push to the data repo")
     print("                  --unbind drop the binding (gh's own account is never switched)")
-    print("  memory <status|enable|disable|adopt|release|path|push>")
+    print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
     print("                  Shared notebook that every AI tool reads and writes")
     print("                  path --global|--project print one of the two roots")
+    print("                  push --if-stale <小時> only when nothing pushed since")
+    print("                  autopush status|enable [時]|disable  schedule a daily save")
     print("                  handoff list|write <線> <內容>|claim <線>|done <線>")
     print("                    hand one work thread to the session that follows")
     print("                  push --allow-secrets skip the credential-content check")
@@ -454,9 +456,12 @@ def main(argv: "list[str] | None" = None) -> int:
         usage()
         return 1
 
+    from .autopush import opportunistic_push
     from .commands.update import maybe_notify_update
 
     maybe_notify_update()
+    # 沒有排程的機器靠這裡兜底;裝了排程就完全不做事
+    opportunistic_push()
     return 0
 
 

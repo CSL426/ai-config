@@ -865,6 +865,26 @@ packageCopy.addEventListener("click", async () => {
   setTimeout(() => { packageCopy.textContent = "複製說明"; }, 2000);
 });
 
+$<HTMLInputElement>("#autopush-toggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget as HTMLInputElement;
+  const bridge = api();
+  const wanted = toggle.checked;
+  if (!bridge) { toggle.checked = !wanted; return; }
+  toggle.disabled = true;
+  try {
+    const result = await bridge.set_autopush(wanted);
+    if (result.code !== 0) {
+      toggle.checked = !wanted;
+      feedback($("#memory-feedback"), result.output, true);
+      return;
+    }
+    feedback($("#memory-feedback"), wanted ? "已排定每天自動上傳" : "已取消自動上傳");
+    await refreshMemory();
+  } finally {
+    toggle.disabled = false;
+  }
+});
+
 pluginCopy.addEventListener("click", async () => {
   pluginInstall.select();
   const copied = await copyText(pluginInstall.value);
@@ -1403,6 +1423,17 @@ function memoryHealthGroup(
   return group;
 }
 
+function renderAutopush(info: MemoryInfo): void {
+  const toggle = $<HTMLInputElement>("#autopush-toggle");
+  const state = info.autopush ?? { installed: false, last_push: "", reason: "" };
+  toggle.checked = state.installed;
+  const parts: string[] = ["凌晨四點檢查，沒有變更或十二小時內推過就跳過。"];
+  if (state.last_push) {
+    parts.push(`上次上傳：${state.last_push.slice(0, 16).replace("T", " ")}`);
+  }
+  $("#autopush-hint").textContent = parts.join(" ");
+}
+
 function renderMemoryHealth(info: MemoryInfo): void {
   const host = $("#memory-health");
   host.replaceChildren();
@@ -1475,6 +1506,7 @@ async function refreshMemory(): Promise<void> {
     }
     $("#memory-summary").textContent = summaryText;
     renderMemoryHealth(info);
+    renderAutopush(info);
     const data = $("#memory-data");
     data.replaceChildren();
     textRow(data, "資料根", info.data_root);
