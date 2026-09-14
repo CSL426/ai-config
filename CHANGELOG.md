@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.45 - 2026-09-14
 
 - 新增 `acg memory handoff`:把一條工作線交接給下一個 session。日誌是按專案存的,
   同專案的多個 session 都往同一份追加,分不出哪句屬於哪條線;交接則是一條線一份檔案,
