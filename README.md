@@ -207,6 +207,15 @@ cross-surface `~/.agents/skills` directory used by Codex Desktop, CLI, and the
 IDE extension. Antigravity global Skills are deployed to
 `~/.gemini/config/skills`.
 
+## Two GitHub accounts on one machine
+
+`acg login` binds an account to the data repository, but gh's credential helper
+only ever answers as the machine-wide active account, so it cannot give a
+different identity to a different repository. The fix is an SSH key and a host
+alias per account, which bypasses the helper entirely. See
+[docs/multiple-github-accounts.md](docs/multiple-github-accounts.md) — it also
+explains why `~/.ssh/config` must not be synced.
+
 ## Data repository contract
 
 The data repository is the source of truth. `init` gathers live configuration

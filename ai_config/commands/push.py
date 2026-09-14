@@ -1123,7 +1123,8 @@ def _explain_push_refusal() -> None:
     remote = _run_repo_git("config", "--get", "remote.origin.url")
     if remote.returncode != 0:
         return
-    status = check_push_access(remote.stdout.strip())
+    # 傳資料儲存庫路徑:這個 repo 綁定了誰就問誰,不要退回 gh 的全域帳號
+    status = check_push_access(remote.stdout.strip(), SCRIPT_DIR)
     if not status.repository:
         return
     for line in describe(status):

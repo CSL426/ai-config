@@ -542,6 +542,7 @@ def check_push_access(remote_url: str, repo_dir: "Path | None" = None) -> GhStat
             active, status.accounts = _logged_in_accounts()
         except (OSError, subprocess.SubprocessError) as exc:
             status.detail = f"無法讀取 gh 登入狀態:{exc}"
+    # 有綁定就只認綁定;沒綁定才退回 gh 的作用中帳號,而那是全機器共用的
     status.account = status.bound or active
     status.logged_in = bool(status.account)
     if git_access is True:
@@ -627,8 +628,14 @@ def describe(status: GhStatus) -> list[str]:
     if not status.logged_in:
         return [f"gh 已安裝但尚未登入,需要一個能寫入 {status.repository} 的帳號。"]
     if status.can_push:
+        # 綁定的帳號只屬於這個資料庫;沒綁定才是 gh 全機器共用的那個
+        source = (
+            f"這個資料庫綁定 {status.account}"
+            if status.bound
+            else f"這個資料庫沒有綁定帳號,目前用 gh 的作用中帳號 {status.account}"
+        )
         return [
-            f"gh 目前登入 {status.account},且可以寫入 {status.repository}。",
+            f"{source},且可以寫入 {status.repository}。",
             "如果 push 仍失敗,git 可能還沒接上 gh 的憑證。",
         ]
     if status.account_can_push:
