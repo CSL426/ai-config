@@ -1,6 +1,7 @@
 """acg memory: the shared notebook's status, enable, disable, path and push."""
 
 import json
+import shlex
 import shutil
 import uuid
 from contextlib import contextmanager, nullcontext
@@ -67,7 +68,11 @@ def _handoff(rest: list[str]) -> int:
         if action == "write" and len(args) >= 2:
             note = hand.write(args[0], " ".join(args[1:]))
             log_success(f"已記下交接:{note.thread}")
-            log_info(f"下個 session 用 {ENTRYPOINT} memory handoff claim {note.name}")
+            # 名稱含空格時要引號,否則照著貼會被拆成多個參數
+            log_info(
+                f"下個 session 用 {ENTRYPOINT} memory handoff claim "
+                f"{shlex.quote(note.name)}"
+            )
             return 0
         if action == "claim" and len(args) == 1:
             note = hand.claim(args[0])

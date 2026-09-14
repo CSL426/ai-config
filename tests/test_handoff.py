@@ -107,3 +107,13 @@ def test_a_malformed_file_is_skipped_not_fatal(notebook: Path) -> None:
     handoff.write("好的", "內容")
 
     assert [n.thread for n in handoff.load_all()] == ["好的"]
+
+
+def test_the_hint_quotes_a_name_with_spaces(
+    notebook: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 提示是給人照著貼的:名稱有空格卻沒引號,貼上去會被拆成多個參數
+    from ai_config.commands import memory as command
+
+    assert command._handoff(["write", "含 空格 的線", "內容"]) == 0
+    assert "'含 空格 的線'" in capsys.readouterr().out
