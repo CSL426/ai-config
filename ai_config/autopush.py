@@ -153,6 +153,9 @@ def systemd_units(hour: int, stale_hours: float) -> tuple[str, str]:
         "Description=Save acg shared memory\n\n"
         "[Service]\n"
         "Type=oneshot\n"
+        # 保存記憶是幾秒的事。真的卡住就砍掉,不要讓一個停住的行程
+        # 佔著到下一次排程,那只會讓問題更難察覺
+        "RuntimeMaxSec=900\n"
         f"ExecStart={command}\n"
     )
     timer = (
@@ -180,6 +183,7 @@ def launchd_plist(hour: int, stale_hours: float) -> bytes:
         "ProgramArguments": _run_args(stale_hours),
         "StartCalendarInterval": {"Hour": hour, "Minute": 0},
         "RunAtLoad": False,
+        "ExitTimeOut": 900,
         "StandardOutPath": str(_log_path()),
         "StandardErrorPath": str(_log_path()),
     })
@@ -297,7 +301,33 @@ def _enable_schtasks(hour: int, stale_hours: float) -> list[str]:
         raise RuntimeError(
             f"建立工作排程失敗:{(created.stderr or created.stdout).strip()}"
         )
-    return [f"已排定每天 {hour:02d}:00 檢查(工作排程器:{_TASK})"]
+    lines = [f"已排定每天 {hour:02d}:00 檢查(工作排程器:{_TASK})"]
+    if _limit_windows_runtime():
+        lines.append("單次執行超過 15 分鐘會被中止")
+    return lines
+
+
+def _limit_windows_runtime() -> bool:
+    """Cap how long one run may take. schtasks /Create cannot express this.
+
+    The scheduler's default is 72 hours, so anything that does stall sits
+    there until the day after tomorrow. Saving memory takes seconds; a run
+    still going after fifteen minutes is stuck, and killing it is kinder
+    than hiding it.
+    """
+    script = (
+        f"$t = Get-ScheduledTask -TaskName '{_TASK}'; "
+        "$t.Settings.ExecutionTimeLimit = 'PT15M'; "
+        "Set-ScheduledTask -TaskName $t.TaskName -Settings $t.Settings"
+    )
+    try:
+        done = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, check=False, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0
 
 
 def disable() -> list[str]:

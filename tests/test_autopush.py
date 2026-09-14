@@ -221,3 +221,35 @@ def test_the_windows_task_goes_through_cmd() -> None:
 
     assert command.startswith("cmd /c ")
     assert "--if-stale" in command
+
+
+def test_every_platform_caps_how_long_one_run_may_take() -> None:
+    """卡住的行程要被砍掉,不要佔到下一次排程。
+
+    Windows 的預設是 72 小時,一個停住的工作會掛到後天。
+    """
+    service, _timer = autopush.systemd_units(4, 12)
+    assert "RuntimeMaxSec=" in service
+
+    parsed = plistlib.loads(autopush.launchd_plist(4, 12))
+    assert parsed["ExitTimeOut"] > 0
+
+
+def test_windows_sets_the_limit_after_creating_the_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # schtasks /Create 沒有表達執行上限的參數,要另外設
+    seen = []
+
+    def fake_run(args, **kwargs):
+        seen.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(autopush.subprocess, "run", fake_run)
+    monkeypatch.setattr(autopush, "platform_name", lambda: "windows")
+
+    lines = autopush.enable(4)
+
+    assert any("powershell" in str(call) for call in seen)
+    assert any("ExecutionTimeLimit" in str(call) for call in seen)
+    assert any("15 分鐘" in line for line in lines)
