@@ -294,6 +294,13 @@ claude plugin install acg@acg</textarea>
             <button class="btn" id="memory-push">上傳記憶</button>
             <button class="btn btn-ghost" data-memory-action="disable">停用共用記憶</button>
           </div>
+          <label class="autopush-row">
+            <input type="checkbox" id="autopush-toggle" />
+            <span class="autopush-text">
+              <span class="autopush-title">每天自動上傳記憶</span>
+              <span class="autopush-hint" id="autopush-hint">凌晨四點檢查，沒有變更或十二小時內推過就跳過。</span>
+            </span>
+          </label>
           <p class="package-hint" id="memory-global-reasons"></p>
           <p class="memory-sync-note">記憶下載後立即更新；設定與技能可另外選擇是否套用。</p>
           <div class="memory-health" id="memory-health" hidden></div>

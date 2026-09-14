@@ -1677,3 +1677,22 @@ summary:focus-visible,
 .settings-group:has(> #plugin-install) .package-hint {
   overflow-wrap: anywhere;
 }
+
+.autopush-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+  cursor: pointer;
+}
+
+.autopush-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.autopush-hint {
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}

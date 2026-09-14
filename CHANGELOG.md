@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- 新增 `acg memory autopush`:每天固定時間自動保存共用記憶,預設凌晨四點。
+  Linux 用 systemd user timer(帶 `Persistent=true`,關機錯過會補跑)、macOS 用
+  LaunchAgent、Windows 用工作排程器,全部寫在家目錄底下,`disable` 可完整移除。
+  執行時先判斷:記憶沒變更、或十二小時內推過,就不碰 git 直接結束。沒有排程的
+  機器則在每次執行 acg 後順手檢查,`AI_CONFIG_NO_AUTOPUSH=1` 可關閉。兩條路徑都
+  只跳過確認提示,憑證檢查照常擋下不該外流的內容。Desktop 的記憶頁有對應開關。
+- 新增 acg 自己的 Claude Code 外掛:`claude plugin marketplace add CSL426/ai-config`
+  之後可用八個帶 `acg:` 前綴的斜線指令,看得出來指令是哪裡來的。
+- 推送被拒絕時的說明改問這個資料庫綁定的帳號,不再退回 gh 的全機器作用中帳號。
+  狀態訊息也會講明帳號是綁定的還是跟著全機器跑。
+- 新增 `docs/multiple-github-accounts.md`:一台機器兩個 GitHub 帳號時,為什麼
+  `acg login` 解不掉其他儲存庫的身分問題,以及 SSH 別名的設法。
+- CI 測試矩陣加上 macOS。
+
 ## 1.0.45 - 2026-09-14
 
 - 新增 `acg memory handoff`:把一條工作線交接給下一個 session。日誌是按專案存的,

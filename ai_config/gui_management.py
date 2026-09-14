@@ -13,6 +13,20 @@ from .applyplan import StalePreview
 from .locking import apply_lock
 
 
+def _autopush_state() -> dict:
+    """Never let a scheduler hiccup take down the whole memory page."""
+    blank = {"installed": False, "last_push": "", "reason": ""}
+    try:
+        from . import autopush
+
+        state = autopush.status()
+        return {"installed": state["installed"], "last_push": state["last_push"],
+                "reason": state["reason"]}
+    except (ImportError, OSError, RuntimeError, ValueError):
+        # 排程查詢壞掉不該讓整個記憶頁打不開
+        return blank
+
+
 def outcome(code=0, output="", error=None, backup=None, recovery=False):
     return {"code": code, "output": output, "error": error,
             "backup_path": str(backup) if backup else None,
@@ -154,6 +168,7 @@ class ManagementApi:
         empty = {"data_root": str(paths.SCRIPT_DIR), "shared_path": str(paths.MEMORY_LINK),
                  "shared_status": "missing", "tracked": False, "git_status": "untracked",
                  "index_unlisted": [], "index_dangling": [], "secret_notes": [],
+                 "autopush": {"installed": False, "last_push": "", "reason": ""},
                  "changed_paths": [], "entries": [], "project": None, "locations": [],
                  "actions": {action: {"allowed": False, "reason": "請先設定資料庫"}
                              for action in ("enable", "disable", "adopt", "release", "push")}}
@@ -204,6 +219,7 @@ class ManagementApi:
                     "index_unlisted": state.index_unlisted,
                     "index_dangling": state.index_dangling,
                     "secret_notes": state.secret_notes,
+                    "autopush": _autopush_state(),
                     "locations": locations,
                     "project": {"root": str(project), "key": state.project.key,
                                 "stable": state.project.stable, "memory_path": str(state.project_dir),
@@ -212,6 +228,23 @@ class ManagementApi:
                     if project else None}
         except (OSError, RuntimeError, ValueError) as exc:
             return {**empty, **failure(exc)}
+        finally:
+            self._lock.release()
+
+    def set_autopush(self, wanted):
+        """Schedule or unschedule the daily memory save."""
+        if not isinstance(wanted, bool):
+            return outcome(1, "參數不正確", "INVALID_ARGUMENT")
+        if not self._lock.acquire(blocking=False):
+            return outcome(1, "另一個動作正在執行", "BUSY")
+        try:
+            from . import autopush
+
+            self._ensure_configured()
+            lines = autopush.enable() if wanted else autopush.disable()
+            return {**outcome(), "output": "\n".join(lines)}
+        except (OSError, RuntimeError, ValueError) as exc:
+            return failure(exc)
         finally:
             self._lock.release()
 

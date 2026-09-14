@@ -54,6 +54,7 @@ export interface MemoryInfo extends RunResult {
   index_unlisted: string[];
   index_dangling: string[];
   secret_notes: string[];
+  autopush: { installed: boolean; last_push: string; reason: string };
   entries: {
     tool: Exclude<ToolScope, "all">;
     status: "missing" | "installed" | "blocked";
@@ -177,6 +178,7 @@ interface AcgApi {
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
   select_memory_project(): Promise<ProjectSelection>;
   memory_info(projectToken?: string): Promise<MemoryInfo>;
+  set_autopush(wanted: boolean): Promise<OperationResult>;
   open_memory_location(locationToken: string): Promise<OperationResult>;
   preview_memory(action: MemoryAction, projectToken?: string): Promise<ChangePreview>;
   confirm_memory(token: string): Promise<OperationResult>;

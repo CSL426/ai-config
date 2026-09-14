@@ -15,7 +15,7 @@ from ..paths import BACKUP_BASE, ENTRYPOINT, MEMORY_LINK, tilde
 
 USAGE = (
     f"Usage: {ENTRYPOINT} memory "
-    "<status|enable|disable|adopt|release|path|push|handoff>"
+    "<status|enable|disable|adopt|release|path|push|handoff|autopush>"
 )
 
 
@@ -37,17 +37,85 @@ def _run_memory(args: list[str]) -> int:
         return execute(command, project).code
     if command == "path" and set(rest) <= {"--global", "--project"}:
         return _path(rest)
+    if command == "autopush":
+        return _autopush(rest)
     if command == "push":
+        from .. import autopush as auto
         from .push import MEMORY_SCOPE, do_push
 
+        stale = None
+        if len(rest) == 2 and rest[0] == "--if-stale":
+            try:
+                stale = float(rest[1])
+            except ValueError:
+                log_error("--if-stale 要接小時數,例如 --if-stale 12")
+                return 1
+            rest = []
+        if stale is not None:
+            decision = auto.decide(stale)
+            if not decision.push:
+                log_info(f"跳過自動推送:{decision.reason}")
+                return 0
         allow_secrets = rest == ["--allow-secrets"]
         if rest and not allow_secrets:
-            log_error(f"Usage: {ENTRYPOINT} memory push [--allow-secrets]")
+            log_error(
+                f"Usage: {ENTRYPOINT} memory push "
+                "[--allow-secrets] [--if-stale <小時>]"
+            )
             return 1
+        if stale is not None:
+            # 排程沒有終端機,確認提示讀到 EOF 就會當成拒絕。只跳過確認,
+            # 憑證檢查照跑:allow_secrets 維持 False
+            from ..console import set_force
+
+            set_force(True)
+            code = do_push(MEMORY_SCOPE, allow_secrets=False)
+            if code == 0:
+                auto.record_push()
+            return code
         return do_push(MEMORY_SCOPE, allow_secrets=allow_secrets)
     if command == "handoff":
         return _handoff(rest)
     log_error(USAGE)
+    return 1
+
+
+_AUTOPUSH_USAGE = (
+    f"Usage: {ENTRYPOINT} memory autopush [status | enable [時] | disable]"
+)
+
+
+def _autopush(rest: list[str]) -> int:
+    from .. import autopush as auto
+
+    action = rest[0] if rest else "status"
+    args = rest[1:]
+    try:
+        if action == "status" and not args:
+            state = auto.status()
+            log_info(f"平台:{state['platform']}")
+            if state["installed"]:
+                log_success("已排定每天自動推送記憶")
+            else:
+                log_info(
+                    f"尚未排定;沒有排程時,{ENTRYPOINT} 每次執行也會順手檢查"
+                )
+            log_info(f"上次推送:{state['last_push'] or '沒有紀錄'}")
+            log_info(f"現在執行的話:{state['reason']}")
+            return 0
+        if action == "enable" and len(args) <= 1:
+            hour = int(args[0]) if args else auto.DEFAULT_HOUR
+            for line in auto.enable(hour):
+                log_success(line)
+            return 0
+        if action == "disable" and not args:
+            for line in auto.disable():
+                log_info(line)
+            return 0
+    except (OSError, RuntimeError, ValueError) as exc:
+        log_error(str(exc))
+        return 1
+    log_error(_AUTOPUSH_USAGE)
     return 1
 
 
