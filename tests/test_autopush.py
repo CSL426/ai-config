@@ -209,3 +209,15 @@ def test_git_never_waits_for_a_password_when_nobody_is_there() -> None:
 
     assert captured["env"]["GIT_TERMINAL_PROMPT"] == "0"
     assert captured["timeout"] > 0
+
+
+def test_the_windows_task_goes_through_cmd() -> None:
+    """直接啟動 exe 時工作排程器給的標準控制代碼不堪用,行程會停在那裡。
+
+    實測:直接啟動掛住不動,同一條命令列包一層 cmd 1.5 秒就完成。
+    """
+    argv = autopush.schtasks_argv(4, 12)
+    command = argv[argv.index("/TR") + 1]
+
+    assert command.startswith("cmd /c ")
+    assert "--if-stale" in command

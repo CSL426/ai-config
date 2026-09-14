@@ -22,6 +22,8 @@ def test_double_click_pauses_before_exit(
     monkeypatch.setattr(cli, "gui_assets_bundled", lambda: False)
     monkeypatch.setattr(cli, "console_main", lambda: 3)
     monkeypatch.setattr(builtins, "input", lambda prompt="": prompts.append(prompt))
+    # 真的被雙擊時一定有可互動的 stdin;pytest 底下沒有,要明說
+    monkeypatch.setattr(cli, "_stdin_can_answer", lambda: True)
     monkeypatch.setattr(cli.sys, "argv", ["ai-config.exe"])
 
     assert cli.standalone_main() == 3
@@ -143,6 +145,8 @@ def test_double_click_holds_window_when_gui_fails(
     monkeypatch.setattr(gui_module, "run_gui", lambda: 1)
     monkeypatch.setattr(cli.sys, "argv", ["ai-config.exe"])
     monkeypatch.setattr(builtins, "input", lambda prompt="": prompts.append(prompt))
+    # 真的被雙擊時一定有可互動的 stdin;pytest 底下沒有,要明說
+    monkeypatch.setattr(cli, "_stdin_can_answer", lambda: True)
 
     # 開不起來時視窗必須留住,否則使用者只看到閃一下
     assert cli.standalone_main() == 1
