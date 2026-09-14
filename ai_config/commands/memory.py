@@ -126,6 +126,24 @@ def _status() -> int:
     if state.codex_override:
         log_warn(f"{tilde(memory.codex_override_path())} 存在,會遮蔽 Codex 的共用規則")
 
+    if state.index_unlisted:
+        log_warn(
+            f"有 {len(state.index_unlisted)} 則筆記沒有寫進索引,"
+            "下次開會話不會被看到:"
+        )
+        for name in state.index_unlisted:
+            print(f"  {memory.TOPICS_NAME}/{name}")
+    if state.index_dangling:
+        log_warn(f"索引有 {len(state.index_dangling)} 個連結指向不存在的檔案:")
+        for name in state.index_dangling:
+            print(f"  {memory.TOPICS_NAME}/{name}")
+
+    if state.secret_notes:
+        log_error(f"有 {len(state.secret_notes)} 則筆記像是含有憑證,push 會擋下:")
+        for name in state.secret_notes:
+            print(f"  {name}")
+        log_info("請先移除內容;本機日誌不同步,不在此列")
+
     if state.changes is None:
         log_info("記憶目錄不在 git 管理之下")
     elif state.changes:

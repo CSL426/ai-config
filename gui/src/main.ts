@@ -1367,6 +1367,64 @@ async function previewChange(kind: "apply" | "memory", action?: MemoryAction): P
     : "請檢閱檔案、連結目標與略過原因。取消不會套用；內容變動後必須重新預覽。");
 }
 
+function memoryHealthGroup(
+  kind: "warn" | "error",
+  heading: string,
+  hint: string,
+  paths: string[],
+): HTMLElement {
+  const group = document.createElement("div");
+  group.className = "memory-health-group";
+  group.dataset.kind = kind;
+  const title = document.createElement("p");
+  title.className = "memory-health-title";
+  title.textContent = `${heading}（${paths.length}）`;
+  const note = document.createElement("p");
+  note.className = "memory-health-hint";
+  note.textContent = hint;
+  const list = document.createElement("ul");
+  list.className = "memory-health-list";
+  for (const path of paths) {
+    const item = document.createElement("li");
+    item.textContent = path;
+    list.append(item);
+  }
+  group.append(title, note, list);
+  return group;
+}
+
+function renderMemoryHealth(info: MemoryInfo): void {
+  const host = $("#memory-health");
+  host.replaceChildren();
+  // 舊版後端沒有這些欄位;讀不到就當成沒有問題,不要讓整頁停在這裡
+  const checks: Array<{ kind: "warn" | "error"; heading: string; hint: string; paths: string[] }> = [
+    {
+      kind: "error",
+      heading: "疑似含有憑證的筆記",
+      hint: "上傳會被擋下。請先移除內容；本機日誌不同步，不在此列。",
+      paths: info.secret_notes ?? [],
+    },
+    {
+      kind: "warn",
+      heading: "沒有寫進索引的筆記",
+      hint: "索引沒連到它們，下次開新對話不會被讀到。",
+      paths: info.index_unlisted ?? [],
+    },
+    {
+      kind: "warn",
+      heading: "指向不存在檔案的索引連結",
+      hint: "檔案已不在，連結留著只會浪費閱讀的人的時間。",
+      paths: info.index_dangling ?? [],
+    },
+  ];
+  const groups = checks
+    .filter((c) => c.paths.length > 0)
+    .map((c) => memoryHealthGroup(c.kind, c.heading, c.hint, c.paths));
+
+  host.hidden = groups.length === 0;
+  host.append(...groups);
+}
+
 async function refreshMemory(): Promise<void> {
   const bridge = api();
   if (!bridge || !configured || memoryLoading) return;
@@ -1406,6 +1464,7 @@ async function refreshMemory(): Promise<void> {
       summaryText = `記憶已納入 Git，有 ${info.changed_paths.length} 個檔案變更，準備好後可預覽上傳。`;
     }
     $("#memory-summary").textContent = summaryText;
+    renderMemoryHealth(info);
     const data = $("#memory-data");
     data.replaceChildren();
     textRow(data, "資料根", info.data_root);
