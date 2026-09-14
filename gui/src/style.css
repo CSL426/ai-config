@@ -660,6 +660,31 @@ body {
   flex-wrap: wrap;
 }
 
+.skill-install {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.skill-install h3 {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.skill-install-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+#skill-source {
+  flex: 1 1 50%;
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+  color: var(--color-ink-soft);
+}
+
 .skill-toolbar .setup-field:first-child {
   flex: 1 1 12rem;
 }

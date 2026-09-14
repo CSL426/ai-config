@@ -107,6 +107,11 @@ export interface SkillList {
   skills: SkillEntry[];
 }
 
+export interface SkillDirectorySelection extends RunResult {
+  cancelled: boolean;
+  path: string | null;
+}
+
 export interface PackageResult {
   code: number;
   output: string;
@@ -178,6 +183,8 @@ interface AcgApi {
   preview_push(scope?: PushScope): Promise<PushPreview>;
   confirm_push(scope: PushScope, token: string): Promise<OperationResult>;
   list_skills(): Promise<SkillList>;
+  select_skill_directory(): Promise<SkillDirectorySelection>;
+  add_skill(source: string): Promise<RunResult>;
   package_skills(names: string[]): Promise<PackageResult>;
   share_skills(names: string[]): Promise<RunResult>;
   unshare_skills(names: string[]): Promise<RunResult>;
