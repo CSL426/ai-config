@@ -176,6 +176,17 @@ Pull still downloads the entire repository, including shared memory.
 - Backups land in `~/.ai-config-backup/<timestamp>/` before every apply and
   project.
 
+## Handing a thread to the next session
+
+The journal answers "what happened in this project"; every session in a
+project appends to the same files, so it cannot answer "where did my
+thread get to". A handoff is per-thread: `{entrypoint} memory handoff
+write "<thread>" "<where it got to, what is next>"` before a session
+ends, `handoff list` to see what is waiting, `handoff claim <thread>`
+to take one over, `handoff done <thread>` when it is finished. Claiming
+records the session id, so a second session is told who holds it rather
+than silently taking it. Writing again reopens a claimed thread.
+
 ## Shared memory
 
 `{entrypoint} memory enable` turns `<data-repo>/memory/` into a notebook every

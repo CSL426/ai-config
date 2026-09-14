@@ -81,6 +81,8 @@ def usage() -> None:
     print("  memory <status|enable|disable|adopt|release|path|push>")
     print("                  Shared notebook that every AI tool reads and writes")
     print("                  path --global|--project print one of the two roots")
+    print("                  handoff list|write <線> <內容>|claim <線>|done <線>")
+    print("                    hand one work thread to the session that follows")
     print("                  push --allow-secrets skip the credential-content check")
     print("  desktop         Launch the desktop app (bundled on Windows)")
     print("                  --shortcut add a Start-menu entry (Windows)")
