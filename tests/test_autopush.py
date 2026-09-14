@@ -158,3 +158,16 @@ def test_a_successful_push_is_recorded(notebook: Path) -> None:
     autopush.record_push(moment)
 
     assert autopush.state_path().read_text(encoding="utf-8").startswith("2026-09-14")
+
+
+def test_being_behind_the_remote_is_not_a_failure(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 落後是常態;每晚回非零會讓使用者學會忽略這個 timer
+    _changes(monkeypatch, True)
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: True)
+
+    decision = autopush.decide()
+
+    assert decision.push is False
+    assert "pull" in decision.reason
