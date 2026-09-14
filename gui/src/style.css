@@ -1661,3 +1661,19 @@ summary:focus-visible,
   #memory-panel .panel-head { flex-wrap: wrap; }
   #memory-panel .panel-head h2 { order: -1; flex-basis: 100%; }
 }
+
+/* 外掛安裝:指令與 code 片段都可能比對話框窄邊還長,
+   要讓它們自己換行或自己捲動,不能把對話框撐寬 */
+#plugin-install {
+  min-width: 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.settings-group:has(> #plugin-install) {
+  min-width: 0;
+}
+
+.settings-group:has(> #plugin-install) .package-hint {
+  overflow-wrap: anywhere;
+}

@@ -207,6 +207,26 @@ cross-surface `~/.agents/skills` directory used by Codex Desktop, CLI, and the
 IDE extension. Antigravity global Skills are deployed to
 `~/.gemini/config/skills`.
 
+## Claude Code plugin
+
+This repository is also a plugin marketplace, so commands can carry
+an `acg:` prefix that says where they came from:
+
+```bash
+claude plugin marketplace add CSL426/ai-config
+claude plugin install acg@acg
+```
+
+It adds eight slash commands wrapping `acg`: `/acg:status`, `/acg:sync`,
+`/acg:save`, `/acg:share`, `/acg:memory`, and three for session handoff
+(`/acg:handoff` records where a work thread got to, `/acg:handoffs` lists
+waiting threads, and `/acg:pickup` claims one and reads its notes back).
+The journal answers what happened in a project; handoff answers where one thread
+got to, which matters when several sessions work on the same project at once.
+
+The plugin carries only commands. The `acg` skill itself arrives through
+`apply` like every other skill, so it is not bundled here twice.
+
 ## Two GitHub accounts on one machine
 
 `acg login` binds an account to the data repository, but gh's credential helper

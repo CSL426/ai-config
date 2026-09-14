@@ -176,6 +176,16 @@ Pull still downloads the entire repository, including shared memory.
 - Backups land in `~/.ai-config-backup/<timestamp>/` before every apply and
   project.
 
+## Slash commands
+
+Installing this repository as a plugin (`claude plugin marketplace add
+CSL426/ai-config`, then `claude plugin install acg@acg`) adds eight slash
+commands whose `acg:` prefix says where they came from: `/acg:status`,
+`/acg:sync`, `/acg:save`, `/acg:share`, `/acg:memory`, `/acg:handoff`,
+`/acg:handoffs`, `/acg:pickup`. They wrap the CLI below and add no behaviour
+of their own, so the guards described here apply to them unchanged. The
+plugin carries only commands; the `acg` skill arrives through `apply`.
+
 ## Handing a thread to the next session
 
 The journal answers "what happened in this project"; every session in a

@@ -1,0 +1,13 @@
+{
+  "name": "acg",
+  "owner": {
+    "name": "CSL426"
+  },
+  "plugins": [
+    {
+      "name": "acg",
+      "source": "./plugin",
+      "description": "Cross-AI CLI configuration manager: sync settings, rules and skills across Claude Code, Codex and Antigravity, and hand a work thread to the session that follows."
+    }
+  ]
+}

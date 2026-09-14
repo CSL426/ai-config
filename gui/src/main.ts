@@ -53,6 +53,8 @@ const skillRetry = $<HTMLButtonElement>("#skill-retry");
 const skillSource = $("#skill-source");
 const packageMessage = $<HTMLTextAreaElement>("#package-message");
 const packageCopy = $<HTMLButtonElement>("#package-copy");
+const pluginInstall = $<HTMLTextAreaElement>("#plugin-install");
+const pluginCopy = $<HTMLButtonElement>("#plugin-copy");
 const updateBtn = $<HTMLButtonElement>("#update-check");
 const appNotice = $("#app-notice");
 const operationStatus = $("#operation-status");
@@ -861,6 +863,14 @@ packageCopy.addEventListener("click", async () => {
   if (!copied) { packageMessage.focus(); packageMessage.select(); }
   packageCopy.textContent = copied ? "已複製" : "請按複製快捷鍵";
   setTimeout(() => { packageCopy.textContent = "複製說明"; }, 2000);
+});
+
+pluginCopy.addEventListener("click", async () => {
+  pluginInstall.select();
+  const copied = await copyText(pluginInstall.value);
+  if (!copied) { pluginInstall.focus(); pluginInstall.select(); }
+  pluginCopy.textContent = copied ? "已複製" : "請按複製快捷鍵";
+  setTimeout(() => { pluginCopy.textContent = "複製安裝指令"; }, 2000);
 });
 
 updateBtn.addEventListener("click", async () => {
