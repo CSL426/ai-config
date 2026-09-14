@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.46 - 2026-09-14
 
 - 新增 `acg memory autopush`:每天固定時間自動保存共用記憶,預設凌晨四點。
   Linux 用 systemd user timer(帶 `Persistent=true`,關機錯過會補跑)、macOS 用
