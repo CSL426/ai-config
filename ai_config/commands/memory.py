@@ -12,7 +12,10 @@ from ..console import log_error, log_header, log_info, log_success, log_warn
 from ..locking import apply_lock
 from ..paths import BACKUP_BASE, ENTRYPOINT, MEMORY_LINK, tilde
 
-USAGE = f"Usage: {ENTRYPOINT} memory <status|enable|disable|adopt|release|path|push>"
+USAGE = (
+    f"Usage: {ENTRYPOINT} memory "
+    "<status|enable|disable|adopt|release|path|push|handoff>"
+)
 
 
 def run_memory(args: list[str]) -> int:
@@ -41,8 +44,62 @@ def _run_memory(args: list[str]) -> int:
             log_error(f"Usage: {ENTRYPOINT} memory push [--allow-secrets]")
             return 1
         return do_push(MEMORY_SCOPE, allow_secrets=allow_secrets)
+    if command == "handoff":
+        return _handoff(rest)
     log_error(USAGE)
     return 1
+
+
+_HANDOFF_USAGE = (
+    f"Usage: {ENTRYPOINT} memory handoff "
+    "[list | write <線> <內容> | claim <線> | done <線>]"
+)
+
+
+def _handoff(rest: list[str]) -> int:
+    from .. import handoff as hand
+
+    action = rest[0] if rest else "list"
+    args = rest[1:]
+    try:
+        if action == "list" and not args:
+            return _handoff_list()
+        if action == "write" and len(args) >= 2:
+            note = hand.write(args[0], " ".join(args[1:]))
+            log_success(f"已記下交接:{note.thread}")
+            log_info(f"下個 session 用 {ENTRYPOINT} memory handoff claim {note.name}")
+            return 0
+        if action == "claim" and len(args) == 1:
+            note = hand.claim(args[0])
+            log_success(f"已認領:{note.thread}")
+            print()
+            print(note.body)
+            return 0
+        if action == "done" and len(args) == 1:
+            note = hand.done(args[0])
+            log_success(f"已結束:{note.thread}")
+            return 0
+    except (OSError, RuntimeError, ValueError) as exc:
+        log_error(str(exc))
+        return 1
+    log_error(_HANDOFF_USAGE)
+    return 1
+
+
+def _handoff_list() -> int:
+    from .. import handoff as hand
+
+    notes = hand.load_all(memory.project_key().key)
+    if not notes:
+        log_info("這個專案沒有待接手的工作線")
+        return 0
+    for note in notes:
+        mark = {hand.OPEN: "○", hand.CLAIMED: "◐", hand.DONE: "●"}.get(note.state, "○")
+        held = f" ← {note.claimed_by[:8]}" if note.claimed_by else ""
+        first_line = note.body.splitlines()[0] if note.body.splitlines() else ""
+        print(f"  {mark} {note.name}{held}")
+        print(f"    {first_line[:70]}")
+    return 0
 
 
 def _status() -> int:

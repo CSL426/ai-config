@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 新增 `acg memory handoff`:把一條工作線交接給下一個 session。日誌是按專案存的,
+  同專案的多個 session 都往同一份追加,分不出哪句屬於哪條線;交接則是一條線一份檔案,
+  含狀態與認領者。`write` 記下進度、`list` 看有什麼待接手、`claim` 接手、`done` 結案。
+  認領會記下 session id,別的 session 想接會被告知已有人持有,不會無聲覆蓋。
 - Desktop 技能頁新增本機安裝：透過原生資料夾選擇器選取來源，檢視路徑後
   按「安裝技能」，完成後更新清單。永久刪除仍限 CLI，避免誤刪跨工具副本。
 - 新增 `acg skill add <本機目錄>`:依 SKILL.md 名稱安裝到資料儲存庫與 Claude
