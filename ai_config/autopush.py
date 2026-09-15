@@ -32,7 +32,14 @@ _TASK = "acg memory autopush"
 
 
 def state_path() -> Path:
-    return memory_dir() / ".autopush-state"
+    """When this machine last pushed. Local: every machine has its own.
+
+    Keeping it in the synced notebook would let one machine's timestamp
+    become another's, and the cooldown would then skip a machine that had
+    not pushed at all.
+    """
+    base = os.environ.get("XDG_STATE_HOME") or str(HOME / ".local" / "state")
+    return Path(base) / "acg" / "autopush-state"
 
 
 def _read_last_push() -> "datetime | None":

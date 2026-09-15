@@ -16,6 +16,8 @@ def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root.mkdir(parents=True)
     monkeypatch.setattr(autopush, "memory_dir", lambda: root)
     monkeypatch.setattr(autopush, "HOME", tmp_path)
+    # 狀態檔改放本機之後,沒有這行測試會寫進真的家目錄
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     return root
 
 
@@ -62,9 +64,11 @@ def test_never_pushed_with_changes_goes(
 
 
 def test_a_corrupt_state_file_does_not_stop_the_push(
-    notebook: Path, monkeypatch: pytest.MonkeyPatch
+    notebook: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _changes(monkeypatch, True)
+    autopush.state_path().parent.mkdir(parents=True, exist_ok=True)
     autopush.state_path().write_text("不是時間", encoding="utf-8")
 
     assert autopush.decide().push is True
@@ -341,3 +345,17 @@ def test_a_quiet_machine_still_catches_up(
     autopush.decide()
 
     assert caught == [1]
+
+
+def test_the_push_timestamp_stays_on_this_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """每台的上次推送時間不同,同步會讓一台的時間變成另一台的。"""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setattr(autopush, "memory_dir", lambda: tmp_path / "memory")
+
+    path = autopush.state_path()
+
+    assert (tmp_path / "memory") not in path.parents
+    autopush.record_push()
+    assert path.is_file()
