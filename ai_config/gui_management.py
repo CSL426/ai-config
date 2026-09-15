@@ -15,13 +15,23 @@ from .locking import apply_lock
 
 def _autopush_state() -> dict:
     """Never let a scheduler hiccup take down the whole memory page."""
-    blank = {"installed": False, "last_push": "", "reason": ""}
+    blank = {"installed": False, "last_push": "", "reason": "",
+             "slot": "", "host": "", "others": []}
     try:
-        from . import autopush
+        from . import autopush, schedule_table
 
         state = autopush.status()
+        host = schedule_table.host_name()
+        table = schedule_table.load()
+        mine = table.hosts.get(host)
+        others = [
+            {"host": name, "slot": str(slot)}
+            for name, slot in sorted(table.hosts.items())
+            if name != host
+        ]
         return {"installed": state["installed"], "last_push": state["last_push"],
-                "reason": state["reason"]}
+                "reason": state["reason"], "host": host,
+                "slot": str(mine) if mine else "", "others": others}
     except (ImportError, OSError, RuntimeError, ValueError):
         # 排程查詢壞掉不該讓整個記憶頁打不開
         return blank
@@ -168,7 +178,8 @@ class ManagementApi:
         empty = {"data_root": str(paths.SCRIPT_DIR), "shared_path": str(paths.MEMORY_LINK),
                  "shared_status": "missing", "tracked": False, "git_status": "untracked",
                  "index_unlisted": [], "index_dangling": [], "secret_notes": [],
-                 "autopush": {"installed": False, "last_push": "", "reason": ""},
+                 "autopush": {"installed": False, "last_push": "", "reason": "",
+                              "slot": "", "host": "", "others": []},
                  "changed_paths": [], "entries": [], "project": None, "locations": [],
                  "actions": {action: {"allowed": False, "reason": "請先設定資料庫"}
                              for action in ("enable", "disable", "adopt", "release", "push")}}
@@ -242,6 +253,33 @@ class ManagementApi:
 
             self._ensure_configured()
             lines = autopush.enable() if wanted else autopush.disable()
+            return {**outcome(), "output": "\n".join(lines)}
+        except (OSError, RuntimeError, ValueError) as exc:
+            return failure(exc)
+        finally:
+            self._lock.release()
+
+    def set_autopush_slot(self, clock):
+        """Move this machine to a chosen time and rebuild its schedule."""
+        if not isinstance(clock, str) or ":" not in clock:
+            return outcome(1, "時間格式要像 04:30", "INVALID_ARGUMENT")
+        hour, _, minute = clock.partition(":")
+        try:
+            hour, minute = int(hour), int(minute)
+        except ValueError:
+            return outcome(1, "時間格式要像 04:30", "INVALID_ARGUMENT")
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return outcome(1, "時間要在 00:00 到 23:59 之間", "INVALID_ARGUMENT")
+        if not self._lock.acquire(blocking=False):
+            return outcome(1, "另一個動作正在執行", "BUSY")
+        try:
+            from . import autopush, schedule_table
+
+            self._ensure_configured()
+            schedule_table.record(
+                schedule_table.host_name(), schedule_table.Slot(hour, minute)
+            )
+            lines = autopush.enable(hour)
             return {**outcome(), "output": "\n".join(lines)}
         except (OSError, RuntimeError, ValueError) as exc:
             return failure(exc)

@@ -348,17 +348,21 @@ def enable(
 
 
 def _claim_slot(hour: "int | None"):
-    """Pick this machine's minute and write it back for the others to see."""
+    """Pick this machine's minute and write it back for the others to see.
+
+    An hour given by hand keeps whatever minute the table already holds,
+    so setting a time in one place does not silently move it in another.
+    """
     try:
         from . import schedule_table as table
 
         host = table.host_name()
         current = table.load()
-        if hour is not None:
-            slot = table.Slot(hour, current.hosts.get(host, table.Slot(hour, 0)).minute)
-            slot = table.Slot(hour, 0) if host not in current.hosts else slot
-        else:
+        if hour is None:
             slot = table.claim(current, host)
+        else:
+            held = current.hosts.get(host)
+            slot = table.Slot(hour, held.minute if held else 0)
         table.record(host, slot)
         return slot
     except (ImportError, OSError, RuntimeError, ValueError):

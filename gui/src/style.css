@@ -1696,3 +1696,19 @@ summary:focus-visible,
   opacity: 0.75;
   overflow-wrap: anywhere;
 }
+
+/* display 要讓 [hidden] 贏,否則設了 hidden 還是看得見 */
+.autopush-slot:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+  padding-inline-start: 1.5rem;
+}
+
+.autopush-slot > .package-hint {
+  flex-basis: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
