@@ -375,3 +375,20 @@ def test_enable_moves_off_a_slot_somebody_else_holds(
     slot = autopush._claim_slot(None)
 
     assert str(slot) == "04:10"
+
+
+def test_bare_enable_asks_the_table_for_a_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """不帶參數的 enable 要讓時間表分配,不是直接用預設小時。
+
+    傳了預設值就會走「手動指定」那條路,讓位邏輯整個不會執行。
+    """
+    from ai_config.commands import memory as command
+
+    seen = []
+    monkeypatch.setattr(autopush, "enable", lambda hour=None: seen.append(hour) or [])
+
+    command._autopush(["enable"])
+
+    assert seen == [None]

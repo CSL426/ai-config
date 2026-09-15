@@ -108,7 +108,8 @@ def _autopush(rest: list[str]) -> int:
             log_info(f"現在執行的話:{state['reason']}")
             return 0
         if action == "enable" and len(args) <= 1:
-            hour = int(args[0]) if args else auto.DEFAULT_HOUR
+            # None 表示「照時間表分配」;給了數字才是手動指定
+            hour = int(args[0]) if args else None
             for line in auto.enable(hour):
                 log_success(line)
             return 0
