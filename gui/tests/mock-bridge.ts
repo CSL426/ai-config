@@ -62,11 +62,13 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
       },
       confirm_memory: success,
       set_autopush: success,
+      set_autopush_slot: success,
       memory_info: {
         ...success, data_root: "/tmp/data/memory", shared_path: "/tmp/shared-memory",
         shared_status: "ok", tracked: true, git_status: "dirty", changed_paths: ["memory/MEMORY.md"],
         index_unlisted: [], index_dangling: [], secret_notes: [],
-        autopush: { installed: false, last_push: "", reason: "" },
+        autopush: { installed: false, last_push: "", reason: "",
+          slot: "", host: "gpu-a4000", others: [] },
         entries: [
           { tool: "claude", status: "installed", reason: "", path: "/tmp/CLAUDE.md", cli_installed: true },
           { tool: "codex", status: "blocked", reason: "override 遮蔽入口", path: "/tmp/AGENTS.md", cli_installed: false },

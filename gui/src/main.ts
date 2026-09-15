@@ -885,6 +885,25 @@ $<HTMLInputElement>("#autopush-toggle").addEventListener("change", async (event)
   }
 });
 
+$<HTMLButtonElement>("#autopush-slot-save").addEventListener("click", async () => {
+  const bridge = api();
+  const clock = $<HTMLInputElement>("#autopush-slot").value;
+  if (!bridge || !clock) return;
+  const button = $<HTMLButtonElement>("#autopush-slot-save");
+  button.disabled = true;
+  try {
+    const result = await bridge.set_autopush_slot(clock);
+    if (result.code !== 0) {
+      feedback($("#memory-feedback"), result.output, true);
+      return;
+    }
+    feedback($("#memory-feedback"), `這台改到每天 ${clock}`);
+    await refreshMemory();
+  } finally {
+    button.disabled = false;
+  }
+});
+
 pluginCopy.addEventListener("click", async () => {
   pluginInstall.select();
   const copied = await copyText(pluginInstall.value);
@@ -1425,13 +1444,24 @@ function memoryHealthGroup(
 
 function renderAutopush(info: MemoryInfo): void {
   const toggle = $<HTMLInputElement>("#autopush-toggle");
-  const state = info.autopush ?? { installed: false, last_push: "", reason: "" };
+  const state = info.autopush ?? {
+    installed: false, last_push: "", reason: "", slot: "", host: "", others: [],
+  };
   toggle.checked = state.installed;
-  const parts: string[] = ["凌晨四點檢查，沒有變更或十二小時內推過就跳過。"];
+  const parts: string[] = ["沒有變更或十二小時內推過就跳過。"];
   if (state.last_push) {
     parts.push(`上次上傳：${state.last_push.slice(0, 16).replace("T", " ")}`);
   }
   $("#autopush-hint").textContent = parts.join(" ");
+
+  const row = $("#autopush-slot-row");
+  row.hidden = !state.installed;
+  if (!state.installed) return;
+  $<HTMLInputElement>("#autopush-slot").value = state.slot || "04:00";
+  const others = state.others ?? [];
+  $("#autopush-others").textContent = others.length
+    ? `其他機器：${others.map((o) => `${o.host} ${o.slot}`).join("、")}`
+    : "目前只有這台登記了時間。多台時會各自錯開，不必手動協調。";
 }
 
 function renderMemoryHealth(info: MemoryInfo): void {

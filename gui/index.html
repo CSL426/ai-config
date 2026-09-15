@@ -301,6 +301,12 @@ claude plugin install acg@acg</textarea>
               <span class="autopush-hint" id="autopush-hint">凌晨四點檢查，沒有變更或十二小時內推過就跳過。</span>
             </span>
           </label>
+          <div class="autopush-slot" id="autopush-slot-row" hidden>
+            <label for="autopush-slot">這台的時間</label>
+            <input type="time" id="autopush-slot" step="600" />
+            <button class="btn" id="autopush-slot-save">更新</button>
+            <p class="package-hint" id="autopush-others"></p>
+          </div>
           <p class="package-hint" id="memory-global-reasons"></p>
           <p class="memory-sync-note">記憶下載後立即更新；設定與技能可另外選擇是否套用。</p>
           <div class="memory-health" id="memory-health" hidden></div>

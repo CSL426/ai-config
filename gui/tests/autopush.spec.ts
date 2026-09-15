@@ -13,7 +13,8 @@ const base = {
     adopt: { allowed: false, reason: "" },
     release: { allowed: true, reason: "" }, push: { allowed: true, reason: "" },
   },
-  autopush: { installed: false, last_push: "", reason: "" },
+  autopush: { installed: false, last_push: "", reason: "",
+    slot: "", host: "gpu-a4000", others: [] },
 };
 
 async function openMemory(page: Parameters<typeof boot>[0], info: object) {
@@ -32,7 +33,8 @@ test("已排定時開關是開的,並顯示上次上傳時間", async ({ page })
   await boot(page);
   await openMemory(page, {
     ...base,
-    autopush: { installed: true, last_push: "2026-09-14T04:00:00+00:00", reason: "" },
+    autopush: { installed: true, last_push: "2026-09-14T04:00:00+00:00", reason: "",
+      slot: "04:00", host: "gpu-a4000", others: [] },
   });
 
   await expect(page.locator("#autopush-toggle")).toBeChecked();
@@ -42,7 +44,8 @@ test("已排定時開關是開的,並顯示上次上傳時間", async ({ page })
 test("打開開關會請後端排定", async ({ page }) => {
   await boot(page);
   await openMemory(page, base);
-  await queue(page, "memory_info", { ...base, autopush: { installed: true, last_push: "", reason: "" } });
+  await queue(page, "memory_info", { ...base, autopush: { installed: true, last_push: "", reason: "",
+    slot: "04:00", host: "gpu-a4000", others: [] } });
 
   await page.locator("#autopush-toggle").click();
 
@@ -67,4 +70,53 @@ test("舊版後端沒有這個欄位時不會壞掉", async ({ page }) => {
 
   await expect(page.locator("#autopush-toggle")).not.toBeChecked();
   await expect(page.locator("#memory-summary")).not.toBeEmpty();
+});
+
+
+test("沒排定時不顯示時間欄位", async ({ page }) => {
+  await boot(page);
+  await openMemory(page, base);
+
+  await expect(page.locator("#autopush-slot-row")).toBeHidden();
+});
+
+test("已排定時顯示這台的時間與其他機器", async ({ page }) => {
+  await boot(page);
+  await openMemory(page, {
+    ...base,
+    autopush: {
+      installed: true, last_push: "", reason: "",
+      slot: "04:20", host: "gpu-a4000",
+      others: [{ host: "gn100-d091", slot: "04:00" }],
+    },
+  });
+
+  await expect(page.locator("#autopush-slot")).toHaveValue("04:20");
+  await expect(page.locator("#autopush-others")).toContainText("gn100-d091 04:00");
+});
+
+test("只有一台時說明會自動錯開", async ({ page }) => {
+  await boot(page);
+  await openMemory(page, {
+    ...base,
+    autopush: { installed: true, last_push: "", reason: "",
+      slot: "04:00", host: "gpu-a4000", others: [] },
+  });
+
+  await expect(page.locator("#autopush-others")).toContainText("只有這台");
+});
+
+test("改時間會送到後端", async ({ page }) => {
+  await boot(page);
+  await openMemory(page, {
+    ...base,
+    autopush: { installed: true, last_push: "", reason: "",
+      slot: "04:00", host: "gpu-a4000", others: [] },
+  });
+  await queue(page, "memory_info", base);
+
+  await page.locator("#autopush-slot").fill("05:30");
+  await page.locator("#autopush-slot-save").click();
+
+  expect((await calls(page, "set_autopush_slot")).at(-1)?.args).toEqual(["05:30"]);
 });
