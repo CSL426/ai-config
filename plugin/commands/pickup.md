@@ -1,6 +1,6 @@
 ---
 description: 接手一條交接出來的工作線,並讀取它的進度
-argument-hint: '[工作線名稱]'
+argument-hint: '[專案路徑] [工作線名稱]'
 allowed-tools: Bash(acg memory handoff:*), Bash(ai-config memory handoff:*)
 ---
 
@@ -8,13 +8,24 @@ allowed-tools: Bash(acg memory handoff:*), Bash(ai-config memory handoff:*)
 
 引數:`$ARGUMENTS`
 
-若使用者沒指定名稱,先列出有哪些可接:
+引數的第一個詞若是一個存在的目錄,就是要看**那個專案**的交接線,列表時把它
+傳給 `list`;其餘的詞才是工作線名稱。沒給路徑就看目前這個專案。
 
-!`acg memory handoff list`
+若使用者沒指定名稱,先列出有哪些可接(有路徑就接在後面):
 
-然後問他要接哪一條,不要自己挑。
+```
+acg memory handoff list
+acg memory handoff list /path/to/other/project
+```
 
-指定了名稱就用 Bash 認領它(名稱含空格要用引號):
+列表已經只含這個專案的工作線,照數量決定:
+
+- **沒有**:告訴使用者目前沒有可接的線,到這裡結束。
+- **只有一條**:直接認領它,不用再問 —— 沒有第二個選項時,問是多餘的。
+  認領前先把那條線的名稱與摘要說一遍,讓使用者知道接的是哪條。
+- **兩條以上**:問他要接哪一條,不要自己挑。
+
+指定了名稱,或只有一條可接,就用 Bash 認領它(名稱含空格要用引號):
 
 ```
 acg memory handoff claim "使用者說的那條線"

@@ -117,3 +117,34 @@ def test_the_hint_quotes_a_name_with_spaces(
 
     assert command._handoff(["write", "含 空格 的線", "內容"]) == 0
     assert "'含 空格 的線'" in capsys.readouterr().out
+
+
+def test_listing_takes_another_projects_path(
+    notebook: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ai_config.commands import memory as command
+
+    other = tmp_path / "other-project"
+    other.mkdir()
+
+    def by_path(cwd: "Path | None" = None) -> memory.ProjectKey:
+        name = "other--repo" if cwd == other else "o--r"
+        return memory.ProjectKey(name, True, "t")
+
+    monkeypatch.setattr(memory, "project_key", by_path)
+    monkeypatch.setattr(handoff, "project_key", by_path)
+    handoff.write("本線", "這裡的進度")
+    handoff.write("別線", "那邊的進度", cwd=other)
+
+    assert command.run_memory(["handoff", "list"]) == 0
+    here = capsys.readouterr().out
+    assert command.run_memory(["handoff", "list", str(other)]) == 0
+    there = capsys.readouterr().out
+    assert "本線" in here and "別線" not in here
+    assert "別線" in there and "本線" not in there
+
+
+def test_listing_a_missing_path_is_refused(notebook: Path, tmp_path: Path) -> None:
+    from ai_config.commands import memory as command
+
+    assert command.run_memory(["handoff", "list", str(tmp_path / "nope")]) == 1
