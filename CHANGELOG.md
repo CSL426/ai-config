@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.58 - 2026-09-15
+
+- 新增 Claude Code 本機交接提醒：`memory handoff remind status|enable [百分比]|disable`，
+  預設停用，啟用門檻預設 70%，可設定 1 到 99 的整數。Desktop 記憶頁與
+  `/acg:handoff remind` 同步提供管理入口。
+- 使用官方 statusLine context 百分比並保留原輸出；每個 session 每輪壓縮前到門檻
+  提醒一次，讀值缺漏、null 或過期時略過。PreCompact 只重設狀態，不阻擋壓縮，
+  提醒不會自動寫入交接，也不要求先認領工作線。
+
 ## 1.0.57 - 2026-09-15
 
 - 外掛指令不再誤執行範例文字。`/acg:handoff` 原本會照著說明裡的佔位符建立一則名字

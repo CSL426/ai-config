@@ -126,7 +126,8 @@ def _autopush(rest: list[str]) -> int:
 
 _HANDOFF_USAGE = (
     f"Usage: {ENTRYPOINT} memory handoff "
-    "[list | write <線> <內容> | claim <線> | done <線>]"
+    "[list | write <線> <內容> | claim <線> | done <線> | "
+    "remind [status|enable [百分比]|disable]]"
 )
 
 
@@ -136,6 +137,8 @@ def _handoff(rest: list[str]) -> int:
     action = rest[0] if rest else "list"
     args = rest[1:]
     try:
+        if action == "remind":
+            return _handoff_remind(args)
         if action == "list" and not args:
             return _handoff_list()
         if action == "write" and len(args) >= 2:
@@ -162,6 +165,31 @@ def _handoff(rest: list[str]) -> int:
         return 1
     log_error(_HANDOFF_USAGE)
     return 1
+
+
+def _handoff_remind(args: list[str]) -> int:
+    from .. import handoff_reminder as remind
+
+    action = args[0] if args else "status"
+    rest = args[1:]
+    if action == "status" and not rest:
+        state = remind.status()
+    elif action == "enable" and len(rest) <= 1:
+        threshold = int(rest[0]) if rest else remind.DEFAULT_THRESHOLD
+        state = remind.configure(True, threshold)
+    elif action == "disable" and not rest:
+        state = remind.configure(False)
+    else:
+        log_error(_HANDOFF_USAGE)
+        return 1
+    if state["installed"]:
+        log_success(f"Claude 交接提醒已啟用，門檻 {state['threshold']}%")
+    elif state["enabled"]:
+        log_warn("交接提醒安裝不完整，請重新執行 handoff remind enable")
+    else:
+        log_info("Claude 交接提醒未啟用")
+    log_info("只提醒，不自動寫入交接；使用新會話確認 hooks 生效")
+    return 0
 
 
 def _handoff_list() -> int:

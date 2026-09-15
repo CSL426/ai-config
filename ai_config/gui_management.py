@@ -43,6 +43,16 @@ def outcome(code=0, output="", error=None, backup=None, recovery=False):
             "recovery_required": recovery}
 
 
+def _handoff_reminder_state() -> dict:
+    try:
+        from . import handoff_reminder
+
+        return {**handoff_reminder.status(), "reason": ""}
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {"enabled": False, "threshold": 70, "installed": False,
+                "reason": str(exc)}
+
+
 def failure(exc):
     recovery = getattr(exc, "recovery_required", False)
     if recovery:
@@ -180,6 +190,7 @@ class ManagementApi:
                  "index_unlisted": [], "index_dangling": [], "secret_notes": [],
                  "autopush": {"installed": False, "last_push": "", "reason": "",
                               "slot": "", "host": "", "others": []},
+                 "handoff_reminder": None,
                  "changed_paths": [], "entries": [], "project": None, "locations": [],
                  "actions": {action: {"allowed": False, "reason": "請先設定資料庫"}
                              for action in ("enable", "disable", "adopt", "release", "push")}}
@@ -231,6 +242,7 @@ class ManagementApi:
                     "index_dangling": state.index_dangling,
                     "secret_notes": state.secret_notes,
                     "autopush": _autopush_state(),
+                    "handoff_reminder": _handoff_reminder_state(),
                     "locations": locations,
                     "project": {"root": str(project), "key": state.project.key,
                                 "stable": state.project.stable, "memory_path": str(state.project_dir),
@@ -239,6 +251,27 @@ class ManagementApi:
                     if project else None}
         except (OSError, RuntimeError, ValueError) as exc:
             return {**empty, **failure(exc)}
+        finally:
+            self._lock.release()
+
+    def set_handoff_reminder(self, enabled, threshold=70):
+        """Configure the Claude Code reminder under the GUI action lock."""
+        if (not isinstance(enabled, bool) or type(threshold) is not int
+                or not 1 <= threshold <= 99):
+            return outcome(1, "提醒門檻必須是 1 到 99 的整數", "INVALID_ARGUMENT")
+        if not self._lock.acquire(blocking=False):
+            return outcome(1, "另一個動作正在執行", "BUSY")
+        try:
+            from . import handoff_reminder
+
+            self._ensure_configured()
+            self._discard_previews()
+            state = handoff_reminder.configure(enabled, threshold)
+            message = (f"已啟用 Claude Code 交接提醒，門檻 {state['threshold']}%。"
+                       if state["enabled"] else "已停用 Claude Code 交接提醒。")
+            return {**outcome(output=message), "handoff_reminder": state}
+        except (OSError, RuntimeError, ValueError) as exc:
+            return failure(exc)
         finally:
             self._lock.release()
 

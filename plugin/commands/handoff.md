@@ -1,12 +1,34 @@
 ---
-description: 把這條工作線的進度交接給下一個 session
-argument-hint: '[工作線名稱] [進度與下一步]'
+description: 把這條工作線的進度交接給下一個 session，或管理 context 提醒
+argument-hint: '[工作線名稱] [進度與下一步] | remind [status|enable [百分比]|disable]'
 allowed-tools: Bash(acg memory handoff:*), Bash(ai-config memory handoff:*)
 ---
 
 使用者要把目前這條工作線交接出去,給接手的下一個 session 讀。
 
 引數:`$ARGUMENTS`
+
+## 管理提醒
+
+若引數以 `remind` 開頭，或使用者明確要求查看、啟用、調整、停用交接提醒，
+執行對應指令並回報結果，到這裡結束，不建立交接：
+
+```bash
+acg memory handoff remind status
+acg memory handoff remind enable
+acg memory handoff remind enable 80
+acg memory handoff remind disable
+```
+
+`remind` 未指定動作時查詢 `status`。`enable` 預設門檻 70%，可接受 1 到 99
+的整數。上面的 80 是指定門檻的範例，應使用使用者要求的數值。
+
+這是 Claude Code 專用、本機選擇啟用的功能。讀取官方 context 使用百分比，
+保留既有 statusLine 輸出，在送出提示或工具完成時，到門檻只提醒一次；
+壓縮後重設。無讀值、null 或讀值過期時略過，不要求事先 claim 工作線。
+提醒不會自動寫入交接；PreCompact 只重設狀態，不要求模型寫交接，也不阻擋壓縮。
+
+## 寫入交接
 
 第一個詞是工作線名稱,其餘是內容。若使用者沒給,或給得不完整,你要自己補:
 

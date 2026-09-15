@@ -62,11 +62,13 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
       },
       confirm_memory: success,
       set_autopush: success,
+      set_handoff_reminder: success,
       set_autopush_slot: success,
       memory_info: {
         ...success, data_root: "/tmp/data/memory", shared_path: "/tmp/shared-memory",
         shared_status: "ok", tracked: true, git_status: "dirty", changed_paths: ["memory/MEMORY.md"],
         index_unlisted: [], index_dangling: [], secret_notes: [],
+        handoff_reminder: { enabled: false, threshold: 70, installed: false },
         autopush: { installed: false, last_push: "", reason: "",
           slot: "", host: "gpu-a4000", others: [] },
         entries: [

@@ -211,6 +211,24 @@ to take one over, `handoff done <thread>` when it is finished. Claiming
 records the session id, so a second session is told who holds it rather
 than silently taking it. Writing again reopens a claimed thread.
 
+### Remind before context compaction (Claude Code only)
+
+`{entrypoint} memory handoff remind status` shows this machine's reminder
+configuration. Opt in with `{entrypoint} memory handoff remind enable` (70%),
+or `enable 80` to choose a whole-number threshold from 1 to 99. Turn it off
+with `{entrypoint} memory handoff remind disable`. The desktop memory page
+and `/acg:handoff remind status|enable [percentage]|disable` manage the same
+local setting; enabling shared memory does not enable reminders.
+
+The reminder reads Claude Code's official context percentage from its
+statusLine input and preserves the existing status-line output. Once usage
+reaches the threshold, UserPromptSubmit or PostToolUse adds one reminder per
+session compaction cycle. No claimed handoff is required. Missing, null, or
+stale readings are skipped. PreCompact only resets the reminder state; it
+does not ask the model to write or delay compaction. The reminder itself
+never writes a handoff: use `memory handoff write` or `/acg:handoff` to save
+the current work and next steps. Reminder settings and readings stay local.
+
 ## Shared memory
 
 `{entrypoint} memory enable` turns `<data-repo>/memory/` into a notebook every

@@ -40,7 +40,10 @@ TOOLS = (
 TOOL_COMMANDS = ("init", "apply", "project", "status", "pull", "push", "sync")
 SETUP_OPTIONS = ("--data-dir", "--repo-url", "--remote-name", "--replace-remote")
 DEPLOY_OPTIONS = ("--profile", "--save-as")
-MEMORY_COMMANDS = ("status", "enable", "disable", "adopt", "release", "path", "push")
+MEMORY_COMMANDS = (
+    "status", "enable", "disable", "adopt", "release", "path", "push",
+    "handoff", "autopush",
+)
 SHELLS = ("bash", "powershell")
 
 
@@ -88,6 +91,12 @@ def bash_completion() -> str:
         memory)
             if (( COMP_CWORD == 2 )); then
                 COMPREPLY=( $(compgen -W '{memory_commands}' -- "$current") )
+            elif [[ "${{COMP_WORDS[2]}}" == handoff ]]; then
+                if (( COMP_CWORD == 3 )); then
+                    COMPREPLY=( $(compgen -W 'list write claim done remind' -- "$current") )
+                elif (( COMP_CWORD == 4 )) && [[ "${{COMP_WORDS[3]}}" == remind ]]; then
+                    COMPREPLY=( $(compgen -W 'status enable disable' -- "$current") )
+                fi
             fi
             ;;
         completion)
@@ -177,6 +186,17 @@ def powershell_completion() -> str:
                 ($arguments.Count -eq 2 -and $arguments[-1] -eq $wordToComplete)
             ) {{
                 $candidates = $memoryCommands
+            }}
+            elseif ($arguments[1] -eq 'handoff') {{
+                $position = $arguments.Count
+                if ($wordToComplete) {{ $position -= 1 }}
+                if ($position -eq 2) {{
+                    $candidates = @('list', 'write', 'claim', 'done', 'remind')
+                }}
+                elseif ($position -eq 3 -and $arguments[2] -eq 'remind') {{
+                    $candidates = @('status', 'enable', 'disable')
+                }}
+                else {{ $candidates = @() }}
             }}
             else {{
                 $candidates = @()
