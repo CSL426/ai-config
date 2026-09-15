@@ -126,7 +126,7 @@ def _autopush(rest: list[str]) -> int:
 
 _HANDOFF_USAGE = (
     f"Usage: {ENTRYPOINT} memory handoff "
-    "[list | write <線> <內容> | claim <線> | done <線> | "
+    "[list [專案路徑] | write <線> <內容> | claim <線> | done <線> | "
     "remind [status|enable [百分比]|disable]]"
 )
 
@@ -139,8 +139,8 @@ def _handoff(rest: list[str]) -> int:
     try:
         if action == "remind":
             return _handoff_remind(args)
-        if action == "list" and not args:
-            return _handoff_list()
+        if action == "list" and len(args) <= 1:
+            return _handoff_list(Path(args[0]) if args else None)
         if action == "write" and len(args) >= 2:
             note = hand.write(args[0], " ".join(args[1:]))
             log_success(f"已記下交接:{note.thread}")
@@ -192,12 +192,16 @@ def _handoff_remind(args: list[str]) -> int:
     return 0
 
 
-def _handoff_list() -> int:
+def _handoff_list(cwd: "Path | None" = None) -> int:
+    """List one project's threads; a path lets a session read another's."""
     from .. import handoff as hand
 
-    notes = hand.load_all(memory.project_key().key)
+    if cwd is not None and not cwd.is_dir():
+        raise ValueError(f"找不到這個專案目錄:{cwd}")
+    notes = hand.load_all(memory.project_key(cwd).key)
     if not notes:
-        log_info("這個專案沒有待接手的工作線")
+        where = f"{cwd} 這個專案" if cwd is not None else "這個專案"
+        log_info(f"{where}沒有待接手的工作線")
         return 0
     for note in notes:
         mark = {hand.OPEN: "○", hand.CLAIMED: "◐", hand.DONE: "●"}.get(note.state, "○")
