@@ -13,8 +13,11 @@ allowed-tools: Bash(acg memory handoff:*), Bash(ai-config memory handoff:*)
 - **名稱**:用這個 session 實際在做的事命名,簡短好認,例如「記憶改善」「GUI 改版」。不要用 session id。
 - **內容**:寫給不知道前因後果的人看。必須包含做完了什麼、現在卡在哪、下一步該做什麼。不要只寫「繼續」這種沒有資訊的句子。
 
-寫入指令(名稱含空格要用引號):
+決定好名稱與內容之後,用 Bash 執行(名稱含空格要用引號):
 
-!`acg memory handoff write "<名稱>" "<內容>"`
+```
+acg memory handoff write "你決定的名稱" "你寫的內容"
+```
 
-寫完把結果回報給使用者,並提醒下個 session 可以用 `/acg:pickup` 接手。
+**不要照抄上面的字面值**,那是格式示範。執行完把結果回報給使用者,並提醒下個
+session 可以用 `/acg:pickup` 接手。

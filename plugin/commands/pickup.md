@@ -14,9 +14,13 @@ allowed-tools: Bash(acg memory handoff:*), Bash(ai-config memory handoff:*)
 
 然後問他要接哪一條,不要自己挑。
 
-指定了名稱就認領它(名稱含空格要用引號):
+指定了名稱就用 Bash 認領它(名稱含空格要用引號):
 
-!`acg memory handoff claim "<名稱>"`
+```
+acg memory handoff claim "使用者說的那條線"
+```
+
+**不要照抄字面值**,要換成實際的名稱。
 
 認領會印出那條線的進度。讀完之後,用你自己的話跟使用者確認你理解的接手點,再開始工作。
 

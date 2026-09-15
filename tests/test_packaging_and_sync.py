@@ -1773,3 +1773,48 @@ def test_clone_options_bind_the_account_from_the_first_fetch() -> None:
     assert options[3].startswith("credential.helper=!") and options[3].endswith(
         "__git-credential CSL426"
     )
+
+
+def test_the_plugin_version_matches_the_project() -> None:
+    """外掛的版號是手寫的,發版時很容易忘記跟上。
+
+    忘了的話使用者在 `claude plugin list` 看到的是舊版號,會以為自己沒更新。
+    """
+    import json
+    import tomllib
+
+    project = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["version"]
+    plugin = json.loads(
+        (REPO_ROOT / "plugin/.claude-plugin/plugin.json").read_text(encoding="utf-8")
+    )["version"]
+
+    assert plugin == project
+
+
+def test_plugin_commands_never_run_a_placeholder() -> None:
+    """`!` 開頭的行會被 Claude Code 直接執行,佔位符會原封不動送進去。
+
+    實際發生過:`!`acg memory handoff write "<名稱>" "<內容>"`` 寫出了一則
+    名字就叫「名稱」的交接。要嘛用 $ARGUMENTS,要嘛讓模型自己組指令。
+    """
+    offenders = []
+    for path in sorted((REPO_ROOT / "plugin/commands").glob("*.md")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.startswith("!") and ("<" in line and ">" in line):
+                offenders.append(f"{path.name}:{number}")
+
+    assert offenders == []
+
+
+def test_every_plugin_command_declares_what_it_is() -> None:
+    """沒有 description 的指令在選單裡只剩名字,使用者看不出它做什麼。"""
+    missing = [
+        path.name
+        for path in sorted((REPO_ROOT / "plugin/commands").glob("*.md"))
+        if not path.read_text(encoding="utf-8").startswith("---\n")
+        or "description:" not in path.read_text(encoding="utf-8").split("---")[1]
+    ]
+
+    assert missing == []
