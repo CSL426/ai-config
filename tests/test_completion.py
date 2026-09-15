@@ -51,6 +51,14 @@ def test_bash_completion_commands(executable: str) -> None:
     assert _bash_candidates([executable, "st"]) == ["status"]
 
 
+def test_bash_handoff_reminder_completion() -> None:
+    assert _bash_candidates(["acg", "memory", "hand"]) == ["handoff"]
+    assert _bash_candidates(["acg", "memory", "handoff", "rem"]) == ["remind"]
+    assert _bash_candidates(["acg", "memory", "handoff", "remind", ""]) == [
+        "status", "enable", "disable",
+    ]
+
+
 @pytest.mark.parametrize("executable", EXECUTABLES)
 @pytest.mark.parametrize("command", COMMANDS)
 def test_bash_completion_all_commands_and_flags(

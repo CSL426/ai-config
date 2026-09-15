@@ -85,6 +85,8 @@ def usage() -> None:
     print("                  autopush status|enable [時]|disable  schedule a daily save")
     print("                  handoff list|write <線> <內容>|claim <線>|done <線>")
     print("                    hand one work thread to the session that follows")
+    print("                  handoff remind status|enable [百分比]|disable")
+    print("                    Claude context reminder (default 70%; no automatic write)")
     print("                  push --allow-secrets skip the credential-content check")
     print("  desktop         Launch the desktop app (bundled on Windows)")
     print("                  --shortcut add a Start-menu entry (Windows)")
@@ -130,6 +132,11 @@ def resolve_tool(tool: str) -> str:
 
 def main(argv: "list[str] | None" = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    if args and args[0] in {"__handoff-statusline", "__handoff-reminder"}:
+        from .handoff_reminder import run_hook, run_statusline
+
+        handler = run_statusline if args[0] == "__handoff-statusline" else run_hook
+        return handler(args[1:])
     if args and args[0] == "__memory-project-entry":
         from .memory_hooks import run
 

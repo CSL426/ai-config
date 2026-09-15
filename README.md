@@ -227,6 +227,32 @@ got to, which matters when several sessions work on the same project at once.
 The plugin carries only commands. The `acg` skill itself arrives through
 `apply` like every other skill, so it is not bundled here twice.
 
+### Handoff reminders before context compaction
+
+Claude Code can remind you to record a handoff when its context usage reaches
+a chosen percentage. Enable it separately on each machine:
+
+```bash
+acg memory handoff remind status
+acg memory handoff remind enable     # default: 70%
+acg memory handoff remind enable 80  # whole-number threshold: 1–99
+acg memory handoff remind disable
+```
+
+The desktop memory page and `/acg:handoff remind status|enable [percentage]|disable`
+manage the same setting. The feature is off by default and is specific to
+Claude Code. It reads the official context percentage through a statusLine
+wrapper that preserves your existing status-line output. Settings and readings
+stay on this machine.
+
+At the threshold, the next prompt submission or completed tool call injects
+one reminder per session compaction cycle, even if no thread has been claimed.
+Missing, null, or stale readings are skipped. PreCompact only resets the
+reminder state; it neither requests a handoff nor blocks compaction. A reminder
+does not save notes automatically: use `/acg:handoff` or
+`acg memory handoff write` to record progress. See the
+[handoff reminder specification](docs/handoff-reminder-spec.md).
+
 ## Two GitHub accounts on one machine
 
 `acg login` binds an account to the data repository, but gh's credential helper

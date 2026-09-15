@@ -307,6 +307,19 @@ claude plugin install acg@acg</textarea>
             <button class="btn" id="autopush-slot-save">更新</button>
             <p class="package-hint" id="autopush-others"></p>
           </div>
+          <label class="autopush-row">
+            <input type="checkbox" id="handoff-reminder-toggle" />
+            <span class="autopush-text">
+              <span>Context 用量偏高時提醒交接</span>
+              <span class="autopush-hint">僅適用 Claude Code；只提醒，不會自動寫交接。</span>
+            </span>
+          </label>
+          <div class="autopush-slot" id="handoff-reminder-settings">
+            <label for="handoff-reminder-threshold">提醒門檻（%）</label>
+            <input type="number" id="handoff-reminder-threshold" min="1" max="99" step="1" value="70" />
+            <button class="btn" id="handoff-reminder-save">更新門檻</button>
+            <p class="package-hint" id="handoff-reminder-hint" role="status"></p>
+          </div>
           <p class="package-hint" id="memory-global-reasons"></p>
           <p class="memory-sync-note">記憶下載後立即更新；設定與技能可另外選擇是否套用。</p>
           <div class="memory-health" id="memory-health" hidden></div>

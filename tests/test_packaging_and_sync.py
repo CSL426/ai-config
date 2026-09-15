@@ -1818,3 +1818,24 @@ def test_every_plugin_command_declares_what_it_is() -> None:
     ]
 
     assert missing == []
+
+
+def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
+    from ai_config.guide import render_guide
+
+    surfaces = {
+        "guide": render_guide(),
+        "README": (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+        "plugin": (REPO_ROOT / "plugin/commands/handoff.md").read_text(
+            encoding="utf-8"
+        ),
+    }
+    for name, content in surfaces.items():
+        for action in ("status", "enable", "disable"):
+            assert f"memory handoff remind {action}" in content, (name, action)
+        assert "PreCompact" in content, name
+
+    plugin = surfaces["plugin"]
+    frontmatter = plugin.split("---", 2)[1]
+    assert "Bash(acg memory handoff:*)" in frontmatter
+    assert "Bash(ai-config memory handoff:*)" in frontmatter

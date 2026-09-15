@@ -144,6 +144,13 @@ function syncControls(): void {
   skillFilter.disabled = blocked || skillsLoading;
   skillRetry.disabled = blocked || skillsLoading;
   const managementBlocked = blocked || !configured || restartRequired;
+  for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+    "#handoff-reminder-toggle, #handoff-reminder-threshold, #handoff-reminder-save",
+  )) {
+    control.disabled = managementBlocked || memoryLoading || !memoryInfo?.handoff_reminder
+      || Boolean(memoryInfo.handoff_reminder.reason);
+  }
+  $<HTMLButtonElement>("#handoff-reminder-save").disabled ||= !memoryInfo?.handoff_reminder?.enabled;
   for (const selector of ["#memory-open", "#apply-preview", "#memory-select-project", "#memory-refresh", "#memory-push", "#pull-apply"]) {
     $<HTMLButtonElement>(selector).disabled = managementBlocked;
   }
@@ -865,6 +872,33 @@ packageCopy.addEventListener("click", async () => {
   setTimeout(() => { packageCopy.textContent = "複製說明"; }, 2000);
 });
 
+async function configureHandoffReminder(enabled: boolean): Promise<void> {
+  const bridge = api();
+  const toggle = $<HTMLInputElement>("#handoff-reminder-toggle");
+  const input = $<HTMLInputElement>("#handoff-reminder-threshold");
+  const previous = memoryInfo?.handoff_reminder?.enabled ?? false;
+  const threshold = input.valueAsNumber;
+  if (!bridge || running || pendingPreview || !input.reportValidity()
+      || !Number.isInteger(threshold)) {
+    toggle.checked = previous;
+    return;
+  }
+  const result = await perform("設定交接提醒", async () => {
+    const response = await bridge.set_handoff_reminder(enabled, threshold);
+    if (response.code === 0) await refreshMemory();
+    return response;
+  }, false);
+  if (!result || result.code !== 0) toggle.checked = previous;
+  if (result) feedback($("#memory-feedback"), result.output, result.code !== 0);
+}
+
+$<HTMLInputElement>("#handoff-reminder-toggle").addEventListener("change", (event) => {
+  void configureHandoffReminder((event.currentTarget as HTMLInputElement).checked);
+});
+$("#handoff-reminder-save").addEventListener("click", () => {
+  void configureHandoffReminder(true);
+});
+
 $<HTMLInputElement>("#autopush-toggle").addEventListener("change", async (event) => {
   const toggle = event.currentTarget as HTMLInputElement;
   const bridge = api();
@@ -1442,6 +1476,29 @@ function memoryHealthGroup(
   return group;
 }
 
+function handoffReminderHint(state: MemoryInfo["handoff_reminder"]): string {
+  if (!state) {
+    return "目前後端尚未提供交接提醒設定，請更新並重開視窗。";
+  }
+  if (state.reason) {
+    return `無法讀取提醒設定：${state.reason}`;
+  }
+  if (state.enabled && !state.installed) {
+    return "提醒尚未完整安裝，請按更新門檻重新安裝。";
+  }
+  if (state.enabled) {
+    return `Context 用量達 ${state.threshold}% 時提醒交接。`;
+  }
+  return "目前未啟用。預設門檻為 70%。";
+}
+
+function renderHandoffReminder(info: MemoryInfo): void {
+  const state = info.handoff_reminder;
+  $<HTMLInputElement>("#handoff-reminder-toggle").checked = state?.enabled ?? false;
+  $<HTMLInputElement>("#handoff-reminder-threshold").value = String(state?.threshold ?? 70);
+  $("#handoff-reminder-hint").textContent = handoffReminderHint(state);
+}
+
 function renderAutopush(info: MemoryInfo): void {
   const toggle = $<HTMLInputElement>("#autopush-toggle");
   const state = info.autopush ?? {
@@ -1537,6 +1594,7 @@ async function refreshMemory(): Promise<void> {
     $("#memory-summary").textContent = summaryText;
     renderMemoryHealth(info);
     renderAutopush(info);
+    renderHandoffReminder(info);
     const data = $("#memory-data");
     data.replaceChildren();
     textRow(data, "資料根", info.data_root);
