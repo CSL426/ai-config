@@ -52,6 +52,10 @@ def _run_memory(args: list[str]) -> int:
                 return 1
             rest = []
         if stale is not None:
+            # 時間表可能在別台被改過;排程自己對一次,使用者不用每台重跑 enable
+            moved = auto.reconcile_slot()
+            if moved:
+                log_info(moved)
             decision = auto.decide(stale)
             if not decision.push:
                 log_info(f"跳過自動推送:{decision.reason}")

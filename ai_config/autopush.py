@@ -13,6 +13,7 @@ day from filling up with one commit per session.
 
 import os
 import plistlib
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -69,6 +70,15 @@ def _memory_has_changes() -> bool:
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
+def _provider() -> str:
+    try:
+        from .config import configured_remote_provider
+
+        return configured_remote_provider()
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return "git"
+
+
 def _git(*args: str, timeout: float = 120) -> "subprocess.CompletedProcess | None":
     try:
         return subprocess.run(
@@ -87,7 +97,12 @@ def _behind_upstream() -> bool:
     which on a machine that has not pulled for days says "level" while the
     remote has moved on. The scheduled push would then hit a rejection it
     could have predicted.
+
+    Only git has this problem. A Drive repository has no upstream ref and
+    its push overwrites, so there is nothing to be behind of.
     """
+    if _provider() != "git":
+        return False
     _git("fetch", "--quiet")
     result = _git("rev-list", "--count", "HEAD..@{upstream}", timeout=30)
     if result is None or result.returncode != 0:
@@ -116,13 +131,80 @@ class Decision:
     reason: str
 
 
+def reconcile_slot() -> str:
+    """Move this machine's schedule if the shared table gave it a new slot.
+
+    The table is edited on one machine and reaches the others through the
+    notebook, so the run that reads it is the one that must act on it.
+    Doing it here means a changed slot takes effect by itself, at most a
+    day later, without anyone re-running enable on every machine.
+    """
+    try:
+        from . import schedule_table as table
+
+        host = table.host_name()
+        current = table.load()
+        # 兩台同時 enable 會挑到同一分鐘,誰也看不到誰;同步之後才看得見,
+        # 所以讓位要在這裡做
+        moved = table.resolve_collision(current, host)
+        if moved is not None:
+            table.record(host, moved)
+            wanted = moved
+        else:
+            wanted = current.hosts.get(host)
+        if wanted is None or not _schedule_installed():
+            return ""
+        if _scheduled_at() == (wanted.hour, wanted.minute):
+            return ""
+        enable(wanted.hour)
+        return f"時段改為 {wanted},排程已跟著更新"
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return ""
+
+
+def _scheduled_at() -> "tuple[int, int] | None":
+    """The hour and minute this machine's scheduler currently holds."""
+    name = platform_name()
+    try:
+        if name == "linux":
+            text = (systemd_dir() / f"{_UNIT}.timer").read_text(encoding="utf-8")
+            for line in text.splitlines():
+                if line.startswith("OnCalendar="):
+                    clock = line.split()[-1]
+                    hour, minute, _ = clock.split(":")
+                    return int(hour), int(minute)
+            return None
+        if name == "macos":
+            import plistlib
+
+            parsed = plistlib.loads(launchd_path().read_bytes())
+            when = parsed.get("StartCalendarInterval") or {}
+            return int(when["Hour"]), int(when["Minute"])
+        listed = subprocess.run(
+            ["schtasks", "/Query", "/TN", _TASK, "/XML"],
+            capture_output=True, text=True, check=False, timeout=60,
+        )
+        if listed.returncode != 0:
+            return None
+        match = re.search(r"<StartBoundary>[^T]*T(\d{2}):(\d{2})", listed.stdout)
+        return (int(match[1]), int(match[2])) if match else None
+    except (KeyError, OSError, ValueError):
+        return None
+
+
 def decide(stale_hours: float = DEFAULT_STALE_HOURS) -> Decision:
     """Whether a scheduled run should push, and the reason either way."""
     if not memory_dir().is_dir():
         return Decision(False, "沒有記憶目錄")
+    # 先問遠端再看本機。順序反過來的話,沒有變更的機器永遠不會 fetch,
+    # origin/main 會一直停在幾天前的快照,落後判斷等於失效
+    # 落後就先接上,即使沒有東西要推。共用的時間表就住在記憶目錄裡,
+    # 一台永遠不接上的機器會一直讀到自己那份舊的,看不到別台認領了哪一分鐘
+    behind = _behind_upstream()
+    caught_up = _catch_up() if behind else True
     if not _memory_has_changes():
         return Decision(False, "記憶沒有變更")
-    if _behind_upstream() and not _catch_up():
+    if not caught_up:
         return Decision(False, "落後遠端且無法自動接上,請自己 acg pull 處理")
     last = _read_last_push()
     if last is not None:
@@ -145,7 +227,7 @@ def _run_args(stale_hours: float) -> list[str]:
     return [*_acg_command(), "memory", "push", "--if-stale", str(stale_hours)]
 
 
-def systemd_units(hour: int, stale_hours: float) -> tuple[str, str]:
+def systemd_units(hour: int, stale_hours: float, minute: int = 0) -> tuple[str, str]:
     """The service and timer text. Persistent catches a machine that slept."""
     command = " ".join(_quote(part) for part in _run_args(stale_hours))
     service = (
@@ -162,7 +244,7 @@ def systemd_units(hour: int, stale_hours: float) -> tuple[str, str]:
         "[Unit]\n"
         "Description=Save acg shared memory daily\n\n"
         "[Timer]\n"
-        f"OnCalendar=*-*-* {hour:02d}:00:00\n"
+        f"OnCalendar=*-*-* {hour:02d}:{minute:02d}:00\n"
         # 機器在排定時間關著或睡著時,開機後補跑,不要整天漏掉
         "Persistent=true\n"
         "RandomizedDelaySec=600\n\n"
@@ -176,12 +258,12 @@ def _quote(part: str) -> str:
     return f'"{part}"' if " " in part else part
 
 
-def launchd_plist(hour: int, stale_hours: float) -> bytes:
+def launchd_plist(hour: int, stale_hours: float, minute: int = 0) -> bytes:
     """A LaunchAgent. RunAtLoad covers a Mac asleep at the scheduled hour."""
     return plistlib.dumps({
         "Label": _LABEL,
         "ProgramArguments": _run_args(stale_hours),
-        "StartCalendarInterval": {"Hour": hour, "Minute": 0},
+        "StartCalendarInterval": {"Hour": hour, "Minute": minute},
         "RunAtLoad": False,
         "ExitTimeOut": 900,
         "StandardOutPath": str(_log_path()),
@@ -193,7 +275,7 @@ def _log_path() -> Path:
     return memory_dir() / "logs" / "autopush.log"
 
 
-def schtasks_argv(hour: int, stale_hours: float) -> list[str]:
+def schtasks_argv(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
     """Windows: /F replaces an existing task so enable stays idempotent.
 
     Run through cmd.exe rather than starting the exe directly. The task
@@ -205,7 +287,7 @@ def schtasks_argv(hour: int, stale_hours: float) -> list[str]:
     command = " ".join(_quote(part) for part in _run_args(stale_hours))
     return [
         "schtasks", "/Create", "/F", "/TN", _TASK, "/SC", "DAILY",
-        "/ST", f"{hour:02d}:00", "/TR", f"cmd /c {command}",
+        "/ST", f"{hour:02d}:{minute:02d}", "/TR", f"cmd /c {command}",
     ]
 
 
@@ -235,24 +317,59 @@ def _systemctl(*args: str) -> subprocess.CompletedProcess:
     )
 
 
-def enable(hour: int = DEFAULT_HOUR, stale_hours: float = DEFAULT_STALE_HOURS) -> list[str]:
-    """Register the daily run with whatever scheduler this platform has."""
-    if not 0 <= hour <= 23:
-        raise ValueError("時間要在 0 到 23 之間")
+def enable(
+    hour: "int | None" = None, stale_hours: float = DEFAULT_STALE_HOURS
+) -> list[str]:
+    """Register the daily run with whatever scheduler this platform has.
+
+    With no hour given, take one from the shared table so machines do not
+    all wake at once. An explicit hour wins and is recorded, so asking for
+    a time is also how you change your own slot.
+    """
     if stale_hours < 0:
         raise ValueError("冷卻時數不能是負的")
+    lines, minute = [], 0
+    slot = _claim_slot(hour)
+    if slot is not None:
+        hour, minute = slot.hour, slot.minute
+        lines.append(f"這台在共用時間表裡的時段是 {slot}")
+    elif hour is None:
+        hour = DEFAULT_HOUR
+    if not 0 <= hour <= 23:
+        raise ValueError("時間要在 0 到 23 之間")
     name = platform_name()
     if name == "linux":
-        return _enable_systemd(hour, stale_hours)
-    if name == "macos":
-        return _enable_launchd(hour, stale_hours)
-    return _enable_schtasks(hour, stale_hours)
+        lines.extend(_enable_systemd(hour, stale_hours, minute))
+    elif name == "macos":
+        lines.extend(_enable_launchd(hour, stale_hours, minute))
+    else:
+        lines.extend(_enable_schtasks(hour, stale_hours, minute))
+    return lines
 
 
-def _enable_systemd(hour: int, stale_hours: float) -> list[str]:
+def _claim_slot(hour: "int | None"):
+    """Pick this machine's minute and write it back for the others to see."""
+    try:
+        from . import schedule_table as table
+
+        host = table.host_name()
+        current = table.load()
+        if hour is not None:
+            slot = table.Slot(hour, current.hosts.get(host, table.Slot(hour, 0)).minute)
+            slot = table.Slot(hour, 0) if host not in current.hosts else slot
+        else:
+            slot = table.claim(current, host)
+        table.record(host, slot)
+        return slot
+    except (ImportError, OSError, RuntimeError, ValueError):
+        # 時間表只是協調用的;讀不到就照預設走,不要讓排程裝不起來
+        return None
+
+
+def _enable_systemd(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
     directory = systemd_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    service, timer = systemd_units(hour, stale_hours)
+    service, timer = systemd_units(hour, stale_hours, minute)
     (directory / f"{_UNIT}.service").write_text(service, encoding="utf-8")
     (directory / f"{_UNIT}.timer").write_text(timer, encoding="utf-8")
     lines = [f"寫入 {directory / (_UNIT + '.timer')}"]
@@ -269,11 +386,11 @@ def _enable_systemd(hour: int, stale_hours: float) -> list[str]:
     return lines
 
 
-def _enable_launchd(hour: int, stale_hours: float) -> list[str]:
+def _enable_launchd(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
     path = launchd_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     _log_path().parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(launchd_plist(hour, stale_hours))
+    path.write_bytes(launchd_plist(hour, stale_hours, minute))
     lines = [f"寫入 {path}"]
     # bootout 先移除舊的,否則 bootstrap 會因為已載入而失敗
     target = f"gui/{os.getuid()}"
@@ -292,9 +409,9 @@ def _enable_launchd(hour: int, stale_hours: float) -> list[str]:
     return lines
 
 
-def _enable_schtasks(hour: int, stale_hours: float) -> list[str]:
+def _enable_schtasks(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
     created = subprocess.run(
-        schtasks_argv(hour, stale_hours),
+        schtasks_argv(hour, stale_hours, minute),
         capture_output=True, text=True, check=False, timeout=60,
     )
     if created.returncode != 0:
