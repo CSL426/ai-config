@@ -22,10 +22,11 @@ def test_an_absent_table_is_empty_not_an_error(notebook: Path) -> None:
     assert loaded.hour == table.DEFAULT_HOUR
 
 
-def test_a_corrupt_table_does_not_stop_anything(notebook: Path) -> None:
-    table.table_path().write_text("這不是 TOML [[[", encoding="utf-8")
+def test_a_corrupt_file_only_hides_that_one_machine(notebook: Path) -> None:
+    table.record("good", table.Slot(4, 0))
+    table.table_dir().joinpath("bad.toml").write_text("這不是 TOML [[[")
 
-    assert table.load().hosts == {}
+    assert list(table.load().hosts) == ["good"]
 
 
 def test_machines_are_spaced_apart(notebook: Path) -> None:
@@ -66,9 +67,10 @@ def test_recording_the_same_slot_changes_nothing(notebook: Path) -> None:
     assert table.record("one", table.Slot(4, 0)) is False
 
 
-def test_a_hand_written_table_is_respected(notebook: Path) -> None:
-    table.table_path().write_text(
-        'default_hour = 2\nspacing_minutes = 5\n\n[hosts]\n"mine" = "02:15"\n',
+def test_a_hand_written_file_is_respected(notebook: Path) -> None:
+    table.table_dir().mkdir(parents=True, exist_ok=True)
+    table.host_path("mine").write_text(
+        'host = "mine"\nslot = "02:15"\ndefault_hour = 2\nspacing_minutes = 5\n',
         encoding="utf-8",
     )
 
@@ -79,10 +81,10 @@ def test_a_hand_written_table_is_respected(notebook: Path) -> None:
     assert str(loaded.hosts["mine"]) == "02:15"
 
 
-def test_an_impossible_time_in_the_file_is_ignored(notebook: Path) -> None:
-    table.table_path().write_text(
-        '[hosts]\n"bad" = "99:99"\n"good" = "04:00"\n', encoding="utf-8"
-    )
+def test_an_impossible_time_is_ignored(notebook: Path) -> None:
+    table.table_dir().mkdir(parents=True, exist_ok=True)
+    table.host_path("bad").write_text('host = "bad"\nslot = "99:99"\n')
+    table.host_path("good").write_text('host = "good"\nslot = "04:00"\n')
 
     assert list(table.load().hosts) == ["good"]
 
@@ -140,3 +142,20 @@ def test_a_full_hour_leaves_the_collision_alone(notebook: Path) -> None:
     current = table.Table(4, 10, hosts)
 
     assert table.resolve_collision(current, "late") is None
+
+
+def test_each_machine_writes_its_own_file(notebook: Path) -> None:
+    """共用一個檔時 git 得挑一個贏家,實際上兩邊都只剩自己。"""
+    table.record("alpha", table.Slot(4, 0))
+    table.record("bravo", table.Slot(4, 10))
+
+    names = sorted(p.name for p in table.table_dir().glob("*.toml"))
+
+    assert names == ["alpha.toml", "bravo.toml"]
+    assert sorted(table.load().hosts) == ["alpha", "bravo"]
+
+
+def test_a_hostile_host_name_cannot_escape_the_directory(notebook: Path) -> None:
+    path = table.host_path("../../etc/passwd")
+
+    assert path.parent == table.table_dir()

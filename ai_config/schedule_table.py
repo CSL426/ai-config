@@ -1,13 +1,14 @@
 """Which machine saves memory at which minute, agreed through the notebook.
 
 Every machine defaults to the same hour, so they wake together and race to
-push. The table hands each one its own slot: a machine claims the next free
-minute, writes it where the others will read it, and keeps that slot for
-good. It rides on the notebook's own sync, so no server is involved.
+push. This hands each one its own minute: a machine claims the next free
+slot and writes it where the others will read it, riding on the notebook's
+own sync with no server involved.
 
-TOML because it is the only structured format Python reads without a
-dependency the frozen executable would have to carry, and because a person
-editing this by hand wants comments.
+One file per machine, not one shared table. Two machines editing a shared
+file forces git to pick a winner, and it picked badly in practice — each
+side ended up with a table naming only itself. Separate files merge with
+no decision to make.
 """
 
 import socket
@@ -17,18 +18,23 @@ from pathlib import Path
 
 from .memory import memory_dir
 
-TABLE_NAME = "autopush-schedule.toml"
+TABLE_DIR = "autopush-schedule"
 DEFAULT_HOUR = 4
 DEFAULT_SPACING = 10
 _MAX_SLOTS = 6
 
 
-def table_path() -> Path:
-    return memory_dir() / TABLE_NAME
+def table_dir() -> Path:
+    return memory_dir() / TABLE_DIR
+
+
+def host_path(host: str) -> Path:
+    safe = "".join(c if c.isalnum() or c in "-_." else "-" for c in host)
+    return table_dir() / f"{safe.strip('-.') or 'unknown-host'}.toml"
 
 
 def host_name() -> str:
-    """This machine's name, as the table will know it."""
+    """This machine's name, as the others will know it."""
     try:
         name = socket.gethostname().strip()
     except OSError:
@@ -66,65 +72,55 @@ def _parse_slot(value: object) -> "Slot | None":
 
 
 def load() -> Table:
-    """Read the table. A missing or broken file is an empty one, not an error."""
-    path = table_path()
+    """Every machine's claim. A broken file is one machine missing, not an error."""
     hour, spacing, hosts = DEFAULT_HOUR, DEFAULT_SPACING, {}
-    try:
-        raw = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    root = table_dir()
+    if not root.is_dir():
         return Table(hour, spacing, hosts)
-    if isinstance(raw.get("default_hour"), int):
-        hour = max(0, min(23, raw["default_hour"]))
-    if isinstance(raw.get("spacing_minutes"), int):
-        spacing = max(1, min(30, raw["spacing_minutes"]))
-    for name, value in (raw.get("hosts") or {}).items():
-        slot = _parse_slot(value)
-        if slot is not None:
-            hosts[str(name)] = slot
+    for path in sorted(root.glob("*.toml")):
+        try:
+            raw = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(raw.get("default_hour"), int):
+            hour = max(0, min(23, raw["default_hour"]))
+        if isinstance(raw.get("spacing_minutes"), int):
+            spacing = max(1, min(30, raw["spacing_minutes"]))
+        name = raw.get("host")
+        slot = _parse_slot(raw.get("slot"))
+        if isinstance(name, str) and name and slot is not None:
+            hosts[name] = slot
     return Table(hour, spacing, hosts)
 
 
-def claim(table: Table, host: str) -> Slot:
-    """This host's slot, taking the next free one when it has none.
-
-    Slots wrap within the hour rather than spilling into the next, so a
-    late machine shares a minute rather than running at an hour nobody
-    chose. Six machines at ten minutes apart fills the hour.
-    """
-    existing = table.hosts.get(host)
-    if existing is not None:
-        return existing
+def _free_slot(table: Table) -> "Slot | None":
     taken = {(s.hour, s.minute) for s in table.hosts.values()}
     for index in range(_MAX_SLOTS):
         minute = (index * table.spacing) % 60
         if (table.hour, minute) not in taken:
             return Slot(table.hour, minute)
-    return Slot(table.hour, 0)
+    return None
 
 
-def render(table: Table) -> str:
-    lines = [
-        "# 每台機器保存記憶的時間。acg memory autopush enable 會自己認領一個",
-        "# 空的時段並寫進來,也可以手動改;改完在那台重新 enable 才會生效。",
-        "",
-        f"default_hour = {table.hour}",
-        f"spacing_minutes = {table.spacing}",
-        "",
-        "[hosts]",
-    ]
-    for name in sorted(table.hosts):
-        lines.append(f'"{name}" = "{table.hosts[name]}"')
-    return "\n".join(lines) + "\n"
+def claim(table: Table, host: str) -> Slot:
+    """This host's slot, taking the next free one when it has none.
+
+    Slots wrap inside the hour rather than spilling into the next: sharing
+    a minute is better than running at an hour nobody chose.
+    """
+    existing = table.hosts.get(host)
+    if existing is not None:
+        return existing
+    return _free_slot(table) or Slot(table.hour, 0)
 
 
 def resolve_collision(table: Table, host: str) -> "Slot | None":
     """A new slot when somebody else holds this one, else None.
 
-    Two machines enabling before either has synced both read the same
-    table and pick the same free minute. Neither can see the other until
-    the notebook syncs, so the tie is broken here instead: the host whose
-    name sorts later moves on, which both sides compute the same way
-    without talking to each other.
+    Two machines claiming before either has synced both read the same
+    table and pick the same minute. Neither can see the other until the
+    notebook syncs, so the tie is broken here: the name that sorts later
+    moves on, which both sides compute identically without talking.
     """
     mine = table.hosts.get(host)
     if mine is None:
@@ -136,21 +132,27 @@ def resolve_collision(table: Table, host: str) -> "Slot | None":
     ]
     if not rivals or host < min(rivals):
         return None
-    taken = {(s.hour, s.minute) for s in table.hosts.values()}
-    for index in range(_MAX_SLOTS):
-        minute = (index * table.spacing) % 60
-        if (table.hour, minute) not in taken:
-            return Slot(table.hour, minute)
-    return None
+    return _free_slot(table)
+
+
+def render(host: str, slot: Slot, table: Table) -> str:
+    return (
+        "# 這台機器保存記憶的時間。一台一個檔,幾台同時改也不會互相覆蓋。\n"
+        "# 可以手動改 slot,那台下次跑排程時會自己跟上。\n"
+        "\n"
+        f'host = "{host}"\n'
+        f'slot = "{slot}"\n'
+        f"default_hour = {table.hour}\n"
+        f"spacing_minutes = {table.spacing}\n"
+    )
 
 
 def record(host: str, slot: Slot) -> bool:
-    """Write this host's slot into the table. False when it was already there."""
+    """Write this host's claim. False when it already said the same thing."""
     table = load()
     if table.hosts.get(host) == slot:
         return False
-    table.hosts[host] = slot
-    path = table_path()
+    path = host_path(host)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render(table), encoding="utf-8")
+    path.write_text(render(host, slot, table), encoding="utf-8")
     return True
