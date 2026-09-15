@@ -359,3 +359,19 @@ def test_the_push_timestamp_stays_on_this_machine(
     assert (tmp_path / "memory") not in path.parents
     autopush.record_push()
     assert path.is_file()
+
+
+def test_enable_moves_off_a_slot_somebody_else_holds(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """撞到別台時 enable 就該讓位,不要等到隔天排程執行才錯開。"""
+    from ai_config import schedule_table
+
+    monkeypatch.setattr(schedule_table, "memory_dir", lambda: notebook)
+    monkeypatch.setattr(schedule_table, "host_name", lambda: "zulu")
+    schedule_table.record("alpha", schedule_table.Slot(4, 0))
+    schedule_table.record("zulu", schedule_table.Slot(4, 0))
+
+    slot = autopush._claim_slot(None)
+
+    assert str(slot) == "04:10"

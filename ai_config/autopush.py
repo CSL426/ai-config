@@ -367,6 +367,10 @@ def _claim_slot(hour: "int | None"):
         current = table.load()
         if hour is None:
             slot = table.claim(current, host)
+            # 已經有時段但和別台撞在一起時,這裡就讓位,不必等到排程執行
+            moved = table.resolve_collision(current, host)
+            if moved is not None:
+                slot = moved
         else:
             held = current.hosts.get(host)
             slot = table.Slot(hour, held.minute if held else 0)
