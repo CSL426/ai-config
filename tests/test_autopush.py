@@ -253,3 +253,91 @@ def test_windows_sets_the_limit_after_creating_the_task(
     assert any("powershell" in str(call) for call in seen)
     assert any("ExecutionTimeLimit" in str(call) for call in seen)
     assert any("15 分鐘" in line for line in lines)
+
+
+def test_the_remote_is_asked_even_with_nothing_to_send(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """沒有變更的機器也要 fetch,否則它的遠端快照會無限期變舊。
+
+    實際遇到:一台機器兩天沒推過任何東西,origin/main 也就停在兩天前,
+    落後判斷拿舊快照去比,永遠說「一致」。
+    """
+    asked = []
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: asked.append(1) or False)
+    _changes(monkeypatch, False)
+
+    autopush.decide()
+
+    assert asked == [1]
+
+
+def test_a_changed_slot_moves_the_schedule_by_itself(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """表在別台改,這台自己跟上;不用每台重跑 enable。"""
+    from ai_config import schedule_table
+
+    monkeypatch.setattr(schedule_table, "memory_dir", lambda: notebook)
+    monkeypatch.setattr(schedule_table, "host_name", lambda: "mine")
+    schedule_table.record("mine", schedule_table.Slot(4, 30))
+    monkeypatch.setattr(autopush, "_schedule_installed", lambda: True)
+    monkeypatch.setattr(autopush, "_scheduled_at", lambda: (4, 0))
+    asked = []
+    monkeypatch.setattr(autopush, "enable", lambda hour: asked.append(hour))
+
+    message = autopush.reconcile_slot()
+
+    assert asked == [4]
+    assert "04:30" in message
+
+
+def test_an_unchanged_slot_leaves_the_schedule_alone(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config import schedule_table
+
+    monkeypatch.setattr(schedule_table, "memory_dir", lambda: notebook)
+    monkeypatch.setattr(schedule_table, "host_name", lambda: "mine")
+    schedule_table.record("mine", schedule_table.Slot(4, 30))
+    monkeypatch.setattr(autopush, "_schedule_installed", lambda: True)
+    monkeypatch.setattr(autopush, "_scheduled_at", lambda: (4, 30))
+    monkeypatch.setattr(
+        autopush, "enable", lambda hour: pytest.fail("時段沒變不該重建排程")
+    )
+
+    assert autopush.reconcile_slot() == ""
+
+
+def test_no_schedule_means_nothing_to_reconcile(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config import schedule_table
+
+    monkeypatch.setattr(schedule_table, "memory_dir", lambda: notebook)
+    monkeypatch.setattr(schedule_table, "host_name", lambda: "mine")
+    schedule_table.record("mine", schedule_table.Slot(4, 30))
+    monkeypatch.setattr(autopush, "_schedule_installed", lambda: False)
+    monkeypatch.setattr(
+        autopush, "enable", lambda hour: pytest.fail("沒裝排程不該去建")
+    )
+
+    assert autopush.reconcile_slot() == ""
+
+
+def test_a_quiet_machine_still_catches_up(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """沒東西要推的機器也要接上遠端。
+
+    共用的時間表住在記憶目錄裡,永遠不接上的機器會一直讀到舊的一份,
+    看不到別台認領了哪一分鐘,於是大家永遠撞在一起。
+    """
+    _changes(monkeypatch, False)
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: True)
+    caught = []
+    monkeypatch.setattr(autopush, "_catch_up", lambda: caught.append(1) or True)
+
+    autopush.decide()
+
+    assert caught == [1]
