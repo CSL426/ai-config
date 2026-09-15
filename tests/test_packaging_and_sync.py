@@ -1844,16 +1844,23 @@ def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
 def test_pull_clears_phantom_line_ending_change(tmp_path: Path) -> None:
     """Windows autocrlf marks a rewritten file modified with an empty diff."""
     remote, data_repo = create_data_remote(tmp_path)
-    # seed 的檔案是 "{}",沒有換行符可轉;要有多行內容幽靈才出得來
-    commit_and_push_settings(data_repo, '{\n  "local": true\n}\n', "multi-line")
+    local = data_repo / "claude" / "settings.json"
+    # 兩端都用位元組控制:index 一定是 LF、工作區之後一定是 CRLF。
+    # 走 write_text 的話 Windows 落地就是 CRLF,再寫 CRLF 等於沒改,幽靈出不來
+    local.write_bytes(b'{\n  "local": true\n}\n')
+    run_git(data_repo, "-c", "core.autocrlf=false", "add", "claude/settings.json")
+    run_git(data_repo, "-c", "core.autocrlf=false", "commit", "-q", "-m", "lf seed")
+    run_git(data_repo, "push", "-q", "origin", "HEAD")
     _push_from_another_clone(
         tmp_path, remote, "claude/settings.json", '{\n  "remote": 1\n}\n'
     )
-    local = data_repo / "claude" / "settings.json"
     run_git(data_repo, "config", "core.autocrlf", "true")
-    local.write_text(local.read_text(encoding="utf-8"), encoding="utf-8", newline="\r\n")
+    local.write_bytes(b'{\r\n  "local": true\r\n}\r\n')
     # run_git 會 strip,porcelain 的前導空白會不見
-    assert run_git(data_repo, "status", "--porcelain").split() == ["M", "claude/settings.json"]
+    status = run_git(data_repo, "status", "--porcelain").split()
+    if not status:
+        pytest.skip("這個 git 沒有產生幽靈標記,清除路徑在此平台未驗證")
+    assert status == ["M", "claude/settings.json"]
     assert run_git(data_repo, "diff", "--numstat") == ""
     head_before = run_git(data_repo, "rev-parse", "HEAD")
     home = tmp_path / "home"
