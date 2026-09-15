@@ -782,7 +782,7 @@ def test_pull_refuses_when_remote_touches_a_locally_modified_file(
     assert result.returncode != 0
     assert "本機修改保留" in result.stderr
     assert "claude/settings.json" in result.stdout
-    assert "push" in result.stdout
+    assert "commit 或 stash" in result.stdout
     # git 拒絕時什麼都沒動
     assert local.read_text(encoding="utf-8") == '{"changed": true}\n'
     assert run_git(data_repo, "rev-parse", "HEAD") == head_before
@@ -1839,3 +1839,30 @@ def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
     frontmatter = plugin.split("---", 2)[1]
     assert "Bash(acg memory handoff:*)" in frontmatter
     assert "Bash(ai-config memory handoff:*)" in frontmatter
+
+
+def test_pull_clears_phantom_line_ending_change(tmp_path: Path) -> None:
+    """Windows autocrlf marks a rewritten file modified with an empty diff."""
+    remote, data_repo = create_data_remote(tmp_path)
+    # seed 的檔案是 "{}",沒有換行符可轉;要有多行內容幽靈才出得來
+    commit_and_push_settings(data_repo, '{\n  "local": true\n}\n', "multi-line")
+    _push_from_another_clone(
+        tmp_path, remote, "claude/settings.json", '{\n  "remote": 1\n}\n'
+    )
+    local = data_repo / "claude" / "settings.json"
+    run_git(data_repo, "config", "core.autocrlf", "true")
+    local.write_text(local.read_text(encoding="utf-8"), encoding="utf-8", newline="\r\n")
+    # run_git 會 strip,porcelain 的前導空白會不見
+    assert run_git(data_repo, "status", "--porcelain").split() == ["M", "claude/settings.json"]
+    assert run_git(data_repo, "diff", "--numstat") == ""
+    head_before = run_git(data_repo, "rev-parse", "HEAD")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode == 0, result.stderr
+    assert "只有換行差異" in result.stdout
+    assert "claude/settings.json" in result.stdout
+    assert run_git(data_repo, "rev-parse", "HEAD") != head_before
+    assert '"remote": 1' in local.read_text(encoding="utf-8")
