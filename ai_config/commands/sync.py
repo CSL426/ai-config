@@ -51,7 +51,7 @@ def _pull_preflight() -> "tuple[int, int] | None":
         return None
     # 已追蹤檔案有修改也不先擋:git 的 fast-forward 只在遠端動到同一批檔案時
     # 才會拒絕,而且拒絕時本機修改原封不動。讓 git 判斷,重疊時再解釋。
-    report_dirty_tracked(status.stdout)
+    report_dirty_tracked(clear_phantom_changes(status.stdout))
 
     untracked = _run_repo_git("ls-files", "--others", "--exclude-standard")
     if untracked.returncode == 0 and untracked.stdout.strip():
@@ -214,6 +214,37 @@ def _hint_remote_access(result: subprocess.CompletedProcess[str]) -> None:
     )
 
 
+def clear_phantom_changes(porcelain: str) -> str:
+    """Drop worktree edits that have no content, returning the rest of the status.
+
+    On Windows with core.autocrlf, any rewrite of a tracked file (acg's own
+    init included) leaves it marked modified while ``git diff`` shows nothing.
+    Those marks made git refuse the fast-forward, and the advice was to push
+    first, which a repository behind its upstream cannot do: a deadlock the
+    user never caused. ``checkout --`` keeps the bytes and clears the mark.
+    """
+    kept = []
+    cleared = []
+    for line in porcelain.splitlines():
+        path = line[3:]
+        if line[:2] != " M" or not path:
+            kept.append(line)
+            continue
+        # 只有工作區改動、且 diff 沒有內容,才是幽靈;真的改動 diff 會回 1
+        if _run_repo_git("diff", "--quiet", "--", path).returncode != 0:
+            kept.append(line)
+            continue
+        if _run_repo_git("checkout", "--", path).returncode == 0:
+            cleared.append(path)
+        else:
+            kept.append(line)
+    if cleared:
+        log_info(f"有 {len(cleared)} 個檔案只有換行差異、沒有實質修改,已自動清除:")
+        for path in cleared:
+            print(f"  {path}")
+    return "\n".join(kept)
+
+
 def report_dirty_tracked(porcelain: str) -> list[str]:
     """Tell the user which tracked files carry unsaved changes; return them."""
     dirty = [line[3:] for line in porcelain.splitlines() if line.strip()]
@@ -254,7 +285,11 @@ def explain_merge_refusal(result: subprocess.CompletedProcess[str]) -> bool:
     if files and all(path.startswith(f"{MEMORY_DIR_NAME}/") for path in files):
         log_info(f"先執行 {ENTRYPOINT} memory push 保存記憶,再 pull")
     else:
-        log_info(f"先執行 {ENTRYPOINT} push 保存本機修改,再 pull;或放棄修改後重試")
+        # 走到這裡代表落後遠端,push 會拒絕;建議一條真的走得通的路
+        log_info(
+            "這些檔案本機與遠端都改了,push 會因落後遠端而拒絕;"
+            "請先在資料庫 commit 或 stash 本機修改再 pull,或放棄修改後重試"
+        )
     return True
 
 
