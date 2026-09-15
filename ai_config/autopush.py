@@ -335,6 +335,10 @@ def enable(
     """
     if stale_hours < 0:
         raise ValueError("冷卻時數不能是負的")
+    # 先驗證再寫表:寫了才拒絕會把這台的表項變成 -1:00 之類讀不回來的值,
+    # 下次就當成沒認領過、從頭搶時段
+    if hour is not None and not 0 <= hour <= 23:
+        raise ValueError("時間要在 0 到 23 之間")
     lines, minute = [], 0
     slot = _claim_slot(hour)
     if slot is not None:

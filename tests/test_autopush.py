@@ -116,8 +116,19 @@ def test_the_windows_task_replaces_an_existing_one() -> None:
 
 @pytest.mark.parametrize("hour", [-1, 24, 99])
 def test_an_impossible_hour_is_refused(hour: int) -> None:
+    from ai_config import schedule_table
+
+    schedule_table.record("test-host", schedule_table.Slot(4, 10))
     with pytest.raises(ValueError):
         autopush.enable(hour)
+    # 拒絕就不能留下痕跡,否則表項會壞掉、下次從頭認領
+    assert schedule_table.load().hosts["test-host"] == schedule_table.Slot(4, 10)
+
+
+def test_the_table_never_points_at_the_real_notebook(tmp_path: Path) -> None:
+    from ai_config import schedule_table
+
+    assert tmp_path in schedule_table.table_dir().parents
 
 
 def test_the_opportunistic_path_stays_out_of_the_way(
