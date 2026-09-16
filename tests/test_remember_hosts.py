@@ -17,6 +17,8 @@ def homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(hosts, "AGY_HOOKS", tmp_path / ".gemini" / "config" / "hooks.json")
     cache = tmp_path / "claude-cache" / "remember"
     monkeypatch.setattr(memory, "REMEMBER_PLUGIN_CACHE", cache)
+    # CI 上沒有 codex / agy 指令;測試談的是 acg 的行為,不是那台有什麼
+    monkeypatch.setattr(hosts, "available", lambda host: True)
     for version in ("0.9.0", "0.32.0", "0.10.0"):
         scripts = cache / version / "scripts"
         scripts.mkdir(parents=True)
@@ -166,7 +168,7 @@ def test_hosts_without_the_cli_are_neither_reported_nor_offered(
 ) -> None:
     from ai_config.commands import memory as command
 
-    monkeypatch.setattr(hosts.shutil, "which", lambda name: None if name == "agy" else "/bin/x")
+    monkeypatch.setattr(hosts, "available", lambda host: host != "agy")
     command._report_hosts()
     out = capsys.readouterr().out
     assert "Codex" in out and "Antigravity" not in out
