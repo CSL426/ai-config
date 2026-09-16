@@ -53,6 +53,23 @@ def _handoff_reminder_state() -> dict:
                 "reason": str(exc)}
 
 
+def _remember_hosts_state() -> dict:
+    from . import remember_hosts
+
+    result = {}
+    for host in remember_hosts.HOSTS:
+        try:
+            found = remember_hosts.state(host)
+            result[host] = {"available": remember_hosts.available(host),
+                            "installed": found.installed, "version": found.version,
+                            "trusted": found.trusted, "detail": found.detail}
+        except (OSError, RuntimeError, ValueError) as exc:
+            result[host] = {"available": remember_hosts.available(host),
+                            "installed": False, "version": "", "trusted": None,
+                            "detail": str(exc)}
+    return result
+
+
 def failure(exc):
     recovery = getattr(exc, "recovery_required", False)
     if recovery:
@@ -190,7 +207,7 @@ class ManagementApi:
                  "index_unlisted": [], "index_dangling": [], "secret_notes": [],
                  "autopush": {"installed": False, "last_push": "", "reason": "",
                               "slot": "", "host": "", "others": []},
-                 "handoff_reminder": None,
+                 "handoff_reminder": None, "remember_hosts": None,
                  "changed_paths": [], "entries": [], "project": None, "locations": [],
                  "actions": {action: {"allowed": False, "reason": "請先設定資料庫"}
                              for action in ("enable", "disable", "adopt", "release", "push")}}
@@ -243,6 +260,7 @@ class ManagementApi:
                     "secret_notes": state.secret_notes,
                     "autopush": _autopush_state(),
                     "handoff_reminder": _handoff_reminder_state(),
+                    "remember_hosts": _remember_hosts_state(),
                     "locations": locations,
                     "project": {"root": str(project), "key": state.project.key,
                                 "stable": state.project.stable, "memory_path": str(state.project_dir),
@@ -270,6 +288,26 @@ class ManagementApi:
             message = (f"已啟用 Claude Code 交接提醒，門檻 {state['threshold']}%。"
                        if state["enabled"] else "已停用 Claude Code 交接提醒。")
             return {**outcome(output=message), "handoff_reminder": state}
+        except (OSError, RuntimeError, ValueError) as exc:
+            return failure(exc)
+        finally:
+            self._lock.release()
+
+    def set_remember_host(self, host, enabled):
+        """Install or remove remember's capture on Codex or Antigravity."""
+        from . import remember_hosts
+
+        if host not in remember_hosts.HOSTS or not isinstance(enabled, bool):
+            return outcome(1, "host 必須是 codex 或 agy", "INVALID_ARGUMENT")
+        if not self._lock.acquire(blocking=False):
+            return outcome(1, "另一個動作正在執行", "BUSY")
+        try:
+            self._ensure_configured()
+            self._discard_previews()
+            lines = (remember_hosts.install(host) if enabled
+                     else remember_hosts.remove(host))
+            message = "\n".join(lines) or "沒有需要改的"
+            return {**outcome(output=message), "remember_hosts": _remember_hosts_state()}
         except (OSError, RuntimeError, ValueError) as exc:
             return failure(exc)
         finally:

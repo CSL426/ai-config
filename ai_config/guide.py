@@ -212,6 +212,16 @@ to take one over, `handoff done <thread>` when it is finished. Claiming
 records the session id, so a second session is told who holds it rather
 than silently taking it. Writing again reopens a claimed thread.
 
+### The journal on every host
+
+The project journal only records what remember captures, and Claude Code
+was the only host it was installed on. `{entrypoint} memory status` reports
+Codex and Antigravity as well; a bare `{entrypoint} memory enable` offers to
+install the capture where it is missing, and `{entrypoint} memory enable
+codex|agy` / `disable codex|agy` change one host without asking. Codex
+reviews new hooks itself: after installing, open codex once and type
+/hooks; viewing remember's hooks there records the trust.
+
 ### Remind before context compaction (Claude Code only)
 
 `{entrypoint} memory handoff remind status` shows this machine's reminder
