@@ -1,10 +1,12 @@
 import "./style.css";
 import { closeActiveSelect, initializeSelects } from "./select";
 
-import type {
+import type { RememberHost, RememberHostState,
   AcgApi, AcgCommand, ApplyCategory, ChangePreview, GithubAccess, MemoryAction,
   MemoryInfo, PushScope, RunResult, SettingsInfo, SkillEntry, ToolScope,
 } from "./bridge";
+
+const REMEMBER_HOSTS = ["codex", "agy"] as const;
 
 const COMMAND_LABELS: Record<AcgCommand, string> = {
   status: "檢查狀態", apply: "套用設定", pull: "下載更新", push: "上傳變更",
@@ -151,6 +153,10 @@ function syncControls(): void {
       || Boolean(memoryInfo.handoff_reminder.reason);
   }
   $<HTMLButtonElement>("#handoff-reminder-save").disabled ||= !memoryInfo?.handoff_reminder?.enabled;
+  for (const host of REMEMBER_HOSTS) {
+    $<HTMLInputElement>(`#remember-${host}-toggle`).disabled =
+      managementBlocked || memoryLoading || !memoryInfo?.remember_hosts?.[host]?.available;
+  }
   for (const selector of ["#memory-open", "#apply-preview", "#memory-select-project", "#memory-refresh", "#memory-push", "#pull-apply"]) {
     $<HTMLButtonElement>(selector).disabled = managementBlocked;
   }
@@ -899,6 +905,29 @@ $("#handoff-reminder-save").addEventListener("click", () => {
   void configureHandoffReminder(true);
 });
 
+async function configureRememberHost(host: RememberHost, enabled: boolean): Promise<void> {
+  const bridge = api();
+  const toggle = $<HTMLInputElement>(`#remember-${host}-toggle`);
+  const previous = memoryInfo?.remember_hosts?.[host]?.installed ?? false;
+  if (!bridge || running || pendingPreview) {
+    toggle.checked = previous;
+    return;
+  }
+  const result = await perform(enabled ? "安裝 remember" : "移除 remember", async () => {
+    const response = await bridge.set_remember_host(host, enabled);
+    if (response.code === 0) await refreshMemory();
+    return response;
+  }, false);
+  if (!result || result.code !== 0) toggle.checked = previous;
+  if (result) feedback($("#memory-feedback"), result.output, result.code !== 0);
+}
+
+for (const host of REMEMBER_HOSTS) {
+  $<HTMLInputElement>(`#remember-${host}-toggle`).addEventListener("change", (event) => {
+    void configureRememberHost(host, (event.currentTarget as HTMLInputElement).checked);
+  });
+}
+
 $<HTMLInputElement>("#autopush-toggle").addEventListener("change", async (event) => {
   const toggle = event.currentTarget as HTMLInputElement;
   const bridge = api();
@@ -1499,6 +1528,31 @@ function renderHandoffReminder(info: MemoryInfo): void {
   $("#handoff-reminder-hint").textContent = handoffReminderHint(state);
 }
 
+function rememberHostHint(host: RememberHost, state: RememberHostState | undefined): string {
+  if (!state) return "";
+  if (!state.available) return host === "codex" ? "這台沒有安裝 Codex。" : "這台沒有安裝 Antigravity。";
+  if (state.detail) return state.detail;
+  if (!state.installed) {
+    return host === "codex"
+      ? "安裝 remember 到 Codex；裝完在 Codex 裡輸入 /hooks 看過一次就算信任。"
+      : "把 remember 的 hook 合併進 Antigravity 的共用 hooks.json。";
+  }
+  if (host === "codex" && state.trusted === false) {
+    return `已安裝 ${state.version}，但 hook 還沒信任：在 Codex 輸入 /hooks 看過一次。`;
+  }
+  return host === "codex"
+    ? `已安裝 ${state.version}，Codex 的工作會進專案日誌。`
+    : `已安裝（腳本 ${state.version}），Antigravity 的工作會進專案日誌。`;
+}
+
+function renderRememberHosts(info: MemoryInfo): void {
+  for (const host of REMEMBER_HOSTS) {
+    const state = info.remember_hosts?.[host];
+    $<HTMLInputElement>(`#remember-${host}-toggle`).checked = state?.installed ?? false;
+    $(`#remember-${host}-hint`).textContent = rememberHostHint(host, state);
+  }
+}
+
 function renderAutopush(info: MemoryInfo): void {
   const toggle = $<HTMLInputElement>("#autopush-toggle");
   const state = info.autopush ?? {
@@ -1595,6 +1649,7 @@ async function refreshMemory(): Promise<void> {
     renderMemoryHealth(info);
     renderAutopush(info);
     renderHandoffReminder(info);
+  renderRememberHosts(info);
     const data = $("#memory-data");
     data.replaceChildren();
     textRow(data, "資料根", info.data_root);

@@ -79,6 +79,7 @@ def usage() -> None:
     print("  login [account] Bind a GitHub account that can push to the data repo")
     print("                  --unbind drop the binding (gh's own account is never switched)")
     print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
+    print("                  enable|disable codex|agy  remember capture on that host only")
     print("                  Shared notebook that every AI tool reads and writes")
     print("                  path --global|--project print one of the two roots")
     print("                  push --if-stale <小時> only when nothing pushed since")

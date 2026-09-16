@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.59 - 2026-09-16
+
+- 專案日誌不再只記 Claude Code。`memory status` 會報 Codex 與 Antigravity 有沒有裝
+  remember 的擷取;`memory enable` 缺的會問一次要不要裝(`--force` 不代答),
+  `memory enable codex|agy` / `disable codex|agy` 只動那一個 host。Codex 由它的
+  marketplace 安裝(這版指令是 `plugin add`),裝完要在 Codex 輸入 /hooks 看過一次才算信任,
+  acg 只偵測不代辦;Antigravity 由 acg 自己寫入、自己移除共用 hooks.json 裡的那個
+  項目,不依賴 remember 的安裝腳本。桌面記憶頁多兩個開關。
+
 ## 1.0.58 - 2026-09-15
 
 - 新增 Claude Code 本機交接提醒：`memory handoff remind status|enable [百分比]|disable`，

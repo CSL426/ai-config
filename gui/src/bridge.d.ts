@@ -1,3 +1,9 @@
+export type RememberHost = "codex" | "agy";
+export interface RememberHostState {
+  available: boolean; installed: boolean; version: string;
+  trusted: boolean | null; detail: string;
+}
+
 /** Python 端 GuiApi(ai_config/commands/gui.py)的型別契約 — 前後端唯一介面。 */
 
 export type AcgCommand = "status" | "apply" | "pull" | "push";
@@ -61,6 +67,7 @@ export interface MemoryInfo extends RunResult {
   handoff_reminder: {
     enabled: boolean; threshold: number; installed: boolean; reason?: string;
   } | null;
+  remember_hosts: Record<RememberHost, RememberHostState> | null;
   entries: {
     tool: Exclude<ToolScope, "all">;
     status: "missing" | "installed" | "blocked";
@@ -186,6 +193,7 @@ interface AcgApi {
   memory_info(projectToken?: string): Promise<MemoryInfo>;
   set_autopush(wanted: boolean): Promise<OperationResult>;
   set_handoff_reminder(enabled: boolean, threshold: number): Promise<OperationResult>;
+  set_remember_host(host: RememberHost, enabled: boolean): Promise<OperationResult>;
   set_autopush_slot(clock: string): Promise<OperationResult>;
   open_memory_location(locationToken: string): Promise<OperationResult>;
   preview_memory(action: MemoryAction, projectToken?: string): Promise<ChangePreview>;

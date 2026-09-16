@@ -15,7 +15,8 @@ from ..paths import BACKUP_BASE, ENTRYPOINT, MEMORY_LINK, tilde
 
 USAGE = (
     f"Usage: {ENTRYPOINT} memory "
-    "<status|enable|disable|adopt|release|path|push|handoff|autopush>"
+    "<status|enable [codex|agy]|disable [codex|agy]|adopt|release|path|push|"
+    "handoff|autopush>"
 )
 
 
@@ -32,6 +33,8 @@ def _run_memory(args: list[str]) -> int:
     rest = args[1:]
     if command == "status" and not rest:
         return _status()
+    if command in {"enable", "disable"} and rest in (["codex"], ["agy"]):
+        return _host(command, rest[0])
     if command in {"enable", "disable", "adopt", "release"} and not rest:
         project = memory.project_root() if command in {"adopt", "release"} else None
         return execute(command, project).code
@@ -271,6 +274,7 @@ def _status() -> int:
     else:
         log_info("專案記憶尚未建立,AI 第一次「記住」專案內容時會自己建")
 
+    _report_hosts()
     if not state.remember:
         return 0
     if state.journal_config == "ours":
@@ -542,9 +546,79 @@ def _enable() -> int:
     if memory.codex_override_path().is_file():
         log_warn(f"{tilde(memory.codex_override_path())} 存在,Codex 可能讀不到共用規則")
 
+    _offer_hosts()
+
     print()
     log_success("共用記憶已啟用;開新的 AI 會話後生效")
     log_info(f"保存記憶:{ENTRYPOINT} memory push")
+    return 0
+
+
+_HOST_LABELS = {"codex": "Codex", "agy": "Antigravity"}
+_TRUST_HINT = "開一次 codex,輸入 /hooks 看過 remember 的 hook 就算信任"
+
+
+def _report_hosts() -> None:
+    """One line per host: the journal only records what remember captures."""
+    from .. import remember_hosts as hosts
+
+    for host, label in _HOST_LABELS.items():
+        if not hosts.available(host):
+            continue
+        found = hosts.state(host)
+        if not found.installed:
+            if found.detail:
+                log_warn(f"{label} 的 remember:{found.detail}")
+            else:
+                log_info(
+                    f"{label} 尚未裝 remember,它的工作不會進專案日誌"
+                    f"({ENTRYPOINT} memory enable {host})"
+                )
+        elif found.detail:
+            log_warn(f"{label} 的 remember:{found.detail}")
+        elif found.trusted is False:
+            log_warn(f"{label} 已裝 remember {found.version},但 hook 還沒信任:{_TRUST_HINT}")
+        else:
+            log_success(f"{label} 的 remember 已安裝({found.version})")
+
+
+def _offer_hosts() -> None:
+    """Ask once per host that lacks the capture; the GUI has its own switches."""
+    import sys
+
+    from .. import remember_hosts as hosts
+    from ..console import confirm
+
+    if not sys.stdin.isatty():
+        return
+    for host, label in _HOST_LABELS.items():
+        try:
+            if not hosts.available(host) or hosts.state(host).installed:
+                continue
+            # 裝第三方擷取不該被 --force 一律答 yes;要人親口說好
+            if not confirm(
+                f"在 {label} 安裝 remember,讓它的工作也進專案日誌?", forceable=False,
+            ):
+                continue
+            for line in hosts.install(host):
+                (log_warn if "/hooks" in line else log_success)(line)
+        except RuntimeError as exc:
+            log_warn(f"{label} 這邊沒裝成:{exc}")
+
+
+def _host(command: str, host: str) -> int:
+    from .. import remember_hosts as hosts
+
+    label = _HOST_LABELS[host]
+    log_header(f"{'Enable' if command == 'enable' else 'Disable'} remember on {label}")
+    if command == "enable" and not hosts.available(host):
+        log_error(f"這台沒有 {label} 的指令,沒東西可以裝")
+        return 1
+    lines = hosts.install(host) if command == "enable" else hosts.remove(host)
+    for line in lines:
+        (log_warn if "/hooks" in line else log_success)(line)
+    if not lines:
+        log_info("沒有需要改的")
     return 0
 
 
