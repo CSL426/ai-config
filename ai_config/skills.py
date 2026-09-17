@@ -167,6 +167,33 @@ def acknowledge_unmanaged(dst_skills: Path) -> list[str]:
     return names
 
 
+def vendor_skill_candidates(
+    live_skills: Path, repo_skills: Path, known: "frozenset[str]",
+) -> list[str]:
+    """Live skill directories the repository has never heard of.
+
+    Claude's skills/ is an exact mirror with no manifest, so
+    ``unmanaged_skills`` — which reads one — cannot see anything here. That
+    is how skills/synced/ went unnoticed until apply was about to delete
+    208 files of Claude Code's own first-party cache.
+
+    A directory that appears live, is absent from the repository, and is
+    not already excluded is either a skill someone installed by hand or the
+    next vendor cache. Both are worth a line in status before apply runs.
+    """
+    if not live_skills.is_dir():
+        return []
+    repo_names = (
+        {p.name for p in repo_skills.iterdir() if p.is_dir()}
+        if repo_skills.is_dir() else set()
+    )
+    return sorted(
+        p.name
+        for p in live_skills.iterdir()
+        if p.is_dir() and p.name not in repo_names and p.name not in known
+    )
+
+
 def managed_skill_orphans(staged_skills: Path, dst_skills: Path) -> list[str]:
     if not dst_skills.is_dir():
         return []

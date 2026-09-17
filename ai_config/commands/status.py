@@ -26,13 +26,18 @@ from ..paths import (
     CLAUDE_VENDOR_SKILL_DIRS,
     CODEX_CANONICAL_SKILLS,
     ENTRYPOINT,
+    claude_source_dir,
     codex_live_skills,
     tilde,
     tool_home,
 )
 from ..plugins import check_plugin_drift
 from ..safety import is_reparse_point
-from ..skills import managed_skill_orphans, unmanaged_skills
+from ..skills import (
+    managed_skill_orphans,
+    unmanaged_skills,
+    vendor_skill_candidates,
+)
 from ..tools import agy, claude, codex
 from .apply import _TOOLS
 
@@ -360,6 +365,31 @@ def _skill_stores(tool: str) -> list[tuple[str, Path]]:
     return stores
 
 
+def check_vendor_skill_candidates(tool: str) -> None:
+    """Name live skill directories the repository does not know about.
+
+    Claude's store has no manifest, so unmanaged_skills is blind there.
+    Without this, the next tool that writes its own cache under skills/
+    is discovered the way skills/synced/ was: by apply deleting it.
+    """
+    if tool not in ("all", "claude"):
+        return
+    names = vendor_skill_candidates(
+        CLAUDE_HOME / "skills",
+        claude_source_dir() / "skills",
+        CLAUDE_VENDOR_SKILL_DIRS,
+    )
+    if not names:
+        return
+    log_warn(f"claude: {len(names)} skill 目錄只在 live,資料庫沒有")
+    print(f"    {tilde(CLAUDE_HOME / 'skills')}/")
+    print(f"    {', '.join(names)}")
+    log_info(
+        "手動安裝的技能會被 apply 刪掉;若是某個工具自己維護的快取,"
+        "要加進 CLAUDE_VENDOR_SKILL_DIRS 排除"
+    )
+
+
 def check_unmanaged_skills(tool: str) -> None:
     found = False
     for label, store in _skill_stores(tool):
@@ -423,5 +453,6 @@ def show_status(tool: str) -> None:
     check_shared_mirrors()
     log_header("Unmanaged skills")
     check_unmanaged_skills(tool)
+    check_vendor_skill_candidates(tool)
     log_header("Plugin drift")
     check_plugin_drift()

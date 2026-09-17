@@ -62,3 +62,38 @@ def test_status_does_not_offer_to_remove_it(
     removals = command._planned_removals("claude", stage, live)
 
     assert all("synced" not in path.as_posix() for path in removals), removals
+
+
+def test_an_unknown_live_skill_dir_is_named(tmp_path: Path) -> None:
+    """The next vendor cache should surface in status, not in apply's deletions."""
+    from ai_config.skills import vendor_skill_candidates
+
+    live = tmp_path / "live"
+    repo = tmp_path / "repo"
+    write(live / "mine/SKILL.md", "user skill\n")
+    write(live / "synced/abc/pdf/SKILL.md", "first-party\n")
+    write(live / "some-other-vendor/cache/SKILL.md", "not ours\n")
+    write(repo / "mine/SKILL.md", "user skill\n")
+
+    found = vendor_skill_candidates(live, repo, CLAUDE_VENDOR_SKILL_DIRS)
+
+    # 已排除的不報,repo 有的不報,只剩真正沒人認得的那個
+    assert found == ["some-other-vendor"]
+
+
+def test_nothing_unknown_reports_nothing(tmp_path: Path) -> None:
+    from ai_config.skills import vendor_skill_candidates
+
+    live = tmp_path / "live"
+    repo = tmp_path / "repo"
+    write(live / "mine/SKILL.md", "user skill\n")
+    write(live / "synced/abc/pdf/SKILL.md", "first-party\n")
+    write(repo / "mine/SKILL.md", "user skill\n")
+
+    assert vendor_skill_candidates(live, repo, CLAUDE_VENDOR_SKILL_DIRS) == []
+
+
+def test_a_missing_live_store_is_not_an_error(tmp_path: Path) -> None:
+    from ai_config.skills import vendor_skill_candidates
+
+    assert vendor_skill_candidates(tmp_path / "nope", tmp_path, frozenset()) == []
