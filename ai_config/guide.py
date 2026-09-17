@@ -212,6 +212,15 @@ to take one over, `handoff done <thread>` when it is finished. Claiming
 records the session id, so a second session is told who holds it rather
 than silently taking it. Writing again reopens a claimed thread.
 
+### Refusing a commit subject that breaks convention
+
+`{entrypoint} commit-style enable` installs a Claude Code hook that reads
+the subject of a `git commit` before it runs and refuses one that does not
+match `type(scope): description`, handing the reason back so the model
+rewrites it. `status` and `disable` do the obvious. It is opt-in per
+machine and never travels: the hook names this machine's own interpreter,
+so gather strips it and apply re-adds the local one.
+
 ### The journal on every host
 
 The project journal only records what remember captures, and Claude Code

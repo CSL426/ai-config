@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.62 - 2026-09-17
+
+- 新增 `commit-style status|enable|disable`:Claude Code 的 PreToolUse hook,
+  在 `git commit` 執行前讀出主旨,不符 `type(scope): description` 就擋下並把理由
+  交回模型改寫。每台自己選擇啟用。
+- 這個 hook 帶 acg 的標記,所以 gather 會把它剝掉、apply 會補回這台自己的執行檔路徑。
+  先前手寫進 settings.json 的同名 hook 沒有標記,寫死了 `/usr/bin/python3` 與本機
+  絕對路徑,已經被收進資料庫並準備同步到其他平台 —— 那份已從資料庫移除。
+
 ## 1.0.61 - 2026-09-17
 
 - `status` 會指出只存在於 live、資料庫不認得的 Claude 技能目錄。Claude 的
