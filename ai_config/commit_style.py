@@ -7,25 +7,20 @@ when the subject does not match, exits 2 so the reason goes back to the
 model, which rewrites the message itself.
 
 Opt-in per machine, like the handoff reminder: the hook entry carries
-MARKER so gather strips it before it reaches the database, and apply
+hooks.COMMIT_STYLE.marker so gather strips it before it reaches the database, and apply
 re-adds this machine's own executable. Without that, a hook naming one
 machine's interpreter and script path travels to every other machine and
 fires there against files that do not exist.
 """
 
-import copy
 import json
 import re
 import shlex
 import subprocess
 import sys
 
-from . import memory
-from .paths import CLAUDE_HOME
+from . import hooks
 
-HOOK_COMMAND = "__commit-style"
-MARKER = "acg：commit 訊息風格"
-EVENTS = ("PreToolUse",)
 TYPES = ("feat", "fix", "refactor", "docs", "test", "chore", "perf", "ci")
 MAX_SUBJECT = 72
 
@@ -35,118 +30,20 @@ _HEREDOC = re.compile(
 )
 
 
-def _owned(hook: object) -> bool:
-    return isinstance(hook, dict) and hook.get("statusMessage") == MARKER
-
-
 def without_settings(document: dict) -> dict:
-    """Drop our hook entries; everything else in the document is untouched."""
-    result = copy.deepcopy(document)
-    events = result.get("hooks", {})
-    if not isinstance(events, dict):
-        return result
-    for event in EVENTS:
-        rows = events.get(event)
-        if not isinstance(rows, list):
-            continue
-        kept = []
-        for row in rows:
-            if not isinstance(row, dict) or not isinstance(row.get("hooks"), list):
-                kept.append(row)
-                continue
-            hooks = [hook for hook in row["hooks"] if not _owned(hook)]
-            if hooks == row["hooks"]:
-                kept.append(row)
-            elif hooks:
-                kept.append({**row, "hooks": hooks})
-        if kept:
-            events[event] = kept
-        else:
-            events.pop(event, None)
-    if not events and result.get("hooks") != document.get("hooks"):
-        result.pop("hooks", None)
-    return result
+    return hooks.without_one(document, hooks.COMMIT_STYLE)
 
 
 def preserve_settings(source: dict, target: dict) -> dict:
-    """Keep this machine's own hook entry when applying shared settings."""
-    result = without_settings(source)
-    events = target.get("hooks", {})
-    if not isinstance(events, dict):
-        return result
-    for event in EVENTS:
-        rows = events.get(event, [])
-        if not isinstance(rows, list):
-            continue
-        for row in rows:
-            if not isinstance(row, dict) or not isinstance(row.get("hooks"), list):
-                continue
-            owned = [hook for hook in row["hooks"] if _owned(hook)]
-            if owned:
-                result.setdefault("hooks", {}).setdefault(event, []).append(
-                    {**row, "hooks": copy.deepcopy(owned)}
-                )
-    return result
-
-
-def _settings_path():
-    return CLAUDE_HOME / "settings.json"
-
-
-def _settings() -> dict:
-    path = _settings_path()
-    memory.assert_plain_path(path, directory=False)
-    if not path.exists():
-        return {}
-    document = json.loads(path.read_text(encoding="utf-8-sig"))
-    if not isinstance(document, dict):
-        raise ValueError("Claude settings.json 必須是物件")  # noqa: TRY004
-    return document
-
-
-def _installed(document: dict) -> bool:
-    rows = document.get("hooks", {}).get("PreToolUse")
-    if not isinstance(rows, list):
-        return False
-    return any(
-        isinstance(row, dict) and isinstance(row.get("hooks"), list)
-        and any(_owned(hook) for hook in row["hooks"])
-        for row in rows
-    )
+    return hooks.preserve_one(source, target, hooks.COMMIT_STYLE)
 
 
 def status() -> dict:
-    return {"installed": _installed(_settings())}
+    return {"installed": hooks.installed(hooks.read_settings(), hooks.COMMIT_STYLE)}
 
 
 def configure(enabled: bool) -> dict:
-    """Install or remove the hook on this machine only."""
-    from .locking import apply_lock
-
-    with apply_lock():
-        document = _settings()
-        result = without_settings(document)
-        if enabled:
-            argv = [sys.executable]
-            if not getattr(sys, "frozen", False):
-                argv += ["-m", "ai_config"]
-            events = result.setdefault("hooks", {})
-            if not isinstance(events, dict):
-                raise ValueError("Claude hooks 必須是物件")
-            rows = events.setdefault("PreToolUse", [])
-            if not isinstance(rows, list):
-                raise ValueError("Claude PreToolUse hooks 必須是陣列")
-            rows.append({"matcher": "Bash", "hooks": [{
-                "type": "command", "command": argv[0],
-                "args": argv[1:] + [HOOK_COMMAND],
-                "statusMessage": MARKER, "timeout": 10,
-            }]})
-        if result != document:
-            path = _settings_path()
-            memory._write_text_atomic(
-                path, json.dumps(result, ensure_ascii=False, indent=2) + "\n",
-            )
-        return {"installed": _installed(result)}
+    return {"installed": hooks.configure(hooks.COMMIT_STYLE, enabled)}
 
 
 def _literal(message: str, command: str) -> "str | None":

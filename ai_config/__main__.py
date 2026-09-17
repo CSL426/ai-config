@@ -78,8 +78,8 @@ def usage() -> None:
     print("  config          Show provider (git/gdrive), repo, and login state")
     print("  login [account] Bind a GitHub account that can push to the data repo")
     print("                  --unbind drop the binding (gh's own account is never switched)")
-    print("  commit-style <status|enable|disable>")
-    print("                  refuse a commit subject this repo would not write")
+    print("  hooks <list|enable <name>|disable <name>>")
+    print("                  machine-local Claude Code hooks; never synced")
     print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
     print("                  enable|disable codex|agy  remember capture on that host only")
     print("                  Shared notebook that every AI tool reads and writes")
@@ -308,10 +308,10 @@ def main(argv: "list[str] | None" = None) -> int:
 
         return run_memory(args[1:])
 
-    if cmd == "commit-style":
-        from .commands.commit_style import run_commit_style
+    if cmd == "hooks":
+        from .commands.hooks import run_hooks
 
-        return run_commit_style(args[1:])
+        return run_hooks(args[1:])
 
     if cmd == "ignore-skills":
         if len(args) > 2:

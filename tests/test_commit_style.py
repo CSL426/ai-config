@@ -62,8 +62,9 @@ def test_the_subject_limit_is_exact() -> None:
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     claude = tmp_path / ".claude"
     claude.mkdir()
-    monkeypatch.setattr(commit_style, "CLAUDE_HOME", claude)
-    monkeypatch.setattr(commit_style.memory, "CLAUDE_HOME", claude)
+    # hook 的安裝與剝除都住在註冊表裡,改那裡就好
+    monkeypatch.setattr(commit_style.hooks, "CLAUDE_HOME", claude)
+    monkeypatch.setattr(commit_style.hooks.memory, "CLAUDE_HOME", claude)
     return claude
 
 
@@ -111,4 +112,4 @@ def test_apply_keeps_this_machines_hook(home: Path) -> None:
 
     assert merged["statusLine"]["command"] == "shared"
     hooks = merged["hooks"]["PreToolUse"][0]["hooks"]
-    assert any(h["statusMessage"] == commit_style.MARKER for h in hooks)
+    assert any(h["statusMessage"] == commit_style.hooks.COMMIT_STYLE.marker for h in hooks)

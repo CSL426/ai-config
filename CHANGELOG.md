@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.63 - 2026-09-17
+
+- 新增 `hooks list|enable <名稱>|disable <名稱>`:acg 能裝在這台的 Claude Code hook
+  集中在一張註冊表裡。三個功能先前各寫一套剝除與還原,`tools/claude.py` 為此疊了
+  三層呼叫;現在同步只跑一次,再多一個 hook 是表裡多一筆,不必再動同步。
+  `commit-style` 成為表中的一筆,單獨的 `commit-style` 指令移除。
+- 排程的讓位改在同步之後才做。時間表住在記憶目錄裡,先前在接上遠端之前就判斷,
+  所以別台剛認領的時段要隔天才看得見。
+- Codex 的 remember 狀態會看這台所有的 home(`~/.codex`、`~/.codex-*`)。用 shell
+  function 依帳號切換 CODEX_HOME 時,先前只報預設那個,可能不是實際在跑的。
+- `status` 會指出 `settings.json` 的 env 裡指向不存在路徑的值。env 已不再同步,
+  但之前同步過去的殘留不會自己消失(例如 Windows 上的 Linux CODEX_HOME)。
+- 新增測試:`plugin/` 內容改了卻沒升版號會失敗。`claude plugin update` 只比版號,
+  同版號不同內容永遠推不出去 —— 指令檔曾因此落後十一版。
+
 ## 1.0.62 - 2026-09-17
 
 - 新增 `commit-style status|enable|disable`:Claude Code 的 PreToolUse hook,

@@ -1873,3 +1873,42 @@ def test_pull_clears_phantom_line_ending_change(tmp_path: Path) -> None:
     assert "claude/settings.json" in result.stdout
     assert run_git(data_repo, "rev-parse", "HEAD") != head_before
     assert '"remote": 1' in local.read_text(encoding="utf-8")
+
+
+def test_plugin_content_changes_carry_a_version_bump() -> None:
+    """An edit under plugin/ that keeps the version cannot reach anyone.
+
+    `claude plugin update` compares versions, not content: same number,
+    same install, no matter what changed inside. The command files sat
+    eleven releases behind precisely because nothing checked this.
+    """
+    import json
+    import subprocess
+
+    tag = subprocess.run(
+        ["git", "describe", "--tags", "--abbrev=0"],
+        capture_output=True, text=True, cwd=REPO_ROOT, check=False,
+    ).stdout.strip()
+    if not tag:
+        pytest.skip("no tag to compare against")
+
+    # 比到工作區,不是只比到 HEAD:忘記升版號通常在還沒提交時就看得出來
+    changed = subprocess.run(
+        ["git", "diff", "--name-only", tag, "--", "plugin/"],
+        capture_output=True, text=True, cwd=REPO_ROOT, check=False,
+    ).stdout.strip()
+    if not changed:
+        return
+
+    released = subprocess.run(
+        ["git", "show", f"{tag}:plugin/.claude-plugin/plugin.json"],
+        capture_output=True, text=True, cwd=REPO_ROOT, check=False,
+    ).stdout
+    if not released:
+        return
+    current = json.loads(
+        (REPO_ROOT / "plugin/.claude-plugin/plugin.json").read_text(encoding="utf-8")
+    )["version"]
+    assert current != json.loads(released)["version"], (
+        f"plugin/ 改了但版號還是 {current};{tag} 之後改的檔案:\n{changed}"
+    )

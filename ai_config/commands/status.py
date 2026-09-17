@@ -1,6 +1,8 @@
 """status command: diff the staged repo projection against live tool homes."""
 
 import difflib
+import json
+import os
 import shutil
 import tempfile
 from datetime import datetime
@@ -365,6 +367,41 @@ def _skill_stores(tool: str) -> list[tuple[str, Path]]:
     return stores
 
 
+def check_env_paths(tool: str) -> None:
+    """Warn about env values naming a path that does not exist here.
+
+    env is machine-local and no longer synced, but a value that travelled
+    before that rule stays behind on every machine it reached. A Linux
+    CODEX_HOME on a Windows box makes its CLI warn on every run, and
+    nothing ever revisits it.
+    """
+    if tool not in ("all", "claude"):
+        return
+    path = CLAUDE_HOME / "settings.json"
+    if not path.is_file():
+        return
+    try:
+        values = json.loads(path.read_text(encoding="utf-8-sig")).get("env", {})
+    except (OSError, ValueError):
+        return
+    if not isinstance(values, dict):
+        return
+    missing = [
+        f"{key}={value}"
+        for key, value in values.items()
+        if isinstance(value, str)
+        # 只看長得像絕對路徑的值;PATH 那種多段的不在此列
+        and value.startswith(("/", "~")) and os.pathsep not in value
+        and not Path(value).expanduser().exists()
+    ]
+    if not missing:
+        return
+    log_warn(f"claude: settings.json 的 env 有 {len(missing)} 個值指向不存在的路徑")
+    for item in missing:
+        print(f"    {item}")
+    log_info("這類值常是從別台同步過來的殘留;env 不再同步,要自己刪掉")
+
+
 def check_vendor_skill_candidates(tool: str) -> None:
     """Name live skill directories the repository does not know about.
 
@@ -454,5 +491,6 @@ def show_status(tool: str) -> None:
     log_header("Unmanaged skills")
     check_unmanaged_skills(tool)
     check_vendor_skill_candidates(tool)
+    check_env_paths(tool)
     log_header("Plugin drift")
     check_plugin_drift()

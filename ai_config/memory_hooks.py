@@ -1,6 +1,5 @@
 """Machine-local hooks restoring the journal's project entry after migration."""
 
-import copy
 import json
 import os
 import re
@@ -8,7 +7,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from . import memory
+from . import hooks, memory
 from .paths import WINDOWS_MODE
 
 COMMAND = "__memory-project-entry"
@@ -17,63 +16,16 @@ EVENTS = ("SessionStart", "UserPromptSubmit")
 
 
 def _owned(hook: object) -> bool:
-    return (
-        isinstance(hook, dict)
-        and hook.get("type") == "command"
-        and hook.get("statusMessage") == MARKER
-    )
+    return hooks.owned_by(hook, MARKER)
 
 
 def without_hooks(document: dict) -> dict:
-    result = copy.deepcopy(document)
-    events = result.get("hooks")
-    if not isinstance(events, dict):
-        return result
-    for event in EVENTS:
-        rows = events.get(event)
-        if not isinstance(rows, list):
-            continue
-        if not any(
-            isinstance(row, dict)
-            and isinstance(row.get("hooks"), list)
-            and any(_owned(hook) for hook in row["hooks"])
-            for row in rows
-        ):
-            continue
-        kept = []
-        for row in rows:
-            if not isinstance(row, dict) or not isinstance(row.get("hooks"), list):
-                kept.append(row)
-                continue
-            remaining = [hook for hook in row["hooks"] if not _owned(hook)]
-            if len(remaining) == len(row["hooks"]):
-                kept.append(row)
-            elif remaining:
-                kept.append({**row, "hooks": remaining})
-        if kept:
-            events[event] = kept
-        else:
-            events.pop(event, None)
-    if not events and result.get("hooks") != document.get("hooks"):
-        result.pop("hooks", None)
-    return result
+    """Only this feature's entries; the registry owns the general pass."""
+    return hooks.without_one(document, hooks.MEMORY_ENTRY)
 
 
 def preserve_hooks(source: dict, target: dict) -> dict:
-    result = without_hooks(source)
-    events = target.get("hooks", {})
-    if not isinstance(events, dict):
-        return result
-    for event in EVENTS:
-        for row in events.get(event, []):
-            if not isinstance(row, dict) or not isinstance(row.get("hooks"), list):
-                continue
-            owned = [hook for hook in row["hooks"] if _owned(hook)]
-            if owned:
-                result.setdefault("hooks", {}).setdefault(event, []).append(
-                    {**row, "hooks": copy.deepcopy(owned)}
-                )
-    return result
+    return hooks.preserve_one(source, target, hooks.MEMORY_ENTRY)
 
 
 def settings_path() -> Path:
