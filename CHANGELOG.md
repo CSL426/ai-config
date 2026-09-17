@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.61 - 2026-09-17
+
+- `status` 會指出只存在於 live、資料庫不認得的 Claude 技能目錄。Claude 的
+  `skills/` 是精確鏡像、沒有 manifest,所以既有的 unmanaged 偵測對它永遠回空 ——
+  `skills/synced/` 就是這樣一路無聲到 `apply` 要刪掉 208 個檔才被發現。下一個
+  自己維護快取的工具現在會在 apply 之前先出現在 status 裡。
+
 ## 1.0.60 - 2026-09-17
 
 - `apply` 不再刪掉 Claude Code 自己的第一方技能快取 `skills/synced/`。那個目錄由
