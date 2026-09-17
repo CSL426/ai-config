@@ -138,8 +138,36 @@ def _run_codex(*args: str) -> subprocess.CompletedProcess:
     return result
 
 
+def _codex_has_plugins() -> bool:
+    """Codex grew its plugin system around 0.15x; 0.77 has no such subcommand."""
+    binary = shutil.which("codex")
+    if binary is None:
+        raise RuntimeError("找不到 codex 指令,Codex 這邊先跳過")
+    probe = subprocess.run(
+        [binary, "plugin", "--help"], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=False, timeout=60,
+    )
+    return probe.returncode == 0
+
+
+def codex_version() -> str:
+    binary = shutil.which("codex")
+    if binary is None:
+        return ""
+    result = subprocess.run(
+        [binary, "--version"], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=False, timeout=60,
+    )
+    return result.stdout.strip() or result.stderr.strip()
+
+
 def install_codex() -> list[str]:
     """Add the author's marketplace once, then the plugin; both idempotent."""
+    if not _codex_has_plugins():
+        raise RuntimeError(
+            f"這台的 Codex({codex_version() or '版本不明'})沒有 plugin 子指令,"
+            "要先把 Codex 升級到有 plugin 的版本才裝得了 remember"
+        )
     lines = []
     marketplaces = codex_config().get("marketplaces", {})
     if not (isinstance(marketplaces, dict) and CODEX_MARKETPLACE in marketplaces):
