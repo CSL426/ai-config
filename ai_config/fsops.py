@@ -38,7 +38,9 @@ def copy_file_to_stage(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
-def overlay_dir_to_stage(src: Path, dst: Path) -> None:
+def overlay_dir_to_stage(
+    src: Path, dst: Path, *, exclude_dir_names: "frozenset[str] | None" = None,
+) -> None:
     """rsync -aL src/ dst/ — merge overlay, dereference symlinks, no deletion."""
     if not src.is_dir():
         return
@@ -47,6 +49,8 @@ def overlay_dir_to_stage(src: Path, dst: Path) -> None:
     dst.mkdir(parents=True, exist_ok=True)
     for item in sorted(src.rglob("*")):
         rel = item.relative_to(src)
+        if exclude_dir_names and any(part in exclude_dir_names for part in rel.parts):
+            continue
         target = dst / rel
         if item.is_dir():
             target.mkdir(parents=True, exist_ok=True)

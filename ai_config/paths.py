@@ -64,6 +64,12 @@ CODEX_SKILLS_MIGRATION_MARKER = ".ai-config-codex-skills-migrated"
 # version marker; they are vendor content, not user configuration.
 CODEX_VENDOR_SKILL_DIRS = frozenset({".system"})
 
+# Claude Code downloads the first-party skills into skills/synced/ itself and
+# refreshes them on its own. Mirroring that tree would put a machine-local
+# cache under version control, and — because Claude's managed directories are
+# exact mirrors — apply would delete the copy Claude Code is still using.
+CLAUDE_VENDOR_SKILL_DIRS = frozenset({"synced"})
+
 # Antigravity 2.0 stores global skills here. AGY_HOME/skills points to this
 # canonical store so the editor and CLI share one skills directory.
 AGY_CANONICAL_SKILLS = HOME / ".gemini" / "config" / "skills"
