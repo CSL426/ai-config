@@ -78,6 +78,8 @@ def usage() -> None:
     print("  config          Show provider (git/gdrive), repo, and login state")
     print("  login [account] Bind a GitHub account that can push to the data repo")
     print("                  --unbind drop the binding (gh's own account is never switched)")
+    print("  commit-style <status|enable|disable>")
+    print("                  refuse a commit subject this repo would not write")
     print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
     print("                  enable|disable codex|agy  remember capture on that host only")
     print("                  Shared notebook that every AI tool reads and writes")
@@ -138,6 +140,10 @@ def main(argv: "list[str] | None" = None) -> int:
 
         handler = run_statusline if args[0] == "__handoff-statusline" else run_hook
         return handler(args[1:])
+    if args and args[0] == "__commit-style":
+        from .commit_style import run_hook
+
+        return run_hook(args[1:])
     if args and args[0] == "__memory-project-entry":
         from .memory_hooks import run
 
@@ -301,6 +307,11 @@ def main(argv: "list[str] | None" = None) -> int:
         from .commands.memory import run_memory
 
         return run_memory(args[1:])
+
+    if cmd == "commit-style":
+        from .commands.commit_style import run_commit_style
+
+        return run_commit_style(args[1:])
 
     if cmd == "ignore-skills":
         if len(args) > 2:
