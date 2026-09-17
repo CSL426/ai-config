@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.60 - 2026-09-17
+
+- `apply` 不再刪掉 Claude Code 自己的第一方技能快取 `skills/synced/`。那個目錄由
+  Claude Code 下載並自行更新,但它落在 acg 精確鏡像的 `skills/` 底下,於是 `status`
+  報「apply removes」、`init` 會把它收進資料庫、`apply` 會把 live 那份刪掉。四個路徑
+  (status、init、apply、預覽)現在一致跳過它,和 Codex 的 `.system` 同樣處理。
+- Codex 太舊(沒有 `plugin` 子指令)時,`memory enable codex` 會直接說要先升級 Codex
+  並印出版本,不再吐出整段 usage。
+
 ## 1.0.59 - 2026-09-16
 
 - 專案日誌不再只記 Claude Code。`memory status` 會報 Codex 與 Antigravity 有沒有裝

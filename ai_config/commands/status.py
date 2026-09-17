@@ -23,6 +23,7 @@ from ..paths import (
     ALL_TOOLS,
     CLAUDE_HOME,
     CLAUDE_MANAGED_DIRS,
+    CLAUDE_VENDOR_SKILL_DIRS,
     CODEX_CANONICAL_SKILLS,
     ENTRYPOINT,
     codex_live_skills,
@@ -117,6 +118,9 @@ def _mirror_live_only_files(stage_dir: Path, live_dir: Path) -> list[Path]:
             continue
         relative = path.relative_to(live_dir)
         if any(is_excluded(part) for part in relative.parts):
+            continue
+        # Claude Code 自己維護的第一方技能快取:不收進 repo,也不該說要刪
+        if any(part in CLAUDE_VENDOR_SKILL_DIRS for part in relative.parts):
             continue
         if relative not in staged:
             removals.append(relative)

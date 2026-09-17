@@ -21,6 +21,7 @@ from ..paths import (
     CLAUDE_HOME,
     CLAUDE_MANAGED_DIRS,
     CLAUDE_MANAGED_FILES,
+    CLAUDE_VENDOR_SKILL_DIRS,
     SCRIPT_DIR,
     claude_source_dir,
 )
@@ -88,7 +89,9 @@ def stage_projection(dst: Path, *, category: str = "all") -> None:
         else:
             copy_file_to_stage(src / name, dst / name)
     for name in selected_paths(CLAUDE_MANAGED_DIRS, category):
-        overlay_dir_to_stage(src / name, dst / name)
+        overlay_dir_to_stage(
+            src / name, dst / name, exclude_dir_names=CLAUDE_VENDOR_SKILL_DIRS,
+        )
 
 
 def preflight_init() -> bool:
@@ -131,7 +134,10 @@ def init() -> bool:
 
     for name in CLAUDE_MANAGED_DIRS:
         if (src / name).is_dir():
-            mirror_dir(src / name, dst / name)
+            mirror_dir(
+                src / name, dst / name,
+                exclude_dir_names=CLAUDE_VENDOR_SKILL_DIRS,
+            )
             log_success(f"{name}/")
         elif (dst / name).is_dir():
             shutil.rmtree(dst / name)
@@ -172,5 +178,8 @@ def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
 
     for name in selected_paths(CLAUDE_MANAGED_DIRS, category):
         if (src / name).is_dir():
-            mirror_dir(src / name, dst / name)
+            mirror_dir(
+                src / name, dst / name,
+                exclude_dir_names=CLAUDE_VENDOR_SKILL_DIRS,
+            )
             log_success(f"{name}/")
