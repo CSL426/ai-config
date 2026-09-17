@@ -19,6 +19,7 @@ def homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(memory, "REMEMBER_PLUGIN_CACHE", cache)
     # CI 上沒有 codex / agy 指令;測試談的是 acg 的行為,不是那台有什麼
     monkeypatch.setattr(hosts, "available", lambda host: True)
+    monkeypatch.setattr(hosts, "_codex_has_plugins", lambda: True)
     for version in ("0.9.0", "0.32.0", "0.10.0"):
         scripts = cache / version / "scripts"
         scripts.mkdir(parents=True)
@@ -174,3 +175,10 @@ def test_hosts_without_the_cli_are_neither_reported_nor_offered(
     assert "Codex" in out and "Antigravity" not in out
     assert command.run_memory(["enable", "agy"]) == 1
     assert hosts.agy_state().installed is False
+
+
+def test_old_codex_without_plugins_is_explained(homes: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(hosts, "_codex_has_plugins", lambda: False)
+    monkeypatch.setattr(hosts, "codex_version", lambda: "codex-cli 0.77.0")
+    with pytest.raises(RuntimeError, match="0.77.0.*沒有 plugin"):
+        hosts.install_codex()
