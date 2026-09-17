@@ -74,8 +74,23 @@ def claude_plugin_root() -> "Path | None":
 # --- Codex ---------------------------------------------------------------
 
 
-def codex_config() -> dict:
-    path = CODEX_HOME / "config.toml"
+def codex_homes() -> list[Path]:
+    """Every Codex home on this machine, the default one first.
+
+    A shell function can point CODEX_HOME at a different directory per
+    account (~/.codex-work, ~/.codex-personal), and each keeps its own
+    plugins and its own hook trust. Reporting only ~/.codex then describes
+    a home the user may never actually run in.
+    """
+    found = [CODEX_HOME] if (CODEX_HOME / "config.toml").is_file() else []
+    for path in sorted(HOME.glob(".codex-*")):
+        if path.is_dir() and (path / "config.toml").is_file():
+            found.append(path)
+    return found or [CODEX_HOME]
+
+
+def codex_config(home: "Path | None" = None) -> dict:
+    path = (home or CODEX_HOME) / "config.toml"
     if not path.is_file():
         return {}
     try:
@@ -84,9 +99,9 @@ def codex_config() -> dict:
         raise RuntimeError(f"讀不了 Codex 設定 {path}:{exc}") from exc
 
 
-def codex_plugin_dir() -> "Path | None":
+def codex_plugin_dir(home: "Path | None" = None) -> "Path | None":
     return _newest_version_dir(
-        CODEX_HOME / "plugins" / "cache" / CODEX_MARKETPLACE / CODEX_PLUGIN
+        (home or CODEX_HOME) / "plugins" / "cache" / CODEX_MARKETPLACE / CODEX_PLUGIN
     )
 
 
@@ -102,14 +117,14 @@ def codex_trusted(config: dict) -> bool:
     )
 
 
-def codex_state() -> HostState:
+def codex_state(home: "Path | None" = None) -> HostState:
     try:
-        config = codex_config()
+        config = codex_config(home)
     except RuntimeError as exc:
         return HostState(installed=False, detail=str(exc))
     plugins = config.get("plugins", {})
     installed = isinstance(plugins, dict) and CODEX_PLUGIN_REF in plugins
-    plugin_dir = codex_plugin_dir()
+    plugin_dir = codex_plugin_dir(home)
     if installed and plugin_dir is None:
         return HostState(installed=False, detail="設定裡有但快取不見了,重新安裝")
     if not installed:
@@ -299,7 +314,33 @@ def available(host: str) -> bool:
 
 
 def state(host: str) -> HostState:
-    return codex_state() if host == "codex" else agy_state()
+    """One line per host; for Codex that means every home this machine has."""
+    if host != "codex":
+        return agy_state()
+    homes = codex_homes()
+    if len(homes) == 1:
+        return codex_state(homes[0])
+    states = [(home, codex_state(home)) for home in homes]
+    missing = [home.name for home, found in states if not found.installed]
+    untrusted = [
+        home.name for home, found in states
+        if found.installed and found.trusted is False
+    ]
+    first = states[0][1]
+    if missing:
+        return HostState(
+            installed=False,
+            detail=f"這台有 {len(homes)} 個 Codex home,尚未安裝:{', '.join(missing)}",
+        )
+    if untrusted:
+        return HostState(
+            installed=True, version=first.version, trusted=False,
+            detail=f"尚未信任:{', '.join(untrusted)}",
+        )
+    return HostState(
+        installed=True, version=first.version, trusted=True,
+        detail=f"{len(homes)} 個 home 都已就緒",
+    )
 
 
 def install(host: str) -> list[str]:

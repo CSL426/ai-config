@@ -55,11 +55,12 @@ def _run_memory(args: list[str]) -> int:
                 return 1
             rest = []
         if stale is not None:
-            # 時間表可能在別台被改過;排程自己對一次,使用者不用每台重跑 enable
+            decision = auto.decide(stale)
+            # 時間表住在記憶目錄裡,decide 會先把落後的部分接上,所以讓位要在
+            # 它之後才看得到別台剛認領的時段。反過來的話,撞號要等到隔天才發現
             moved = auto.reconcile_slot()
             if moved:
                 log_info(moved)
-            decision = auto.decide(stale)
             if not decision.push:
                 log_info(f"跳過自動推送:{decision.reason}")
                 return 0
@@ -574,12 +575,11 @@ def _report_hosts() -> None:
                     f"{label} 尚未裝 remember,它的工作不會進專案日誌"
                     f"({ENTRYPOINT} memory enable {host})"
                 )
-        elif found.detail:
-            log_warn(f"{label} 的 remember:{found.detail}")
         elif found.trusted is False:
             log_warn(f"{label} 已裝 remember {found.version},但 hook 還沒信任:{_TRUST_HINT}")
         else:
-            log_success(f"{label} 的 remember 已安裝({found.version})")
+            extra = f",{found.detail}" if found.detail else ""
+            log_success(f"{label} 的 remember 已安裝({found.version}{extra})")
 
 
 def _offer_hosts() -> None:

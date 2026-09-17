@@ -212,14 +212,20 @@ to take one over, `handoff done <thread>` when it is finished. Claiming
 records the session id, so a second session is told who holds it rather
 than silently taking it. Writing again reopens a claimed thread.
 
-### Refusing a commit subject that breaks convention
+### Machine-local hooks
 
-`{entrypoint} commit-style enable` installs a Claude Code hook that reads
-the subject of a `git commit` before it runs and refuses one that does not
-match `type(scope): description`, handing the reason back so the model
-rewrites it. `status` and `disable` do the obvious. It is opt-in per
-machine and never travels: the hook names this machine's own interpreter,
-so gather strips it and apply re-adds the local one.
+`{entrypoint} hooks list` shows the Claude Code hooks acg can install here
+and which are on; `hooks enable <name>` / `disable <name>` change one. They
+are per-machine by nature — each names this machine's own executable — so
+gather strips every acg-owned hook out of the database and apply puts the
+local ones back. Installing one by hand into settings.json instead is what
+sends one machine's paths to every other.
+
+Registered today: `commit-style` refuses a `git commit` subject that is not
+`type(scope): description`, handing the reason back so the model rewrites
+it. `memory-entry` and `handoff-reminder` are installed by their own
+features (`memory enable`, `memory handoff remind enable`) and appear here
+for visibility.
 
 ### The journal on every host
 
