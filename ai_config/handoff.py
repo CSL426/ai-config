@@ -62,6 +62,7 @@ class Handoff:
     state: str
     author: str
     claimed_by: str
+    created: str
     updated: str
     body: str
 
@@ -80,6 +81,7 @@ def _parse(path: Path) -> "Handoff | None":
         return None
     fields = dict(_FIELD.findall(front))
     state = fields.get("state", "").strip()
+    updated = fields.get("updated", "").strip()
     return Handoff(
         path=path,
         thread=fields.get("thread", path.stem).strip(),
@@ -87,7 +89,10 @@ def _parse(path: Path) -> "Handoff | None":
         state=state if state in _STATES else OPEN,
         author=fields.get("author", "").strip(),
         claimed_by=fields.get("claimed_by", "").strip(),
-        updated=fields.get("updated", "").strip(),
+        # 這個欄位比筆記晚出現,舊的沒有。退回 updated 只會讓那幾則
+        # 看起來像剛開的,不會讀不出來
+        created=fields.get("created", "").strip() or updated,
+        updated=updated,
         body=body.strip(),
     )
 
@@ -102,9 +107,19 @@ def _render(note: Handoff) -> str:
     ]
     if note.claimed_by:
         lines.append(f"claimed_by: {note.claimed_by}\n")
+    lines.append(f"created: {note.created}\n")
     lines.append(f"updated: {note.updated}\n")
     lines.append(_FRONT)
     return "".join(lines) + "\n" + note.body.strip() + "\n"
+
+
+def age_in_days(created: str) -> int:
+    """Whole days since the thread was opened; 0 when unknown or today."""
+    try:
+        opened = datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return 0
+    return max((datetime.now(UTC) - opened).days, 0)
 
 
 def _now() -> str:
@@ -140,6 +155,7 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
     path = root / f"{_slug(thread)}.md"
     assert_plain_path(path, directory=False)
     existing = _parse(path) if path.is_file() else None
+    now = _now()
     note = Handoff(
         path=path,
         thread=thread.strip(),
@@ -147,7 +163,9 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
         state=OPEN,
         author=session_id() or (existing.author if existing else ""),
         claimed_by="",
-        updated=_now(),
+        # 重寫一條線是接著做,不是另一條新的線
+        created=existing.created if existing else now,
+        updated=now,
         body=body,
     )
     _write_text_atomic(path, _render(note))

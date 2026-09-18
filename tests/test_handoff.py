@@ -193,3 +193,60 @@ def test_a_finished_thread_cannot_be_claimed(notebook: Path) -> None:
         handoff.claim("做完的")
 
     assert [n.state for n in handoff.load_all()] == [handoff.DONE]
+
+
+def test_created_survives_a_rewrite(notebook: Path) -> None:
+    """updated moves with every touch, so alone it cannot say how old a thread is.
+
+    A thread sat in the list for three days; the only timestamp on it
+    was the one `done` had just rewritten.
+    """
+    first = handoff.write("長命線", "第一版").created
+
+    handoff.claim("長命線")
+    handoff.write("長命線", "第二版")
+    note = handoff.done("長命線")
+
+    # 時間戳只到秒,同一秒內跑完的話 updated 會等於 created;
+    # 這裡要問的是 created 有沒有被後續的寫入蓋掉
+    assert note.created == first
+    assert note.updated >= first
+
+
+def test_an_older_note_without_created_falls_back(notebook: Path) -> None:
+    """Notes written before the field exists must still load."""
+    handoff.write("舊的", "內容")
+    path = handoff.handoff_dir() / "舊的.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("created: ", "legacy: ", 1),
+        encoding="utf-8",
+    )
+
+    note = handoff.load_all()[0]
+
+    assert note.created == note.updated
+
+
+def test_the_list_says_how_long_a_thread_has_waited(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """"Opened three days ago" is the reason to pick it up; updated cannot say it."""
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("放很久的", "內容")
+    path = handoff.handoff_dir() / "放很久的.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "created: 2026", "created: 2020", 1
+        ),
+        encoding="utf-8",
+    )
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    assert "天前" in capsys.readouterr().out
