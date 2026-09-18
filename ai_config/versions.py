@@ -81,21 +81,34 @@ def installed_versions() -> list[str]:
     return sorted(found, key=_sort_key)
 
 
+def _active_marker() -> Path:
+    return store_dir() / "active"
+
+
 def active_version() -> "str | None":
-    """Which version the stable path resolves to, or None when unmanaged."""
+    """Which version the stable path holds, or None when unmanaged.
+
+    Where the stable path is a link, it answers this itself. Windows may
+    not be allowed to make one and keeps a copy instead, which resolves
+    to itself and says nothing about where it came from — so activate
+    also records the name, and that record is what both platforms read.
+    """
     path = stable_path()
     if not os.path.lexists(path):
         return None
     try:
         resolved = path.resolve()
+        relative = resolved.relative_to(store_dir().resolve())
+    except (OSError, ValueError):
+        relative = None
+    if relative is not None and relative.parts:
+        return relative.parts[0]
+    try:
+        recorded = _active_marker().read_text(encoding="utf-8").strip()
     except OSError:
         return None
-    root = store_dir().resolve()
-    try:
-        relative = resolved.relative_to(root)
-    except ValueError:
-        return None
-    return relative.parts[0] if relative.parts else None
+    # 記錄可能落後於磁碟現況:那一版被刪掉就不算數
+    return recorded if recorded and version_binary(recorded).is_file() else None
 
 
 def place(version: str, source: Path) -> Path:
@@ -124,6 +137,7 @@ def activate(version: str) -> bool:
         staged = path.with_name(f".{path.name}.new")
         shutil.copy2(binary, staged)
         os.replace(staged, path)
+        _record_active(version)
         return True
     staged = path.with_name(f".{path.name}.new")
     if os.path.lexists(staged):
@@ -135,7 +149,16 @@ def activate(version: str) -> bool:
         target = str(binary)
     os.symlink(target, staged)
     os.replace(staged, path)
+    _record_active(version)
     return True
+
+
+def _record_active(version: str) -> None:
+    marker = _active_marker()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    staged = marker.with_name(f".{marker.name}.new")
+    staged.write_text(f"{version}\n", encoding="utf-8")
+    os.replace(staged, marker)
 
 
 def prune(keep: int = KEEP_VERSIONS) -> list[str]:
