@@ -1912,3 +1912,20 @@ def test_plugin_content_changes_carry_a_version_bump() -> None:
     assert current != json.loads(released)["version"], (
         f"plugin/ 改了但版號還是 {current};{tag} 之後改的檔案:\n{changed}"
     )
+
+
+def test_attribution_stays_disabled_in_the_database() -> None:
+    """The rule file once claimed this was set when the key did not exist.
+
+    Only the setting stops the trailer; a sentence in a rules file does
+    not, which is how one reached a commit. If the key is ever dropped
+    from the database, every machine silently starts adding them again.
+    """
+    import json
+
+    database = REPO_ROOT / "data/claude/settings.json"
+    if not database.is_file():
+        pytest.skip("no data repository checked out here")
+    settings = json.loads(database.read_text(encoding="utf-8-sig"))
+
+    assert settings.get("includeCoAuthoredBy") is False
