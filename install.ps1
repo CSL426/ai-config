@@ -13,6 +13,15 @@ $DataDir = if ($env:AI_CONFIG_DATA_DIR) { $env:AI_CONFIG_DATA_DIR } elseif ($env
 $SkipPathUpdate = $env:AI_CONFIG_SKIP_PATH_UPDATE -eq '1'
 $SkipCompletion = $env:AI_CONFIG_SKIP_COMPLETION -eq '1'
 
+# Each version lives in its own directory and the name on PATH is only a
+# pointer to one. A symlink needs a privilege an ordinary account may not
+# hold here, so the pointer degrades to a copy and a marker file records
+# which version it came from -- the layout stays the same either way.
+$ShareDir = if ($env:AI_CONFIG_SHARE_DIR) { $env:AI_CONFIG_SHARE_DIR } else { Join-Path $UserHome '.local\share\ai-config' }
+$VersionsDir = Join-Path $ShareDir 'versions'
+$ActiveMarker = Join-Path $ShareDir 'active'
+$KeepVersions = if ($env:AI_CONFIG_KEEP_VERSIONS) { [int]$env:AI_CONFIG_KEEP_VERSIONS } else { 5 }
+
 function Write-Step([string]$Message) { Write-Host "* $Message" -ForegroundColor Cyan }
 function Write-Warn([string]$Message) { Write-Host "! $Message" -ForegroundColor Yellow }
 function Fail([string]$Message) { Write-Host "x $Message" -ForegroundColor Red; exit 1 }
@@ -39,7 +48,7 @@ function Install-CommandAlias([string]$Name, [string]$Executable) {
     Write-Utf8NoBom $AliasPath $Content
 }
 
-function Install-Binary([string]$Source, [string]$Destination) {
+function Copy-WithRetry([string]$Source, [string]$Destination) {
     $Attempts = 50
     for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
         try {
@@ -49,6 +58,69 @@ function Install-Binary([string]$Source, [string]$Destination) {
         catch {
             if ($Attempt -eq $Attempts) { throw }
             Start-Sleep -Milliseconds 200
+        }
+    }
+}
+
+function Install-Binary([string]$Source, [string]$Destination) {
+    Adopt-ExistingBinary $Destination
+    $Resolved = Get-BinaryVersion $Source
+    if (-not $Resolved) { $Resolved = ($Version -replace '^v', '') }
+    # An unreadable version must not fail the install: a name that is merely
+    # definite still gives the user a working binary, and the next update
+    # that can name itself replaces it
+    if (-not $Resolved -or $Resolved -eq 'latest') { $Resolved = 'unversioned' }
+
+    $VersionRoot = Join-Path $VersionsDir $Resolved
+    New-Item -ItemType Directory -Force -Path $VersionRoot | Out-Null
+    Copy-WithRetry $Source (Join-Path $VersionRoot 'ai-config.exe')
+    Copy-WithRetry (Join-Path $VersionRoot 'ai-config.exe') $Destination
+    New-Item -ItemType Directory -Force -Path $ShareDir | Out-Null
+    Write-Utf8NoBom $ActiveMarker $Resolved
+    Remove-StaleVersions $Resolved
+}
+
+function Get-BinaryVersion([string]$Executable) {
+    # Ask the binary itself: $Version may be "latest", which names no directory.
+    # This runs before Wait-ExecutableReady has vouched for the file, so a
+    # download that cannot start yet must yield no version, never an error.
+    $global:LASTEXITCODE = 0
+    try {
+        $Reported = & $Executable version 2>$null | Out-String
+    }
+    catch { return $null }
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $Match = [regex]::Match($Reported, '\d+\.\d+\.\d+')
+    if ($Match.Success) { return $Match.Value }
+    return $null
+}
+
+function Adopt-ExistingBinary([string]$Destination) {
+    # A machine installed before this layout has the real exe sitting on PATH.
+    # Take it into a version directory on the first update, or every later one
+    # still overwrites a file that may be running.
+    if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) { return }
+    if (Test-Path -LiteralPath $ActiveMarker) { return }
+    $Existing = Get-BinaryVersion $Destination
+    if (-not $Existing) { return }
+    $Adopted = Join-Path (Join-Path $VersionsDir $Existing) 'ai-config.exe'
+    if (Test-Path -LiteralPath $Adopted) { return }
+    New-Item -ItemType Directory -Force -Path (Split-Path $Adopted) | Out-Null
+    Copy-Item -LiteralPath $Destination -Destination $Adopted -Force
+    Write-Step "Adopted the existing $Existing into $(Split-Path $Adopted)"
+}
+
+function Remove-StaleVersions([string]$Active) {
+    if (-not (Test-Path -LiteralPath $VersionsDir)) { return }
+    $Kept = 0
+    # Newest first, and never the one in use
+    $Ordered = Get-ChildItem -LiteralPath $VersionsDir -Directory |
+        Sort-Object -Property @{ Expression = { try { [version]$_.Name } catch { [version]'0.0.0' } } } -Descending
+    foreach ($Directory in $Ordered) {
+        if ($Directory.Name -eq $Active) { continue }
+        $Kept++
+        if ($Kept -ge $KeepVersions) {
+            Remove-Item -LiteralPath $Directory.FullName -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }

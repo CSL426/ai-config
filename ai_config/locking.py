@@ -44,6 +44,30 @@ def _unlock(handle: BinaryIO) -> None:
 
 
 @contextmanager
+def exclusive_lock(name: str) -> Iterator[bool]:
+    """Hold a named lock, yielding whether this process got it.
+
+    Unlike apply_lock this never waits: a second updater should say so and
+    stop, not queue up behind the first and then write the same file.
+    """
+    assert_root_not_reparse(BACKUP_BASE, "backup root")
+    BACKUP_BASE.mkdir(parents=True, exist_ok=True)
+    lock_path = BACKUP_BASE / name
+    assert_safe_write_target(lock_path)
+
+    with lock_path.open("a+b") as handle:
+        if os.name == "nt" and lock_path.stat().st_size == 0:
+            handle.write(b"\0")
+            handle.flush()
+        acquired = _try_lock(handle)
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                _unlock(handle)
+
+
+@contextmanager
 def apply_lock(timeout: float = 10.0) -> Iterator[None]:
     assert_root_not_reparse(BACKUP_BASE, "backup root")
     BACKUP_BASE.mkdir(parents=True, exist_ok=True)
