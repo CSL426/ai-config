@@ -122,6 +122,12 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
         if not _memory_root_available(selected, working):
             return None
         outside = _paths_outside(working, selected)
+        if outside and selected == [MEMORY_SCOPE]:
+            # 記憶是自己一個範圍,而且多半由排程推。設定目錄有什麼改動與它無關,
+            # 拿那些擋下來只會讓沒人看著的排程整晚不跑 — 昨晚就是這樣失敗的。
+            # 其他範圍仍然要擋:那是人在選,漏掉一塊值得提醒。
+            log_info(f"這次只推 {MEMORY_SCOPE},其他 {len(outside)} 個未提交的改動不動它")
+            outside = []
         if outside:
             log_error("Uncommitted paths outside the selected tools; push cancelled:")
             _print_capped(outside)
@@ -814,8 +820,14 @@ def _validate_staged_push(selected: list[str]) -> bool:
             )
             return False
 
-    unstaged = _run_repo_git("diff", "--quiet")
-    untracked = _run_repo_git("ls-files", "--others", "--exclude-standard")
+    # 只推記憶時(排程走的就是這條)才把檢查縮到那個目錄:設定目錄裡還沒決定
+    # 要不要提交的改動,不該讓沒人看著的排程整晚推不出去。其他範圍維持原樣,
+    # 連 repo 根目錄的檔案都要算進去 —— 那是人在選,漏掉一塊值得停下來說。
+    scope = [f"{MEMORY_SCOPE}/"] if selected == [MEMORY_SCOPE] else []
+    unstaged = _run_repo_git("diff", "--quiet", "--", *scope)
+    untracked = _run_repo_git(
+        "ls-files", "--others", "--exclude-standard", "--", *scope
+    )
     if (
         unstaged.returncode not in (0, 1)
         or untracked.returncode != 0

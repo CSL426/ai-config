@@ -78,6 +78,22 @@ RULES_BLOCK = f"""{BLOCK_BEGIN}
 - 專案層目錄不存在時自行建立 MEMORY.md。`acg memory path` 會印出兩層路徑。
 - 若 `~/.claude/shared-memory/projects/<鍵值>/journal/recent.md` 或專案目錄的
   `.remember/recent.md` 存在,讀它了解最近進度。那是 Claude 的工作日誌,唯讀。
+
+### 工作線交接(handoff)
+
+日誌記的是「這個專案發生過什麼」,交接記的是「我這條線做到哪」。兩者不同:
+每個 session 都往同一份日誌追加,但交接是一條線一份,由接手的 session 認領。
+
+- **開工前**先 `acg memory handoff list`。有待接的線就把名稱與摘要
+  告訴使用者,問他要不要接;**不要自己挑**,也不要看到就當作已經接手。
+- 使用者說要接,才 `acg memory handoff claim "<名稱>"`。認領會印出
+  那條線的完整進度,讀完用自己的話跟使用者確認理解的接手點,再開始做事。
+- 認領被拒表示別的 session 正持有它。把持有者告訴使用者,讓他決定,不要重試。
+- **收工前**若這條線沒做完,`acg memory handoff write "<名稱>" "<內容>"`。
+  內容寫給不知道前因後果的人看:做完什麼、卡在哪、下一步。「繼續」不算交接。
+  做完了就 `handoff done "<名稱>"`。
+- 這跟 session 開頭 remember 印的 `=== HANDOFF ===`(那只是告訴你日誌檔寫在哪)
+  是兩回事,不要混用。
 {BLOCK_END}
 """
 
