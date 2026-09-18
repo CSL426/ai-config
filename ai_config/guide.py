@@ -212,7 +212,8 @@ to take one over, `handoff done <thread>` when it is finished. Claiming
 records the session id, so a second session is told who holds it rather
 than silently taking it, and a finished thread is refused rather than
 resurrected. A finished thread stays on disk as a record but leaves the
-list. Writing again reopens a claimed thread.
+list. Writing again reopens a claimed thread, keeping the date it was
+first opened, which `list` shows as how long it has been waiting.
 
 ### Machine-local hooks
 
