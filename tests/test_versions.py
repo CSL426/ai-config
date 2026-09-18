@@ -131,3 +131,44 @@ def test_switching_to_a_version_already_on_disk_needs_no_download(
     assert versions.active_version() == "1.0.63"
     assert versions.stable_path().read_text() == "sixtythree"
     assert "1.0.63" in capsys.readouterr().out
+
+
+def test_windows_keeps_a_copy_and_still_knows_which_version_it_is(
+    layout: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows may not be allowed a symlink; the copy must still be identifiable.
+
+    Every version assertion here failed on the Windows runners until
+    activate recorded the name: a copied file resolves to itself and says
+    nothing about where it came from.
+    """
+    monkeypatch.setattr(versions, "NATIVE_WINDOWS", True)
+    versions.place("1.0.63", _release(layout, "sixtythree"))
+    versions.place("1.0.64", _release(layout, "sixtyfour"))
+
+    versions.activate("1.0.64")
+
+    assert versions.stable_path().is_file()
+    assert not versions.stable_path().is_symlink()
+    assert versions.stable_path().read_text() == "sixtyfour"
+    assert versions.active_version() == "1.0.64"
+
+    versions.activate("1.0.63")
+
+    assert versions.active_version() == "1.0.63"
+    assert versions.stable_path().read_text() == "sixtythree"
+    # 版本目錄裡的那份從頭到尾沒被動過
+    assert versions.version_binary("1.0.64").read_text() == "sixtyfour"
+
+
+def test_a_record_pointing_at_a_deleted_version_is_ignored(
+    layout: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(versions, "NATIVE_WINDOWS", True)
+    versions.place("1.0.64", _release(layout, "sixtyfour"))
+    versions.activate("1.0.64")
+
+    import shutil as shutil_mod
+    shutil_mod.rmtree(versions.version_dir("1.0.64"))
+
+    assert versions.active_version() is None
