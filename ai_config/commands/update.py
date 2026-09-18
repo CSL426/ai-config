@@ -17,7 +17,14 @@ import zipfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from ..console import log_error, log_info, log_success, log_warn
+from ..console import (
+    confirm,
+    log_error,
+    log_header,
+    log_info,
+    log_success,
+    log_warn,
+)
 from ..paths import ENTRYPOINT, NATIVE_WINDOWS, standalone_install_path
 from ..version import current_version
 
@@ -300,6 +307,22 @@ def _launch_windows_update(tag: "str | None" = None) -> int:
     return 0
 
 
+def run_update_list() -> int:
+    """Which versions are on disk and which one PATH resolves to."""
+    from .. import versions
+
+    installed = versions.installed_versions()
+    if not installed:
+        log_info("這台還沒有版本目錄;下次 update 會把現有的執行檔收進去")
+        return 0
+    active = versions.active_version()
+    log_header("Installed versions")
+    for name in reversed(installed):
+        print(f"  {'✓' if name == active else ' '} {name}")
+    log_info(f"回到上一版:{ENTRYPOINT} update <版號>")
+    return 0
+
+
 def run_update(requested_version: "str | None" = None) -> int:
     tag = None
     if requested_version is not None:
@@ -349,6 +372,18 @@ def run_update(requested_version: "str | None" = None) -> int:
             if _is_up_to_date(current, latest):
                 log_success("ai-config is already up to date")
                 return 0
+
+    if tag is not None and getattr(sys, "frozen", False):
+        from .. import versions
+
+        wanted = tag.lstrip("v")
+        if versions.version_binary(wanted).is_file():
+            # 已經在磁碟上就只換連結:回滾不必再下載一次,也不碰網路
+            if versions.activate(wanted):
+                log_success(f"已切換到 {wanted}")
+            else:
+                log_info(f"已經在 {wanted}")
+            return 0
 
     if uv_installation is not None:
         return _update_uv(uv_installation, tag or f"v{latest}")
@@ -435,6 +470,26 @@ def _spawn_update_check() -> None:
         pass
 
 
+def _offer_update(latest: str, current: str) -> None:
+    """Say a release is out, and take yes for an answer right here.
+
+    Telling someone to go and run another command is how three machines
+    drift apart: each notice is seen, acknowledged, and postponed. The
+    answer is one keystroke away instead. A non-interactive run never
+    reaches this — the caller already checked for a terminal.
+    """
+    log_info(f"新版 v{latest} 可用(目前 v{current})")
+    try:
+        wanted = confirm("現在更新?", forceable=False)
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if not wanted:
+        log_info(f"稍後可執行 {ENTRYPOINT} update")
+        return
+    run_update(latest)
+
+
 def maybe_notify_update() -> None:
     """讀快取提示新版;過期則派背景行程刷新。零網路呼叫、零阻塞。"""
     import time
@@ -453,10 +508,7 @@ def maybe_notify_update() -> None:
         and isinstance(cache.get("latest"), str)
         and not _is_up_to_date(current, cache["latest"])
     ):
-        log_info(
-            f"新版 v{cache['latest']} 可用(目前 v{current}),"
-            f"執行 {ENTRYPOINT} update 更新"
-        )
+        _offer_update(cache["latest"], current)
     checked_at = cache.get("checked_at", 0) if cache else 0
     if time.time() - checked_at >= _CHECK_INTERVAL_SECONDS:
         _spawn_update_check()

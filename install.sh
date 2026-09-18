@@ -52,10 +52,62 @@ if [[ -e "$destination" || -L "$destination" ]]; then
     binary_verb="Updated"
 fi
 
+# 每個版本放進自己的目錄,PATH 上的名字只是一條連結。正在執行的檔案因此
+# 永遠不必被覆寫 — 那在 Windows 根本做不到,在任何平台也讓回滾無路可走。
+SHARE_DIR="${AI_CONFIG_SHARE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/ai-config}"
+VERSIONS_DIR="$SHARE_DIR/versions"
+KEEP_VERSIONS="${AI_CONFIG_KEEP_VERSIONS:-5}"
+
+adopt_existing_binary() {
+    # 這個格局之前裝的機器,真正的執行檔就擺在 PATH 上。第一次更新時把它
+    # 收進自己的版本目錄,否則往後每次更新都還是在覆寫一個執行中的檔案。
+    local existing
+    [[ -f "$destination" && ! -L "$destination" ]] || return 0
+    existing="$("$destination" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+    [[ -n "$existing" ]] || return 0
+    [[ -e "$VERSIONS_DIR/$existing/ai-config" ]] && return 0
+    mkdir -p "$VERSIONS_DIR/$existing"
+    install -m 755 "$destination" "$VERSIONS_DIR/$existing/ai-config"
+    step "Adopted the existing $existing into $VERSIONS_DIR/$existing"
+}
+
+prune_versions() {
+    local active keep_count
+    active="$(readlink "$destination" 2>/dev/null | sed -E 's#.*/versions/([^/]+)/.*#\1#')"
+    keep_count=0
+    # 由新到舊保留 KEEP_VERSIONS 個,正在用的那個永遠不刪
+    while IFS= read -r dir; do
+        [[ -z "$dir" ]] && continue
+        local name="${dir##*/}"
+        [[ "$name" == "$active" ]] && continue
+        keep_count=$((keep_count + 1))
+        if (( keep_count >= KEEP_VERSIONS )); then
+            rm -rf "$dir"
+        fi
+    done < <(ls -d "$VERSIONS_DIR"/*/ 2>/dev/null | sort -rV)
+}
+
 install_binary() {
-    local staged_binary="$destination.new.$$"
+    local resolved staged_binary version_root probe
+    adopt_existing_binary
+    # 版號問下載回來的執行檔自己:VERSION 可能是 "latest",那時還不知道是哪一版
+    probe="$1"
+    chmod +x "$probe" 2>/dev/null || true
+    resolved="$("$probe" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+    [[ -n "$resolved" ]] || resolved="$(printf '%s' "$VERSION" | sed 's/^v//')"
+    # 問不出版號就用一個確定的名字,而不是讓整個安裝失敗。下一次裝得出版號的
+    # 更新會把它換掉,而使用者手上至少有一個能跑的執行檔
+    [[ -n "$resolved" && "$resolved" != "latest" ]] || resolved="unversioned"
+    version_root="$VERSIONS_DIR/$resolved"
+    mkdir -p "$version_root"
+    staged_binary="$version_root/.ai-config.new.$$"
     install -m 755 "$1" "$staged_binary"
-    mv -f "$staged_binary" "$destination"
+    mv -f "$staged_binary" "$version_root/ai-config"
+    # 換連結是原子操作,而且舊版還留在自己的目錄裡,要退回去只是再換一次
+    local staged_link="$destination.new.$$"
+    ln -sfn "$version_root/ai-config" "$staged_link"
+    mv -f "$staged_link" "$destination"
+    prune_versions
 }
 
 install_acg_alias() {

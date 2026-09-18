@@ -52,7 +52,9 @@ def test_installer_places_standalone_binary_without_python(tmp_path: Path) -> No
 
     executable = home / ".local" / "bin" / "ai-config"
     assert executable.is_file()
-    assert not executable.is_symlink()
+    # PATH 上的名字是連結,實體住在自己的版本目錄裡:更新換連結,不覆寫執行中的檔案
+    assert executable.is_symlink()
+    assert executable.resolve().parent.parent.name == "versions"
     assert old_target.read_text(encoding="utf-8") == "old install\n"
     assert os.access(executable, os.X_OK)
     acg = home / ".local" / "bin" / "acg"
