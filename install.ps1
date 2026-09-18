@@ -101,8 +101,18 @@ function Adopt-ExistingBinary([string]$Destination) {
     # still overwrites a file that may be running.
     if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) { return }
     if (Test-Path -LiteralPath $ActiveMarker) { return }
+    # The process that ran `update` has only just exited, so Windows may still
+    # hold this file. Asking it for a version right away answers nothing, and
+    # the version it would have named is the one worth keeping.
+    if (-not (Wait-ExecutableReady $Destination)) {
+        Write-Warn "The installed binary did not start; keeping no copy of it"
+        return
+    }
     $Existing = Get-BinaryVersion $Destination
-    if (-not $Existing) { return }
+    if (-not $Existing) {
+        Write-Warn "Could not read the installed version; keeping no copy of it"
+        return
+    }
     $Adopted = Join-Path (Join-Path $VersionsDir $Existing) 'ai-config.exe'
     if (Test-Path -LiteralPath $Adopted) { return }
     New-Item -ItemType Directory -Force -Path (Split-Path $Adopted) | Out-Null
