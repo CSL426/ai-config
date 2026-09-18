@@ -1,10 +1,24 @@
 """交接是每條工作線各一份;日誌解決不了「我這條線做到哪」。"""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from ai_config import handoff, memory
+
+
+def _rewrite(path: Path, edit: "Callable[[str], str]") -> None:
+    """Edit a note the way the module would, keeping its line endings.
+
+    Path.write_text translates "\\n" to CRLF on Windows, and the field
+    regex is anchored with $, so a stray "\\r" makes every field read as
+    missing and the note parses as if it were empty.
+    """
+    with path.open(encoding="utf-8", newline="") as handle:
+        text = handle.read()
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(edit(text))
 
 
 @pytest.fixture
@@ -217,10 +231,7 @@ def test_an_older_note_without_created_falls_back(notebook: Path) -> None:
     """Notes written before the field exists must still load."""
     handoff.write("舊的", "內容")
     path = handoff.handoff_dir() / "舊的.md"
-    path.write_text(
-        path.read_text(encoding="utf-8").replace("created: ", "legacy: ", 1),
-        encoding="utf-8",
-    )
+    _rewrite(path, lambda text: text.replace("created: ", "legacy: ", 1))
 
     note = handoff.load_all()[0]
 
@@ -240,13 +251,26 @@ def test_the_list_says_how_long_a_thread_has_waited(
     )
     handoff.write("放很久的", "內容")
     path = handoff.handoff_dir() / "放很久的.md"
-    path.write_text(
-        path.read_text(encoding="utf-8").replace(
-            "created: 2026", "created: 2020", 1
-        ),
-        encoding="utf-8",
-    )
+    _rewrite(path, lambda text: text.replace("created: 2026", "created: 2020", 1))
 
     assert command.run_memory(["handoff", "list"]) == 0
 
     assert "天前" in capsys.readouterr().out
+
+
+def test_a_note_with_windows_line_endings_still_loads(notebook: Path) -> None:
+    """The directory syncs to a Windows machine, which can hand back CRLF.
+
+    The field regex anchors on $, so a trailing "\\r" left every field
+    reading as missing: the note vanished from the list and claiming it
+    reported the file as malformed.
+    """
+    handoff.write("跨平台線", "內容")
+    path = handoff.handoff_dir() / "跨平台線.md"
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+    notes = handoff.load_all()
+
+    assert [n.thread for n in notes] == ["跨平台線"]
+    assert notes[0].state == handoff.OPEN
+    assert notes[0].body == "內容"
