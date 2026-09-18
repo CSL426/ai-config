@@ -72,7 +72,9 @@ class Handoff:
 
 
 def _parse(path: Path) -> "Handoff | None":
-    text = _read_text(path)
+    # 這個目錄會同步到 Windows,回來可能帶 CRLF。欄位的正規表示式
+    # 錨在 $,留著 \r 會讓每個欄位都讀成空的,整份筆記等於消失
+    text = _read_text(path).replace("\r\n", "\n")
     if not text.startswith(_FRONT):
         return None
     _, _, rest = text.partition(_FRONT)
