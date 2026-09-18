@@ -202,13 +202,18 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
 
     if cwd is not None and not cwd.is_dir():
         raise ValueError(f"找不到這個專案目錄:{cwd}")
-    notes = hand.load_all(memory.project_key(cwd).key)
+    # 結束的線留在磁碟上當紀錄,但這裡問的是「有什麼可以接手」,
+    # 把它們一起列出來只會讓人多判斷一次哪條還活著
+    notes = [
+        note for note in hand.load_all(memory.project_key(cwd).key)
+        if note.state != hand.DONE
+    ]
     if not notes:
         where = f"{cwd} 這個專案" if cwd is not None else "這個專案"
         log_info(f"{where}沒有待接手的工作線")
         return 0
     for note in notes:
-        mark = {hand.OPEN: "○", hand.CLAIMED: "◐", hand.DONE: "●"}.get(note.state, "○")
+        mark = {hand.OPEN: "○", hand.CLAIMED: "◐"}.get(note.state, "○")
         held = f" ← {note.claimed_by[:8]}" if note.claimed_by else ""
         first_line = note.body.splitlines()[0] if note.body.splitlines() else ""
         print(f"  {mark} {note.name}{held}")

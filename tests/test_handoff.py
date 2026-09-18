@@ -148,3 +148,32 @@ def test_listing_a_missing_path_is_refused(notebook: Path, tmp_path: Path) -> No
     from ai_config.commands import memory as command
 
     assert command.run_memory(["handoff", "list", str(tmp_path / "nope")]) == 1
+
+
+def test_a_finished_thread_leaves_the_pickup_list(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """list answers "what can I take", so a closed thread is noise there.
+
+    One sat in the list for three days after being closed, and every
+    session had to work out which of the two was still alive.
+    """
+    from ai_config.commands import memory as command
+
+    # list 問的是 memory.project_key;fixture 只換了 handoff 那邊的
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("還在做的", "進行中")
+    handoff.write("做完的", "已結束")
+    handoff.done("做完的")
+
+    assert command.run_memory(["handoff", "list"]) == 0
+    listed = capsys.readouterr().out
+
+    assert "還在做的" in listed
+    assert "做完的" not in listed
+    # 紀錄本身留著,只是不再擋在待接清單裡
+    assert {n.thread for n in handoff.load_all("o--r")} == {"還在做的", "做完的"}
