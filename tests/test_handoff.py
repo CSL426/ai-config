@@ -177,3 +177,19 @@ def test_a_finished_thread_leaves_the_pickup_list(
     assert "做完的" not in listed
     # 紀錄本身留著,只是不再擋在待接清單裡
     assert {n.thread for n in handoff.load_all("o--r")} == {"還在做的", "做完的"}
+
+
+def test_a_finished_thread_cannot_be_claimed(notebook: Path) -> None:
+    """Claiming a closed thread used to resurrect it into the pickup list.
+
+    A session that misread the list marker went to claim a thread that
+    had been finished three days earlier; nothing stopped it, and the
+    note came back as live work with the wrong holder on it.
+    """
+    handoff.write("做完的", "內容")
+    handoff.done("做完的")
+
+    with pytest.raises(ValueError, match="已結束"):
+        handoff.claim("做完的")
+
+    assert [n.state for n in handoff.load_all()] == [handoff.DONE]
