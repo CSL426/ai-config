@@ -1945,3 +1945,21 @@ def test_both_installers_lay_out_versions_the_same_way() -> None:
     for token in ("versions", "active"):
         assert token in posix, f"install.sh lost its {token} handling"
         assert token in windows, f"install.ps1 never learned about {token}"
+
+
+def test_adoption_retries_and_says_when_it_gives_up() -> None:
+    """The old exe is asked for its version the instant it stops running.
+
+    A Windows machine updated from 1.0.67 into the new layout and the
+    1.0.67 binary was never adopted: the installer asked it for a version
+    while the file was still locked, got nothing, and returned silently.
+    The one machine the adoption path exists for is the one where it is
+    most likely to be asked too early.
+    """
+    installer = (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")
+    adopt = installer.split("function Adopt-ExistingBinary")[1].split("\nfunction ")[0]
+
+    assert "Wait-ExecutableReady" in adopt, (
+        "adoption reads the version without waiting for the file to be usable"
+    )
+    assert "Write-Warn" in adopt, "giving up on adoption must not be silent"
