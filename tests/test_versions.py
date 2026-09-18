@@ -41,10 +41,15 @@ def test_activate_points_the_stable_path_at_it(layout: Path) -> None:
 
 
 def test_the_running_file_is_never_rewritten(layout: Path) -> None:
-    """The whole point: the old binary stays readable at its own path."""
+    """The whole point: a process already running keeps a readable binary.
+
+    Ask the version directory directly rather than resolving the stable
+    path: on Windows that path is the copy, which resolves to itself and
+    would make this assertion about the wrong file.
+    """
     versions.place("1.0.63", _release(layout, "sixtythree"))
     versions.activate("1.0.63")
-    running = versions.stable_path().resolve()
+    running = versions.version_binary("1.0.63")
 
     versions.place("1.0.64", _release(layout, "sixtyfour"))
     versions.activate("1.0.64")
