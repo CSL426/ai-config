@@ -210,7 +210,9 @@ ends, `handoff list [path]` to see what is waiting (a path reads another
 project's threads), `handoff claim <thread>`
 to take one over, `handoff done <thread>` when it is finished. Claiming
 records the session id, so a second session is told who holds it rather
-than silently taking it. Writing again reopens a claimed thread.
+than silently taking it, and a finished thread is refused rather than
+resurrected. A finished thread stays on disk as a record but leaves the
+list. Writing again reopens a claimed thread.
 
 ### Machine-local hooks
 

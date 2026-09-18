@@ -5,9 +5,10 @@ The journal answers "what happened in this project". It cannot answer
 to the same files. A handoff is per-thread instead: one file, written
 when a session stops, claimed by the session that continues it.
 
-Claiming is a rename plus a status line, not a lock. Two sessions on one
-machine cannot claim the same note because the rename is atomic; two
-machines are caught by push refusing to overwrite a moved upstream.
+Claiming is a status line, not a lock: it records a holder so the next
+session can see the thread is taken, and refuses a note another session
+already holds. Two machines are caught by push refusing to overwrite a
+moved upstream.
 """
 
 import os
@@ -165,9 +166,13 @@ def _load_or_fail(name: str) -> Handoff:
 
 
 def claim(name: str) -> Handoff:
-    """Take over a thread. Refuses one another session already holds."""
+    """Take over a thread. Refuses a closed one, or one another session holds."""
     note = _load_or_fail(name)
     me = session_id()
+    # 結束的線不再是工作。認領它會把紀錄翻回活線並蓋掉持有者,
+    # 而會走到這一步的多半是把列表符號讀錯了,不是真的要重開
+    if note.state == DONE:
+        raise ValueError(f"這則交接已結束:{name}")
     if note.state == CLAIMED and note.claimed_by and note.claimed_by != me:
         raise ValueError(
             f"這則交接已被其他 session 認領:{note.claimed_by}"
