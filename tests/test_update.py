@@ -485,3 +485,36 @@ def test_uv_update_refuses_foreign_source(uv_installation, monkeypatch):
         "must not query releases for another installation source",
     ))
     assert update.run_update() == 1
+
+
+def test_a_second_update_refuses_while_one_is_running(tmp_path, monkeypatch, capsys):
+    """Two updates raced to write the same exe; it survived on luck alone.
+
+    A user started one update, saw no progress bar, and ran it again. Both
+    downloaded and both wrote the binary on PATH, and on Windows the loser
+    of that race is a half-written executable.
+    """
+    from ai_config import locking
+    from ai_config.commands import update
+
+    monkeypatch.setattr(locking, "BACKUP_BASE", tmp_path)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.39")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.40")
+
+    with update.update_lock():
+        assert update.run_update() == 1
+
+    assert "已經有一個更新" in capsys.readouterr().err
+
+
+def test_the_update_lock_is_released_for_the_next_run(tmp_path, monkeypatch):
+    """A refusal must not leave the lock held, or no update runs again."""
+    from ai_config import locking
+    from ai_config.commands import update
+
+    monkeypatch.setattr(locking, "BACKUP_BASE", tmp_path)
+
+    with update.update_lock():
+        pass
+    with update.update_lock():
+        pass

@@ -1929,3 +1929,19 @@ def test_attribution_stays_disabled_in_the_database() -> None:
     settings = json.loads(database.read_text(encoding="utf-8-sig"))
 
     assert settings.get("includeCoAuthoredBy") is False
+
+
+def test_both_installers_lay_out_versions_the_same_way() -> None:
+    """The layout has to exist on every platform, or update means overwrite.
+
+    install.sh grew version directories; install.ps1 did not, and nothing
+    compared them. Two Windows updates ran without ever creating one, and
+    the running exe was overwritten in place each time — which is exactly
+    what the layout exists to avoid, on the one platform that cannot do it.
+    """
+    posix = (REPO_ROOT / "install.sh").read_text(encoding="utf-8")
+    windows = (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    for token in ("versions", "active"):
+        assert token in posix, f"install.sh lost its {token} handling"
+        assert token in windows, f"install.ps1 never learned about {token}"

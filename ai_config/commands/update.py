@@ -14,9 +14,12 @@ import sys
 import tempfile
 import tomllib
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from .. import locking
 from ..console import (
     confirm,
     log_error,
@@ -289,7 +292,9 @@ def _launch_windows_update(tag: "str | None" = None) -> int:
     # The handoff outlives this process, so its output must not go to the shared
     # console: the shell has already redrawn its prompt by then, and installer
     # lines would land on top of it looking like a crash. Log to a file instead.
-    log_path = Path(tempfile.gettempdir()) / "ai-config-update.log"
+    # The pid keeps two runs from overwriting each other's log; without it
+    # a failure could not be told apart from the run that followed it
+    log_path = Path(tempfile.gettempdir()) / f"ai-config-update.{os.getpid()}.log"
     try:
         # The child inherits the handle, so closing it here is safe and correct.
         with open(log_path, "w", encoding="utf-8") as log_file:
@@ -323,7 +328,26 @@ def run_update_list() -> int:
     return 0
 
 
+@contextmanager
+def update_lock() -> "Iterator[bool]":
+    """Hold the updater's lock, yielding whether this process got it."""
+    with locking.exclusive_lock(".ai-config-update.lock") as acquired:
+        yield acquired
+
+
 def run_update(requested_version: "str | None" = None) -> int:
+    # Two updates writing the same binary is a corrupted executable on
+    # Windows, where the loser cannot even replace the file it is racing for.
+    # The handoff gives no progress bar, so running it twice looks reasonable.
+    with update_lock() as acquired:
+        if not acquired:
+            log_error("已經有一個更新正在進行")
+            log_info("等它結束後再試一次;同時更新會寫壞執行檔")
+            return 1
+        return _run_update(requested_version)
+
+
+def _run_update(requested_version: "str | None" = None) -> int:
     tag = None
     if requested_version is not None:
         tag = normalize_version(requested_version)

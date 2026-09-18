@@ -114,3 +114,52 @@ def test_completion_profile_is_idempotent_and_unicode_safe(tmp_path: Path) -> No
     assert "# 使用者設定" in profile_text
     assert profile_text.count("# >>> ai-config completion >>>") == 1
     assert str(completion) in profile_text
+
+
+def test_powershell_installer_builds_the_version_layout(tmp_path: Path) -> None:
+    """Two updates ran on Windows without ever creating a version directory.
+
+    install.sh grew the layout and install.ps1 did not, so the exe on PATH
+    was overwritten in place -- on the one platform where replacing a
+    running file is exactly what cannot be done.
+    """
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+
+    standalone = tmp_path / "ai-config-source.exe"
+    standalone.write_bytes(b"standalone-binary")
+    bin_dir = tmp_path / "bin"
+    share_dir = tmp_path / "share"
+    bin_dir.mkdir()
+
+    env = os.environ.copy()
+    env["AI_CONFIG_BINARY_PATH"] = str(standalone)
+    env["AI_CONFIG_BIN_DIR"] = str(bin_dir)
+    env["AI_CONFIG_SHARE_DIR"] = str(share_dir)
+    env["AI_CONFIG_SKIP_PATH_UPDATE"] = "1"
+    env["AI_CONFIG_SKIP_COMPLETION"] = "1"
+    result = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(REPO_ROOT / "install.ps1"),
+        ],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    # The stub cannot report a version, so it lands under the definite name
+    staged = share_dir / "versions" / "unversioned" / "ai-config.exe"
+    assert staged.read_bytes() == b"standalone-binary"
+    assert (bin_dir / "ai-config.exe").read_bytes() == b"standalone-binary"
+    assert (share_dir / "active").read_text(encoding="utf-8").strip() == (
+        "unversioned"
+    )

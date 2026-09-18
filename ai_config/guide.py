@@ -39,7 +39,7 @@ project, status, pull, push, and sync.
 | `list` | managed tools, file counts, backup snapshot count |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `setup` | configure the data repo remote and verify push access |
-| `update [version]` | install the latest release, or a pinned one (also downgrades) |
+| `update [version]` | install the latest release, or a pinned one (also downgrades); refuses to start while another update is running |
 | `skill` | print this guide |
 | `skill guide` | explicit alias for this guide; works before setup |
 | `skill add <local-directory>` | install into data repo and Claude home; refuses overwrite |
