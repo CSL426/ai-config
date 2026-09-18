@@ -185,3 +185,42 @@ def test_memory_push_refuses_unpublished_configuration_commits(
     assert push.do_push("memory") == 1
     assert "outside the selected tools" in capsys.readouterr().err
     assert git(data_repo, "rev-list", "--count", "@{upstream}..HEAD") == "1"
+
+
+def test_a_config_change_does_not_cancel_the_scheduled_memory_push(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The nightly run pushes memory only; other directories are not its business.
+
+    A settings edit left uncommitted once cancelled the whole scheduled run,
+    with nobody watching, and the advice printed was to run the very command
+    that had just failed.
+    """
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n\nnew line\n", encoding="utf-8")
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+    staged = []
+
+    def accept(prompt: str) -> bool:
+        staged.append(git(data_repo, "diff", "--cached", "--name-only"))
+        return True
+
+    monkeypatch.setattr(push, "confirm_prompt", accept)
+
+    assert push.do_push("memory") == 0
+    # 只收記憶,設定的改動原封不動留在工作區
+    assert staged == ["memory/MEMORY.md"]
+    assert git(data_repo, "diff", "--name-only") == "claude/settings.json"
+
+
+def test_another_tools_change_still_cancels_a_hand_picked_scope(
+    data_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Choosing one tool by hand is different: a missed directory is worth saying."""
+    tracked_memory(data_repo)
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+    (data_repo / "codex").mkdir()
+    (data_repo / "codex/config.toml").write_text("x = 1\n", encoding="utf-8")
+
+    assert push.do_push("claude") == 1
+    assert "outside the selected tools" in capsys.readouterr().err
