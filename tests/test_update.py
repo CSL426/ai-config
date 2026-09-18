@@ -358,6 +358,8 @@ def test_maybe_notify_update_prints_hint_and_respects_optout(
     monkeypatch.setattr(update, "current_version", lambda: "1.0.0")
     spawned = []
     monkeypatch.setattr(update, "_spawn_update_check", lambda: spawned.append(1))
+    # 提示現在會就地問要不要更新;這個測試看的是提示與背景刷新,不是那個回答
+    monkeypatch.setattr(update, "confirm", lambda prompt, **kw: False)
 
     (tmp_path / "config.json").parent.mkdir(parents=True, exist_ok=True)
     update._update_check_cache_path().write_text(

@@ -138,6 +138,11 @@ def standalone_main() -> int:
         print("    acg status")
         print()
     code = console_main()
+    if code == 0:
+        # 指令做完才提示:中途插話會打斷正在讀輸出的人
+        from .commands.update import maybe_notify_update
+
+        maybe_notify_update()
     gui_launch = sys.argv[1:] in (
         ["gui"],
         ["desktop"],

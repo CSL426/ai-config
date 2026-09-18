@@ -78,6 +78,7 @@ def usage() -> None:
     print("  config          Show provider (git/gdrive), repo, and login state")
     print("  login [account] Bind a GitHub account that can push to the data repo")
     print("                  --unbind drop the binding (gh's own account is never switched)")
+    print("  versions        list installed versions; update <ver> switches back")
     print("  hooks <list|enable <name>|disable <name>>")
     print("                  machine-local Claude Code hooks; never synced")
     print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
@@ -307,6 +308,11 @@ def main(argv: "list[str] | None" = None) -> int:
         from .commands.memory import run_memory
 
         return run_memory(args[1:])
+
+    if cmd == "versions":
+        from .commands.update import run_update_list
+
+        return run_update_list()
 
     if cmd == "hooks":
         from .commands.hooks import run_hooks
