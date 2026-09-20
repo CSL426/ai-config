@@ -159,3 +159,21 @@ def test_a_hostile_host_name_cannot_escape_the_directory(notebook: Path) -> None
     path = table.host_path("../../etc/passwd")
 
     assert path.parent == table.table_dir()
+
+
+def test_a_rewrite_drops_whatever_the_template_omits(notebook: Path) -> None:
+    """The file is rebuilt, not edited, so an extra section does not survive.
+
+    keepalive settings were nearly stored here. Every slot reconciliation
+    would have deleted them, and nothing would have said so.
+    """
+    table.record("host-a", table.Slot(4, 10))
+    path = table.host_path("host-a")
+    path.write_text(
+        path.read_text(encoding="utf-8") + '\n[extra]\nkept = "no"\n',
+        encoding="utf-8",
+    )
+
+    table.record("host-a", table.Slot(4, 20))
+
+    assert "[extra]" not in path.read_text(encoding="utf-8")
