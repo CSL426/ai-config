@@ -13,6 +13,20 @@ from .applyplan import StalePreview
 from .locking import apply_lock
 
 
+def _keepalive_state() -> dict:
+    """Never let the scheduler take down the whole memory page."""
+    blank = {"installed": False, "times": [], "model": "", "ccs": "", "recent": []}
+    try:
+        from . import keepalive
+
+        settings = keepalive.load()
+        return {"installed": keepalive.installed(), "times": list(settings.times),
+                "model": settings.model, "ccs": keepalive.existing_ccs(),
+                "recent": keepalive.last_runs()}
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return blank
+
+
 def _autopush_state() -> dict:
     """Never let a scheduler hiccup take down the whole memory page."""
     blank = {"installed": False, "last_push": "", "reason": "",
@@ -205,6 +219,8 @@ class ManagementApi:
         empty = {"data_root": str(paths.SCRIPT_DIR), "shared_path": str(paths.MEMORY_LINK),
                  "shared_status": "missing", "tracked": False, "git_status": "untracked",
                  "index_unlisted": [], "index_dangling": [], "secret_notes": [],
+                 "keepalive": {"installed": False, "times": [], "model": "",
+                               "ccs": "", "recent": []},
                  "autopush": {"installed": False, "last_push": "", "reason": "",
                               "slot": "", "host": "", "others": []},
                  "handoff_reminder": None, "remember_hosts": None,
@@ -259,6 +275,7 @@ class ManagementApi:
                     "index_dangling": state.index_dangling,
                     "secret_notes": state.secret_notes,
                     "autopush": _autopush_state(),
+                    "keepalive": _keepalive_state(),
                     "handoff_reminder": _handoff_reminder_state(),
                     "remember_hosts": _remember_hosts_state(),
                     "locations": locations,
@@ -325,6 +342,30 @@ class ManagementApi:
             self._ensure_configured()
             lines = autopush.enable() if wanted else autopush.disable()
             return {**outcome(), "output": "\n".join(lines)}
+        except (OSError, RuntimeError, ValueError) as exc:
+            return failure(exc)
+        finally:
+            self._lock.release()
+
+    def set_keepalive(self, wanted, times=None):
+        """Schedule or unschedule the calls that anchor the usage window."""
+        if not isinstance(wanted, bool):
+            return outcome(1, "參數不正確", "INVALID_ARGUMENT")
+        if not self._lock.acquire(blocking=False):
+            return outcome(1, "另一個動作正在執行", "BUSY")
+        try:
+            from . import keepalive
+
+            if not wanted:
+                code, lines = keepalive.disable()
+            else:
+                chosen = tuple(times) if isinstance(times, list) else ()
+                code, lines = keepalive.enable(chosen)
+            message = "\n".join(lines)
+            if code != 0:
+                return {**outcome(code, message, "KEEPALIVE_REFUSED"),
+                        "output": message}
+            return {**outcome(), "output": message}
         except (OSError, RuntimeError, ValueError) as exc:
             return failure(exc)
         finally:

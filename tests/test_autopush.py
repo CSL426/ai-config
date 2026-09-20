@@ -403,3 +403,20 @@ def test_bare_enable_asks_the_table_for_a_time(
     command._autopush(["enable"])
 
     assert seen == [None]
+
+
+def test_the_installed_schedule_keeps_its_names() -> None:
+    """Three machines already have a schedule installed under these names.
+
+    Renaming a unit does not move the old one: the machine keeps running
+    the orphan on its old timer and enable installs a second alongside it,
+    so the push happens twice and neither name is the one anyone looks for.
+    """
+    service, timer = autopush.systemd_units(4, 12.0, minute=10)
+
+    assert autopush._UNIT == "acg-autopush"
+    assert autopush._LABEL == "com.csl426.acg.autopush"
+    assert autopush._TASK == "acg memory autopush"
+    assert "OnCalendar=*-*-* 04:10:00" in timer
+    assert "Persistent=true" in timer
+    assert "memory push" in service

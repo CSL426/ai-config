@@ -37,6 +37,7 @@ project, status, pull, push, and sync.
 | `deploy --profile <name>` | replay a saved selection without prompting |
 | `deploy --save-as <name>` | deploy interactively, then remember the selection |
 | `list` | managed tools, file counts, backup snapshot count |
+| `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send>` | anchor this machine's Claude usage window; off by default, settings stay local |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `setup` | configure the data repo remote and verify push access |
 | `update [version]` | install the latest release, or a pinned one (also downgrades); refuses to start while another update is running |
@@ -214,6 +215,20 @@ than silently taking it, and a finished thread is refused rather than
 resurrected. A finished thread stays on disk as a record but leaves the
 list. Writing again reopens a claimed thread, keeping the date it was
 first opened, which `list` shows as how long it has been waiting.
+
+### Anchoring the usage window
+
+Claude's five-hour usage window starts at the account's first call of the
+day, so where that call lands decides every boundary after it.
+`{entrypoint} keepalive enable [HH:MM ...]` schedules a throwaway call at
+chosen times (four by default) to put the boundaries where the day needs
+them; `keepalive status` reports them and the last few runs, `disable`
+removes the schedule, `send` calls once now. Off unless a machine turns it
+on, and the times, model and log stay local — each machine keeps different
+hours, so syncing them would have one machine's answer overwrite another's.
+Claude only: the window belongs to that account, not to Codex or
+Antigravity. A machine still running `claude-scheduler` is told to remove
+it first, since both anchor the same window and would each fire.
 
 ### Machine-local hooks
 

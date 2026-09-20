@@ -308,6 +308,19 @@ claude plugin install acg@acg</textarea>
             <p class="package-hint" id="autopush-others"></p>
           </div>
           <label class="autopush-row">
+            <input type="checkbox" id="keepalive-toggle" />
+            <span class="autopush-text">
+              <span class="autopush-title">錨定 Claude 用量視窗</span>
+              <span class="autopush-hint" id="keepalive-hint">在選定的時間送一句即丟的提示，讓五小時視窗的邊界避開工作時段。</span>
+            </span>
+          </label>
+          <div class="autopush-slot" id="keepalive-times-row" hidden>
+            <label for="keepalive-times">這台的時間</label>
+            <input type="text" id="keepalive-times" placeholder="07:00 12:05 17:10 22:15" />
+            <button class="btn" id="keepalive-save">更新</button>
+            <p class="package-hint" id="keepalive-recent"></p>
+          </div>
+          <label class="autopush-row">
             <input type="checkbox" id="handoff-reminder-toggle" />
             <span class="autopush-text">
               <span>Context 用量偏高時提醒交接</span>
