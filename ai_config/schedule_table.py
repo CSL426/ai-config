@@ -136,6 +136,14 @@ def resolve_collision(table: Table, host: str) -> "Slot | None":
 
 
 def render(host: str, slot: Slot, table: Table) -> str:
+    """The whole file, rebuilt from scratch.
+
+    Anything this template does not name is gone the next time a machine
+    reconciles its slot, with nothing said. A second feature's settings
+    do not belong here for that reason — keepalive keeps its own in local
+    state instead. Adding a field means adding it here too, or it will
+    survive exactly until the next schedule change.
+    """
     return (
         "# 這台機器保存記憶的時間。一台一個檔,幾台同時改也不會互相覆蓋。\n"
         "# 可以手動改 slot,那台下次跑排程時會自己跟上。\n"
