@@ -928,6 +928,41 @@ for (const host of REMEMBER_HOSTS) {
   });
 }
 
+$<HTMLInputElement>("#keepalive-toggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget as HTMLInputElement;
+  const bridge = api();
+  const wanted = toggle.checked;
+  if (!bridge) { toggle.checked = !wanted; return; }
+  toggle.disabled = true;
+  try {
+    const result = await bridge.set_keepalive(wanted);
+    if (result.code !== 0) {
+      toggle.checked = !wanted;
+      feedback($("#memory-feedback"), result.output, true);
+      return;
+    }
+    feedback($("#memory-feedback"), wanted ? "已排定錨定用量視窗" : "已取消錨定");
+    await refreshMemory();
+  } finally {
+    toggle.disabled = false;
+  }
+});
+
+$<HTMLButtonElement>("#keepalive-save").addEventListener("click", async () => {
+  const bridge = api();
+  const raw = $<HTMLInputElement>("#keepalive-times").value.trim();
+  if (!bridge) return;
+  const button = $<HTMLButtonElement>("#keepalive-save");
+  button.disabled = true;
+  try {
+    const result = await bridge.set_keepalive(true, raw.split(/[\s,]+/).filter(Boolean));
+    feedback($("#memory-feedback"), result.output, result.code !== 0);
+    if (result.code === 0) await refreshMemory();
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $<HTMLInputElement>("#autopush-toggle").addEventListener("change", async (event) => {
   const toggle = event.currentTarget as HTMLInputElement;
   const bridge = api();
@@ -1553,6 +1588,27 @@ function renderRememberHosts(info: MemoryInfo): void {
   }
 }
 
+function renderKeepalive(info: MemoryInfo): void {
+  const toggle = $<HTMLInputElement>("#keepalive-toggle");
+  const state = info.keepalive ?? {
+    installed: false, times: [], model: "", ccs: "", recent: [],
+  };
+  toggle.checked = state.installed;
+  const hint = state.ccs
+    ? `claude-scheduler 的排程還在（${state.ccs}），兩個都開會一天點兩次火。`
+    : "在選定的時間送一句即丟的提示，讓五小時視窗的邊界避開工作時段。";
+  $("#keepalive-hint").textContent = hint;
+
+  const row = $("#keepalive-times-row");
+  row.hidden = !state.installed;
+  if (!state.installed) return;
+  $<HTMLInputElement>("#keepalive-times").value = (state.times ?? []).join(" ");
+  const recent = state.recent ?? [];
+  $("#keepalive-recent").textContent = recent.length
+    ? `最近：${recent[recent.length - 1]}`
+    : "還沒有執行紀錄。";
+}
+
 function renderAutopush(info: MemoryInfo): void {
   const toggle = $<HTMLInputElement>("#autopush-toggle");
   const state = info.autopush ?? {
@@ -1648,6 +1704,7 @@ async function refreshMemory(): Promise<void> {
     $("#memory-summary").textContent = summaryText;
     renderMemoryHealth(info);
     renderAutopush(info);
+    renderKeepalive(info);
     renderHandoffReminder(info);
   renderRememberHosts(info);
     const data = $("#memory-data");

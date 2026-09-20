@@ -81,6 +81,9 @@ def usage() -> None:
     print("  versions        list installed versions; update <ver> switches back")
     print("  hooks <list|enable <name>|disable <name>>")
     print("                  machine-local Claude Code hooks; never synced")
+    print("  keepalive <status|enable [HH:MM ...]|disable|send>")
+    print("                  call Claude at chosen times so its five-hour usage")
+    print("                  window starts where the day needs it; per machine")
     print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
     print("                  enable|disable codex|agy  remember capture on that host only")
     print("                  Shared notebook that every AI tool reads and writes")
@@ -318,6 +321,11 @@ def main(argv: "list[str] | None" = None) -> int:
         from .commands.hooks import run_hooks
 
         return run_hooks(args[1:])
+
+    if cmd == "keepalive":
+        from .commands.keepalive import run_keepalive
+
+        return run_keepalive(args[1:])
 
     if cmd == "ignore-skills":
         if len(args) > 2:
