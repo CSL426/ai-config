@@ -211,3 +211,35 @@ def done(name: str) -> Handoff:
     note.updated = _now()
     _write_text_atomic(note.path, _render(note))
     return note
+
+
+_HEADING = re.compile(r"^#{1,3}\s*(.+?)\s*$", re.MULTILINE)
+# 接手的人最先要問的是「還剩什麼」,其次才是「有什麼還不確定」
+_WANTED = ("next", "下一步", "unknowns", "待決定", "待辦")
+
+
+def summary(body: str, limit: int = 70) -> str:
+    """The line worth showing in a list: what is left, else the opening.
+
+    A thread written as one prose block hides its open items — one here
+    ran to ten thousand characters with three of them buried inside. A
+    note that names them under a heading can say so in the list instead.
+    """
+    sections = {}
+    marks = list(_HEADING.finditer(body))
+    for index, mark in enumerate(marks):
+        end = marks[index + 1].start() if index + 1 < len(marks) else len(body)
+        sections[mark.group(1).strip().casefold()] = body[mark.end():end].strip()
+    for wanted in _WANTED:
+        for name, text in sections.items():
+            if not name.startswith(wanted) or not text:
+                continue
+            first = text.splitlines()[0].lstrip("-* ").strip()
+            if first:
+                return f"{mark_label(name)}{first}"[:limit]
+    lines = body.splitlines()
+    return (lines[0] if lines else "")[:limit]
+
+
+def mark_label(heading: str) -> str:
+    return "還剩:" if heading.startswith(("next", "下一步")) else "未定:"
