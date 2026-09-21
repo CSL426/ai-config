@@ -446,3 +446,132 @@ $("#memory-select-project").addEventListener("click", async () => {
   } catch (error) { feedback($("#memory-feedback"), String(error), true); }
   finally { setBusy(false); }
 });
+
+async function configureHandoffReminder(enabled: boolean): Promise<void> {
+  const bridge = api();
+  const toggle = $<HTMLInputElement>("#handoff-reminder-toggle");
+  const input = $<HTMLInputElement>("#handoff-reminder-threshold");
+  const previous = state.memoryInfo?.handoff_reminder?.enabled ?? false;
+  const threshold = input.valueAsNumber;
+  if (!bridge || state.running || state.pendingPreview || !input.reportValidity()
+      || !Number.isInteger(threshold)) {
+    toggle.checked = previous;
+    return;
+  }
+  const result = await perform("設定交接提醒", async () => {
+    const response = await bridge.set_handoff_reminder(enabled, threshold);
+    if (response.code === 0) await refreshMemory();
+    return response;
+  }, false);
+  if (!result || result.code !== 0) toggle.checked = previous;
+  if (result) feedback($("#memory-feedback"), result.output, result.code !== 0);
+}
+
+$<HTMLInputElement>("#handoff-reminder-toggle").addEventListener("change", (event) => {
+  void configureHandoffReminder((event.currentTarget as HTMLInputElement).checked);
+});
+$("#handoff-reminder-save").addEventListener("click", () => {
+  void configureHandoffReminder(true);
+});
+
+async function configureRememberHost(host: RememberHost, enabled: boolean): Promise<void> {
+  const bridge = api();
+  const toggle = $<HTMLInputElement>(`#remember-${host}-toggle`);
+  const previous = state.memoryInfo?.remember_hosts?.[host]?.installed ?? false;
+  if (!bridge || state.running || state.pendingPreview) {
+    toggle.checked = previous;
+    return;
+  }
+  const result = await perform(enabled ? "安裝 remember" : "移除 remember", async () => {
+    const response = await bridge.set_remember_host(host, enabled);
+    if (response.code === 0) await refreshMemory();
+    return response;
+  }, false);
+  if (!result || result.code !== 0) toggle.checked = previous;
+  if (result) feedback($("#memory-feedback"), result.output, result.code !== 0);
+}
+
+for (const host of REMEMBER_HOSTS) {
+  $<HTMLInputElement>(`#remember-${host}-toggle`).addEventListener("change", (event) => {
+    void configureRememberHost(host, (event.currentTarget as HTMLInputElement).checked);
+  });
+}
+
+$<HTMLInputElement>("#keepalive-toggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget as HTMLInputElement;
+  const bridge = api();
+  const wanted = toggle.checked;
+  if (!bridge) { toggle.checked = !wanted; return; }
+  toggle.disabled = true;
+  try {
+    const result = await bridge.set_keepalive(wanted);
+    if (result.code !== 0) {
+      toggle.checked = !wanted;
+      feedback($("#memory-feedback"), result.output, true);
+      return;
+    }
+    feedback($("#memory-feedback"), wanted ? "已排定錨定用量視窗" : "已取消錨定");
+    await refreshMemory();
+  } catch (error) {
+    toggle.checked = !wanted;
+    feedback($("#memory-feedback"), `無法更新排程：${String(error)}`, true);
+  } finally {
+    toggle.disabled = false;
+  }
+});
+
+$<HTMLButtonElement>("#keepalive-save").addEventListener("click", async () => {
+  const bridge = api();
+  const raw = $<HTMLInputElement>("#keepalive-times").value.trim();
+  if (!bridge) return;
+  const button = $<HTMLButtonElement>("#keepalive-save");
+  button.disabled = true;
+  try {
+    const result = await bridge.set_keepalive(true, raw.split(/[\s,]+/).filter(Boolean));
+    feedback($("#memory-feedback"), result.output, result.code !== 0);
+    if (result.code === 0) await refreshMemory();
+  } catch (error) {
+    feedback($("#memory-feedback"), `無法更新排程：${String(error)}`, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$<HTMLInputElement>("#autopush-toggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget as HTMLInputElement;
+  const bridge = api();
+  const wanted = toggle.checked;
+  if (!bridge) { toggle.checked = !wanted; return; }
+  toggle.disabled = true;
+  try {
+    const result = await bridge.set_autopush(wanted);
+    if (result.code !== 0) {
+      toggle.checked = !wanted;
+      feedback($("#memory-feedback"), result.output, true);
+      return;
+    }
+    feedback($("#memory-feedback"), wanted ? "已排定每天自動上傳" : "已取消自動上傳");
+    await refreshMemory();
+  } finally {
+    toggle.disabled = false;
+  }
+});
+
+$<HTMLButtonElement>("#autopush-slot-save").addEventListener("click", async () => {
+  const bridge = api();
+  const clock = $<HTMLInputElement>("#autopush-slot").value;
+  if (!bridge || !clock) return;
+  const button = $<HTMLButtonElement>("#autopush-slot-save");
+  button.disabled = true;
+  try {
+    const result = await bridge.set_autopush_slot(clock);
+    if (result.code !== 0) {
+      feedback($("#memory-feedback"), result.output, true);
+      return;
+    }
+    feedback($("#memory-feedback"), `這台改到每天 ${clock}`);
+    await refreshMemory();
+  } finally {
+    button.disabled = false;
+  }
+});
