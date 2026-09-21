@@ -158,3 +158,81 @@ def test_entry_status_rejects_unmanaged_link(isolated_memory):  # noqa: F811
     symlink(memory.codex_rules_path(), external)
     state = memory.entry_status(memory.codex_rules_path())
     assert state["status"] == "blocked"
+
+
+def test_adopt_takes_a_path_without_changing_directory(journal_project, monkeypatch):
+    """cd-ing into each project in turn is the whole complaint.
+
+    execute() has always taken a project; only the CLI insisted on the
+    working directory.
+    """
+    elsewhere = journal_project.parent / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    assert command.run_memory(["adopt", str(journal_project)]) == 0
+
+    assert memory.journal_state(journal_project)[0] == "adopted"
+    assert Path.cwd() == elsewhere
+
+
+def test_adopt_refuses_a_path_that_is_not_a_directory(tmp_path):
+    assert command.run_memory(["adopt", str(tmp_path / "nope")]) == 1
+
+
+def test_scan_finds_every_journal_under_a_root(journal_project, tmp_path):
+    """Anywhere with a journal is a candidate; the depth is not knowable."""
+    from ai_config import memory as core
+
+    deep = tmp_path / "work" / "nested" / "deep"
+    (deep / ".remember").mkdir(parents=True)
+    (deep / ".remember" / "recent.md").write_text("notes", encoding="utf-8")
+
+    found = core.journals_below(tmp_path)
+
+    assert deep in found
+
+
+def test_scan_skips_what_is_already_adopted(journal_project, monkeypatch):
+    from ai_config import memory as core
+
+    root = journal_project.parent
+    command.execute("adopt", journal_project)
+
+    assert journal_project not in core.unadopted_below(root)
+
+
+def test_scan_leaves_the_home_directory_and_data_repo_alone(tmp_path, monkeypatch):
+    """Neither is a project: one is where projects live, the other is the store.
+
+    A scan that offers to adopt the data repository into itself is offering
+    to nest the notebook inside its own journal.
+    """
+    from ai_config import memory as core
+
+    monkeypatch.setattr(core, "HOME", tmp_path)
+    (tmp_path / ".remember").mkdir()
+    (tmp_path / ".remember" / "recent.md").write_text("home", encoding="utf-8")
+    store = tmp_path / "ai-config" / "data"
+    (store / ".remember").mkdir(parents=True)
+    (store / ".remember" / "recent.md").write_text("store", encoding="utf-8")
+    monkeypatch.setattr(core, "SCRIPT_DIR", store)
+
+    found = core.journals_below(tmp_path)
+
+    assert tmp_path not in found
+    assert store not in found
+
+
+def test_status_counts_the_projects_still_waiting(
+    journal_project, monkeypatch, capsys
+):
+    """A count is what makes the scan discoverable; nobody runs --scan blind."""
+    from ai_config import memory as core
+
+    monkeypatch.setattr(core, "HOME", journal_project.parent)
+    monkeypatch.chdir(journal_project)
+
+    command.run_memory(["status"])
+
+    assert "adopt --scan" in capsys.readouterr().out

@@ -1187,3 +1187,54 @@ def entry_status(path: Path) -> dict:
         "status": status,
         "reason": reason,
     }
+
+
+_SCAN_SKIP = {
+    ".git", "node_modules", ".venv", "venv", "__pycache__", ".cache",
+    ".hf_cache", "dist", "build", ".worktree", ".worktrees", "site-packages",
+}
+
+
+def journals_below(root: Path, depth: int = 4) -> list:
+    """Every project under root that keeps a journal.
+
+    The name of a project's directory cannot be recovered from Claude
+    Code's own registry — a hyphen there may be a separator or part of the
+    name, and `ai-config` decodes to `ai/config`. Walking for the journal
+    itself is the only reading that cannot be wrong.
+    """
+    found = []
+    root = Path(root)
+    if not root.is_dir():
+        return found
+    stack = [(root, 0)]
+    while stack:
+        directory, level = stack.pop()
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if not entry.is_dir() or entry.is_symlink():
+                continue
+            if entry.name == ".remember":
+                # 家目錄不是專案,它是專案住的地方;資料庫更不是,
+                # 認領它等於把筆記本收進自己的日誌裡
+                if journal_link(directory) is None:
+                    continue
+                if _path_identity(directory, HOME) or _path_identity(directory, SCRIPT_DIR):
+                    continue
+                found.append(directory)
+                continue
+            if entry.name in _SCAN_SKIP or level >= depth:
+                continue
+            stack.append((entry, level + 1))
+    return sorted(set(found))
+
+
+def unadopted_below(root: Path, depth: int = 4) -> list:
+    """The projects a scan would still have something to do for."""
+    return [
+        project for project in journals_below(root, depth)
+        if journal_state(project)[0] in {"local", "legacy"}
+    ]

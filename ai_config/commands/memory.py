@@ -15,7 +15,8 @@ from ..paths import BACKUP_BASE, ENTRYPOINT, MEMORY_LINK, tilde
 
 USAGE = (
     f"Usage: {ENTRYPOINT} memory "
-    "<status|enable [codex|agy]|disable [codex|agy]|adopt|release|path|push|"
+    "<status|enable [codex|agy]|disable [codex|agy]|"
+    "adopt [路徑|--scan [目錄]]|release [路徑]|path|push|"
     "handoff|autopush>"
 )
 
@@ -35,6 +36,17 @@ def _run_memory(args: list[str]) -> int:
         return _status()
     if command in {"enable", "disable"} and rest in (["codex"], ["agy"]):
         return _host(command, rest[0])
+    if command in {"adopt", "release"} and rest and rest[0] != "--scan":
+        if len(rest) > 1:
+            log_error(f"Usage: {ENTRYPOINT} memory {command} [專案路徑|--scan [目錄]]")
+            return 1
+        chosen = Path(rest[0]).expanduser()
+        if not chosen.is_dir():
+            log_error(f"找不到這個專案目錄:{chosen}")
+            return 1
+        return execute(command, memory.project_root(chosen)).code
+    if command == "adopt" and rest and rest[0] == "--scan":
+        return _adopt_scan(rest[1:])
     if command in {"enable", "disable", "adopt", "release"} and not rest:
         project = memory.project_root() if command in {"adopt", "release"} else None
         return execute(command, project).code
@@ -295,7 +307,23 @@ def _status() -> int:
             f"remember 日誌仍在各專案的 .remember(執行 {ENTRYPOINT} memory enable)"
         )
     _report_journal(state.journal, state.journal_detail)
+    _report_unadopted()
     return 0
+
+
+def _report_unadopted() -> None:
+    """Say how many other projects are waiting, or nobody finds the scan."""
+    try:
+        pending = memory.unadopted_below(Path.home())
+    except OSError:
+        return
+    here = memory.project_root()
+    others = [project for project in pending if project != here]
+    if others:
+        log_info(
+            f"另外 {len(others)} 個專案的日誌還沒同步"
+            f"({ENTRYPOINT} memory adopt --scan 可一次處理)"
+        )
 
 
 def _report_journal(state: str, detail: str) -> None:
@@ -702,4 +730,44 @@ def _path(flags: list[str]) -> int:
         print(f"global: {state.directory}")
         stability = "stable" if state.project.stable else "local-only"
         print(f"project: {state.project_dir} ({state.project.key}, {stability})")
+    return 0
+
+
+def _adopt_scan(args: list) -> int:
+    """Adopt every project under a root, so nobody visits them one at a time."""
+    from ..console import confirm
+
+    if len(args) > 1:
+        log_error(f"Usage: {ENTRYPOINT} memory adopt --scan [目錄]")
+        return 1
+    root = Path(args[0]).expanduser() if args else Path.home()
+    if not root.is_dir():
+        log_error(f"找不到這個目錄:{root}")
+        return 1
+
+    log_header("尚未同步的專案")
+    pending = memory.unadopted_below(root)
+    if not pending:
+        log_info(f"{tilde(root)} 底下每個有日誌的專案都同步了")
+        return 0
+    for project in pending:
+        state, _ = memory.journal_state(project)
+        print(f"  {state:<7} {tilde(project)}")
+    log_info(f"共 {len(pending)} 個,日誌會搬進共用資料庫並留下連結")
+    if not confirm("全部同步?"):
+        log_info("沒有變更")
+        return 0
+
+    failed = []
+    for project in pending:
+        result = execute("adopt", project)
+        if result.code != 0:
+            failed.append(project)
+    if failed:
+        # 一個失敗不該讓其他的白做,但要講清楚哪幾個沒成功
+        log_warn(f"{len(failed)} 個沒有成功:")
+        for project in failed:
+            print(f"  {tilde(project)}")
+        return 1
+    log_success(f"{len(pending)} 個專案的日誌都同步了")
     return 0

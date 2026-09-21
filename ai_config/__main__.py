@@ -86,6 +86,8 @@ def usage() -> None:
     print("                  window starts where the day needs it; per machine,")
     print("                  and each tool keeps its own times (default: claude)")
     print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
+    print("                  adopt [專案路徑|--scan [目錄]] sync one project's journal,")
+    print("                    or find every unsynced one below a directory")
     print("                  enable|disable codex|agy  remember capture on that host only")
     print("                  Shared notebook that every AI tool reads and writes")
     print("                  path --global|--project print one of the two roots")
