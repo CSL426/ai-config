@@ -1,456 +1,83 @@
 import "./style.css";
+import {
+  api,
+  toolLabel,
+  feedback,
+  onSync,
+  syncControls,
+  setBusy,
+  showView,
+  goBack,
+  openOutput,
+  presentResult,
+  perform,
+  firstErrorLine,
+  copyText,
+  renderOutput,
+  armPreview,
+  closePreview,
+  lastOutput,
+  installMessage,
+} from "./shell";
+import {
+  refreshMemory,
+  openApply,
+  setRequestPush,
+} from "./memory";
 import { closeActiveSelect, initializeSelects } from "./select";
 
-import type { RememberHost, RememberHostState,
-  AcgApi, AcgCommand, ApplyCategory, ChangePreview, GithubAccess, MemoryAction,
-  MemoryInfo, PushScope, RunResult, SettingsInfo, SkillEntry, ToolScope,
+import type { RememberHost, AcgCommand, GithubAccess, PushScope, RunResult, SkillEntry, ToolScope,
 } from "./bridge";
 
-const REMEMBER_HOSTS = ["codex", "agy"] as const;
+import {
+  $,
+  COMMAND_LABELS,
+  REMEMBER_HOSTS,
+  appNotice,
+  confirmBox,
+  confirmYes,
+  githubAccounts,
+  githubActions,
+  githubCode,
+  githubCodeCopy,
+  githubCodeHint,
+  githubCodeValue,
+  githubFallback,
+  githubGroup,
+  githubLoginBtn,
+  githubState,
+  heroMark,
+  heroSub,
+  heroTitle,
+  outputState,
+  packageCopy,
+  packageMessage,
+  pluginCopy,
+  pluginInstall,
+  providerEl,
+  repoEl,
+  settingsBox,
+  settingsClose,
+  settingsFeedback,
+  settingsRetry,
+  settingsSwitch,
+  settingsSwitchForm,
+  setupGdrivePanel,
+  setupGitPanel,
+  skillFilter,
+  skillList,
+  skillResult,
+  skillRetry,
+  skillSearch,
+  skillSource,
+  toolRows,
+  toolTabs,
+  updateBtn,
+  versionEl,
+} from "./dom";
 
-const COMMAND_LABELS: Record<AcgCommand, string> = {
-  status: "檢查狀態", apply: "套用設定", pull: "下載更新", push: "上傳變更",
-};
-const $ = <T extends HTMLElement>(selector: string): T => {
-  const element = document.querySelector<T>(selector);
-  if (!element) throw new Error(`missing element: ${selector}`);
-  return element;
-};
-const versionEl = $("#version");
-const repoEl = $("#repo");
-const providerEl = $("#provider");
-const settingsBox = $("#settings");
-const settingsClose = $<HTMLButtonElement>("#settings-close");
-const settingsFeedback = $("#settings-feedback");
-const settingsRetry = $<HTMLButtonElement>("#settings-retry");
-const settingsSwitch = $("#settings-switch");
-const settingsSwitchForm = $("#settings-switch-form");
-const githubGroup = $("#settings-github");
-const githubState = $("#github-state");
-const githubAccounts = $("#github-accounts");
-const githubActions = $("#github-actions");
-const githubLoginBtn = $<HTMLButtonElement>("#github-login");
-const githubFallback = $("#github-fallback");
-const githubCode = $("#github-code");
-const githubCodeValue = $("#github-code-value");
-const githubCodeCopy = $<HTMLButtonElement>("#github-code-copy");
-const githubCodeHint = $("#github-code-hint");
-const toolTabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".scope-tab"));
-const toolRows = Array.from(document.querySelectorAll<HTMLElement>(".tool-row"));
-const heroMark = $("#hero-mark");
-const heroTitle = $("#hero-title");
-const heroSub = $("#hero-sub");
-const confirmBox = $("#confirm");
-const confirmYes = $<HTMLButtonElement>("#confirm-yes");
-const outputTitle = $("#output-title");
-const outputState = $("#output-state");
-const outputBody = $("#output-body");
-const outputCopy = $<HTMLButtonElement>("#output-copy");
-const copyFallback = $<HTMLTextAreaElement>("#copy-fallback");
-const skillList = $("#skill-list");
-const skillSearch = $<HTMLInputElement>("#skill-search");
-const skillFilter = $<HTMLSelectElement>("#skill-filter");
-const skillResult = $("#skill-result");
-const skillRetry = $<HTMLButtonElement>("#skill-retry");
-const skillSource = $("#skill-source");
-const packageMessage = $<HTMLTextAreaElement>("#package-message");
-const packageCopy = $<HTMLButtonElement>("#package-copy");
-const pluginInstall = $<HTMLTextAreaElement>("#plugin-install");
-const pluginCopy = $<HTMLButtonElement>("#plugin-copy");
-const updateBtn = $<HTMLButtonElement>("#update-check");
-const appNotice = $("#app-notice");
-const operationStatus = $("#operation-status");
-const setupBox = $("#setup");
-const setupGitPanel = $("#setup-git-panel");
-const setupGdrivePanel = $("#setup-gdrive-panel");
+import { state } from "./state";
 
-type MainView = "status" | "output" | "skills" | "export" | "apply" | "memory";
-let currentView: MainView = "status";
-let outputReturn: MainView = "status";
-let selectedTool: ToolScope = "all";
-let configured = false;
-let running = false;
-let connected = false;
-let restartRequired = false;
-let skillsLoading = false;
-let settingsLoading = false;
-type PendingPreview = { kind: "push" | "apply" | "memory"; token: string; scope: PushScope; label: string };
-let pendingPreview: PendingPreview | null = null;
-let previewOpener: HTMLElement | null = null;
-let memoryInfo: MemoryInfo | null = null;
-let memoryLoading = false;
-let projectToken: string | null = null;
-let pendingUpdate: string | null = null;
-let updateInstalled = false;
-let settingsInfo: SettingsInfo | null = null;
-let settingsOpener: HTMLElement | null = null;
-let skills: SkillEntry[] = [];
-let skillDirectory: string | null = null;
-const selectedSkills = new Set<string>();
-
-function api(): AcgApi | null {
-  return window.pywebview?.api ?? null;
-}
-
-function toolLabel(tool: string = selectedTool): string {
-  return toolTabs.find(tab => tab.dataset.tool === tool)?.textContent?.trim() ?? tool;
-}
-
-function feedback(element: HTMLElement, text: string, failed = false): void {
-  element.textContent = text;
-  element.hidden = !text;
-  element.classList.toggle("is-fail", failed);
-}
-
-function syncControls(): void {
-  const blocked = running || !connected || pendingPreview !== null;
-  for (const control of document.querySelectorAll<
-    HTMLButtonElement | HTMLInputElement | HTMLSelectElement
-  >("button, input, select")) {
-    control.disabled = blocked;
-  }
-  // 閱讀、複製、取消確認與關閉對話框不會更動設定。
-  for (const id of ["#output-copy", "#package-copy", "#settings-close"]) {
-    $<HTMLButtonElement>(id).disabled = false;
-  }
-  for (const id of ["#output-back", "#confirm-yes", "#confirm-no"]) {
-    $<HTMLButtonElement>(id).disabled = running;
-  }
-  $<HTMLButtonElement>("#info-retry").disabled = running;
-  updateBtn.disabled = blocked || updateInstalled;
-  for (const control of document.querySelectorAll<HTMLButtonElement>(
-    "[data-cmd], .scope-tab, #package-open",
-  )) control.disabled = blocked || !configured || restartRequired;
-  for (const control of setupBox.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
-    "input, button",
-  )) control.disabled = blocked || restartRequired;
-  for (const control of settingsBox.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
-    "input, button:not(#settings-close):not(#settings-retry)",
-  )) control.disabled = blocked || settingsLoading || settingsInfo === null;
-  settingsRetry.disabled = blocked || settingsLoading;
-  $<HTMLButtonElement>("#settings-open").disabled = blocked || restartRequired;
-  const selected = skills.filter((skill) => selectedSkills.has(skill.name));
-  const unavailable = blocked || !configured || skillsLoading || restartRequired;
-  const hasSelection = selected.length > 0;
-  const canShare = hasSelection && selected.every((skill) => skill.shareable);
-  const canUnshare = hasSelection && selected.every((skill) => skill.shared);
-
-  $<HTMLButtonElement>("#skill-pick").disabled = unavailable;
-  $<HTMLButtonElement>("#skill-add").disabled = unavailable || !skillDirectory;
-  $<HTMLButtonElement>("#skill-share").disabled = unavailable || !canShare;
-  $<HTMLButtonElement>("#skill-unshare").disabled = unavailable || !canUnshare;
-  $<HTMLButtonElement>("#skill-package").disabled = unavailable || !hasSelection;
-  $<HTMLButtonElement>("#skill-all").disabled = unavailable || visibleSkills().length === 0;
-  $<HTMLButtonElement>("#skill-none").disabled = unavailable || !hasSelection;
-  skillSearch.disabled = blocked || skillsLoading;
-  skillFilter.disabled = blocked || skillsLoading;
-  skillRetry.disabled = blocked || skillsLoading;
-  const managementBlocked = blocked || !configured || restartRequired;
-  for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
-    "#handoff-reminder-toggle, #handoff-reminder-threshold, #handoff-reminder-save",
-  )) {
-    control.disabled = managementBlocked || memoryLoading || !memoryInfo?.handoff_reminder
-      || Boolean(memoryInfo.handoff_reminder.reason);
-  }
-  $<HTMLButtonElement>("#handoff-reminder-save").disabled ||= !memoryInfo?.handoff_reminder?.enabled;
-  for (const host of REMEMBER_HOSTS) {
-    $<HTMLInputElement>(`#remember-${host}-toggle`).disabled =
-      managementBlocked || memoryLoading || !memoryInfo?.remember_hosts?.[host]?.available;
-  }
-  for (const selector of ["#memory-open", "#apply-preview", "#memory-select-project", "#memory-refresh", "#memory-push", "#pull-apply"]) {
-    $<HTMLButtonElement>(selector).disabled = managementBlocked;
-  }
-  $<HTMLButtonElement>("#apply-preview").disabled = managementBlocked || !applyCategory();
-  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-memory-action]")) {
-    const action = button.dataset.memoryAction as MemoryAction;
-    const permission = memoryInfo?.actions[action];
-    button.disabled = managementBlocked || memoryLoading || !permission?.allowed
-      || ((action === "adopt" || action === "release") && !projectToken);
-    button.title = permission?.reason ?? "請先讀取記憶狀態";
-  }
-  $<HTMLButtonElement>("#memory-push").disabled = managementBlocked || memoryLoading || !memoryInfo?.actions.push.allowed;
-  for (const button of document.querySelectorAll<HTMLButtonElement>("#memory-locations button, #memory-select-project, #memory-refresh")) {
-    button.disabled = managementBlocked || memoryLoading
-      || (button.closest("#memory-locations") !== null && !memoryInfo);
-  }
-  $("#skill-selection").textContent = `已選 ${selected.length} 項 · 顯示 ${visibleSkills().length} / ${skills.length} 項`;
-  $("#skill-share").title = !hasSelection || canShare
-    ? "分享給 Codex 與 Antigravity"
-    : "選取項目包含無法從 Claude Code 分享的技能";
-  $("#skill-unshare").title = !hasSelection || canUnshare
-    ? "收回已分享的技能"
-    : "請只選擇已分享的技能";
-}
-
-function setBusy(busy: boolean, label = ""): void {
-  running = busy;
-  feedback(operationStatus, busy ? `${label}，請稍候…` : "");
-  $(".app").setAttribute("aria-busy", String(busy));
-  syncControls();
-}
-
-async function cancelPreview(): Promise<boolean> {
-  if (running) return false;
-  const pending = pendingPreview;
-  if (!pending) return true;
-  setBusy(true, "取消預覽");
-  try {
-    const result = await api()!.cancel_preview(pending.token);
-    if (result.code !== 0) { presentResult(result); return false; }
-    pendingPreview = null;
-    confirmBox.hidden = true;
-    outputState.textContent = pending.kind === "push"
-      ? "已取消確認，尚未上傳；已收集的差異仍保留" : "已取消確認，尚未套用";
-    outputState.className = "output-state";
-    previewOpener?.focus();
-    return true;
-  } catch (error) { presentResult(errorResult(error)); return false; }
-  finally { setBusy(false); }
-}
-
-function viewFocusTarget(view: MainView): HTMLElement {
-  switch (view) {
-    case "apply": return $("#apply-title");
-    case "memory": return $("#memory-title");
-    case "output":
-      return outputTitle;
-    case "skills":
-      return $("#skills-title");
-    case "export":
-      return $("#export-title");
-    case "status":
-      return configured ? heroTitle : $(".setup-title");
-  }
-}
-
-function showView(view: MainView, focus = true): void {
-  if (view !== "output" && pendingPreview) {
-    void cancelPreview().then(cancelled => {
-      if (cancelled) { showView(view, false); previewOpener?.focus(); }
-    });
-    return;
-  }
-  if (currentView === "apply" && view !== "output" && view !== "apply") resetCategories();
-  closeActiveSelect();
-  currentView = view;
-  $("#hero").hidden = view !== "status" || !configured;
-  setupBox.hidden = view !== "status" || configured;
-  $("#output").hidden = view !== "output";
-  $("#package").hidden = view !== "skills";
-  $("#package-result").hidden = view !== "export";
-  $("#apply-panel").hidden = view !== "apply";
-  $("#memory-panel").hidden = view !== "memory";
-  $(".app").scrollTop = 0;
-  if (focus) {
-    const target = viewFocusTarget(view);
-    target.tabIndex = -1;
-    target.focus({ preventScroll: true });
-  }
-}
-
-function goBack(): void {
-  if (running) return;
-  if (pendingPreview) {
-    void closePreview();
-    return;
-  }
-  const previous = currentView;
-  if (previous === "status") return;
-
-  let target: MainView = "status";
-  if (previous === "output") {
-    target = outputReturn;
-  } else if (previous === "export") {
-    target = "skills";
-  }
-  showView(target);
-
-  let opener: HTMLElement | null = null;
-  switch (previous) {
-    case "memory":
-      opener = $("#memory-open");
-      break;
-    case "skills":
-      opener = $("#package-open");
-      break;
-    case "apply":
-      opener = $("[data-cmd=apply]");
-      break;
-    case "export":
-      opener = $("#skill-package");
-      break;
-  }
-  opener?.focus({ preventScroll: true });
-}
-
-function openOutput(): void {
-  if (currentView !== "output") outputReturn = currentView;
-  showView("output");
-}
-
-function presentResult(result: RunResult): void {
-  const details = [result.output || "（沒有輸出）"];
-  if ("error" in result && result.error) details.push(`錯誤：${result.error}`);
-  if ("backup_path" in result && result.backup_path) details.push(`備份位置：${result.backup_path}`);
-  if ("recovery_required" in result && result.recovery_required) details.push("需要人工復原，請保留備份並檢查上述錯誤。");
-  renderOutput(details.join("\n"));
-  outputState.textContent = result.code === 0 ? "完成" : "未完成";
-  outputState.className = `output-state ${result.code === 0 ? "is-ok" : "is-fail"}`;
-  outputBody.scrollTop = 0;
-}
-
-function errorResult(error: unknown): RunResult {
-  return { code: 1, output: `✗ 操作失敗：${String(error)}` };
-}
-
-async function perform<T extends RunResult>(
-  label: string,
-  task: () => Promise<T>,
-  reveal = true,
-): Promise<T | RunResult | null> {
-  if (running || pendingPreview || !api()) return null;
-  if (reveal) openOutput();
-  $("#preview-changes").hidden = true;
-  $("#pull-apply").hidden = true;
-  setBusy(true, label);
-  outputTitle.textContent = label;
-  outputState.textContent = "執行中…";
-  outputState.className = "output-state is-running";
-  showPlaceholder(`${label}，請稍候…`);
-  try {
-    const result = await task();
-    presentResult(result);
-    return result;
-  } catch (error) {
-    const result = errorResult(error);
-    presentResult(result);
-    return result;
-  } finally {
-    setBusy(false);
-  }
-}
-
-/** CLI 輸出依行首符號上色:✓ 綠、⚠ 黃、✗ 紅、═══ 標題。 */
-function localizeOutputLine(raw: string): string | null {
-  const line = raw.trimStart();
-  const indent = raw.slice(0, raw.length - line.length);
-  const content = line.trimEnd();
-
-  if (content === "Commit and push these changes? [y/N]") return null;
-  if (content === "═══ Push local configuration") {
-    return "═══ 準備保存這台電腦的設定";
-  }
-  if (content === "ℹ Configuration changes to commit:") {
-    return "ℹ 這次要保存的變更：";
-  }
-  if (content.startsWith("ℹ Commit message: ")) {
-    return `${indent}ℹ 保存紀錄名稱：${content.slice("ℹ Commit message: ".length)}`;
-  }
-  if (content === "✓ Local configuration committed and pushed") {
-    return "✓ 設定已保存並上傳";
-  }
-
-  return raw
-    .replace(
-      /\((\d+) files only in ai-config(?:; repo modified [^)]+)?\)/,
-      "（$1 個檔案只在已保存設定）",
-    )
-    .replace(
-      /\((\d+) files only in live; apply removes\)/,
-      "（$1 個檔案只在這台電腦；套用時會移除）",
-    )
-    .replace(
-      /(\d+) files? changed, (\d+) insertions?\(\+\), (\d+) deletions?\(-\)/,
-      "$1 個檔案有變更，新增 $2 行，移除 $3 行",
-    );
-}
-
-let lastOutput = "";
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // pywebview 某些平臺不開放 clipboard API,退回隱藏 textarea + execCommand
-    const focused = document.activeElement as HTMLElement | null;
-    copyFallback.value = text;
-    copyFallback.select();
-    try {
-      return document.execCommand("copy");
-    } catch {
-      return false;
-    } finally {
-      focused?.focus();
-    }
-  }
-}
-
-function renderOutput(text: string): void {
-  lastOutput = text;
-  outputCopy.hidden = text.trim() === "";
-  const lines = text.replace(/\n+$/, "").split("\n");
-  // 一次組好再插入:上千行的 diff 逐行 append 會反覆重排,
-  // 在 WebView2 / WebKit2GTK 上明顯卡頓
-  const fragment = document.createDocumentFragment();
-  for (const source of lines) {
-    const raw = localizeOutputLine(source);
-    if (raw === null) continue;
-    const span = document.createElement("span");
-    const line = raw.trimStart();
-    if (line.startsWith("✓")) span.className = "line-ok";
-    else if (line.startsWith("⚠")) span.className = "line-warn";
-    else if (line.startsWith("✗")) span.className = "line-err";
-    else if (line.startsWith("═══")) span.className = "line-head";
-    else if (line.startsWith("ℹ")) span.className = "line-dim";
-    else if (line.startsWith("+")) span.className = "line-add";
-    else if (/^-(?!\s)/.test(line)) span.className = "line-remove";
-    else if (/\|\s+\d+/.test(line)) span.className = "line-stat";
-    else if (/^\d+ files? changed/.test(line)) span.className = "line-head";
-    span.textContent = raw;
-    fragment.append(span, document.createTextNode("\n"));
-  }
-  outputBody.replaceChildren(fragment);
-}
-
-outputCopy.addEventListener("click", async () => {
-  const ok = await copyText(lastOutput);
-  outputCopy.textContent = ok ? "已複製！" : "複製失敗";
-  setTimeout(() => {
-    outputCopy.textContent = "複製輸出";
-  }, 2000);
-});
-
-function showPlaceholder(text: string): void {
-  lastOutput = "";
-  outputCopy.hidden = true;
-  const span = document.createElement("span");
-  span.className = "line-placeholder";
-  span.textContent = text;
-  outputBody.replaceChildren(span);
-}
-
-function installMessage(zips: string[]): string {
-  const paths = zips.map((z) => `- ${z}`).join("\n");
-  return [
-    "請幫我安裝以下 AI 技能，ZIP 檔在這些路徑：",
-    paths,
-    "",
-    "請使用這個 AI 工具目前支援的技能安裝方式處理。",
-    "如果可以直接匯入 ZIP，就直接匯入；否則解壓縮到正確的技能目錄。",
-    "完成後請列出已安裝的技能名稱，讓我確認。",
-  ].join("\n");
-}
-
-function firstErrorLine(output: string): string {
-  for (const raw of output.split("\n")) {
-    const line = raw.trim();
-    if (/^[✗⚠]/.test(line)) {
-      return line.replace(/^[✗⚠]\s*/, "");
-    }
-  }
-  return "請查看詳細結果。";
-}
 
 function setHero(mark: "ok" | "pending" | "fail" | "none", title: string, sub: string): void {
   heroMark.className = mark === "none" ? "hero-mark" : `hero-mark is-${mark}`;
@@ -563,9 +190,9 @@ function updateStatus(result: RunResult, tool: string): void {
 
 async function runCommand(cmd: AcgCommand): Promise<void> {
   const bridge = api();
-  if (!bridge || running || !configured || pendingPreview || restartRequired) return;
+  if (!bridge || state.running || !state.configured || state.pendingPreview || state.restartRequired) return;
   if (cmd === "apply") { openApply(); return; }
-  const tool = cmd === "pull" ? "all" : selectedTool;
+  const tool = cmd === "pull" ? "all" : state.selectedTool;
   if (cmd === "status") invalidateToolStates("檢查中…");
   setHero("none", `${COMMAND_LABELS[cmd]}中…`, `操作範圍：${toolLabel(tool)}`);
   const result = await perform(`${COMMAND_LABELS[cmd]}（${toolLabel(tool)}）`,
@@ -580,8 +207,8 @@ async function runCommand(cmd: AcgCommand): Promise<void> {
     await refreshMemory();
     if (result.code !== 0) offerLogin(result.output);
     if (result.code === 0) {
-      const status = await bridge.run("status", selectedTool);
-      updateStatus(status, selectedTool);
+      const status = await bridge.run("status", state.selectedTool);
+      updateStatus(status, state.selectedTool);
       $("#pull-apply").hidden = false;
       feedback(appNotice, "已下載整個資料庫。共用記憶已更新；設定與獨立技能可另行套用，取消套用不會回復下載。");
     }
@@ -589,21 +216,13 @@ async function runCommand(cmd: AcgCommand): Promise<void> {
   if (result.code !== 0) openOutput();
 }
 
-function armPreview(pending: PendingPreview, note: string): void {
-  pendingPreview = pending;
-  confirmBox.hidden = false;
-  $("#confirm-text").textContent = note;
-  confirmYes.textContent = `確認${pending.label}`;
-  outputState.textContent = "等你確認";
-  outputState.className = "output-state is-review";
-  syncControls();
-  $("#confirm-text").focus();
-}
 
-async function previewPush(scope: PushScope = selectedTool): Promise<void> {
+setRequestPush(() => previewPush("memory"));
+
+async function previewPush(scope: PushScope = state.selectedTool): Promise<void> {
   const bridge = api();
-  if (!bridge || !configured || restartRequired) return;
-  previewOpener = document.activeElement as HTMLElement | null;
+  if (!bridge || !state.configured || state.restartRequired) return;
+  state.previewOpener = document.activeElement as HTMLElement | null;
   const label = scope === "memory" ? "上傳記憶" : `上傳變更（${toolLabel(scope)}）`;
   const result = await perform(`${label}前預覽`, () => bridge.preview_push(scope));
   if (result && result.code !== 0) offerLogin(result.output);
@@ -629,8 +248,8 @@ async function previewPush(scope: PushScope = selectedTool): Promise<void> {
 
 for (const tab of toolTabs) {
   tab.addEventListener("click", () => {
-    if (running || pendingPreview) return;
-    selectedTool = (tab.dataset.tool ?? "all") as ToolScope;
+    if (state.running || state.pendingPreview) return;
+    state.selectedTool = (tab.dataset.tool ?? "all") as ToolScope;
     for (const candidate of toolTabs) {
       const selected = candidate === tab;
       candidate.classList.toggle("is-selected", selected);
@@ -664,9 +283,9 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-cmd]"))
 }
 confirmYes.addEventListener("click", async () => {
   const bridge = api();
-  const pending = pendingPreview;
-  if (!bridge || !pending || running || currentView !== "output") return;
-  pendingPreview = null;
+  const pending = state.pendingPreview;
+  if (!bridge || !pending || state.running || state.currentView !== "output") return;
+  state.pendingPreview = null;
   confirmBox.hidden = true;
   markStale(pending.label);
   const result = await perform(pending.label, () => pending.kind === "push"
@@ -679,7 +298,7 @@ confirmYes.addEventListener("click", async () => {
   }
   await refreshMemory();
   if (pending.kind !== "memory") {
-    try { updateStatus(await bridge.run("status", selectedTool), selectedTool); }
+    try { updateStatus(await bridge.run("status", state.selectedTool), state.selectedTool); }
     catch { invalidateToolStates(); }
   }
   if (pending.kind === "apply") await loadSkills();
@@ -687,13 +306,34 @@ confirmYes.addEventListener("click", async () => {
     renderOutput(`${lastOutput}\n已重新整理各入口狀態。規則安裝後請開新會話驗證；本次未提交或上傳。`);
   }
 });
-async function closePreview(): Promise<void> {
-  if (await cancelPreview()) {
-    showView(outputReturn, false);
-    previewOpener?.focus();
-  }
-}
 $("#confirm-no").addEventListener("click", () => { void closePreview(); });
+
+onSync(({ blocked, configured: ready, restartRequired: restart }) => {
+  const selected = state.skills.filter((skill) => state.selectedSkills.has(skill.name));
+  const unavailable = blocked || !ready || state.skillsLoading || restart;
+  const hasSelection = selected.length > 0;
+  const canShare = hasSelection && selected.every((skill) => skill.shareable);
+  const canUnshare = hasSelection && selected.every((skill) => skill.shared);
+
+  $<HTMLButtonElement>("#skill-pick").disabled = unavailable;
+  $<HTMLButtonElement>("#skill-add").disabled = unavailable || !state.skillDirectory;
+  $<HTMLButtonElement>("#skill-share").disabled = unavailable || !canShare;
+  $<HTMLButtonElement>("#skill-unshare").disabled = unavailable || !canUnshare;
+  $<HTMLButtonElement>("#skill-package").disabled = unavailable || !hasSelection;
+  $<HTMLButtonElement>("#skill-all").disabled = unavailable || visibleSkills().length === 0;
+  $<HTMLButtonElement>("#skill-none").disabled = unavailable || !hasSelection;
+  skillSearch.disabled = blocked || state.skillsLoading;
+  skillFilter.disabled = blocked || state.skillsLoading;
+  skillRetry.disabled = blocked || state.skillsLoading;
+
+  $("#skill-selection").textContent = `已選 ${selected.length} 項 · 顯示 ${visibleSkills().length} / ${state.skills.length} 項`;
+  $("#skill-share").title = !hasSelection || canShare
+    ? "分享給 Codex 與 Antigravity"
+    : "選取項目包含無法從 Claude Code 分享的技能";
+  $("#skill-unshare").title = !hasSelection || canUnshare
+    ? "收回已分享的技能"
+    : "請只選擇已分享的技能";
+});
 
 function matchesSkillFilter(skill: SkillEntry, filter: string): boolean {
   if (filter === "shared") return skill.shared;
@@ -703,7 +343,7 @@ function matchesSkillFilter(skill: SkillEntry, filter: string): boolean {
 
 function visibleSkills(): SkillEntry[] {
   const query = skillSearch.value.trim().toLocaleLowerCase();
-  return skills.filter(
+  return state.skills.filter(
     (skill) =>
       skill.name.toLocaleLowerCase().includes(query) &&
       matchesSkillFilter(skill, skillFilter.value),
@@ -716,7 +356,7 @@ function renderSkills(): void {
   if (!visible.length) {
     const message = document.createElement("p");
     message.className = "package-hint";
-    message.textContent = skills.length ? "沒有符合條件的技能，請調整搜尋或篩選。" : "目前沒有可用的技能。";
+    message.textContent = state.skills.length ? "沒有符合條件的技能，請調整搜尋或篩選。" : "目前沒有可用的技能。";
     skillList.append(message);
   }
   for (const skill of visible) {
@@ -725,10 +365,10 @@ function renderSkills(): void {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.value = skill.name;
-    checkbox.checked = selectedSkills.has(skill.name);
+    checkbox.checked = state.selectedSkills.has(skill.name);
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked) selectedSkills.add(skill.name);
-      else selectedSkills.delete(skill.name);
+      if (checkbox.checked) state.selectedSkills.add(skill.name);
+      else state.selectedSkills.delete(skill.name);
       syncControls();
     });
     const name = document.createElement("span");
@@ -748,26 +388,26 @@ function renderSkills(): void {
 
 async function loadSkills(): Promise<void> {
   const bridge = api();
-  if (!bridge || skillsLoading) return;
-  skillsLoading = true;
+  if (!bridge || state.skillsLoading) return;
+  state.skillsLoading = true;
   skillRetry.hidden = true;
   skillList.setAttribute("aria-busy", "true");
   skillList.textContent = "讀取技能中…";
   syncControls();
   try {
     const result = await bridge.list_skills();
-    skills = result.skills;
-    for (const name of selectedSkills) {
-      if (!skills.some(skill => skill.name === name)) selectedSkills.delete(name);
+    state.skills = result.skills;
+    for (const name of state.selectedSkills) {
+      if (!state.skills.some(skill => skill.name === name)) state.selectedSkills.delete(name);
     }
     renderSkills();
   } catch (error) {
-    skills = [];
-    selectedSkills.clear();
+    state.skills = [];
+    state.selectedSkills.clear();
     skillList.textContent = `無法讀取技能：${String(error)}`;
     skillRetry.hidden = false;
   } finally {
-    skillsLoading = false;
+    state.skillsLoading = false;
     skillList.setAttribute("aria-busy", "false");
     syncControls();
   }
@@ -775,19 +415,19 @@ async function loadSkills(): Promise<void> {
 skillSearch.addEventListener("input", renderSkills);
 skillFilter.addEventListener("change", renderSkills);
 $("#skill-all").addEventListener("click", () => {
-  for (const skill of visibleSkills()) selectedSkills.add(skill.name);
+  for (const skill of visibleSkills()) state.selectedSkills.add(skill.name);
   renderSkills();
 });
 $("#skill-none").addEventListener("click", () => {
-  selectedSkills.clear();
+  state.selectedSkills.clear();
   renderSkills();
 });
 skillRetry.addEventListener("click", () => { void loadSkills(); });
 
 $("#skill-pick").addEventListener("click", async () => {
   const bridge = api();
-  if (!bridge || running || pendingPreview || !configured || restartRequired) return;
-  skillDirectory = null;
+  if (!bridge || state.running || state.pendingPreview || !state.configured || state.restartRequired) return;
+  state.skillDirectory = null;
   skillSource.textContent = "尚未選擇資料夾";
   feedback(skillResult, "");
   setBusy(true, "選擇技能資料夾");
@@ -796,7 +436,7 @@ $("#skill-pick").addEventListener("click", async () => {
     if (selection.code !== 0) {
       feedback(skillResult, firstErrorLine(selection.output), true);
     } else if (!selection.cancelled && selection.path) {
-      skillDirectory = selection.path;
+      state.skillDirectory = selection.path;
       skillSource.textContent = selection.path;
     }
   } catch (error) {
@@ -808,13 +448,13 @@ $("#skill-pick").addEventListener("click", async () => {
 
 $("#skill-add").addEventListener("click", async () => {
   const bridge = api();
-  if (!bridge || running || pendingPreview || !configured || restartRequired || !skillDirectory) return;
-  const source = skillDirectory;
+  if (!bridge || state.running || state.pendingPreview || !state.configured || state.restartRequired || !state.skillDirectory) return;
+  const source = state.skillDirectory;
   feedback(skillResult, "");
   const result = await perform("安裝技能", async () => {
     const installed = await bridge.add_skill(source);
     if (installed.code === 0) {
-      skillDirectory = null;
+      state.skillDirectory = null;
       skillSource.textContent = "尚未選擇資料夾";
       markStale("技能已變更");
       await loadSkills();
@@ -835,8 +475,8 @@ const SKILL_ACTION_LABELS = {
 
 async function skillAction(action: "share" | "unshare" | "package"): Promise<void> {
   const bridge = api();
-  if (!bridge || running || pendingPreview || !selectedSkills.size) return;
-  const names = [...selectedSkills];
+  if (!bridge || state.running || state.pendingPreview || !state.selectedSkills.size) return;
+  const names = [...state.selectedSkills];
   const label = SKILL_ACTION_LABELS[action];
   packageMessage.value = "";
   $("#package-result").hidden = true;
@@ -882,9 +522,9 @@ async function configureHandoffReminder(enabled: boolean): Promise<void> {
   const bridge = api();
   const toggle = $<HTMLInputElement>("#handoff-reminder-toggle");
   const input = $<HTMLInputElement>("#handoff-reminder-threshold");
-  const previous = memoryInfo?.handoff_reminder?.enabled ?? false;
+  const previous = state.memoryInfo?.handoff_reminder?.enabled ?? false;
   const threshold = input.valueAsNumber;
-  if (!bridge || running || pendingPreview || !input.reportValidity()
+  if (!bridge || state.running || state.pendingPreview || !input.reportValidity()
       || !Number.isInteger(threshold)) {
     toggle.checked = previous;
     return;
@@ -908,8 +548,8 @@ $("#handoff-reminder-save").addEventListener("click", () => {
 async function configureRememberHost(host: RememberHost, enabled: boolean): Promise<void> {
   const bridge = api();
   const toggle = $<HTMLInputElement>(`#remember-${host}-toggle`);
-  const previous = memoryInfo?.remember_hosts?.[host]?.installed ?? false;
-  if (!bridge || running || pendingPreview) {
+  const previous = state.memoryInfo?.remember_hosts?.[host]?.installed ?? false;
+  if (!bridge || state.running || state.pendingPreview) {
     toggle.checked = previous;
     return;
   }
@@ -1017,12 +657,12 @@ pluginCopy.addEventListener("click", async () => {
 
 updateBtn.addEventListener("click", async () => {
   const bridge = api();
-  if (!bridge || running || pendingPreview || updateInstalled) return;
-  if (pendingUpdate) {
-    const result = await perform(`更新到 v${pendingUpdate}`, () => bridge.run_update());
+  if (!bridge || state.running || state.pendingPreview || state.updateInstalled) return;
+  if (state.pendingUpdate) {
+    const result = await perform(`更新到 v${state.pendingUpdate}`, () => bridge.run_update());
     if (result?.code === 0) {
-      updateInstalled = true;
-      pendingUpdate = null;
+      state.updateInstalled = true;
+      state.pendingUpdate = null;
       updateBtn.textContent = "已更新，重開視窗生效";
     }
   } else {
@@ -1033,9 +673,9 @@ updateBtn.addEventListener("click", async () => {
       if ("up_to_date" in result && result.up_to_date) {
         feedback(appNotice, "目前已是最新版本。");
       } else {
-        pendingUpdate = result.latest;
-        updateBtn.textContent = `更新到 v${pendingUpdate}`;
-        feedback(appNotice, `可更新到 v${pendingUpdate}，按上方更新按鈕開始安裝。`);
+        state.pendingUpdate = result.latest;
+        updateBtn.textContent = `更新到 v${state.pendingUpdate}`;
+        feedback(appNotice, `可更新到 v${state.pendingUpdate}，按上方更新按鈕開始安裝。`);
       }
     } else if (result) openOutput();
   }
@@ -1073,7 +713,7 @@ for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="set
 
 async function submitSetup(provider: string, panel: HTMLElement, switching = false): Promise<void> {
   const bridge = api();
-  if (!bridge || running || pendingPreview) return;
+  if (!bridge || state.running || state.pendingPreview) return;
   if (provider === "git" && !field(panel, "repo-url").value.trim()) {
     const input = field(panel, "repo-url");
     input.setAttribute("aria-invalid", "true");
@@ -1099,7 +739,7 @@ async function submitSetup(provider: string, panel: HTMLElement, switching = fal
   const result = await perform(switching ? "切換同步方式" : "首次設定", task);
   if (result?.code === 0) {
     // 後端工具路徑於啟動時載入；完成 setup 後不可使用舊程序繼續同步。
-    restartRequired = true;
+    state.restartRequired = true;
     feedback(appNotice, "設定完成。請關閉並重新開啟視窗，載入新的連線設定。");
     syncControls();
   }
@@ -1112,23 +752,23 @@ async function loadInfo(): Promise<void> {
   if (!bridge) return;
   try {
     const info = await bridge.get_info();
-    connected = true;
-    configured = info.configured;
+    state.connected = true;
+    state.configured = info.configured;
     versionEl.textContent = info.build_commit
       ? `v${info.version} · ${info.build_commit.slice(0, 8)}`
       : `v${info.version}`;
     versionEl.title = info.build_commit || "";
-    providerEl.textContent = configured ? providerLabel(info.provider) : "尚未設定同步方式";
-    providerEl.dataset.provider = configured ? info.provider : "none";
+    providerEl.textContent = state.configured ? providerLabel(info.provider) : "尚未設定同步方式";
+    providerEl.dataset.provider = state.configured ? info.provider : "none";
     repoEl.textContent = `本機設定位置：${info.repo}`;
     repoEl.title = info.repo;
     field(setupGitPanel, "data-dir").value = info.repo;
     field(setupGdrivePanel, "data-dir").value = info.repo;
     feedback(appNotice, info.config_error ? `設定檔有問題：${info.config_error}` : "", Boolean(info.config_error));
     $("#info-retry").hidden = true;
-    showView(currentView, false);
+    showView(state.currentView, false);
   } catch (error) {
-    connected = false;
+    state.connected = false;
     feedback(appNotice, `無法讀取連線資訊：${String(error)}`, true);
     $("#info-retry").hidden = false;
   } finally {
@@ -1291,16 +931,16 @@ githubCodeCopy.addEventListener("click", async () => {
 
 async function loadSettings(): Promise<void> {
   const bridge = api();
-  if (!bridge || settingsLoading) return;
-  settingsLoading = true;
-  settingsInfo = null;
+  if (!bridge || state.settingsLoading) return;
+  state.settingsLoading = true;
+  state.settingsInfo = null;
   settingsSwitch.hidden = true;
   settingsRetry.hidden = true;
   feedback(settingsFeedback, "讀取設定中…");
   syncControls();
   try {
     const info = await bridge.settings_info();
-    settingsInfo = info;
+    state.settingsInfo = info;
     for (const radio of settingsBox.querySelectorAll<HTMLInputElement>('input[name="settings-provider"]')) {
       radio.checked = radio.value === info.provider;
       const badge = radio.closest(".provider-choice")?.querySelector<HTMLElement>(".provider-choice-current");
@@ -1329,7 +969,7 @@ async function loadSettings(): Promise<void> {
     feedback(settingsFeedback, `無法讀取設定：${String(error)}`, true);
     settingsRetry.hidden = false;
   } finally {
-    settingsLoading = false;
+    state.settingsLoading = false;
     syncControls();
   }
 }
@@ -1343,12 +983,12 @@ function showSettings(show: boolean): void {
     if (child instanceof HTMLElement && child !== settingsBox) child.inert = show;
   }
   if (show) {
-    settingsOpener = document.activeElement as HTMLElement | null;
+    state.settingsOpener = document.activeElement as HTMLElement | null;
     settingsClose.focus();
     void loadSettings();
   } else {
-    settingsOpener?.focus();
-    settingsOpener = null;
+    state.settingsOpener?.focus();
+    state.settingsOpener = null;
   }
 }
 $("#settings-open").addEventListener("click", () => { showSettings(true); });
@@ -1395,7 +1035,7 @@ $("#settings-folder-open").addEventListener("click", () => {
 });
 $("#settings-relogin").addEventListener("click", async () => {
   const bridge = api();
-  if (!bridge || settingsInfo?.provider !== "gdrive") return;
+  if (!bridge || state.settingsInfo?.provider !== "gdrive") return;
   feedback(settingsFeedback, "請在瀏覽器完成 Google 登入。儲存位置保持不變。");
   const result = await perform("重新登入 Google", () => bridge.relogin_gdrive(), false);
   if (!result) return;
@@ -1405,7 +1045,7 @@ $("#settings-relogin").addEventListener("click", async () => {
 });
 
 function offerProviderSwitch(provider: string): void {
-  const info = settingsInfo;
+  const info = state.settingsInfo;
   if (!info) return;
   settingsSwitch.hidden = false;
   feedback(settingsFeedback, "");
@@ -1432,7 +1072,7 @@ function offerProviderSwitch(provider: string): void {
 for (const radio of settingsBox.querySelectorAll<HTMLInputElement>('input[name="settings-provider"]')) {
   radio.addEventListener("change", () => {
     if (!radio.checked) return;
-    if (radio.value === settingsInfo?.provider) settingsSwitch.hidden = true;
+    if (radio.value === state.settingsInfo?.provider) settingsSwitch.hidden = true;
     else offerProviderSwitch(radio.value);
   });
 }
@@ -1444,395 +1084,11 @@ $("#skill-output").addEventListener("click", openOutput);
 $("#output-back").addEventListener("click", goBack);
 $("#export-back").addEventListener("click", goBack);
 
-const MEMORY_LABELS: Record<MemoryAction, string> = {
-  enable: "啟用共用記憶", disable: "停用共用記憶",
-  adopt: "同步此專案日誌", release: "日誌改存本機",
-};
-
-function resetCategories(): void {
-  $<HTMLInputElement>("#category-settings").checked = false;
-  $<HTMLInputElement>("#category-skills").checked = false;
-  syncControls();
-}
-
-function applyCategory(): ApplyCategory | null {
-  const settings = $<HTMLInputElement>("#category-settings").checked;
-  const skills = $<HTMLInputElement>("#category-skills").checked;
-  return settings && skills ? "all" : settings ? "settings" : skills ? "skills" : null;
-}
-
-function openApply(): void {
-  if (running || pendingPreview) return;
-  resetCategories();
-  $("#apply-scope").textContent = `套用目標：${toolLabel()}`;
-  showView("apply");
-}
-
-function textRow(parent: HTMLElement, label: string, value: string): void {
-  const row = document.createElement("p");
-  const title = document.createElement("strong");
-  title.textContent = `${label}：`;
-  row.append(title, document.createTextNode(value));
-  parent.append(row);
-}
-
-function renderChanges(preview: ChangePreview): void {
-  const list = $("#preview-changes");
-  list.replaceChildren();
-  for (const change of preview.changes) {
-    const item = document.createElement("article");
-    item.className = "preview-change";
-    textRow(item, `${change.tool} / ${change.category}`, change.operation);
-    if (change.source) textRow(item, "來源", change.source);
-    textRow(item, "目的地", change.destination);
-    if (change.physical_target) textRow(item, "實體目標", change.physical_target);
-    if (change.shared) textRow(item, "共用影響", "此檔案亦由其他工具使用（包含 Claude）；請確認實體目標。");
-    if (change.reason) textRow(item, "原因", change.reason);
-    list.append(item);
-  }
-  for (const warning of preview.warnings) textRow(list, "注意", warning);
-  list.hidden = !list.childElementCount;
-}
-
-async function previewChange(kind: "apply" | "memory", action?: MemoryAction): Promise<void> {
-  const bridge = api();
-  if (!bridge || running || pendingPreview) return;
-  const category = applyCategory();
-  if (kind === "apply" && !category) return;
-  if (kind === "memory" && (!action || !memoryInfo?.actions[action].allowed)) return;
-  previewOpener = document.activeElement as HTMLElement | null;
-  const label = kind === "apply" ? `套用 ${toolLabel()} · ${category === "all" ? "設定、獨立技能" : category === "settings" ? "設定" : "獨立技能"}` : MEMORY_LABELS[action!];
-  const result = await perform(`${label}前預覽`, () => kind === "apply"
-    ? bridge.preview_apply(selectedTool, category!)
-    : action === "adopt" || action === "release"
-      ? bridge.preview_memory(action, projectToken!) : bridge.preview_memory(action!));
-  if (!result || !("changes" in result)) return;
-  const preview = result as ChangePreview;
-  renderChanges(preview);
-  if (preview.code !== 0) return;
-  if (!preview.needs_confirmation) { outputState.textContent = "已一致"; return; }
-  if (!preview.token) { presentResult({ code: 1, output: "未取得有效預覽，請重新預覽。" }); return; }
-  const count = preview.changes.filter(change => change.operation !== "skip").length;
-  armPreview({ kind, token: preview.token, scope: selectedTool, label: `${label}（${count} 項變更）` },
-    action === "disable" ? "將移除管理區塊與連結。記憶資料保留，既有日誌不搬回；此操作不提交。"
-    : action === "release" ? "日誌將改存本機，資料庫會留下 Git 刪除差異；後續上傳會影響其他機器的同步內容。本次不自動上傳。"
-    : "請檢閱檔案、連結目標與略過原因。取消不會套用；內容變動後必須重新預覽。");
-}
-
-function memoryHealthGroup(
-  kind: "warn" | "error",
-  heading: string,
-  hint: string,
-  paths: string[],
-): HTMLElement {
-  const group = document.createElement("div");
-  group.className = "memory-health-group";
-  group.dataset.kind = kind;
-  const title = document.createElement("p");
-  title.className = "memory-health-title";
-  title.textContent = `${heading}（${paths.length}）`;
-  const note = document.createElement("p");
-  note.className = "memory-health-hint";
-  note.textContent = hint;
-  const list = document.createElement("ul");
-  list.className = "memory-health-list";
-  for (const path of paths) {
-    const item = document.createElement("li");
-    item.textContent = path;
-    list.append(item);
-  }
-  group.append(title, note, list);
-  return group;
-}
-
-function handoffReminderHint(state: MemoryInfo["handoff_reminder"]): string {
-  if (!state) {
-    return "目前後端尚未提供交接提醒設定，請更新並重開視窗。";
-  }
-  if (state.reason) {
-    return `無法讀取提醒設定：${state.reason}`;
-  }
-  if (state.enabled && !state.installed) {
-    return "提醒尚未完整安裝，請按更新門檻重新安裝。";
-  }
-  if (state.enabled) {
-    return `Context 用量達 ${state.threshold}% 時提醒交接。`;
-  }
-  return "目前未啟用。預設門檻為 70%。";
-}
-
-function renderHandoffReminder(info: MemoryInfo): void {
-  const state = info.handoff_reminder;
-  $<HTMLInputElement>("#handoff-reminder-toggle").checked = state?.enabled ?? false;
-  $<HTMLInputElement>("#handoff-reminder-threshold").value = String(state?.threshold ?? 70);
-  $("#handoff-reminder-hint").textContent = handoffReminderHint(state);
-}
-
-function rememberHostHint(host: RememberHost, state: RememberHostState | undefined): string {
-  if (!state) return "";
-  if (!state.available) return host === "codex" ? "這台沒有安裝 Codex。" : "這台沒有安裝 Antigravity。";
-  if (state.detail) return state.detail;
-  if (!state.installed) {
-    return host === "codex"
-      ? "安裝 remember 到 Codex；裝完在 Codex 裡輸入 /hooks 看過一次就算信任。"
-      : "把 remember 的 hook 合併進 Antigravity 的共用 hooks.json。";
-  }
-  if (host === "codex" && state.trusted === false) {
-    return `已安裝 ${state.version}，但 hook 還沒信任：在 Codex 輸入 /hooks 看過一次。`;
-  }
-  return host === "codex"
-    ? `已安裝 ${state.version}，Codex 的工作會進專案日誌。`
-    : `已安裝（腳本 ${state.version}），Antigravity 的工作會進專案日誌。`;
-}
-
-function renderRememberHosts(info: MemoryInfo): void {
-  for (const host of REMEMBER_HOSTS) {
-    const state = info.remember_hosts?.[host];
-    $<HTMLInputElement>(`#remember-${host}-toggle`).checked = state?.installed ?? false;
-    $(`#remember-${host}-hint`).textContent = rememberHostHint(host, state);
-  }
-}
-
-function renderKeepalive(info: MemoryInfo): void {
-  const toggle = $<HTMLInputElement>("#keepalive-toggle");
-  const state = info.keepalive ?? {
-    installed: false, times: [], model: "", ccs: "", recent: [], tools: {},
-  };
-  toggle.checked = state.installed;
-  const hint = state.ccs
-    ? `claude-scheduler 的排程還在（${state.ccs}），兩個都開會一天點兩次火。`
-    : "在選定的時間送一句即丟的提示，讓五小時視窗的邊界避開工作時段。";
-  $("#keepalive-hint").textContent = hint;
-
-  const row = $("#keepalive-times-row");
-  row.hidden = !state.installed;
-  if (!state.installed) return;
-  $<HTMLInputElement>("#keepalive-times").value = (state.times ?? []).join(" ");
-  // 三個工具各有自己的視窗,狀態一起列出來,免得以為只有 Claude 有
-  const tools = state.tools ?? {};
-  const summary = Object.keys(tools).map((name) => {
-    const one = tools[name];
-    return one.installed ? `${name} ${one.times.join(" ")}` : `${name} 未啟用`;
-  });
-  const recent = state.recent ?? [];
-  $("#keepalive-recent").textContent = [
-    summary.length ? summary.join("；") : "",
-    recent.length ? `最近：${recent[recent.length - 1]}` : "還沒有執行紀錄。",
-  ].filter(Boolean).join(" · ");
-}
-
-function renderAutopush(info: MemoryInfo): void {
-  const toggle = $<HTMLInputElement>("#autopush-toggle");
-  const state = info.autopush ?? {
-    installed: false, last_push: "", reason: "", slot: "", host: "", others: [],
-  };
-  toggle.checked = state.installed;
-  const parts: string[] = ["沒有變更或十二小時內推過就跳過。"];
-  if (state.last_push) {
-    parts.push(`上次上傳：${state.last_push.slice(0, 16).replace("T", " ")}`);
-  }
-  $("#autopush-hint").textContent = parts.join(" ");
-
-  const row = $("#autopush-slot-row");
-  row.hidden = !state.installed;
-  if (!state.installed) return;
-  $<HTMLInputElement>("#autopush-slot").value = state.slot || "04:00";
-  const others = state.others ?? [];
-  $("#autopush-others").textContent = others.length
-    ? `其他機器：${others.map((o) => `${o.host} ${o.slot}`).join("、")}`
-    : "目前只有這台登記了時間。多台時會各自錯開，不必手動協調。";
-}
-
-function renderMemoryHealth(info: MemoryInfo): void {
-  const host = $("#memory-health");
-  host.replaceChildren();
-  // 舊版後端沒有這些欄位;讀不到就當成沒有問題,不要讓整頁停在這裡
-  const checks: Array<{ kind: "warn" | "error"; heading: string; hint: string; paths: string[] }> = [
-    {
-      kind: "error",
-      heading: "疑似含有憑證的筆記",
-      hint: "上傳會被擋下。請先移除內容；本機日誌不同步，不在此列。",
-      paths: info.secret_notes ?? [],
-    },
-    {
-      kind: "warn",
-      heading: "沒有寫進索引的筆記",
-      hint: "索引沒連到它們，下次開新對話不會被讀到。",
-      paths: info.index_unlisted ?? [],
-    },
-    {
-      kind: "warn",
-      heading: "指向不存在檔案的索引連結",
-      hint: "檔案已不在，連結留著只會浪費閱讀的人的時間。",
-      paths: info.index_dangling ?? [],
-    },
-  ];
-  const groups = checks
-    .filter((c) => c.paths.length > 0)
-    .map((c) => memoryHealthGroup(c.kind, c.heading, c.hint, c.paths));
-
-  host.hidden = groups.length === 0;
-  host.append(...groups);
-}
-
-async function refreshMemory(): Promise<void> {
-  const bridge = api();
-  if (!bridge || !configured || memoryLoading) return;
-  memoryLoading = true;
-  memoryInfo = null;
-  feedback($("#memory-feedback"), "讀取記憶狀態中…");
-  $("#memory-status").textContent = "讀取中…";
-  $("#memory-status").dataset.state = "loading";
-  $("#memory-summary").textContent = "正在確認共用位置與版本管理狀態…";
-  syncControls();
-  try {
-    const info = await bridge.memory_info(projectToken ?? undefined);
-    if (info.code !== 0) {
-      feedback($("#memory-feedback"), `${info.error ?? ""} ${info.output}`, true);
-      return;
-    }
-    memoryInfo = info;
-    feedback($("#memory-feedback"), "");
-    const status = $("#memory-status");
-    let statusText: string;
-    if (info.shared_status === "ok") {
-      statusText = "共用位置已連結";
-    } else if (info.shared_status === "conflict") {
-      statusText = "共用位置需處理";
-    } else {
-      statusText = "尚未啟用連結";
-    }
-    status.textContent = statusText;
-    status.dataset.state = info.shared_status === "ok" ? "success" : "warning";
-
-    let summaryText: string;
-    if (!info.tracked) {
-      summaryText = "記憶尚未納入 Git；上傳前可先預覽將納管的檔案。";
-    } else if (info.git_status === "clean") {
-      summaryText = "記憶已納入 Git，目前沒有本機檔案變更。";
-    } else {
-      summaryText = `記憶已納入 Git，有 ${info.changed_paths.length} 個檔案變更，準備好後可預覽上傳。`;
-    }
-    $("#memory-summary").textContent = summaryText;
-    renderMemoryHealth(info);
-    renderAutopush(info);
-    renderKeepalive(info);
-    renderHandoffReminder(info);
-  renderRememberHosts(info);
-    const data = $("#memory-data");
-    data.replaceChildren();
-    textRow(data, "資料根", info.data_root);
-    textRow(data, "共用位置", info.shared_path);
-    textRow(data, "目錄狀態", info.shared_status);
-    textRow(data, "Git", `${info.git_status} · ${info.tracked ? "已納管" : "未納管"}`);
-    for (const path of info.changed_paths) textRow(data, "變更", path);
-    const entries = $("#memory-entries");
-    entries.replaceChildren();
-    for (const entry of info.entries) {
-      const item = document.createElement("div");
-      item.className = "memory-entry";
-      item.dataset.state = entry.status;
-      const heading = document.createElement("strong");
-      heading.textContent = toolLabel(entry.tool);
-      const state = document.createElement("span");
-      state.className = "memory-entry-state";
-      let stateLabel: string;
-      if (entry.status === "installed") {
-        stateLabel = "規則已安裝，請開新會話驗證";
-      } else if (entry.status === "blocked") {
-        stateLabel = "入口受阻";
-      } else {
-        stateLabel = "規則未安裝";
-      }
-      state.textContent = stateLabel;
-      item.append(heading, state);
-      textRow(item, "CLI", entry.cli_installed ? "已安裝" : "未安裝");
-      const details = document.createElement("details");
-      details.className = "memory-details";
-      const summary = document.createElement("summary");
-      summary.textContent = "規則位置";
-      details.append(summary);
-      textRow(details, "", entry.path);
-      item.append(details);
-      if (entry.reason) textRow(item, "原因", entry.reason);
-      entries.append(item);
-    }
-    const project = $("#memory-project");
-    project.replaceChildren();
-    if (info.project) {
-      textRow(project, "本機專案", info.project.root);
-      textRow(project, "專案鍵值", `${info.project.key}${info.project.stable ? "" : "（無遠端，鍵值可能因重新命名而改變）"}`);
-      textRow(project, "專案記憶", info.project.memory_path);
-      textRow(project, "日誌", `${info.project.journal_path} · ${info.project.journal_status}`);
-      textRow(project, "remember", info.project.remember_installed ? "已安裝" : "未安裝，無法同步新日誌；已同步日誌仍可改存本機");
-    } else project.textContent = "尚未選擇專案。";
-    for (const [id, actions] of [
-      ["#memory-global-reasons", ["enable", "disable", "push"]],
-      ["#memory-project-reasons", ["adopt", "release"]],
-    ] as const) {
-      $(id).textContent = actions.map(action => info.actions[action].reason).filter(Boolean).join("；");
-    }
-    const locations = $("#memory-locations");
-    locations.replaceChildren();
-    for (const location of info.locations) {
-      const row = document.createElement("div");
-      row.className = "memory-location";
-      const button = document.createElement("button");
-      button.className = "btn btn-ghost";
-      button.textContent = `開啟${location.label}`;
-      button.addEventListener("click", async () => {
-        const result = await perform(`開啟${location.label}`, () => bridge.open_memory_location(location.token), false);
-        if (result) feedback($("#memory-feedback"), result.output, result.code !== 0);
-      });
-      const path = document.createElement("span");
-      path.textContent = location.path;
-      row.append(button, path);
-      locations.append(row);
-    }
-  } catch (error) { feedback($("#memory-feedback"), `無法讀取記憶狀態：${String(error)}`, true); }
-  finally {
-    memoryLoading = false;
-    if (!memoryInfo) {
-      $("#memory-status").textContent = "讀取失敗";
-      $("#memory-status").dataset.state = "error";
-      $("#memory-summary").textContent = "目前無法確認記憶狀態，請重新整理。";
-    }
-    syncControls();
-  }
-}
-
-$("#apply-back").addEventListener("click", goBack);
-$("#pull-apply").addEventListener("click", openApply);
-$("#apply-preview").addEventListener("click", () => { void previewChange("apply"); });
-for (const id of ["#category-settings", "#category-skills"]) {
-  $(id).addEventListener("change", syncControls);
-}
-$("#memory-open").addEventListener("click", () => { showView("memory"); void refreshMemory(); });
-$("#memory-back").addEventListener("click", goBack);
-$("#memory-refresh").addEventListener("click", () => { void refreshMemory(); });
-$("#memory-push").addEventListener("click", () => { void previewPush("memory"); });
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-memory-action]")) {
-  button.addEventListener("click", () => { void previewChange("memory", button.dataset.memoryAction as MemoryAction); });
-}
-$("#memory-select-project").addEventListener("click", async () => {
-  const bridge = api();
-  if (!bridge || running || pendingPreview) return;
-  setBusy(true, "選擇專案");
-  try {
-    const selection = await bridge.select_memory_project();
-    if (selection.code !== 0) feedback($("#memory-feedback"), selection.output, true);
-    else if (!selection.cancelled && selection.project_token) {
-      projectToken = selection.project_token;
-      await refreshMemory();
-    }
-  } catch (error) { feedback($("#memory-feedback"), String(error), true); }
-  finally { setBusy(false); }
-});
 
 async function boot(): Promise<void> {
   syncControls();
   await loadInfo();
-  if (connected && configured) await loadSkills();
+  if (state.connected && state.configured) await loadSkills();
 }
 initializeSelects();
 for (const button of document.querySelectorAll<HTMLElement>("[id$='-back'], #settings-close, #confirm-no")) {
