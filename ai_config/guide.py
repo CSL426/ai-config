@@ -300,9 +300,15 @@ The remember plugin's per-project journal (`.remember/`) is Claude-only and
 never leaves the machine. `enable` points the plugin at
 `~/.claude/shared-memory/journal/{{slug}}` (local, gitignored) and the block
 tells every tool to read the journal's `recent.md`. Run `{entrypoint} memory
-adopt` inside a project to move that project's journal to
-`projects/<owner--repo>/journal/` so it syncs with the notebook; `release`
-undoes it. Local hooks restore the project's `.remember` entry after migration,
+adopt` inside a project, or `adopt <path>` from anywhere, to move that
+project's journal to `projects/<owner--repo>/journal/` so it syncs with the
+notebook; `release` undoes it and takes a path too. `adopt --scan [dir]`
+lists every project below a directory (the home directory by default) whose
+journal is still local and adopts the lot on one confirmation, since
+visiting them one at a time is the reason most stay unsynced. The scan
+leaves the home directory and the data repository out: neither is a
+project, and adopting the repository would nest the notebook in its own
+journal. Local hooks restore the project's `.remember` entry after migration,
 so the journal remains visible inside the project without enabling Git sync.
 They only replace a missing entry or a verified migration notice; other content
 is preserved. Disable removes these hooks and keeps existing entries and data.
