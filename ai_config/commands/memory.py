@@ -230,9 +230,8 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
         age = hand.age_in_days(note.created)
         # 一條線放了幾天,就是該不該接它的理由;當天開的不用說
         waited = f"  ({age} 天前開的)" if age else ""
-        first_line = note.body.splitlines()[0] if note.body.splitlines() else ""
         print(f"  {mark} {note.name}{held}{waited}")
-        print(f"    {first_line[:70]}")
+        print(f"    {hand.summary(note.body)}")
     return 0
 
 

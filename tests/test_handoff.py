@@ -274,3 +274,46 @@ def test_a_note_with_windows_line_endings_still_loads(notebook: Path) -> None:
     assert [n.thread for n in notes] == ["跨平台線"]
     assert notes[0].state == handoff.OPEN
     assert notes[0].body == "內容"
+
+
+def test_free_text_is_still_accepted(notebook: Path) -> None:
+    """The template is a suggestion; seven notes predate it."""
+    note = handoff.write("舊式的", "就是一段話,沒有標題")
+
+    assert note.body == "就是一段話,沒有標題"
+
+
+def test_the_list_surfaces_what_is_left(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Next is the line a session picking this up needs first."""
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("有格式的", "## Goal\n做完 X\n\n## Next\n- 補上聲紋註冊\n- 調 bitrate")
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    listed = capsys.readouterr().out
+    assert "補上聲紋註冊" in listed
+
+
+def test_a_note_without_headings_lists_as_before(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("沒標題的", "第一行就是摘要\n後面還有別的")
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    assert "第一行就是摘要" in capsys.readouterr().out

@@ -209,7 +209,10 @@ thread get to". A handoff is per-thread: `{entrypoint} memory handoff
 write "<thread>" "<where it got to, what is next>"` before a session
 ends, `handoff list [path]` to see what is waiting (a path reads another
 project's threads), `handoff claim <thread>`
-to take one over, `handoff done <thread>` when it is finished. Claiming
+to take one over, `handoff done <thread>` when it is finished. A note is
+free text, but `## Goal / State / Verified / Refuted / Unknowns / Next`
+headings let `list` show what is still open instead of the first line,
+and keep what was checked apart from what was guessed. Claiming
 records the session id, so a second session is told who holds it rather
 than silently taking it, and a finished thread is refused rather than
 resurrected. A finished thread stays on disk as a record but leaves the
