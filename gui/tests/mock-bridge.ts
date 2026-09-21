@@ -65,10 +65,12 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
       set_handoff_reminder: success,
       set_remember_host: success,
       set_autopush_slot: success,
+      set_keepalive: success,
       memory_info: {
         ...success, data_root: "/tmp/data/memory", shared_path: "/tmp/shared-memory",
         shared_status: "ok", tracked: true, git_status: "dirty", changed_paths: ["memory/MEMORY.md"],
         index_unlisted: [], index_dangling: [], secret_notes: [],
+        keepalive: { installed: false, times: [], model: "", ccs: "", recent: [] },
         handoff_reminder: { enabled: false, threshold: 70, installed: false },
         remember_hosts: {
           codex: { available: true, installed: false, version: "", trusted: null, detail: "" },

@@ -14,14 +14,14 @@ test("設定裡有外掛安裝指令,可複製", async ({ page }) => {
   await expect(page.locator("#plugin-copy")).toHaveText(/已複製|請按複製快捷鍵/);
 });
 
-test("八個斜線指令都列在說明裡", async ({ page }) => {
+test("斜線指令都列在說明裡", async ({ page }) => {
   await boot(page);
   await page.locator("#settings-open").click();
   await expect(page.locator("#settings-account")).toHaveText("已授權");
 
   const hint = page.locator(".settings-group", { has: page.locator("#plugin-install") })
     .locator(".package-hint");
-  for (const name of ["status", "sync", "save", "share", "memory", "handoff", "handoffs", "pickup"]) {
+  for (const name of ["status", "sync", "save", "share", "memory", "handoff", "handoffs", "pickup", "keepalive"]) {
     await expect(hint).toContainText(`/acg:${name}`);
   }
 });

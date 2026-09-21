@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ai-config — 讓 AI 設定跟著你走</title>
-<meta name="description" content="用簡單圖解認識 ai-config：把熟悉的 AI 規則與技能安全帶到不同裝置。">
+<meta name="description" content="用簡單圖解認識 ai-config：把 AI 規則、技能、共用記憶與工作交接帶到不同裝置。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;700&family=Plus+Jakarta+Sans:wght@400;700&display=swap" rel="stylesheet">
@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="./slides.css">
 </head>
 <body>
-<!-- Hallmark · Narrative Workflow deck · Hum · ELI5 hand-built SVG story -->
+<!-- Hallmark · Narrative Workflow deck · Hum · ELI5 hand-built SVG story · pre-emit critique: P5 H4 E4 S5 R5 V4 -->
 <main class="deck" aria-label="ai-config 圖解簡報">
   <section class="slide">
     <div class="story-grid hero">
@@ -83,7 +83,7 @@
       <div class="story-copy">
         <h2>該帶走的帶走，該留家的<span class="highlight">留在家</span></h2>
         <div class="carry-list">
-          <div class="carry-group"><strong>跟你走</strong><p>規則、技能、共用設定</p></div>
+          <div class="carry-group"><strong>跟你走</strong><p>規則、技能、共用設定與記憶</p></div>
           <div class="carry-group"><strong>留在這台</strong><p>登入、裝置權限、本機選擇</p></div>
         </div>
       </div>
@@ -114,7 +114,8 @@
   <section class="slide">
     <div class="workflow">
       <h2>平常只是一個小循環</h2>
-      <p class="lede">四個動作，各自只做一件事。</p>
+      <p class="lede">設定與技能：先拉回，再選擇套用。</p>
+      <p class="tiny-note">已啟用的共用記憶在 pull 成功後立即更新，不需 apply。</p>
       <div class="workflow-line" aria-label="ai-config 日常同步四步驟">
         <div class="workflow-step"><strong>拉回</strong><code>acg pull</code></div><span class="workflow-arrow" aria-hidden="true">›</span>
         <div class="workflow-step"><strong>看差異</strong><code>acg status</code></div><span class="workflow-arrow" aria-hidden="true">›</span>
@@ -127,8 +128,8 @@
   <section class="slide">
     <div class="story-grid reverse">
       <div class="story-copy">
-        <h2>它不會趁你沒看時<span class="accent">亂搬東西</span></h2>
-        <div class="guard-copy"><span>1</span><p><strong>先讓你看。</strong>上傳前先顯示這次會保存什麼。</p><span>2</span><p><strong>內容變了就停。</strong>確認前若又有更新，會請你重看。</p><span>3</span><p><strong>套用前先備份。</strong>發現衝突時，不會假裝一切正常。</p></div>
+        <h2>手動上傳，先看過<span class="accent">再確認</span></h2>
+        <div class="guard-copy"><span>1</span><p><strong>先讓你看。</strong>手動上傳前顯示這次會保存什麼。</p><span>2</span><p><strong>內容變了就停。</strong>確認前若又有更新，會請你重看。</p><span>3</span><p><strong>套用前先備份。</strong>發現衝突時，不會假裝一切正常。</p></div>
       </div>
       <figure class="picture">
         <svg viewBox="0 0 700 410" role="img" aria-labelledby="guard-title guard-desc">
@@ -138,7 +139,7 @@
           <g><rect class="svg-sky-soft" x="300" y="207" width="170" height="82" rx="14"/><rect class="svg-line" x="300" y="207" width="170" height="82" rx="14"/><text class="svg-label" x="385" y="241" text-anchor="middle">看過了嗎？</text><text class="svg-small" x="385" y="267" text-anchor="middle">預覽 → 確認</text></g>
           <g><circle class="svg-mint" cx="585" cy="259" r="55"/><circle class="svg-line" cx="585" cy="259" r="55"/><path class="svg-line" d="m557 259 19 20 38-47"/><text class="svg-label" x="585" y="350" text-anchor="middle">安全通過</text></g>
         </svg>
-        <figcaption>真正會改動或上傳前，決定權還是在你手上。</figcaption>
+        <figcaption>自動記憶推送不逐次確認；後面會說明它的範圍。</figcaption>
       </figure>
     </div>
   </section>
@@ -167,18 +168,91 @@
   <section class="slide">
     <div class="story-grid reverse">
       <div class="story-copy">
+        <h2>讓 AI 共讀<span class="accent">同一本筆記</span></h2>
+        <p class="lede">全域記住你的偏好，專案層留下已確認的決定。</p>
+        <p><code>acg memory enable</code></p>
+        <p class="tiny-note">啟用後請開新會話驗證。pull 成功會立即更新共用筆記；不代表既有會話已重新讀取。</p>
+      </div>
+      <figure class="picture">
+        <svg viewBox="0 0 700 410" role="img" aria-labelledby="memory-title memory-desc">
+          <title id="memory-title">三個工具共讀全域與專案筆記</title><desc id="memory-desc">Claude Code、Codex 和 Antigravity 共用同一份記憶，分為全域偏好與專案決定。</desc>
+          <path class="svg-route" d="M165 120V188M350 120V188M535 120V188"/>
+          <g><rect class="svg-sky-soft" x="75" y="45" width="180" height="75" rx="14"/><text class="svg-label" x="165" y="88" text-anchor="middle">Claude Code</text></g>
+          <g><rect class="svg-sky-soft" x="270" y="45" width="160" height="75" rx="14"/><text class="svg-label" x="350" y="88" text-anchor="middle">Codex</text></g>
+          <g><rect class="svg-sky-soft" x="445" y="45" width="180" height="75" rx="14"/><text class="svg-label" x="535" y="88" text-anchor="middle">Antigravity</text></g>
+          <rect class="svg-pear-soft" x="95" y="188" width="510" height="165" rx="20"/><rect class="svg-line" x="95" y="188" width="510" height="165" rx="20"/><path class="svg-soft-line" d="M350 205v130"/>
+          <text class="svg-label" x="220" y="251" text-anchor="middle">全域偏好</text><text class="svg-small" x="220" y="290" text-anchor="middle">跨專案都適用</text><text class="svg-label" x="475" y="251" text-anchor="middle">專案決定</text><text class="svg-small" x="475" y="290" text-anchor="middle">跟著同一個專案走</text>
+        </svg>
+        <figcaption>你說「記住」才寫入已確認知識；日誌是否同步，可另外選擇。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="story-grid">
+      <div class="story-copy">
+        <h2>換個會話，<span class="highlight">接上同一條線</span></h2>
+        <p class="lede">handoff 留下做到哪裡、卡在哪裡，以及下一步。</p>
+        <p class="tiny-note">日誌記錄專案發生過什麼；交接則是一條工作線一份。先列出待接工作，選定後才認領。</p>
+        <p class="tiny-note">Claude Code 可另開 context 提醒；提醒本身不會自動寫交接。</p>
+      </div>
+      <div class="picture callouts" aria-label="工作線交接指令">
+        <div class="callout"><strong>1 · 留進度</strong><p><code>acg memory handoff write "工作線" "進度與下一步"</code></p></div>
+        <div class="callout"><strong>2 · 列出，再認領</strong><p><code>acg memory handoff list</code><br><code>acg memory handoff claim "工作線"</code></p></div>
+        <div class="callout"><strong>3 · 做完再結案</strong><p><code>acg memory handoff done "工作線"</code></p></div>
+        <p class="tiny-note">已被其他會話持有時會告知持有者，不會直接搶走。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="story-grid reverse">
+      <div class="story-copy">
+        <h2>記憶累積後，<span class="accent">自動帶回去</span></h2>
+        <p class="lede">autopush 讓共用筆記定期保存，不必每天記得上傳。</p>
+        <p><code>acg memory autopush enable 4</code></p>
+        <p class="tiny-note">安排每日凌晨 4 點時段執行；用 status 查看、disable 移除排程。</p>
+      </div>
+      <div class="picture callouts" aria-label="自動記憶推送的範圍與條件">
+        <div class="callout"><strong>自動推送，不逐次確認</strong><p>與手動上傳不同，背景流程會自動提交並推送記憶，仍保留憑證掃描與推送守衛。</p></div>
+        <div class="callout"><strong>有變更，也要隔一段時間</strong><p>記憶沒有變更，或距離上次推送未滿 12 小時，就略過推送。</p></div>
+        <div class="callout"><strong>沒有排程，也可能自動保存</strong><p>acg 指令結束後可機會式推送；停用排程不等於關閉此路徑。</p></div>
+        <p class="tiny-note">以 <code>AI_CONFIG_NO_AUTOPUSH=1</code> 抑制指令結束後的機會式推送。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="story-grid">
+      <div class="story-copy">
+        <h2>選個時間，讓 Claude<span class="highlight">先打聲招呼</span></h2>
+        <p class="lede">keepalive 定時送出一句短提示，協助安排用量視窗的起點。</p>
+        <p class="tiny-note">預設停用，只用這台已登入的 Claude。時間、模型與執行日誌留在本機，各台分別設定。</p>
+      </div>
+      <div class="picture callouts" aria-label="keepalive 管理指令">
+        <div class="callout"><strong>設定這台的時間</strong><p><code>acg keepalive enable 07:00 12:05</code></p></div>
+        <div class="callout"><strong>查狀態，或立即送一次</strong><p><code>acg keepalive status</code><br><code>acg keepalive send</code></p></div>
+        <div class="callout"><strong>不需要時停用</strong><p><code>acg keepalive disable</code></p></div>
+        <p class="tiny-note">這是定時呼叫 Claude 的功能，不會同步設定，也不執行你的工作任務。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="story-grid reverse">
+      <div class="story-copy">
         <h2>不會指令，就把目的告訴 AI</h2>
         <p class="lede">你不用記得每個按鈕叫什麼。</p>
-        <div class="ai-steps" aria-label="AI 操作三步驟"><span>先讀 acg 指南</span><span>檢查狀況</span><span>改動前問你</span></div>
+        <div class="ai-steps" aria-label="AI 操作三步驟"><span>先讀 acg 指南</span><span>檢查狀況</span><span>確認操作範圍</span></div>
       </div>
       <div class="picture">
         <p class="speech">「幫我把這台的 AI 設定同步好。」</p>
         <svg viewBox="0 0 700 300" role="img" aria-labelledby="ai-title ai-desc">
-          <title id="ai-title">AI 按照指南協助操作</title><desc id="ai-desc">AI 依序閱讀指南、檢查狀態，最後在改動前詢問使用者。</desc>
+          <title id="ai-title">AI 按照指南協助操作</title><desc id="ai-desc">AI 依序閱讀指南、檢查狀態，最後依照已確認的範圍操作。</desc>
           <path class="svg-route" d="M105 174H595"/>
           <g><circle class="svg-pear" cx="105" cy="174" r="61"/><circle class="svg-line" cx="105" cy="174" r="61"/><text class="svg-label" x="105" y="168" text-anchor="middle">讀指南</text><text class="svg-code" x="105" y="192" text-anchor="middle">acg skill</text></g>
           <g><circle class="svg-sky-soft" cx="350" cy="174" r="61"/><circle class="svg-line" cx="350" cy="174" r="61"/><text class="svg-label" x="350" y="168" text-anchor="middle">先看看</text><text class="svg-code" x="350" y="192" text-anchor="middle">acg status</text></g>
-          <g><circle class="svg-mint" cx="595" cy="174" r="61"/><circle class="svg-line" cx="595" cy="174" r="61"/><text class="svg-label" x="595" y="168" text-anchor="middle">再問你</text><text class="svg-small" x="595" y="192" text-anchor="middle">才真的動</text></g>
+          <g><circle class="svg-mint" cx="595" cy="174" r="61"/><circle class="svg-line" cx="595" cy="174" r="61"/><text class="svg-label" x="595" y="168" text-anchor="middle">確認範圍</text><text class="svg-small" x="595" y="192" text-anchor="middle">依授權操作</text></g>
         </svg>
       </div>
     </div>
@@ -189,12 +263,12 @@
       <div class="story-copy callouts">
         <h2>也有 Desktop 版，不必打指令</h2>
         <div class="callout"><strong>狀況一眼看見</strong><p>同步方式、登入與變更都在同一個畫面。</p></div>
-        <div class="callout"><strong>Drive 位置自己選</strong><p>設定時可填資料夾路徑，之後也能查看連結。</p></div>
-        <div class="callout"><strong>看過才上傳</strong><p>預覽沒問題，再按下確認。</p></div>
+        <div class="callout"><strong>記憶與工作交接</strong><p>管理共用記憶、設定交接提醒，調整自動推送與 keepalive。</p></div>
+        <div class="callout"><strong>手動上傳先預覽</strong><p>預覽沒問題，再按下確認。</p></div>
       </div>
       <figure class="picture">
         <img class="gui-shot" src="./gui-desktop.png" width="880" height="680" alt="acg Desktop 實際介面，顯示 Google Drive 同步狀況、變更摘要與上傳前預覽">
-        <figcaption>目前的 Desktop 管理畫面；CLI 與 Desktop 走同一套安全流程。</figcaption>
+        <figcaption>Desktop 同步畫面示意；記憶與排程管理位於其他分頁。</figcaption>
       </figure>
     </div>
   </section>
@@ -209,7 +283,7 @@
 <footer class="deck-chrome">
   <span class="brand">ai-config · acg</span>
   <nav class="slide-strip" id="slide-strip" aria-label="投影片進度"></nav>
-  <span class="counter" id="counter">01 ∕ 11</span>
+  <span class="counter" id="counter">01 ∕ 15</span>
 </footer>
 
 <script>

@@ -15,14 +15,21 @@ from .locking import apply_lock
 
 def _keepalive_state() -> dict:
     """Never let the scheduler take down the whole memory page."""
-    blank = {"installed": False, "times": [], "model": "", "ccs": "", "recent": []}
+    blank = {"installed": False, "times": [], "model": "", "ccs": "",
+             "recent": [], "tools": {}}
     try:
         from . import keepalive
 
-        settings = keepalive.load()
-        return {"installed": keepalive.installed(), "times": list(settings.times),
-                "model": settings.model, "ccs": keepalive.existing_ccs(),
-                "recent": keepalive.last_runs()}
+        tools = {}
+        for name in keepalive.TOOLS:
+            settings = keepalive.load(name)
+            tools[name] = {"installed": keepalive.installed(name),
+                           "times": list(settings.times),
+                           "recent": keepalive.last_runs(tool=name)}
+        first = tools[keepalive.DEFAULT_TOOL]
+        return {"installed": first["installed"], "times": first["times"],
+                "model": keepalive.load().model, "ccs": keepalive.existing_ccs(),
+                "recent": first["recent"], "tools": tools}
     except (ImportError, OSError, RuntimeError, ValueError):
         return blank
 
@@ -347,7 +354,7 @@ class ManagementApi:
         finally:
             self._lock.release()
 
-    def set_keepalive(self, wanted, times=None):
+    def set_keepalive(self, wanted, times=None, tool=None):
         """Schedule or unschedule the calls that anchor the usage window."""
         if not isinstance(wanted, bool):
             return outcome(1, "參數不正確", "INVALID_ARGUMENT")
@@ -356,11 +363,12 @@ class ManagementApi:
         try:
             from . import keepalive
 
+            which = tool if isinstance(tool, str) and tool else keepalive.DEFAULT_TOOL
             if not wanted:
-                code, lines = keepalive.disable()
+                code, lines = keepalive.disable(which)
             else:
                 chosen = tuple(times) if isinstance(times, list) else ()
-                code, lines = keepalive.enable(chosen)
+                code, lines = keepalive.enable(chosen, tool=which)
             message = "\n".join(lines)
             if code != 0:
                 return {**outcome(code, message, "KEEPALIVE_REFUSED"),

@@ -943,6 +943,9 @@ $<HTMLInputElement>("#keepalive-toggle").addEventListener("change", async (event
     }
     feedback($("#memory-feedback"), wanted ? "已排定錨定用量視窗" : "已取消錨定");
     await refreshMemory();
+  } catch (error) {
+    toggle.checked = !wanted;
+    feedback($("#memory-feedback"), `無法更新排程：${String(error)}`, true);
   } finally {
     toggle.disabled = false;
   }
@@ -958,6 +961,8 @@ $<HTMLButtonElement>("#keepalive-save").addEventListener("click", async () => {
     const result = await bridge.set_keepalive(true, raw.split(/[\s,]+/).filter(Boolean));
     feedback($("#memory-feedback"), result.output, result.code !== 0);
     if (result.code === 0) await refreshMemory();
+  } catch (error) {
+    feedback($("#memory-feedback"), `無法更新排程：${String(error)}`, true);
   } finally {
     button.disabled = false;
   }
@@ -1591,7 +1596,7 @@ function renderRememberHosts(info: MemoryInfo): void {
 function renderKeepalive(info: MemoryInfo): void {
   const toggle = $<HTMLInputElement>("#keepalive-toggle");
   const state = info.keepalive ?? {
-    installed: false, times: [], model: "", ccs: "", recent: [],
+    installed: false, times: [], model: "", ccs: "", recent: [], tools: {},
   };
   toggle.checked = state.installed;
   const hint = state.ccs
@@ -1603,10 +1608,17 @@ function renderKeepalive(info: MemoryInfo): void {
   row.hidden = !state.installed;
   if (!state.installed) return;
   $<HTMLInputElement>("#keepalive-times").value = (state.times ?? []).join(" ");
+  // 三個工具各有自己的視窗,狀態一起列出來,免得以為只有 Claude 有
+  const tools = state.tools ?? {};
+  const summary = Object.keys(tools).map((name) => {
+    const one = tools[name];
+    return one.installed ? `${name} ${one.times.join(" ")}` : `${name} 未啟用`;
+  });
   const recent = state.recent ?? [];
-  $("#keepalive-recent").textContent = recent.length
-    ? `最近：${recent[recent.length - 1]}`
-    : "還沒有執行紀錄。";
+  $("#keepalive-recent").textContent = [
+    summary.length ? summary.join("；") : "",
+    recent.length ? `最近：${recent[recent.length - 1]}` : "還沒有執行紀錄。",
+  ].filter(Boolean).join(" · ");
 }
 
 function renderAutopush(info: MemoryInfo): void {

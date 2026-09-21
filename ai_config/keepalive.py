@@ -28,9 +28,29 @@ DEFAULT_TIMES = ("07:00", "12:05", "17:10", "22:15")
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 DEFAULT_PROMPT = "reply with only the word: hi"
 MAX_TIMES = 8
+DEFAULT_TOOL = "claude"
+TOOLS = ("claude", "codex", "agy")
+
+# 每個工具都有自己的五小時視窗,而且互不相干:codex 的 config.toml 就把
+# five-hour-limit 印在狀態列上。三邊各排各的時間,不共用一份清單
+_COMMANDS = {
+    "claude": ("claude", ("--model", "{model}", "-p", "{prompt}")),
+    # exec 是非互動形式;reasoning effort 走 -c,那是 config.toml 的同一個鍵
+    "codex": ("codex", (
+        "exec", "--skip-git-repo-check",
+        "-c", "model_reasoning_effort=minimal", "{prompt}",
+    )),
+    "agy": ("agy", ("--effort", "low", "-p", "{prompt}")),
+}
 _UNIT = "acg-keepalive"
 _LABEL = "com.csl426.acg.keepalive"
 _TASK = "acg keepalive"
+
+
+def _check_tool(tool: str) -> str:
+    if tool not in TOOLS:
+        raise ValueError(f"不認得這個工具:{tool}(可用:{', '.join(TOOLS)})")
+    return tool
 
 
 def _state_dir() -> Path:
@@ -38,12 +58,15 @@ def _state_dir() -> Path:
     return Path(base) / "acg"
 
 
-def config_path() -> Path:
-    return _state_dir() / "keepalive.json"
+def config_path(tool: str = DEFAULT_TOOL) -> Path:
+    # claude 留用原本的檔名,先前啟用的機器不必重設
+    name = "keepalive.json" if tool == DEFAULT_TOOL else f"keepalive-{tool}.json"
+    return _state_dir() / name
 
 
-def log_path() -> Path:
-    return _state_dir() / "keepalive.log"
+def log_path(tool: str = DEFAULT_TOOL) -> Path:
+    name = "keepalive.log" if tool == DEFAULT_TOOL else f"keepalive-{tool}.log"
+    return _state_dir() / name
 
 
 @dataclass
@@ -85,10 +108,11 @@ def parse_times(values) -> Parsed:
     return result
 
 
-def load() -> Settings:
+def load(tool: str = DEFAULT_TOOL) -> Settings:
     """This machine's settings; the defaults when it has none or they are broken."""
+    _check_tool(tool)
     try:
-        raw = json.loads(config_path().read_text(encoding="utf-8"))
+        raw = json.loads(config_path(tool).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return Settings()
     if not isinstance(raw, dict):
@@ -105,8 +129,9 @@ def load() -> Settings:
     )
 
 
-def save(settings: Settings) -> None:
-    path = config_path()
+def save(settings: Settings, tool: str = DEFAULT_TOOL) -> None:
+    _check_tool(tool)
+    path = config_path(tool)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -123,56 +148,64 @@ def save(settings: Settings) -> None:
     )
 
 
-def claude_binary(configured: str = "") -> str:
+def tool_binary(tool: str = DEFAULT_TOOL, configured: str = "") -> str:
     """The launcher that survives an upgrade, not one version's own file.
 
-    Claude Code installs each version in its own directory behind a stable
+    These CLIs install each version in its own directory behind a stable
     launcher. Recording the version directory works until the next update
     moves it, and the schedule then calls a path that is no longer there.
     """
+    name = _COMMANDS[_check_tool(tool)][0]
     if configured:
         return configured
     candidates = [
-        HOME / ".local" / "bin" / "claude",
-        HOME / ".claude" / "local" / "claude",
-        Path("/usr/local/bin/claude"),
+        HOME / ".local" / "bin" / name,
+        HOME / f".{name}" / "local" / name,
+        Path(f"/usr/local/bin/{name}"),
     ]
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
     from shutil import which
 
-    return which("claude") or "claude"
+    return which(name) or name
 
 
-def run_args(settings: "Settings | None" = None) -> list:
-    active = settings or load()
-    return [
-        claude_binary(active.claude_path),
-        "--model", active.model,
-        "-p", active.prompt,
+def run_args(settings: "Settings | None" = None, tool: str = DEFAULT_TOOL) -> list:
+    _check_tool(tool)
+    active = settings or load(tool)
+    _, template = _COMMANDS[tool]
+    filled = [
+        part.replace("{model}", active.model).replace("{prompt}", active.prompt)
+        for part in template
     ]
+    return [tool_binary(tool, active.claude_path), *filled]
 
 
 def _quote(part: str) -> str:
     return f'"{part}"' if " " in part else part
 
 
-def _invocation() -> list:
+def _invocation(tool: str = DEFAULT_TOOL) -> list:
     from .paths import SCRIPT_DIR
 
     binary = SCRIPT_DIR / ("ai-config.exe" if os.name == "nt" else "ai-config")
+    suffix = [] if tool == DEFAULT_TOOL else [tool]
     if getattr(sys, "frozen", False) and binary.is_file():
-        return [str(binary), "keepalive", "send"]
-    return [sys.executable, "-m", "ai_config", "keepalive", "send"]
+        return [str(binary), "keepalive", "send", *suffix]
+    return [sys.executable, "-m", "ai_config", "keepalive", "send", *suffix]
 
 
-def systemd_units(times) -> tuple:
+def unit_name(tool: str = DEFAULT_TOOL) -> str:
+    return _UNIT if tool == DEFAULT_TOOL else f"{_UNIT}-{tool}"
+
+
+def systemd_units(times, tool: str = DEFAULT_TOOL) -> tuple:
     """One timer carrying every chosen time; Persistent catches a sleeping machine."""
-    command = " ".join(_quote(part) for part in _invocation())
+    command = " ".join(_quote(part) for part in _invocation(tool))
     service = (
         "[Unit]\n"
-        "Description=acg keepalive: anchor the Claude usage window\n\n"
+        f"Description=acg keepalive: anchor the {tool} usage window\n\n"
         "[Service]\n"
         "Type=oneshot\n"
         "RuntimeMaxSec=300\n"
@@ -181,7 +214,7 @@ def systemd_units(times) -> tuple:
     calendars = "".join(f"OnCalendar=*-*-* {at}:00\n" for at in times)
     timer = (
         "[Unit]\n"
-        "Description=acg keepalive at the chosen times\n\n"
+        f"Description=acg keepalive ({tool}) at the chosen times\n\n"
         "[Timer]\n"
         f"{calendars}"
         # 機器在那個時間睡著就整天錯位,開機後補跑
@@ -192,37 +225,38 @@ def systemd_units(times) -> tuple:
     return service, timer
 
 
-def launchd_plist(times) -> bytes:
+def launchd_plist(times, tool: str = DEFAULT_TOOL) -> bytes:
     import plistlib
 
     return plistlib.dumps({
-        "Label": _LABEL,
-        "ProgramArguments": _invocation(),
+        "Label": _LABEL if tool == DEFAULT_TOOL else f"{_LABEL}.{tool}",
+        "ProgramArguments": _invocation(tool),
         "StartCalendarInterval": [
             {"Hour": int(at[:2]), "Minute": int(at[3:])} for at in times
         ],
         "RunAtLoad": False,
         "ExitTimeOut": 300,
-        "StandardOutPath": str(log_path()),
-        "StandardErrorPath": str(log_path()),
+        "StandardOutPath": str(log_path(tool)),
+        "StandardErrorPath": str(log_path(tool)),
     })
 
 
-def schtasks_argv(times) -> list:
+def schtasks_argv(times, tool: str = DEFAULT_TOOL) -> list:
     """One task per time: schtasks daily schedules carry a single start time."""
-    command = " ".join(_quote(part) for part in _invocation())
+    command = " ".join(_quote(part) for part in _invocation(tool))
+    label = _TASK if tool == DEFAULT_TOOL else f"{_TASK} {tool}"
     return [
         [
             "schtasks", "/Create", "/F",
-            "/TN", f"{_TASK} {at.replace(':', '')}",
+            "/TN", f"{label} {at.replace(':', '')}",
             "/SC", "DAILY", "/ST", at, "/TR", f"cmd /c {command}",
         ]
         for at in times
     ]
 
 
-def _append_log(message: str) -> None:
-    path = log_path()
+def _append_log(message: str, tool: str = DEFAULT_TOOL) -> None:
+    path = log_path(tool)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -233,24 +267,27 @@ def _append_log(message: str) -> None:
         pass
 
 
-def send() -> int:
+def send(tool: str = DEFAULT_TOOL) -> int:
     """Make the call. A failure is logged and nothing else.
 
     Missing one costs a window that starts later than intended, which is
     not worth waking anyone for.
     """
-    settings = load()
-    args = run_args(settings)
-    _append_log(f"calling {settings.model}")
+    _check_tool(tool)
+    settings = load(tool)
+    args = run_args(settings, tool)
+    _append_log(f"calling {tool}", tool)
     try:
         result = subprocess.run(
             args, capture_output=True, text=True, timeout=120, check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        _append_log(f"failed to start: {exc}")
+        _append_log(f"failed to start: {exc}", tool)
         return 1
     reply = (result.stdout or "").strip().splitlines()
-    _append_log(f"exit {result.returncode}: {reply[0] if reply else '(no output)'}")
+    _append_log(
+        f"exit {result.returncode}: {reply[-1] if reply else '(no output)'}", tool,
+    )
     return result.returncode
 
 
@@ -264,8 +301,9 @@ def _systemd_dir() -> Path:
     return HOME / ".config" / "systemd" / "user"
 
 
-def _launchd_path() -> Path:
-    return HOME / "Library" / "LaunchAgents" / f"{_LABEL}.plist"
+def _launchd_path(tool: str = DEFAULT_TOOL) -> Path:
+    label = _LABEL if tool == DEFAULT_TOOL else f"{_LABEL}.{tool}"
+    return HOME / "Library" / "LaunchAgents" / f"{label}.plist"
 
 
 def existing_ccs() -> str:
@@ -293,13 +331,14 @@ def existing_ccs() -> str:
     return "ClaudeScheduler_*" if "ClaudeScheduler" in (found.stdout or "") else ""
 
 
-def _enable_systemd(times) -> list:
+def _enable_systemd(times, tool: str = DEFAULT_TOOL) -> list:
     directory = _systemd_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    service, timer = systemd_units(times)
-    (directory / f"{_UNIT}.service").write_text(service, encoding="utf-8")
-    (directory / f"{_UNIT}.timer").write_text(timer, encoding="utf-8")
-    lines = [f"寫入 {directory / (_UNIT + '.timer')}"]
+    unit = unit_name(tool)
+    service, timer = systemd_units(times, tool)
+    (directory / f"{unit}.service").write_text(service, encoding="utf-8")
+    (directory / f"{unit}.timer").write_text(timer, encoding="utf-8")
+    lines = [f"寫入 {directory / (unit + '.timer')}"]
     reloaded = subprocess.run(
         ["systemctl", "--user", "daemon-reload"],
         capture_output=True, text=True, check=False,
@@ -308,7 +347,7 @@ def _enable_systemd(times) -> list:
         lines.append("systemctl daemon-reload 失敗,請手動執行")
         return lines
     started = subprocess.run(
-        ["systemctl", "--user", "enable", "--now", f"{_UNIT}.timer"],
+        ["systemctl", "--user", "enable", "--now", f"{unit}.timer"],
         capture_output=True, text=True, check=False,
     )
     if started.returncode != 0:
@@ -319,14 +358,15 @@ def _enable_systemd(times) -> list:
     return lines
 
 
-def _enable_launchd(times) -> list:
-    path = _launchd_path()
+def _enable_launchd(times, tool: str = DEFAULT_TOOL) -> list:
+    path = _launchd_path(tool)
     path.parent.mkdir(parents=True, exist_ok=True)
     log_path().parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(launchd_plist(times))
+    path.write_bytes(launchd_plist(times, tool))
+    label = _LABEL if tool == DEFAULT_TOOL else f"{_LABEL}.{tool}"
     target = f"gui/{os.getuid()}"
     subprocess.run(
-        ["launchctl", "bootout", f"{target}/{_LABEL}"],
+        ["launchctl", "bootout", f"{target}/{label}"],
         capture_output=True, check=False, timeout=30,
     )
     loaded = subprocess.run(
@@ -338,9 +378,9 @@ def _enable_launchd(times) -> list:
     return [f"寫入 {path}", f"已排定每天 {', '.join(times)}"]
 
 
-def _enable_schtasks(times) -> list:
+def _enable_schtasks(times, tool: str = DEFAULT_TOOL) -> list:
     lines = []
-    for argv in schtasks_argv(times):
+    for argv in schtasks_argv(times, tool):
         done = subprocess.run(argv, capture_output=True, text=True, check=False)
         if done.returncode != 0:
             lines.append(f"建立排程失敗:{(done.stderr or '').strip()}")
@@ -349,15 +389,17 @@ def _enable_schtasks(times) -> list:
     return lines
 
 
-def enable(times=(), replace_ccs: bool = False) -> tuple:
+def enable(times=(), replace_ccs: bool = False, tool: str = DEFAULT_TOOL) -> tuple:
     """Install the schedule. Returns (exit code, lines to print)."""
+    _check_tool(tool)
     parsed = parse_times(times) if times else Parsed(list(DEFAULT_TIMES))
     if parsed.rejected:
         return 1, [f"看不懂這些時間:{', '.join(parsed.rejected)}", "格式是 HH:MM"]
     if len(parsed.times) > MAX_TIMES:
         return 1, [f"最多 {MAX_TIMES} 個時間,給了 {len(parsed.times)} 個"]
 
-    found = existing_ccs()
+    # ccs 只錨定 Claude 的視窗,別的工具不受它影響
+    found = existing_ccs() if tool == DEFAULT_TOOL else ""
     if found and not replace_ccs:
         return 1, [
             f"claude-scheduler 的排程還在:{found}",
@@ -368,17 +410,17 @@ def enable(times=(), replace_ccs: bool = False) -> tuple:
     if found and replace_ccs:
         lines.extend(_remove_ccs())
 
-    settings = load()
+    settings = load(tool)
     settings.times = tuple(parsed.times)
-    save(settings)
+    save(settings, tool)
 
     platform = platform_name()
     if platform == "linux":
-        lines.extend(_enable_systemd(settings.times))
+        lines.extend(_enable_systemd(settings.times, tool))
     elif platform == "macos":
-        lines.extend(_enable_launchd(settings.times))
+        lines.extend(_enable_launchd(settings.times, tool))
     else:
-        lines.extend(_enable_schtasks(settings.times))
+        lines.extend(_enable_schtasks(settings.times, tool))
     return 0, lines
 
 
@@ -404,53 +446,59 @@ def _remove_ccs() -> list:
     return ["請自行移除 claude-scheduler 的排程(acg 只清得掉 crontab 那種)"]
 
 
-def disable() -> tuple:
+def disable(tool: str = DEFAULT_TOOL) -> tuple:
     """Remove the schedule acg installed. Settings and log stay."""
+    _check_tool(tool)
     platform = platform_name()
+    unit = unit_name(tool)
     lines = []
     if platform == "linux":
         subprocess.run(
-            ["systemctl", "--user", "disable", "--now", f"{_UNIT}.timer"],
+            ["systemctl", "--user", "disable", "--now", f"{unit}.timer"],
             capture_output=True, check=False,
         )
         for suffix in (".timer", ".service"):
-            (_systemd_dir() / f"{_UNIT}{suffix}").unlink(missing_ok=True)
+            (_systemd_dir() / f"{unit}{suffix}").unlink(missing_ok=True)
         subprocess.run(
             ["systemctl", "--user", "daemon-reload"], capture_output=True, check=False,
         )
     elif platform == "macos":
         subprocess.run(
-            ["launchctl", "bootout", f"gui/{os.getuid()}/{_LABEL}"],
+            ["launchctl", "bootout",
+             f"gui/{os.getuid()}/{_LABEL if tool == DEFAULT_TOOL else _LABEL + '.' + tool}"],
             capture_output=True, check=False,
         )
-        _launchd_path().unlink(missing_ok=True)
+        _launchd_path(tool).unlink(missing_ok=True)
     else:
-        for at in load().times:
+        label = _TASK if tool == DEFAULT_TOOL else f"{_TASK} {tool}"
+        for at in load(tool).times:
             subprocess.run(
-                ["schtasks", "/Delete", "/F", "/TN", f"{_TASK} {at.replace(':', '')}"],
+                ["schtasks", "/Delete", "/F", "/TN", f"{label} {at.replace(':', '')}"],
                 capture_output=True, check=False,
             )
-    lines.append("已停用 keepalive 排程")
-    lines.append(f"設定與日誌留著:{config_path()}")
+    lines.append(f"已停用 {tool} 的 keepalive 排程")
+    lines.append(f"設定與日誌留著:{config_path(tool)}")
     return 0, lines
 
 
-def installed() -> bool:
+def installed(tool: str = DEFAULT_TOOL) -> bool:
+    _check_tool(tool)
     platform = platform_name()
     if platform == "linux":
-        return (_systemd_dir() / f"{_UNIT}.timer").is_file()
+        return (_systemd_dir() / f"{unit_name(tool)}.timer").is_file()
     if platform == "macos":
-        return _launchd_path().is_file()
+        return _launchd_path(tool).is_file()
+    label = _TASK if tool == DEFAULT_TOOL else f"{_TASK} {tool}"
     found = subprocess.run(
         ["schtasks", "/Query", "/FO", "LIST"],
         capture_output=True, text=True, check=False,
     )
-    return _TASK in (found.stdout or "")
+    return label in (found.stdout or "")
 
 
-def last_runs(limit: int = 3) -> list:
+def last_runs(limit: int = 3, tool: str = DEFAULT_TOOL) -> list:
     try:
-        lines = log_path().read_text(encoding="utf-8").strip().splitlines()
+        lines = log_path(tool).read_text(encoding="utf-8").strip().splitlines()
     except OSError:
         return []
     return lines[-limit:]
