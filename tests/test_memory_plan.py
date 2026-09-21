@@ -232,7 +232,11 @@ def test_status_counts_the_projects_still_waiting(
 
     monkeypatch.setattr(core, "HOME", journal_project.parent)
     monkeypatch.chdir(journal_project)
+    # 要數的是「這個以外」的專案,所以得真的有第二個
+    other = journal_project.parent / "another-project"
+    (other / ".remember").mkdir(parents=True)
+    (other / ".remember" / "recent.md").write_text("notes", encoding="utf-8")
 
-    command.run_memory(["status"])
+    command._report_unadopted()
 
     assert "adopt --scan" in capsys.readouterr().out

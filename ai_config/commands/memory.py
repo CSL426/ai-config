@@ -314,7 +314,7 @@ def _status() -> int:
 def _report_unadopted() -> None:
     """Say how many other projects are waiting, or nobody finds the scan."""
     try:
-        pending = memory.unadopted_below(Path.home())
+        pending = memory.unadopted_below(memory.HOME)
     except OSError:
         return
     here = memory.project_root()
