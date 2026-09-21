@@ -1917,9 +1917,13 @@ def test_plugin_content_changes_carry_a_version_bump() -> None:
 def test_attribution_stays_disabled_in_the_database() -> None:
     """The rule file once claimed this was set when the key did not exist.
 
-    Only the setting stops the trailer; a sentence in a rules file does
-    not, which is how one reached a commit. If the key is ever dropped
-    from the database, every machine silently starts adding them again.
+    Only the setting stops the trailers; a sentence in a rules file does
+    not, which is how one reached a commit. A model agreeing to leave the
+    session link out holds until that conversation ends — the next one is
+    told to add it again, so nothing short of the setting settles it.
+
+    includeCoAuthoredBy is deprecated and never covered the session link
+    at all; attribution replaces it and covers all three.
     """
     import json
 
@@ -1927,8 +1931,13 @@ def test_attribution_stays_disabled_in_the_database() -> None:
     if not database.is_file():
         pytest.skip("no data repository checked out here")
     settings = json.loads(database.read_text(encoding="utf-8-sig"))
+    attribution = settings.get("attribution")
 
-    assert settings.get("includeCoAuthoredBy") is False
+    assert isinstance(attribution, dict), "attribution 不見了,三台都會重新開始加"
+    assert attribution.get("sessionUrl") is True
+    assert attribution.get("commit") == ""
+    assert attribution.get("pr") == ""
+    assert "includeCoAuthoredBy" not in settings, "已棄用,由 attribution 取代"
 
 
 def test_both_installers_lay_out_versions_the_same_way() -> None:
