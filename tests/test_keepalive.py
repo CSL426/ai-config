@@ -120,3 +120,48 @@ def test_too_many_times_are_refused(state: Path) -> None:
     code, _ = keepalive.enable(tuple(f"{h:02d}:00" for h in range(9)))
 
     assert code == 1
+
+
+def test_each_tool_keeps_its_own_times(state: Path) -> None:
+    """Three windows with no reason to share a boundary.
+
+    Tying them to one list would move all three whenever one needed a
+    different hour.
+    """
+    keepalive.save(keepalive.Settings(times=("07:00",)), tool="claude")
+    keepalive.save(keepalive.Settings(times=("08:30",)), tool="codex")
+
+    assert keepalive.load("claude").times == ("07:00",)
+    assert keepalive.load("codex").times == ("08:30",)
+    assert keepalive.load("agy").times == keepalive.DEFAULT_TIMES
+
+
+def test_every_tool_calls_its_own_binary_the_cheap_way(state: Path) -> None:
+    """Weakest model, least thinking: the call exists to have happened."""
+    claude = keepalive.run_args(tool="claude")
+    codex = keepalive.run_args(tool="codex")
+    agy = keepalive.run_args(tool="agy")
+
+    assert "--model" in claude and "-p" in claude
+    assert "exec" in codex and "model_reasoning_effort=" in " ".join(codex)
+    assert "--effort" in agy and "low" in agy
+
+
+def test_an_unknown_tool_is_refused(state: Path) -> None:
+    with pytest.raises(ValueError, match="不認得"):
+        keepalive.run_args(tool="gemini")
+
+
+def test_enabling_one_tool_leaves_the_others_alone(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each tool has its own schedule; enabling codex must not disturb claude."""
+    monkeypatch.setattr(keepalive, "existing_ccs", lambda: "")
+    monkeypatch.setattr(keepalive, "_enable_systemd", lambda times, tool: ["ok"])
+    monkeypatch.setattr(keepalive, "platform_name", lambda: "linux")
+
+    keepalive.enable(("07:00",), tool="claude")
+    keepalive.enable(("09:00",), tool="codex")
+
+    assert keepalive.load("claude").times == ("07:00",)
+    assert keepalive.load("codex").times == ("09:00",)

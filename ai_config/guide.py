@@ -37,7 +37,7 @@ project, status, pull, push, and sync.
 | `deploy --profile <name>` | replay a saved selection without prompting |
 | `deploy --save-as <name>` | deploy interactively, then remember the selection |
 | `list` | managed tools, file counts, backup snapshot count |
-| `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send>` | anchor this machine's Claude usage window; off by default, settings stay local |
+| `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send> [tool]` | anchor this machine's usage window for claude, codex or agy; off by default, settings stay local |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `setup` | configure the data repo remote and verify push access |
 | `update [version]` | install the latest release, or a pinned one (also downgrades); refuses to start while another update is running |
@@ -218,17 +218,24 @@ first opened, which `list` shows as how long it has been waiting.
 
 ### Anchoring the usage window
 
-Claude's five-hour usage window starts at the account's first call of the
-day, so where that call lands decides every boundary after it.
-`{entrypoint} keepalive enable [HH:MM ...]` schedules a throwaway call at
-chosen times (four by default) to put the boundaries where the day needs
-them; `keepalive status` reports them and the last few runs, `disable`
-removes the schedule, `send` calls once now. Off unless a machine turns it
-on, and the times, model and log stay local — each machine keeps different
-hours, so syncing them would have one machine's answer overwrite another's.
-Claude only: the window belongs to that account, not to Codex or
-Antigravity. A machine still running `claude-scheduler` is told to remove
-it first, since both anchor the same window and would each fire.
+A five-hour usage window starts at the account's first call of the day, so
+where that call lands decides every boundary after it.
+`{entrypoint} keepalive enable [HH:MM ...] [tool]` schedules a throwaway
+call at chosen times (four by default) to put the boundaries where the day
+needs them; `keepalive status` reports every tool, `disable` removes one
+schedule, `send` calls once now. The tool is claude, codex or agy, and
+claude when left out.
+
+Each tool is anchored separately, with its own times, schedule and log:
+three accounts, three windows, no reason for their boundaries to line up.
+Every call uses the weakest model and the least thinking that tool offers,
+because the call exists to have happened. Off unless a machine turns it
+on, and settings stay local — each machine keeps different hours, so
+syncing them would have one machine's answer overwrite another's. The
+window belongs to the account rather than the machine, so one machine
+anchoring it is enough. A machine still running `claude-scheduler` is told
+to remove it before claude is enabled, since both anchor that window and
+would each fire.
 
 ### Machine-local hooks
 

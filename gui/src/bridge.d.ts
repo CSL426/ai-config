@@ -67,6 +67,9 @@ export interface MemoryInfo extends RunResult {
   keepalive: {
     installed: boolean; times: string[]; model: string;
     ccs: string; recent: string[];
+    tools: Record<string, {
+      installed: boolean; times: string[]; recent: string[];
+    }>;
   };
   handoff_reminder: {
     enabled: boolean; threshold: number; installed: boolean; reason?: string;
@@ -199,7 +202,7 @@ interface AcgApi {
   set_handoff_reminder(enabled: boolean, threshold: number): Promise<OperationResult>;
   set_remember_host(host: RememberHost, enabled: boolean): Promise<OperationResult>;
   set_autopush_slot(clock: string): Promise<OperationResult>;
-  set_keepalive(wanted: boolean, times?: string[]): Promise<OperationResult>;
+  set_keepalive(wanted: boolean, times?: string[], tool?: string): Promise<OperationResult>;
   open_memory_location(locationToken: string): Promise<OperationResult>;
   preview_memory(action: MemoryAction, projectToken?: string): Promise<ChangePreview>;
   confirm_memory(token: string): Promise<OperationResult>;
