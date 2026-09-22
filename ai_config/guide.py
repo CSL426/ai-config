@@ -305,7 +305,7 @@ never leaves the machine. `enable` points the plugin at
 tells every tool to read the journal's `recent.md`. Run `{entrypoint} memory
 adopt` inside a project, or `adopt <path>` from anywhere, to move that
 project's journal to `projects/<owner--repo>/journal/` so it syncs with the
-notebook; `release` undoes it and takes a path too. `adopt --scan [dir]`
+notebook; `release` undoes it and takes a path too. `adopt all` (or `--scan [dir]`)
 lists every project below a directory (the home directory by default) whose
 journal is still local and adopts the lot on one confirmation, since
 visiting them one at a time is the reason most stay unsynced. The scan

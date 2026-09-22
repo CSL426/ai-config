@@ -239,4 +239,24 @@ def test_status_counts_the_projects_still_waiting(
 
     command._report_unadopted()
 
-    assert "adopt --scan" in capsys.readouterr().out
+    assert "adopt all" in capsys.readouterr().out
+
+
+def test_adopt_all_means_the_same_as_scan(journal_project, monkeypatch, capsys):
+    """Every other command takes `all`, so this one reads like it should.
+
+    `adopt all` reported "找不到這個專案目錄:all" — it had taken the word
+    as a path. --scan is the flag, but nobody guesses a flag when the
+    word already means this everywhere else.
+    """
+    from ai_config import memory as core
+
+    monkeypatch.setattr(core, "HOME", journal_project.parent)
+    other = journal_project.parent / "another-project"
+    (other / ".remember").mkdir(parents=True)
+    (other / ".remember" / "recent.md").write_text("notes", encoding="utf-8")
+    monkeypatch.setattr("ai_config.console.confirm", lambda *a, **k: False)
+
+    assert command.run_memory(["adopt", "all"]) == 0
+
+    assert "尚未同步的專案" in capsys.readouterr().out

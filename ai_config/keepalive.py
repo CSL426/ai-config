@@ -35,10 +35,12 @@ TOOLS = ("claude", "codex", "agy")
 # five-hour-limit 印在狀態列上。三邊各排各的時間,不共用一份清單
 _COMMANDS = {
     "claude": ("claude", ("--model", "{model}", "-p", "{prompt}")),
-    # exec 是非互動形式;reasoning effort 走 -c,那是 config.toml 的同一個鍵
+    # exec 是非互動形式;reasoning effort 走 -c,那是 config.toml 的同一個鍵。
+    # low 是最低的**有效**值——minimal 讀起來更省,但 API 會回 400 拒絕,
+    # 而排程只看得到 exit 1,不會說是哪個參數錯
     "codex": ("codex", (
         "exec", "--skip-git-repo-check",
-        "-c", "model_reasoning_effort=minimal", "{prompt}",
+        "-c", "model_reasoning_effort=low", "{prompt}",
     )),
     "agy": ("agy", ("--effort", "low", "-p", "{prompt}")),
 }

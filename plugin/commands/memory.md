@@ -16,6 +16,6 @@ allowed-tools: Bash(acg memory status), Bash(ai-config memory status)
 - **疑似含有憑證的筆記**。上傳會被擋下。把檔案列給使用者,讓他自己看內容判斷,不要替他決定那是不是真的憑證。本機日誌不同步,不在掃描範圍。
 - **還沒同步的專案數**。日誌預設只留在本機那台,要 adopt 過才會跟著共用記憶走。
   看到「另外 N 個專案的日誌還沒同步」就告訴使用者可以用
-  `acg memory adopt --scan` 一次處理,但**不要代跑**——那會搬動好幾個專案的檔案。
+  `acg memory adopt all` 一次處理,但**不要代跑**——那會搬動好幾個專案的檔案。
 
 若有未保存的記憶變更,提醒可以用 `acg memory push` 保存。
