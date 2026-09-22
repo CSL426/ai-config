@@ -1972,3 +1972,29 @@ def test_adoption_retries_and_says_when_it_gives_up() -> None:
         "adoption reads the version without waiting for the file to be usable"
     )
     assert "Write-Warn" in adopt, "giving up on adoption must not be silent"
+
+
+def test_the_database_rules_match_the_source_block() -> None:
+    """A gather run before a source edit writes the old wording.
+
+    That happened: the rules block gained six handoff headings, the
+    gather had already run, and the commit message described the new
+    format while the file carried the old one. Every machine then pulled
+    a CLAUDE.md that disagreed with the code that generates it, and
+    nothing said so.
+    """
+    from ai_config import memory
+
+    database = REPO_ROOT / "data/claude/CLAUDE.md"
+    if not database.is_file():
+        pytest.skip("no data repository checked out here")
+    stored = database.read_text(encoding="utf-8-sig")
+    if memory.BLOCK_BEGIN not in stored:
+        pytest.skip("shared memory not enabled in this database")
+
+    begin = stored.index(memory.BLOCK_BEGIN)
+    end = stored.index(memory.BLOCK_END) + len(memory.BLOCK_END)
+
+    assert stored[begin:end] == memory.RULES_BLOCK.strip(), (
+        "資料庫的規則區塊跟原始碼不一致;改完 RULES_BLOCK 要重跑 acg init claude"
+    )
