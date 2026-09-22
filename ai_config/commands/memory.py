@@ -92,7 +92,7 @@ def _run_memory(args: list[str]) -> int:
             from ..console import set_force
 
             set_force(True)
-            code = do_push(MEMORY_SCOPE, allow_secrets=False)
+            code = do_push(MEMORY_SCOPE, allow_secrets=False, scheduled=True)
             if code == 0:
                 auto.record_push()
             return code
