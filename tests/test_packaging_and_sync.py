@@ -1998,3 +1998,22 @@ def test_the_database_rules_match_the_source_block() -> None:
     assert stored[begin:end] == memory.RULES_BLOCK.strip(), (
         "資料庫的規則區塊跟原始碼不一致;改完 RULES_BLOCK 要重跑 acg init claude"
     )
+
+
+def test_a_scheduled_push_says_it_was_scheduled() -> None:
+    """Three machines push the same subject; only the clock told them apart.
+
+    "chore: sync ai tool configuration" at 04:00 and again at 04:10 reads
+    as two people doing the same thing, and answering "who pushed this,
+    and did I ask for it" meant knowing each machine's slot by heart.
+    """
+    from ai_config.commands import push as command
+
+    scheduled = command._proposed_push_commit_message(
+        ["claude/settings.json"], scheduled=True,
+    )
+    by_hand = command._proposed_push_commit_message(["claude/settings.json"])
+
+    assert scheduled.splitlines()[0] == by_hand.splitlines()[0]
+    assert "Scheduled-By: acg autopush" in scheduled
+    assert "Scheduled-By" not in by_hand

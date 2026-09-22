@@ -971,7 +971,27 @@ def _staged_json_keys(path: str) -> "set[str] | None":
     }
 
 
-def _proposed_push_commit_message(paths: list[str]) -> str:
+def _proposed_push_commit_message(
+    paths: list[str], scheduled: bool = False,
+) -> str:
+    """The subject these changes deserve, plus who sent it.
+
+    Every machine pushes the same subjects, so a reader had to know each
+    one's scheduled minute to tell an unattended push from someone's own.
+    """
+    subject = _push_subject(paths)
+    if not scheduled:
+        return subject
+    return f"{subject}\n\nScheduled-By: acg autopush on {_host_name()}"
+
+
+def _host_name() -> str:
+    from .. import schedule_table
+
+    return schedule_table.host_name()
+
+
+def _push_subject(paths: list[str]) -> str:
     normalized = [path.replace("\\", "/") for path in paths]
     settings_tools = [
         tool
@@ -1145,7 +1165,9 @@ def _explain_push_refusal() -> None:
         log_info(f"執行 {ENTRYPOINT} login 連結有權限的帳號")
 
 
-def do_push(tool: str, allow_secrets: bool = False) -> int:
+def do_push(
+    tool: str, allow_secrets: bool = False, scheduled: bool = False,
+) -> int:
     # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
     # 才會為 True(GUI 走不到,維持硬擋)。
     global _ALLOW_SECRET_PATHS
@@ -1201,7 +1223,7 @@ def do_push(tool: str, allow_secrets: bool = False) -> int:
     if staged_paths is None:
         _unstage_tools(selected)
         return 1
-    commit_message = _proposed_push_commit_message(staged_paths)
+    commit_message = _proposed_push_commit_message(staged_paths, scheduled)
 
     confirmed = False
     ready_to_commit = False
