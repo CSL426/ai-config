@@ -165,3 +165,17 @@ def test_enabling_one_tool_leaves_the_others_alone(
 
     assert keepalive.load("claude").times == ("07:00",)
     assert keepalive.load("codex").times == ("09:00",)
+
+
+def test_codex_asks_for_an_effort_the_api_accepts(state: Path) -> None:
+    """minimal reads like the cheapest choice and the API rejects it.
+
+    Three scheduled calls failed with "'minimal' is not supported with
+    the 'gpt-6-astra' model. Supported values are: 'low', 'medium',
+    'high', 'xhigh', and 'max'." The log said only "exit 1: (no output)",
+    so nothing pointed at the flag.
+    """
+    joined = " ".join(keepalive.run_args(tool="codex"))
+
+    assert "model_reasoning_effort=minimal" not in joined
+    assert "model_reasoning_effort=low" in joined

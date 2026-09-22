@@ -16,7 +16,7 @@ from ..paths import BACKUP_BASE, ENTRYPOINT, MEMORY_LINK, tilde
 USAGE = (
     f"Usage: {ENTRYPOINT} memory "
     "<status|enable [codex|agy]|disable [codex|agy]|"
-    "adopt [路徑|--scan [目錄]]|release [路徑]|path|push|"
+    "adopt [路徑|all|--scan [目錄]]|release [路徑]|path|push|"
     "handoff|autopush>"
 )
 
@@ -36,9 +36,12 @@ def _run_memory(args: list[str]) -> int:
         return _status()
     if command in {"enable", "disable"} and rest in (["codex"], ["agy"]):
         return _host(command, rest[0])
+    # 別的指令都吃 all,所以這裡也該吃;--scan 留著不動
+    if command == "adopt" and rest and rest[0] == "all":
+        return _adopt_scan(rest[1:])
     if command in {"adopt", "release"} and rest and rest[0] != "--scan":
         if len(rest) > 1:
-            log_error(f"Usage: {ENTRYPOINT} memory {command} [專案路徑|--scan [目錄]]")
+            log_error(f"Usage: {ENTRYPOINT} memory {command} [專案路徑|all|--scan [目錄]]")
             return 1
         chosen = Path(rest[0]).expanduser()
         if not chosen.is_dir():
@@ -321,7 +324,7 @@ def _report_unadopted() -> None:
     if others:
         log_info(
             f"另外 {len(others)} 個專案的日誌還沒同步"
-            f"({ENTRYPOINT} memory adopt --scan 可一次處理)"
+            f"({ENTRYPOINT} memory adopt all 可一次處理)"
         )
 
 
