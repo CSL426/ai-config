@@ -42,7 +42,9 @@ _COMMANDS = {
         "exec", "--skip-git-repo-check",
         "-c", "model_reasoning_effort=low", "{prompt}",
     )),
-    "agy": ("agy", ("--effort", "low", "-p", "{prompt}")),
+    # 不指定 --effort:那個旗標只有部分模型收,預設模型換掉就整個呼叫失敗,
+    # 而錨定視窗只需要最便宜的回覆,指定強度換不到任何東西
+    "agy": ("agy", ("-p", "{prompt}")),
 }
 _UNIT = "acg-keepalive"
 _LABEL = "com.csl426.acg.keepalive"

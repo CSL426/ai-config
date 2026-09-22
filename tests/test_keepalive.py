@@ -144,7 +144,8 @@ def test_every_tool_calls_its_own_binary_the_cheap_way(state: Path) -> None:
 
     assert "--model" in claude and "-p" in claude
     assert "exec" in codex and "model_reasoning_effort=" in " ".join(codex)
-    assert "--effort" in agy and "low" in agy
+    # agy 不帶 effort 旗標:見 test_agy_does_not_pass_an_unsupported_flag
+    assert "-p" in agy and agy[0].endswith("agy")
 
 
 def test_an_unknown_tool_is_refused(state: Path) -> None:
@@ -179,3 +180,15 @@ def test_codex_asks_for_an_effort_the_api_accepts(state: Path) -> None:
 
     assert "model_reasoning_effort=minimal" not in joined
     assert "model_reasoning_effort=low" in joined
+
+
+def test_agy_does_not_pass_an_unsupported_flag(state: Path) -> None:
+    """--effort worked until the model behind agy changed under it.
+
+    "invalid model selection (--model \"\" --effort \"low\"): --effort is
+    not supported for the current model" — the call fails on the flag
+    before it ever reaches the model, and the log only says exit 1.
+    A keepalive asks for nothing but the cheapest reply available, so
+    naming an effort buys nothing and breaks when the default moves.
+    """
+    assert "--effort" not in keepalive.run_args(tool="agy")
