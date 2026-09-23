@@ -177,7 +177,7 @@ def test_init_codex_excludes_machine_local_notify(tmp_path: Path) -> None:
     (repo_dir / "claude").mkdir()
     write(
         home_dir / ".codex/config.toml",
-        'model = "gpt-5"\n'
+        'personality = "gpt-5"\n'
         'notify = ["C:/runtime/codex-computer-use.exe", "turn-ended"]\n\n'
         "[features]\nsearch = true\n",
     )
@@ -186,7 +186,7 @@ def test_init_codex_excludes_machine_local_notify(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert (repo_dir / "codex/config.toml").read_text() == (
-        'model = "gpt-5"\n\n[features]\nsearch = true\n'
+        'personality = "gpt-5"\n\n[features]\nsearch = true\n'
     )
 
 
@@ -214,13 +214,13 @@ def test_apply_codex_preserves_live_notify_and_projects(tmp_path: Path) -> None:
     repo_dir, home_dir = make_repo(tmp_path)
     write(
         repo_dir / "codex/config.toml",
-        'model = "shared"\n'
+        'personality = "shared"\n'
         'notify = ["C:/stale/runtime.exe", "turn-ended"]\n\n'
         "[features]\nsearch = true\n",
     )
     write(
         home_dir / ".codex/config.toml",
-        'model = "local"\n'
+        'personality = "local"\n'
         'notify = ["/opt/live/runtime", "turn-ended"]\n\n'
         '[projects."/srv/work"]\ntrust_level = "trusted"\n',
     )
@@ -229,7 +229,7 @@ def test_apply_codex_preserves_live_notify_and_projects(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     config = (home_dir / ".codex/config.toml").read_text()
-    assert 'model = "shared"' in config
+    assert 'personality = "shared"' in config
     assert 'notify = ["/opt/live/runtime", "turn-ended"]' in config
     assert "C:/stale/runtime.exe" not in config
     assert '[projects."/srv/work"]' in config
@@ -240,13 +240,13 @@ def test_apply_codex_preserves_codex_managed_plugin_blocks(tmp_path: Path) -> No
     repo_dir, home_dir = make_repo(tmp_path)
     write(
         repo_dir / "codex/config.toml",
-        'model = "shared"\n\n'
+        'personality = "shared"\n\n'
         '[plugins."github@openai-curated"]\nenabled = true\n\n'
         '[plugins."stale@openai-bundled"]\nenabled = true\n',
     )
     write(
         home_dir / ".codex/config.toml",
-        'model = "local"\n\n'
+        'personality = "local"\n\n'
         '[plugins."pdf@openai-primary-runtime"]\nenabled = true\n\n'
         '[plugins."browser@openai-bundled"]\nenabled = true\n\n'
         '[plugins."lingering@openai-curated"]\nenabled = true\n',
@@ -256,7 +256,7 @@ def test_apply_codex_preserves_codex_managed_plugin_blocks(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stderr + result.stdout
     config = (home_dir / ".codex/config.toml").read_text()
-    assert 'model = "shared"' in config
+    assert 'personality = "shared"' in config
     assert '[plugins."github@openai-curated"]' in config
     # 機器本地的 Codex 內建外掛留下;repo 裡誤入的內建外掛區塊不會被帶出來
     assert '[plugins."pdf@openai-primary-runtime"]' in config
@@ -270,14 +270,14 @@ def test_apply_codex_filters_repo_notify_from_fresh_copy(tmp_path: Path) -> None
     repo_dir, home_dir = make_repo(tmp_path)
     write(
         repo_dir / "codex/config.toml",
-        'model = "shared"\n'
+        'personality = "shared"\n'
         'notify = ["C:/stale/runtime.exe", "turn-ended"]\n',
     )
 
     result = run_ai_config(repo_dir, home_dir, "apply", "codex")
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert (home_dir / ".codex/config.toml").read_text() == 'model = "shared"\n'
+    assert (home_dir / ".codex/config.toml").read_text() == 'personality = "shared"\n'
 
 
 def test_apply_rejects_symlink_destination_before_backup(tmp_path: Path) -> None:
@@ -686,3 +686,71 @@ def test_init_codex_drops_local_marketplace_paths(tmp_path: Path) -> None:
     stored = (repo_dir / "codex/config.toml").read_text()
     assert "marketplaces" not in stored
     assert "codex-runtimes" not in stored
+
+
+def test_codex_model_choice_stays_on_each_machine() -> None:
+    """Which model a machine runs is picked there, often just for one question.
+
+    Claude's model was already machine-local; codex's was synced, so a
+    temporary switch on one machine was gathered and then applied to the
+    others, and an apply here put back whatever another machine last chose.
+    """
+    from ai_config.tools.codex import filter_codex_config, merge_codex_config
+
+    shared = (
+        'model = "gpt-6-astra"\n'
+        'model_reasoning_effort = "medium"\n'
+        'personality = "pragmatic"\n\n'
+        "[features]\nx = true\n"
+    )
+    live = (
+        'model = "gpt-5.6-luna"\n'
+        'model_reasoning_effort = "high"\n'
+        'personality = "old"\n\n'
+        "[features]\nx = false\n"
+    )
+
+    gathered = filter_codex_config(shared)
+    assert "model =" not in gathered
+    assert "model_reasoning_effort" not in gathered
+    assert 'personality = "pragmatic"' in gathered
+
+    applied = merge_codex_config(gathered, live)
+    assert 'model = "gpt-5.6-luna"' in applied
+    assert 'model_reasoning_effort = "high"' in applied
+    assert 'personality = "pragmatic"' in applied
+    import tomllib
+    assert tomllib.loads(applied)["model"] == "gpt-5.6-luna"
+
+
+def test_codex_hook_trust_stays_on_each_machine() -> None:
+    """[hooks.state.*] records which hooks this machine trusts, keyed by its paths.
+
+    Synced, the Windows machine carried a trust entry for
+    /home/human/openVman/... — a path that exists only on the Linux box.
+    Like [projects.*], it is kept out of the repo and preserved on apply.
+    """
+    from ai_config.tools.codex import filter_codex_config, merge_codex_config
+
+    shared = (
+        'personality = "pragmatic"\n\n'
+        "[hooks.state]\n\n"
+        '[hooks.state."/home/human/openVman/.codex/hooks.json:pre_tool_use:0:0"]\n'
+        'trusted_hash = "sha256:linux"\n\n'
+        "[features]\nx = true\n"
+    )
+    live = (
+        'personality = "old"\n\n'
+        '[hooks.state."C:/work/.codex/hooks.json:pre_tool_use:0:0"]\n'
+        'trusted_hash = "sha256:windows"\n'
+    )
+
+    gathered = filter_codex_config(shared)
+    assert "hooks.state" not in gathered
+    assert "[features]" in gathered
+
+    applied = merge_codex_config(gathered, live)
+    assert "sha256:windows" in applied
+    assert "sha256:linux" not in applied
+    import tomllib
+    assert tomllib.loads(applied)["features"]["x"] is True

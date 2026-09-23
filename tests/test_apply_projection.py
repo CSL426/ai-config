@@ -56,7 +56,7 @@ def test_apply_all_projects_claude_shared_content_without_sync(tmp_path: Path) -
     )
     write(repo_dir / "claude/rules/common/shared.md", "shared rule\n")
 
-    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(repo_dir / "codex/config.toml", 'personality = "gpt-5"\n')
     write(repo_dir / "codex/rules/custom/private.md", "private codex rule\n")
     write(
         repo_dir / "codex/skills/private-skill/SKILL.md",
@@ -98,7 +98,7 @@ def test_apply_all_projects_claude_shared_content_without_sync(tmp_path: Path) -
     assert private_skill.endswith("Private codex skill\n")
 
     codex_config = (home_dir / ".codex/config.toml").read_text(encoding="utf-8")
-    assert 'model = "gpt-5"' in codex_config
+    assert 'personality = "gpt-5"' in codex_config
     assert '[projects."/tmp/demo"]' in codex_config
     assert 'trust_level = "trusted"' in codex_config
 
