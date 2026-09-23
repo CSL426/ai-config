@@ -653,7 +653,11 @@ def test_shortcut_on_linux_adds_a_menu_entry_and_a_desktop_icon(
         text = entry.read_text(encoding="utf-8")
         assert f"Exec={launcher} gui" in text
         assert "Type=Application" in text
-    assert desktop.stat().st_mode & 0o111
+    import os
+
+    # 執行權限只在 POSIX 有意義;Windows 的 CI 也跑這個測試,那裡沒有 x 位元
+    if os.name != "nt":
+        assert desktop.stat().st_mode & 0o111
 
 
 def test_shortcut_points_at_the_launcher_updates_keep_current(
