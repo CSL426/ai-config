@@ -27,9 +27,15 @@ def _report(tool: str) -> None:
         log_success(f"{tool}:已啟用 {', '.join(settings.times)}")
     else:
         log_info(f"{tool}:未啟用")
-    recent = keepalive.last_runs(tool=tool)
-    if recent:
-        print(f"    {recent[-1]}")
+    accounts = keepalive.last_by_account(tool)
+    if accounts:
+        # 一個工具有好幾個帳號時,每個帳號的視窗各自獨立,結果要分開看
+        for home, line in accounts.items():
+            print(f"    {home}: {line}")
+    else:
+        recent = keepalive.last_runs(tool=tool)
+        if recent:
+            print(f"    {recent[-1]}")
     if tool == keepalive.DEFAULT_TOOL:
         _report_window(settings.times)
 
