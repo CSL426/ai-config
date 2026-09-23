@@ -234,7 +234,7 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
     # 這些檔案有進版控,不說一聲的話下次 push 會冒出沒人解釋的改名
     if archived:
         log_info(
-            f"已把 {len(archived)} 條結束超過 {hand.ARCHIVE_AFTER_DAYS} 天的線"
+            f"已把 {len(archived)} 條結案或 {hand.ARCHIVE_AFTER_DAYS} 天沒人動的線"
             f"移到 {hand.ARCHIVE_DIR_NAME}/:{'、'.join(archived)}"
         )
     # 結束的線留在磁碟上當紀錄,但這裡問的是「有什麼可以接手」,

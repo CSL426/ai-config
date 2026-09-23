@@ -462,13 +462,13 @@ def test_a_recently_finished_thread_stays_put(notebook: Path) -> None:
     assert (handoff.handoff_dir() / "剛做完的.md").is_file()
 
 
-def test_open_and_claimed_threads_are_never_archived(notebook: Path) -> None:
-    """Only a thread someone closed is finished; age alone means nothing."""
+def test_open_and_claimed_threads_are_kept_while_they_move(notebook: Path) -> None:
+    """Age is measured from the last touch, so a thread in use never goes."""
     handoff.write("放著沒做的", "內容")
-    _age_note(handoff.handoff_dir() / "放著沒做的.md", "updated", 90)
+    _age_note(handoff.handoff_dir() / "放著沒做的.md", "created", 90)
     handoff.write("認領著的", "內容")
     handoff.claim("認領著的")
-    _age_note(handoff.handoff_dir() / "認領著的.md", "updated", 90)
+    _age_note(handoff.handoff_dir() / "認領著的.md", "created", 90)
 
     assert handoff.archive_finished() == []
     assert len(list(handoff.handoff_dir().glob("*.md"))) == 2
@@ -685,3 +685,28 @@ def test_claim_without_a_name_works_from_the_command_line(
     assert command.run_memory(["handoff", "claim"]) == 0
 
     assert "已認領:排程" in capsys.readouterr().out
+
+
+def test_a_thread_nobody_touched_for_a_month_is_archived_too(notebook: Path) -> None:
+    """Threads are picked up and handed off again, and never closed.
+
+    The flow is handoff, /clear, pickup; nobody types `done`. Only closed
+    threads were archived, so a finished or abandoned line stayed on the
+    list for good, flagged stale forever.
+    """
+    handoff.write("被放掉的", "內容")
+    handoff.claim("被放掉的")
+    _age_note(handoff.handoff_dir() / "被放掉的.md", "updated", 40)
+    handoff.write("還在做的", "內容")
+
+    moved = handoff.archive_finished()
+
+    assert moved == ["被放掉的"]
+    assert [n.thread for n in handoff.load_all()] == ["還在做的"]
+
+
+def test_a_thread_idle_for_a_week_stays_listed(notebook: Path) -> None:
+    handoff.write("一週沒動", "內容")
+    _age_note(handoff.handoff_dir() / "一週沒動.md", "updated", 7)
+
+    assert handoff.archive_finished() == []

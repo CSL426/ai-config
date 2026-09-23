@@ -221,18 +221,23 @@ def load_all(project: str = "") -> list[Handoff]:
 
 
 def archive_finished(older_than_days: int = ARCHIVE_AFTER_DAYS) -> list[str]:
-    """Move long-finished threads into archive/, and say which moved.
+    """Move threads closed or untouched for a month into archive/; say which.
 
     A closed thread never lists again, so it only makes the directory
-    harder to read. The record is kept, not deleted: closed threads get
-    reread months later for why a decision went the way it did.
+    harder to read. Threads are rarely closed, though: the usual flow is
+    handoff, /clear, pickup, and nobody types `done`, so a thread nobody
+    has touched for as long is treated the same. The record is kept, not
+    deleted: threads get reread months later for why a decision went the
+    way it did.
     """
     root = handoff_dir()
     if not root.is_dir():
         return []
     moved = []
     for note in load_all():
-        if note.state != DONE or age_in_days(note.updated) < older_than_days:
+        # 結案的線,或一個月沒人動的線:流程是交接、清空、接手,
+        # 沒有人會打 done,只收結案的線等於什麼都不會收
+        if age_in_days(note.updated) < older_than_days:
             continue
         target = archive_dir() / note.path.name
         target.parent.mkdir(parents=True, exist_ok=True)

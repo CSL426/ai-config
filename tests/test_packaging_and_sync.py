@@ -2021,3 +2021,26 @@ def test_a_scheduled_push_says_it_was_scheduled() -> None:
     assert scheduled.splitlines()[0] == by_hand.splitlines()[0]
     assert "Scheduled-By: acg autopush" in scheduled
     assert "Scheduled-By" not in by_hand
+
+
+def test_plugin_skills_are_named_and_do_not_shadow_a_command() -> None:
+    """A skill fires on what the user says; it needs a description to fire on.
+
+    People say "交接" or "接著做" more often than they type the slash
+    command. A skill named like a command would collide with it under the
+    plugin's prefix, so one of the two would silently win.
+    """
+    commands = {path.stem for path in (REPO_ROOT / "plugin/commands").glob("*.md")}
+    skills = sorted((REPO_ROOT / "plugin/skills").glob("*/SKILL.md"))
+    assert skills, "plugin 沒有任何 skill"
+    for path in skills:
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---\n"), path
+        front = text.split("---", 2)[1]
+        name = next(
+            (line.split(":", 1)[1].strip() for line in front.splitlines()
+             if line.startswith("name:")), "",
+        )
+        assert name == path.parent.name, path
+        assert "description:" in front, path
+        assert name not in commands, f"{name} 跟指令撞名"
