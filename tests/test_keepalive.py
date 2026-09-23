@@ -192,3 +192,57 @@ def test_agy_does_not_pass_an_unsupported_flag(state: Path) -> None:
     naming an effort buys nothing and breaks when the default moves.
     """
     assert "--effort" not in keepalive.run_args(tool="agy")
+
+
+def _finished(returncode: int, stdout: str = "", stderr: str = ""):
+    import subprocess
+
+    def run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, returncode, stdout, stderr)
+
+    return run
+
+
+def test_a_failure_logs_why(state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """exit 1 alone never said why, so every failure meant rerunning by hand.
+
+    codex had been failing for two days on an exhausted usage limit, and
+    the log showed only "exit 1: (no output)" each time. The reason was
+    on stderr the whole while.
+    """
+    monkeypatch.setattr(keepalive.subprocess, "run", _finished(
+        1, stderr="hook: SessionStart\nERROR: You've hit your usage limit. "
+        "try again at 12:45 PM.\n",
+    ))
+
+    assert keepalive.send() == 1
+
+    logged = keepalive.log_path().read_text(encoding="utf-8")
+    assert "usage limit" in logged
+    assert "12:45" in logged
+
+
+def test_the_error_line_wins_over_trailing_noise(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tools print banners and hook chatter after the error; the log needs the error."""
+    monkeypatch.setattr(keepalive.subprocess, "run", _finished(
+        1, stderr="ERROR: model not found\nhook: Stop\nhook: Stop Completed\n",
+    ))
+
+    keepalive.send()
+
+    assert "model not found" in keepalive.log_path().read_text(encoding="utf-8")
+
+
+def test_a_success_still_logs_the_reply(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(keepalive.subprocess, "run", _finished(
+        0, stdout="hi\n", stderr="some warning about config\n",
+    ))
+
+    keepalive.send()
+
+    last = keepalive.log_path().read_text(encoding="utf-8").strip().splitlines()[-1]
+    assert last.endswith("exit 0: hi")

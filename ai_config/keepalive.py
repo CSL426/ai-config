@@ -16,6 +16,7 @@ one machine's answer overwrite another's.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -288,11 +289,30 @@ def send(tool: str = DEFAULT_TOOL) -> int:
     except (OSError, subprocess.SubprocessError) as exc:
         _append_log(f"failed to start: {exc}", tool)
         return 1
-    reply = (result.stdout or "").strip().splitlines()
-    _append_log(
-        f"exit {result.returncode}: {reply[-1] if reply else '(no output)'}", tool,
-    )
+    _append_log(f"exit {result.returncode}: {_outcome(result)}", tool)
     return result.returncode
+
+
+_ERROR_HINT = re.compile(
+    r"error|fail|limit|not supported|denied|invalid", re.IGNORECASE,
+)
+
+
+def _outcome(result: "subprocess.CompletedProcess") -> str:
+    """The one line worth keeping: the reply, or on failure, the reason.
+
+    A failed call used to log only its exit code. The reason was on
+    stderr the whole time -- an exhausted usage limit ran for two days
+    as "exit 1: (no output)" -- and finding it meant rerunning by hand.
+    """
+    reply = (result.stdout or "").strip().splitlines()
+    if result.returncode == 0:
+        return reply[-1] if reply else "(no output)"
+    lines = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]
+    # 工具在錯誤後面還會印 hook 與橫幅,最後一行常是雜訊,要找錯誤那行
+    flagged = [line for line in lines if _ERROR_HINT.search(line)]
+    reason = (flagged or lines or reply or ["(no output)"])[-1]
+    return reason[:300]
 
 
 def platform_name() -> str:
