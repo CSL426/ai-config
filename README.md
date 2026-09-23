@@ -305,7 +305,10 @@ covering status/apply/pull/push.
 
 On Windows the released executable already contains it: download
 `acg.exe` from the latest release and double-click it, or run `acg gui`.
-`acg gui --shortcut` adds a Start-menu entry. Windows 10 builds without
+The Windows installer puts an `acg` shortcut on the desktop and in the
+Start menu on first install (set `AI_CONFIG_NO_SHORTCUT=1` to skip it);
+`acg gui --shortcut` adds them again, and on Linux adds an app-menu entry
+plus a desktop icon when a Desktop folder exists. Windows 10 builds without
 Microsoft Edge WebView2 need that runtime installed first.
 
 Elsewhere, build and install from the same source checkout:

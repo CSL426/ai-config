@@ -629,15 +629,70 @@ def test_source_checkout_without_assets_says_to_build(
     assert "pnpm" in output.out + output.err
 
 
-def test_shortcut_refuses_outside_windows(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_shortcut_on_linux_adds_a_menu_entry_and_a_desktop_icon(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Linux desktops find apps through .desktop files, not the binary's folder."""
+    from ai_config import paths
     from ai_config.commands import gui as gui_module
 
+    launcher = tmp_path / "bin" / "ai-config"
+    launcher.parent.mkdir()
+    launcher.write_text("binary", encoding="utf-8")
+    home = tmp_path / "home"
+    (home / "Desktop").mkdir(parents=True)
     monkeypatch.setattr(gui_module.sys, "platform", "linux")
-    assert gui_module.create_desktop_shortcut() == 1
-    output = capsys.readouterr()
-    assert "Windows" in output.out + output.err
+    monkeypatch.setattr(paths, "standalone_install_path", lambda: launcher)
+    monkeypatch.setattr(gui_module.Path, "home", lambda: home)
+
+    assert gui_module.create_desktop_shortcut() == 0
+
+    menu = home / ".local/share/applications/acg.desktop"
+    desktop = home / "Desktop/acg.desktop"
+    for entry in (menu, desktop):
+        text = entry.read_text(encoding="utf-8")
+        assert f"Exec={launcher} gui" in text
+        assert "Type=Application" in text
+    assert desktop.stat().st_mode & 0o111
+
+
+def test_shortcut_points_at_the_launcher_updates_keep_current(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The running exe lives in versions/<x>/; a shortcut there dies on the next update."""
+    from ai_config import paths
+    from ai_config.commands import gui as gui_module
+
+    running = tmp_path / "versions" / "1.0.1" / "ai-config.exe"
+    running.parent.mkdir(parents=True)
+    running.write_text("binary", encoding="utf-8")
+    launcher = tmp_path / "bin" / "ai-config.exe"
+    launcher.parent.mkdir()
+    launcher.write_text("binary", encoding="utf-8")
+    monkeypatch.setattr(gui_module.sys, "platform", "win32")
+    monkeypatch.setattr(gui_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(gui_module.sys, "executable", str(running))
+    monkeypatch.setattr(paths, "standalone_install_path", lambda: launcher)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData"))
+    captured = {}
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["script"] = cmd[-1]
+        return Result()
+
+    monkeypatch.setattr(gui_module.subprocess, "run", fake_run)
+
+    assert gui_module.create_desktop_shortcut() == 0
+    assert str(launcher) in captured["script"]
+    assert "versions" not in captured["script"]
+    # 桌面與開始選單各一個
+    assert "GetFolderPath('Desktop')" in captured["script"]
+    assert "Start Menu" in captured["script"]
 
 
 def test_shortcut_builds_a_powershell_command(
@@ -653,6 +708,10 @@ def test_shortcut_builds_a_powershell_command(
     monkeypatch.setattr(gui_module.sys, "frozen", True, raising=False)
     monkeypatch.setattr(gui_module.sys, "executable", str(exe))
     monkeypatch.setenv("APPDATA", str(appdata))
+    from ai_config import paths
+
+    # 沒有固定入口時才退回執行中的 exe;這台機器自己的入口不能混進測試
+    monkeypatch.setattr(paths, "standalone_install_path", lambda: tmp_path / "none")
 
     captured = {}
 

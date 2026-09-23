@@ -289,6 +289,11 @@ if (-not (Wait-ExecutableReady $Destination)) {
     exit 0
 }
 Install-Completions $Destination
+# 桌面 App 是給不打指令的人用的;只在第一次安裝建,更新不再建,刪掉的捷徑才不會一直跑回來
+if ($Operation -eq 'Installation' -and -not $env:AI_CONFIG_NO_SHORTCUT) {
+    & $Destination gui --shortcut
+    if ($LASTEXITCODE -ne 0) { Write-Warn "Desktop shortcut was not created; run: ai-config gui --shortcut" }
+}
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not $SkipPathUpdate -and ($UserPath -split ';') -notcontains $BinDir) {
     $UpdatedPath = if ($UserPath) { "$UserPath;$BinDir" } else { $BinDir }

@@ -99,7 +99,7 @@ def usage() -> None:
     print("                    Claude context reminder (default 70%; no automatic write)")
     print("                  push --allow-secrets skip the credential-content check")
     print("  desktop         Launch the desktop app (bundled on Windows)")
-    print("                  --shortcut add a Start-menu entry (Windows)")
+    print("                  --shortcut add desktop and app-menu shortcuts (Windows, Linux)")
     print("                  --wait stay in the foreground (shows errors)")
     print("  gui             Alias for desktop")
     print("  skill           Print the acg usage guide (written for AI agents)")
