@@ -152,3 +152,18 @@ def standalone_install_path() -> Path:
     executable = "ai-config.exe" if NATIVE_WINDOWS else "ai-config"
     default_bin = Path.home() / ".local" / "bin"
     return Path(os.environ.get("AI_CONFIG_BIN_DIR", default_bin)) / executable
+
+
+def scheduled_command() -> list:
+    """What a timer should run to reach acg: the launcher updates keep current.
+
+    `python -m ai_config` resolves to whatever that interpreter has
+    installed. Enabled from a checkout, a timer ran a stale site-packages
+    copy for days while every release went to the standalone launcher.
+    """
+    launcher = standalone_install_path()
+    if launcher.is_file():
+        return [str(launcher)]
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    return [sys.executable, "-m", "ai_config"]

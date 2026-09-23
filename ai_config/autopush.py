@@ -226,9 +226,9 @@ def decide(stale_hours: float = DEFAULT_STALE_HOURS) -> Decision:
 # ─── platform scheduling ──────────────────────────────────────
 
 def _acg_command() -> list[str]:
-    if getattr(sys, "frozen", False):
-        return [sys.executable]
-    return [sys.executable, "-m", "ai_config"]
+    from . import paths
+
+    return paths.scheduled_command()
 
 
 def _run_args(stale_hours: float) -> list[str]:

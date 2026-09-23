@@ -418,3 +418,36 @@ def test_status_lists_the_last_result_of_each_account(state: Path) -> None:
         ".codex-set": "[t2] exit 0: hi",
         ".codex-csl": "[t1] exit 0: hi",
     }
+
+
+def test_the_schedule_calls_the_launcher_that_updates_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Enabled from source, the timer ran `python -m ai_config`.
+
+    That resolved to whatever that interpreter had installed — a stale
+    1.0.75 copy in site-packages — so two releases of keepalive fixes
+    never reached the schedule. The standalone launcher is the one path
+    `acg update` keeps current.
+    """
+    from ai_config import paths
+
+    launcher = tmp_path / "bin" / "ai-config"
+    launcher.parent.mkdir()
+    launcher.write_text("", encoding="utf-8")
+    monkeypatch.setattr(paths, "standalone_install_path", lambda: launcher)
+
+    assert keepalive._invocation("codex") == [str(launcher), "keepalive", "send", "codex"]
+
+
+def test_without_a_launcher_the_schedule_uses_this_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from ai_config import paths
+
+    monkeypatch.setattr(paths, "standalone_install_path", lambda: tmp_path / "none")
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+
+    assert keepalive._invocation()[:3] == [sys.executable, "-m", "ai_config"]
