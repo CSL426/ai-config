@@ -116,7 +116,14 @@ export function updateStatus(result: RunResult, tool: string): void {
       label.textContent = "一致";
     } else if (state === "pending") {
       row.classList.add("is-pending");
-      label.textContent = "有差異";
+      // 看到有差異,下一步就是看差在哪;直接給一個能點的入口
+      const jump = document.createElement("button");
+      jump.type = "button";
+      jump.className = "tool-diff";
+      jump.dataset.diffTool = row.dataset.toolRow ?? "";
+      jump.textContent = "有差異 ›";
+      jump.setAttribute("aria-label", `查看 ${row.querySelector(".tool-name")?.textContent ?? ""} 的差異`);
+      label.replaceChildren(jump);
       pending += 1;
     } else {
       label.textContent = state === "unavailable" ? "缺少設定／工具" : "未檢查";
@@ -294,3 +301,11 @@ $("#config-info").addEventListener("click", () => {
   if (bridge) void perform("連線資訊", () => bridge.config_info());
 });
 
+
+$("#tool-rows").addEventListener("click", (event) => {
+  const jump = (event.target as HTMLElement).closest<HTMLElement>("[data-diff-tool]");
+  if (!jump) return;
+  openOutput();
+  const section = document.getElementById(`output-status-${jump.dataset.diffTool}`);
+  section?.scrollIntoView({ block: "start" });
+});

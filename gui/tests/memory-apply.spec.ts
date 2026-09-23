@@ -101,7 +101,7 @@ test("下載永遠 all、不自動套用，提供後續預覽", async ({ page })
   await expect(page.locator(".command-hint")).toContainText("共用記憶會立即更新");
   await page.locator("[data-cmd=pull]").click();
   await expect(page.locator("#pull-apply")).toBeVisible();
-  expect((await calls(page, "run"))[0].args).toEqual(["pull", "all"]);
+  expect((await calls(page, "run")).map(call => call.args)).toContainEqual(["pull", "all"]);
   expect(await calls(page, "preview_apply")).toHaveLength(0);
   await page.locator("#pull-apply").click();
   await expect(page.locator("#apply-preview")).toBeDisabled();

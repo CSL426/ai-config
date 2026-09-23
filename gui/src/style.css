@@ -1726,3 +1726,17 @@ summary:focus-visible,
 .handoff-thread-meta { color: var(--color-ink-soft); }
 .handoff-thread[data-stale='true'] .handoff-thread-meta { color: var(--color-warn); }
 .handoff-thread-summary { color: var(--color-ink-soft); overflow-wrap: anywhere; }
+
+/* 狀態摘要縮成一行,重新整理放旁邊;開啟時就會自動檢查一次,不再需要大按鈕 */
+.status-head { display: flex; align-items: center; gap: var(--space-sm); inline-size: 100%; flex-shrink: 0; }
+.status-head .hero-state { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-sm); row-gap: 0.125rem; align-items: center; text-align: start; }
+.status-head .hero-mark { grid-row: span 2; inline-size: 1.75rem; block-size: 1.75rem; background-size: 1.125rem; }
+.status-head .hero-title { font-size: 1.0625rem; }
+.status-head .hero-sub { font-size: 0.8125rem; }
+.status-refresh { inline-size: 2.5rem; block-size: 2.5rem; padding: 0; display: inline-grid; place-items: center; flex-shrink: 0; }
+.status-refresh svg { inline-size: 1.25rem; block-size: 1.25rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.status-refresh:disabled svg { opacity: 0.4; }
+.hero-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tool-diff { padding: 0; border: 0; background: none; color: var(--color-warn); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 0.2em; }
+.tool-diff:hover { color: var(--color-accent); }
+.tool-diff:focus-visible { outline: 0.125rem solid var(--color-focus); outline-offset: 0.125rem; border-radius: var(--radius-sm); }
