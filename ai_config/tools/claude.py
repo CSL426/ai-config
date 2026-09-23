@@ -38,7 +38,7 @@ from ..safety import assert_managed_paths_safe
 # statusLine is synced: the script it names travels with the repository and
 # the command is written with "~", which the status line runs through a shell.
 _MACHINE_LOCAL_SETTINGS = frozenset(
-    {"permissions", "env", "model", "modelSettings", "autoMode"}
+    {"permissions", "env", "model", "modelSettings", "effortLevel", "autoMode"}
 )
 _SETTINGS_LABEL = "Claude settings.json"
 

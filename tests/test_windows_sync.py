@@ -294,7 +294,7 @@ def test_init_codex_collects_only_filtered_general_config(tmp_path: Path) -> Non
     live_config.parent.mkdir(parents=True)
     live_config.write_bytes(
         b"\xef\xbb\xbf"
-        b'model = "live"\n\n'
+        b'personality = "live"\n\n'
         b'[projects."C:/one"]\ntrust_level = "trusted"\n\n'
         b"[features]\nsearch = true\n\n"
         b'[projects."C:/two"]\ntrust_level = "untrusted"\n\n'
@@ -311,7 +311,7 @@ def test_init_codex_collects_only_filtered_general_config(tmp_path: Path) -> Non
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert (repo_dir / "codex/config.toml").read_bytes() == (
-        b'model = "live"\n\n'
+        b'personality = "live"\n\n'
         b"[features]\nsearch = true\n\n"
         b"[notice]\nhide = false\n"
     )
@@ -572,7 +572,7 @@ def test_project_all_uses_live_claude_and_repo_tool_specific_and_shared_sources(
     copy_runtime_files(repo_dir)
     write(repo_dir / "claude/CLAUDE.md", "repo instructions must not project\n")
     write(repo_dir / "claude/rules/repo-only.md", "repo claude rule\n")
-    write(repo_dir / "codex/config.toml", 'model = "repo-codex"\n')
+    write(repo_dir / "codex/config.toml", 'personality = "repo-codex"\n')
     write(repo_dir / "codex/rules/codex.md", "codex rule\n")
     write(repo_dir / "codex/skills/codex-only/SKILL.md", "# Codex only\n")
     write(repo_dir / "agy/settings.json", '{"theme":"repo-agy"}\n')
@@ -593,7 +593,7 @@ def test_project_all_uses_live_claude_and_repo_tool_specific_and_shared_sources(
         live_claude / "shared/both/live-shared/SKILL.md",
         "# Must not be shared source\n",
     )
-    write(home_dir / ".codex/config.toml", 'model = "before-project"\n')
+    write(home_dir / ".codex/config.toml", 'personality = "before-project"\n')
     write(
         home_dir / ".gemini/antigravity-cli/settings.json",
         '{"theme":"before-project"}\n',
@@ -605,7 +605,7 @@ def test_project_all_uses_live_claude_and_repo_tool_specific_and_shared_sources(
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert (home_dir / ".codex/AGENTS.md").read_text() == "live instructions\n"
-    assert 'model = "repo-codex"' in (home_dir / ".codex/config.toml").read_text()
+    assert 'personality = "repo-codex"' in (home_dir / ".codex/config.toml").read_text()
     assert (home_dir / ".codex/rules/live.md").read_text() == "live rule\n"
     assert (home_dir / ".codex/rules/codex.md").read_text() == "codex rule\n"
     codex_skills = home_dir / ".agents/skills"
@@ -956,7 +956,7 @@ def test_apply_all_projects_repo_configuration_to_tool_homes(tmp_path: Path) -> 
         "---\nname: reviewer\ndescription: Reviews code\n---\nReview carefully.\n",
     )
     write(repo_dir / "claude/commands/check.md", "Run checks.\n")
-    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(repo_dir / "codex/config.toml", 'personality = "gpt-5"\n')
     write(repo_dir / "codex/rules/codex.md", "codex rule\n")
     write(
         repo_dir / "codex/skills/codex-only/SKILL.md",
@@ -969,7 +969,7 @@ def test_apply_all_projects_repo_configuration_to_tool_homes(tmp_path: Path) -> 
     )
     write(
         home_dir / ".codex/config.toml",
-        'model = "old-model"\n\n'
+        'personality = "old-model"\n\n'
         '[projects."C:/workspace/專案 one"]\n'
         'trust_level = "trusted"\n',
     )
@@ -996,8 +996,8 @@ def test_apply_all_projects_repo_configuration_to_tool_homes(tmp_path: Path) -> 
         assert (home_dir / relative_path).read_text(encoding="utf-8") == expected
 
     codex_config = (home_dir / ".codex/config.toml").read_text(encoding="utf-8")
-    assert 'model = "gpt-5"' in codex_config
-    assert 'model = "old-model"' not in codex_config
+    assert 'personality = "gpt-5"' in codex_config
+    assert 'personality = "old-model"' not in codex_config
     assert '[projects."C:/workspace/專案 one"]' in codex_config
     assert 'trust_level = "trusted"' in codex_config
 

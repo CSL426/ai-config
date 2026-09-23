@@ -117,3 +117,22 @@ def test_apply_syncs_statusline_but_preserves_env(tmp_path: Path) -> None:
     # 腳本跟著 repo 走,指向它的設定也跟著走;新機器 apply 完狀態列就會亮
     assert applied["statusLine"] == {"command": "bash ~/.claude/statusline.sh"}
     assert "env" not in applied
+
+
+def test_effort_is_picked_per_machine_like_the_model() -> None:
+    """model was already local while effortLevel synced beside it.
+
+    Both are chosen at the machine, often for a single question, and a
+    choice made there should not come back on every other machine.
+    """
+    text = json.dumps({"effortLevel": "high", "theme": "dark"})
+
+    assert json.loads(filter_claude_settings(text)) == {"theme": "dark"}
+
+    merged = json.loads(
+        merge_claude_settings(
+            json.dumps({"theme": "dark"}),
+            json.dumps({"effortLevel": "max", "theme": "light"}),
+        )
+    )
+    assert merged == {"effortLevel": "max", "theme": "dark"}

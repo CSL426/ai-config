@@ -48,6 +48,8 @@ _MANAGED_PLUGIN_HEADER = re.compile(
 # marketplace 區塊帶的是這台機器上的絕對路徑(cache 目錄),
 # 同步到別台只會指向不存在的位置,所以和 [projects.*] 一樣不進 repo。
 _MARKETPLACE_HEADER = re.compile(r"^\[marketplaces\.")
+# hook 信任記錄以本機路徑為鍵,別台同步過來的只會是不存在的路徑
+_HOOK_STATE_HEADER = re.compile(r"^\[hooks\.state(\]|\.)")
 _ANY_HEADER = re.compile(r"^\[")
 
 
@@ -56,9 +58,12 @@ def _is_machine_local_header(line: str) -> bool:
         _PROJECTS_HEADER.match(line)
         or _MANAGED_PLUGIN_HEADER.match(line)
         or _MARKETPLACE_HEADER.match(line)
+        or _HOOK_STATE_HEADER.match(line)
     )
 _TOP_LEVEL_ASSIGNMENT = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
-_MACHINE_LOCAL_TOP_LEVEL_KEYS = {"notify"}
+# 模型與思考強度是每台自己挑的,常常只是為了問一個問題臨時切換;跟 Claude
+# 的 model 一樣不同步,否則一台的臨時選擇會被收集回去再套到別台
+_MACHINE_LOCAL_TOP_LEVEL_KEYS = {"notify", "model", "model_reasoning_effort"}
 
 
 def _top_level_machine_local_statements(text: str) -> list[str]:

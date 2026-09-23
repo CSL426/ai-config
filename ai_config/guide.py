@@ -149,7 +149,7 @@ Pull still downloads the entire repository, including shared memory.
 
 ## Gotchas
 
-- **`permissions`, `env`, `model`, `modelSettings`, and `autoMode` are
+- **`permissions`, `env`, `model`, `modelSettings`, `effortLevel`, and `autoMode` are
   machine-local and never synced**
   (plus `trustedWorkspaces` on agy). Each machine keeps its own allowlist and
   environment, so a difference there is expected, not
@@ -162,8 +162,10 @@ Pull still downloads the entire repository, including shared memory.
   requires read access and treats missing push access as a warning, leaving
   the machine able to run `status`, `pull`, and `apply`. `push` then refuses
   up front instead of failing against the remote.
-- **Codex `[projects.*]` and top-level `notify` are preserved** on the target
-  machine; apply updates only general settings.
+- **Codex `[projects.*]`, `[hooks.state.*]` and top-level `notify`, `model` and
+  `model_reasoning_effort` are preserved** on the target machine; apply
+  updates only general settings. Which model a machine runs is picked
+  there, like Claude's `model`.
 - **`push` refuses to run with pre-staged changes** so it cannot commit an
   unreviewed diff. It also aborts on detached HEAD or an in-progress
   merge/rebase, and rolls back if the staged tree changes mid-flight. On cancel,
