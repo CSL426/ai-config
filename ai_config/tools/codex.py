@@ -133,6 +133,53 @@ def _write_config(
     )
 
 
+# 只該出現在最上層的設定。寫進 [hooks.state."…"] 底下就會被忽略並每次啟動警告
+_TOP_LEVEL_ONLY = {
+    "model", "model_reasoning_effort", "personality",
+    "approvals_reviewer", "service_tier",
+}
+_HOOK_ENTRY = re.compile(r'^\[hooks\.state\."(.+)"\]\s*$')
+
+
+def _hook_file_missing(key: str) -> bool:
+    """Whether a hook-trust key names a hooks file absent from this machine.
+
+    Keys are "<path to hooks.json>:<event>:<n>:<n>" for project hooks and
+    "<plugin>@<marketplace>:..." for plugin hooks; only the former name a
+    file that can be checked.
+    """
+    path, sep, _ = key.partition(".json:")
+    if not sep or "@" in path.split("/")[0]:
+        return False
+    path += ".json"
+    if not (path.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", path)):
+        return False
+    return not os.path.exists(path)
+
+
+def _tidy_hook_trust(lines: list[str]) -> list[str]:
+    """Drop trust for hook files this machine lacks, and settings misplaced under it.
+
+    Earlier syncs left another machine's entries here; once hook trust
+    became local, apply preserved them as this machine's own.
+    """
+    out: list[str] = []
+    dropping = False
+    in_hook = False
+    for line in lines:
+        if _ANY_HEADER.match(line):
+            entry = _HOOK_ENTRY.match(line)
+            in_hook = bool(entry) or line.strip() == "[hooks.state]"
+            dropping = bool(entry) and _hook_file_missing(entry.group(1))
+        if dropping:
+            continue
+        match = _TOP_LEVEL_ASSIGNMENT.match(line)
+        if in_hook and match and match.group(1) in _TOP_LEVEL_ONLY:
+            continue
+        out.append(line)
+    return out
+
+
 def merge_codex_config(source_text: str, target_text: str) -> str:
     """Replace shared settings while preserving machine-local target values."""
     machine_local = _top_level_machine_local_statements(target_text)
@@ -149,6 +196,7 @@ def merge_codex_config(source_text: str, target_text: str) -> str:
         if in_projects:
             projects.append(line)
 
+    projects = _tidy_hook_trust(projects)
     result = filter_codex_config(source_text).rstrip("\n")
     block = "\n".join(projects).rstrip("\n")
     if block:
