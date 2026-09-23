@@ -145,7 +145,7 @@ def _autopush(rest: list[str]) -> int:
 
 _HANDOFF_USAGE = (
     f"Usage: {ENTRYPOINT} memory handoff "
-    "[list [專案路徑] | write <線> <內容> | claim <線> | done <線> | "
+    "[list [專案路徑] | write <線> <內容> | claim [線] | done <線> | "
     "remind [status|enable [百分比]|disable]]"
 )
 
@@ -169,8 +169,9 @@ def _handoff(rest: list[str]) -> int:
                 f"{shlex.quote(note.name)}"
             )
             return 0
-        if action == "claim" and len(args) == 1:
-            note, displaced = hand.claim(args[0])
+        if action == "claim" and len(args) <= 1:
+            # 不帶名稱就認領這個 session 名稱留下的那條線
+            note, displaced = hand.claim(args[0] if args else "")
             log_success(f"已認領:{note.thread}")
             # 接走的是別人放著沒收的線,說出前一個持有者,接手的人才
             # 知道這份進度可能停在半路,不是寫完才交出來的

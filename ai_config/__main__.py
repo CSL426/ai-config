@@ -93,7 +93,7 @@ def usage() -> None:
     print("                  path --global|--project print one of the two roots")
     print("                  push --if-stale <小時> only when nothing pushed since")
     print("                  autopush status|enable [時]|disable  schedule a daily save")
-    print("                  handoff list [專案路徑]|write <線> <內容>|claim <線>|done <線>")
+    print("                  handoff list [專案路徑]|write <線> <內容>|claim [線]|done <線>")
     print("                    hand one work thread to the session that follows")
     print("                  handoff remind status|enable [百分比]|disable")
     print("                    Claude context reminder (default 70%; no automatic write)")

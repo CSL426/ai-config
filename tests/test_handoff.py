@@ -597,3 +597,91 @@ def test_the_fallback_summary_skips_headings() -> None:
     body = "## 這條線在做什麼\n\n追 MVP114 的 KPI 差異\n"
 
     assert handoff.summary(body) == "追 MVP114 的 KPI 差異"
+
+
+@pytest.fixture
+def named(notebook: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Claude Code's own record of this session, naming it."""
+    import json
+
+    sessions = tmp_path / "claude" / "sessions"
+    sessions.mkdir(parents=True)
+    monkeypatch.setattr(handoff, "_sessions_dir", lambda: sessions)
+
+    def name_it(session: str, name: str, pid: int = 100) -> None:
+        (sessions / f"{pid}.json").write_text(
+            json.dumps({"pid": pid, "sessionId": session, "name": name}),
+            encoding="utf-8",
+        )
+
+    return name_it
+
+
+def test_the_session_name_is_read_from_claude_code(named) -> None:
+    named("session-one", "acg")
+
+    assert handoff.session_name() == "acg"
+
+
+def test_no_record_means_no_name(named, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The file is Claude Code's internal state; missing it must not break anything."""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "someone-else")
+
+    assert handoff.session_name() == ""
+
+
+def test_writing_records_the_session_name(named) -> None:
+    named("session-one", "acg")
+
+    assert handoff.write("排程", "內容").session_name == "acg"
+
+
+def test_a_session_picks_up_its_own_thread_without_being_told(
+    named, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """handoff, /clear, pickup: the same session name on both ends.
+
+    The name survives /clear while the session id does not, so the name
+    is what says which thread this session left for itself.
+    """
+    named("session-one", "acg")
+    handoff.write("排程", "我的")
+    named("session-x", "Vman0914", pid=200)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-x")
+    handoff.write("別人的", "不是我的")
+
+    named("session-after-clear", "acg", pid=100)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-after-clear")
+    note, _ = handoff.claim()
+
+    assert note.thread == "排程"
+    assert note.claimed_by == "session-after-clear"
+
+
+def test_without_a_matching_thread_claim_asks_for_a_name(named) -> None:
+    named("session-one", "acg")
+
+    with pytest.raises(ValueError, match="指定"):
+        handoff.claim()
+
+
+def test_two_threads_under_one_name_are_not_guessed_between(named) -> None:
+    named("session-one", "acg")
+    handoff.write("一", "內容")
+    handoff.write("二", "內容")
+
+    with pytest.raises(ValueError, match="一.*二|二.*一"):
+        handoff.claim()
+
+
+def test_claim_without_a_name_works_from_the_command_line(
+    named, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ai_config.commands import memory as command
+
+    named("session-one", "acg")
+    handoff.write("排程", "## Next\n- 下一步")
+
+    assert command.run_memory(["handoff", "claim"]) == 0
+
+    assert "已認領:排程" in capsys.readouterr().out

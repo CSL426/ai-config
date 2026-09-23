@@ -11,6 +11,7 @@ already holds. Two machines are caught by push refusing to overwrite a
 moved upstream.
 """
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -65,6 +66,35 @@ def session_id() -> str:
     return os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()
 
 
+def _sessions_dir() -> Path:
+    from .paths import CLAUDE_HOME
+
+    return CLAUDE_HOME / "sessions"
+
+
+def session_name() -> str:
+    """The name this session was given, or "" when it has none or it cannot be read.
+
+    The id changes on /clear and the name does not, so the name is what
+    ties a handoff to the session that picks it up after clearing.
+    Claude Code keeps it in sessions/<pid>.json -- internal state, not an
+    interface, so anything unreadable here just means no name.
+    """
+    me = session_id()
+    root = _sessions_dir()
+    if not me or not root.is_dir():
+        return ""
+    for path in root.glob("*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict) and record.get("sessionId") == me:
+            name = record.get("name")
+            return name.strip() if isinstance(name, str) else ""
+    return ""
+
+
 @dataclass
 class Handoff:
     path: Path
@@ -73,6 +103,7 @@ class Handoff:
     state: str
     author: str
     claimed_by: str
+    session_name: str
     created: str
     updated: str
     body: str
@@ -102,6 +133,7 @@ def _parse(path: Path) -> "Handoff | None":
         state=state if state in _STATES else OPEN,
         author=fields.get("author", "").strip(),
         claimed_by=fields.get("claimed_by", "").strip(),
+        session_name=fields.get("session_name", "").strip(),
         # 這個欄位比筆記晚出現,舊的沒有。退回 updated 只會讓那幾則
         # 看起來像剛開的,不會讀不出來
         created=fields.get("created", "").strip() or updated,
@@ -120,6 +152,8 @@ def _render(note: Handoff) -> str:
     ]
     if note.claimed_by:
         lines.append(f"claimed_by: {note.claimed_by}\n")
+    if note.session_name:
+        lines.append(f"session_name: {note.session_name}\n")
     lines.append(f"created: {note.created}\n")
     lines.append(f"updated: {note.updated}\n")
     lines.append(_FRONT)
@@ -236,6 +270,7 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
         state=OPEN,
         author=session_id() or (existing.author if existing else ""),
         claimed_by="",
+        session_name=session_name() or (existing.session_name if existing else ""),
         # 重寫一條線是接著做,不是另一條新的線
         created=existing.created if existing else now,
         updated=now,
@@ -256,7 +291,29 @@ def _load_or_fail(name: str) -> Handoff:
     return note
 
 
-def claim(name: str) -> "tuple[Handoff, str]":
+def _own_thread() -> Handoff:
+    """The one live thread this session's name left for it.
+
+    handoff, /clear, pickup: the same name on both ends, so the session
+    need not be told which thread is its own. Anything but exactly one
+    match is handed back to the person to choose.
+    """
+    mine = session_name()
+    if not mine:
+        raise ValueError("讀不到這個 session 的名稱,請指定要認領的工作線")
+    candidates = [
+        note for note in load_all(project_key().key)
+        if note.state != DONE and note.session_name == mine
+    ]
+    if not candidates:
+        raise ValueError(f"沒有 session「{mine}」留下的工作線,請指定要認領的工作線")
+    if len(candidates) > 1:
+        names = "、".join(note.thread for note in candidates)
+        raise ValueError(f"session「{mine}」留下不只一條線:{names},請指定")
+    return candidates[0]
+
+
+def claim(name: str = "") -> "tuple[Handoff, str]":
     """Take over a thread, and say whose stale claim it displaced.
 
     Refuses a closed thread, or one another session is actively holding.
@@ -265,7 +322,8 @@ def claim(name: str) -> "tuple[Handoff, str]":
     holder recorded on the note is then a session id that no longer
     exists. Refusing on it strands the thread for good.
     """
-    note = _load_or_fail(name)
+    note = _load_or_fail(name) if name else _own_thread()
+    name = name or note.thread
     me = session_id()
     # 結束的線不再是工作。認領它會把紀錄翻回活線並蓋掉持有者,
     # 而會走到這一步的多半是把列表符號讀錯了,不是真的要重開

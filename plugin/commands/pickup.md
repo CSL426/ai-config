@@ -11,7 +11,17 @@ allowed-tools: Bash(acg memory handoff:*), Bash(ai-config memory handoff:*)
 引數的第一個詞若是一個存在的目錄,就是要看**那個專案**的交接線,列表時把它
 傳給 `list`;其餘的詞才是工作線名稱。沒給路徑就看目前這個專案。
 
-若使用者沒指定名稱,先列出有哪些可接(有路徑就接在後面):
+若使用者沒指定名稱,先試著認領**這個 session 自己留下的線**:
+
+```
+acg memory handoff claim
+```
+
+不帶名稱時,它找的是交接時記下的 session 名稱跟現在這個 session 一樣的線。使用者的
+流程是 handoff → `/clear` → pickup,名字不會變,所以這一步通常就接到了,不用再問。
+成功就直接跳到下面「認領會印出那條線的進度」。
+
+如果它說讀不到名稱、沒有這個名稱留下的線,或不只一條,才改成列出有哪些可接(有路徑就接在後面):
 
 ```
 acg memory handoff list
