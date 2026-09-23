@@ -17,13 +17,18 @@ import { state } from "./state";
 import { feedback, syncControls } from "./shell";
 import { loadSkills } from "./skills";
 import { loadInfo, setRequestBoot } from "./connection";
+import { runCommand } from "./status";
 
 setRequestBoot(() => boot());
 
 async function boot(): Promise<void> {
   syncControls();
   await loadInfo();
-  if (state.connected && state.configured) await loadSkills();
+  if (state.connected && state.configured) {
+    await loadSkills();
+    // 打開就是想知道現在的狀況;不必先按一顆「檢查」
+    await runCommand("status");
+  }
 }
 
 initializeSelects();

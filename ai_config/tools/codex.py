@@ -50,6 +50,12 @@ _MANAGED_PLUGIN_HEADER = re.compile(
 _MARKETPLACE_HEADER = re.compile(r"^\[marketplaces\.")
 # hook 信任記錄以本機路徑為鍵,別台同步過來的只會是不存在的路徑
 _HOOK_STATE_HEADER = re.compile(r"^\[hooks\.state(\]|\.)")
+# Codex 自己寫的介面狀態:新模型提示顯示過幾次、做過哪些模型遷移。
+# 不是設定,同步過去只會讓每次 status 都冒出差異
+_UI_STATE_HEADER = re.compile(r"^\[(tui\.model_availability_nux|notice\.model_migrations)\]")
+# 跟設定混在同一個區塊裡的狀態旗標:[tui] 還有 status_line 這種真正的偏好
+_MACHINE_LOCAL_TABLE_KEYS = {"tui": {"screen_reader_detection_done"}}
+_TABLE_NAME = re.compile(r"^\[([A-Za-z0-9_.-]+)\]\s*$")
 _ANY_HEADER = re.compile(r"^\[")
 
 
@@ -59,6 +65,7 @@ def _is_machine_local_header(line: str) -> bool:
         or _MANAGED_PLUGIN_HEADER.match(line)
         or _MARKETPLACE_HEADER.match(line)
         or _HOOK_STATE_HEADER.match(line)
+        or _UI_STATE_HEADER.match(line)
     )
 _TOP_LEVEL_ASSIGNMENT = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
 # 模型與思考強度是每台自己挑的,常常只是為了問一個問題臨時切換;跟 Claude
@@ -103,6 +110,7 @@ def filter_codex_config(text: str) -> str:
     out: list[str] = []
     skip = False
     in_table = False
+    table = ""
     for line in text.splitlines():
         if _is_machine_local_header(line):
             skip = True
@@ -111,8 +119,12 @@ def filter_codex_config(text: str) -> str:
         if _ANY_HEADER.match(line):
             skip = False
             in_table = True
-        match = None if in_table else _TOP_LEVEL_ASSIGNMENT.match(line)
-        if match and match.group(1) in _MACHINE_LOCAL_TOP_LEVEL_KEYS:
+            named = _TABLE_NAME.match(line)
+            table = named.group(1) if named else ""
+        match = _TOP_LEVEL_ASSIGNMENT.match(line)
+        if match and not in_table and match.group(1) in _MACHINE_LOCAL_TOP_LEVEL_KEYS:
+            continue
+        if match and in_table and match.group(1) in _MACHINE_LOCAL_TABLE_KEYS.get(table, ()):
             continue
         if not skip:
             out.append(line)
@@ -198,10 +210,41 @@ def merge_codex_config(source_text: str, target_text: str) -> str:
 
     projects = _tidy_hook_trust(projects)
     result = filter_codex_config(source_text).rstrip("\n")
+    result = _insert_table_statements(result, _table_machine_local_statements(target_text))
     block = "\n".join(projects).rstrip("\n")
     if block:
         result += "\n" + block
     return _insert_top_level_statements(result + "\n", machine_local)
+
+
+def _table_machine_local_statements(text: str) -> dict:
+    """Machine-local keys that live inside an ordinary table, by table name."""
+    found: dict = {}
+    table = ""
+    for line in text.splitlines():
+        if _ANY_HEADER.match(line):
+            named = _TABLE_NAME.match(line)
+            table = named.group(1) if named else ""
+            continue
+        match = _TOP_LEVEL_ASSIGNMENT.match(line)
+        if table and match and match.group(1) in _MACHINE_LOCAL_TABLE_KEYS.get(table, ()):
+            found.setdefault(table, []).append(line)
+    return found
+
+
+def _insert_table_statements(text: str, statements: dict) -> str:
+    """Put each kept key back under its own table, creating the table if gone."""
+    if not statements:
+        return text
+    lines = text.splitlines()
+    for table, kept in statements.items():
+        header = f"[{table}]"
+        index = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+        if index is None:
+            lines += ["", header, *kept]
+        else:
+            lines[index + 1:index + 1] = kept
+    return "\n".join(lines)
 
 
 def stage_projection(dst: Path, *, category: str = "all") -> None:

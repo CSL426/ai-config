@@ -56,17 +56,35 @@ test("只檢查 Codex 時，摘要不宣稱所有工具或雲端一致", async (
   const summary = await page.locator("#hero-state").innerText();
   expect(summary).not.toMatch(/所有工具.*一致|設定已是最新/);
   expect(summary).not.toMatch(/(?:與|跟)雲端一致/);
-  expect((await calls(page, "run"))[0].args).toEqual(["status", "codex"]);
+  // 第一次是開啟時的自動檢查,這裡要看的是手動那次
+  expect((await calls(page, "run")).at(-1)?.args).toEqual(["status", "codex"]);
 });
 
+const differs = {
+  code: 0,
+  output: "═══ Status: claude ═══\n✓ No differences found\n═══ Status: codex ═══\n⚠ settings differ\n+ model = changed\n═══ Status: agy ═══\n✓ No differences found",
+};
+
 test("有差異的狀態維持差異提示", async ({ page }) => {
-  await boot(page, { run: [{
-    code: 0, output: "═══ Status: codex ═══\n⚠ settings differ\n+ model = changed",
-  }] });
-  await page.locator("[data-tool=codex]").click();
-  await page.locator("[data-cmd=status]").click();
-  await expect(page.locator("[data-tool-row=codex] .tool-state")).toHaveText("有差異");
+  await boot(page, { run: [differs] });
+  await expect(page.locator("[data-tool-row=codex] .tool-state")).toHaveText("有差異 ›");
   await expect(page.locator("#hero-title")).toContainText("差異");
+});
+
+test("開啟就自動檢查，不必先按按鈕", async ({ page }) => {
+  await boot(page);
+  await expect.poll(async () => (await calls(page, "run"))[0]?.args).toEqual(["status", "all"]);
+  await expect(page.locator("[data-tool-row=claude] .tool-state")).not.toHaveText("尚未檢查");
+  // 大顆的檢查按鈕拿掉了,只剩狀態旁的重新整理
+  await expect(page.locator("#actions [data-cmd=status]")).toHaveCount(0);
+  await expect(page.locator(".status-refresh[data-cmd=status]")).toBeVisible();
+});
+
+test("點有差異直接跳到那個工具的差異", async ({ page }) => {
+  await boot(page, { run: [differs] });
+  await page.locator("[data-diff-tool=codex]").click();
+  await expect(page.locator("#output")).toBeVisible();
+  await expect(page.locator("#output-status-codex")).toBeInViewport();
 });
 
 test("離開上傳預覽取消確認，再次預覽只能使用新 token", async ({ page }) => {

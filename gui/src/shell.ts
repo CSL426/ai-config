@@ -318,7 +318,12 @@ export function renderOutput(text: string): void {
     if (line.startsWith("✓")) span.className = "line-ok";
     else if (line.startsWith("⚠")) span.className = "line-warn";
     else if (line.startsWith("✗")) span.className = "line-err";
-    else if (line.startsWith("═══")) span.className = "line-head";
+    else if (line.startsWith("═══")) {
+      span.className = "line-head";
+      // 狀態頁點「有差異」要能跳到這一段
+      const tool = /^═+\s*Status:\s*(\S+)/.exec(line)?.[1];
+      if (tool) span.id = `output-status-${tool}`;
+    }
     else if (line.startsWith("ℹ")) span.className = "line-dim";
     else if (line.startsWith("+")) span.className = "line-add";
     else if (/^-(?!\s)/.test(line)) span.className = "line-remove";

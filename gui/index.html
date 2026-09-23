@@ -209,10 +209,15 @@ claude plugin install acg@acg</textarea>
             <span class="resource-description">分享技能 · 匯出安裝</span>
           </button>
         </nav>
-        <div class="hero-state" id="hero-state" role="status">
-          <span class="hero-mark" id="hero-mark" aria-hidden="true"></span>
-          <h2 class="hero-title" id="hero-title">尚未檢查</h2>
-          <p class="hero-sub" id="hero-sub">比較工具目前的設定與本機保存的設定。</p>
+        <div class="status-head">
+          <div class="hero-state" id="hero-state" role="status">
+            <span class="hero-mark" id="hero-mark" aria-hidden="true"></span>
+            <h2 class="hero-title" id="hero-title">尚未檢查</h2>
+            <p class="hero-sub" id="hero-sub">比較工具目前的設定與本機保存的設定。</p>
+          </div>
+          <button class="btn btn-ghost status-refresh" data-cmd="status" aria-label="重新檢查狀態" title="重新檢查狀態">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><polyline points="20 4 20 9 15 9"/></svg>
+          </button>
         </div>
 
         <div class="tool-rows" id="tool-rows">
@@ -245,7 +250,6 @@ claude plugin install acg@acg</textarea>
         </div>
 
         <div class="hero-actions" id="actions">
-          <button class="btn btn-primary hero-primary" data-cmd="status">檢查狀態</button>
           <button class="btn hero-secondary" data-cmd="pull">下載更新</button>
           <button class="btn hero-secondary" data-cmd="push">上傳變更</button>
           <button class="btn hero-secondary" data-cmd="apply">套用設定</button>

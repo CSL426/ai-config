@@ -806,3 +806,44 @@ def test_apply_strips_settings_misplaced_under_hook_trust() -> None:
         "remember@remember-dev:hooks/hooks.codex.json:session_start:0:0"
     ]
     assert entry == {"trusted_hash": "sha256:plugin"}
+
+
+def test_codex_ui_state_stays_on_each_machine() -> None:
+    """Counters and one-time flags Codex writes read as drift on every status.
+
+    [tui.model_availability_nux] counts how often the new-model notice was
+    shown; [notice.model_migrations] records migrations Codex applied; and
+    screen_reader_detection_done marks a one-time check. None is a setting,
+    and one sits inside [tui] beside status_line, which is.
+    """
+    import tomllib
+
+    from ai_config.tools.codex import filter_codex_config, merge_codex_config
+
+    shared = (
+        'personality = "pragmatic"\n\n'
+        "[notice]\nhide_full_access_warning = true\n\n"
+        '[notice.model_migrations]\n"a" = "b"\n\n'
+        '[tui]\nstatus_line = ["model"]\nscreen_reader_detection_done = true\n\n'
+        '[tui.model_availability_nux]\n"gpt-5.5" = 4\n\n'
+        "[features]\nx = true\n"
+    )
+    gathered = filter_codex_config(shared)
+    assert "model_availability_nux" not in gathered
+    assert "model_migrations" not in gathered
+    assert "screen_reader_detection_done" not in gathered
+    assert "hide_full_access_warning" in gathered
+    assert "status_line" in gathered
+
+    live = (
+        '[tui]\nstatus_line = ["old"]\nscreen_reader_detection_done = true\n\n'
+        '[tui.model_availability_nux]\n"gpt-6" = 2\n\n'
+        '[notice.model_migrations]\n"x" = "y"\n'
+    )
+    applied = tomllib.loads(merge_codex_config(gathered, live))
+    assert applied["tui"]["status_line"] == ["model"]
+    assert applied["tui"]["screen_reader_detection_done"] is True
+    assert applied["tui"]["model_availability_nux"] == {"gpt-6": 2}
+    assert applied["notice"]["model_migrations"] == {"x": "y"}
+    assert applied["notice"]["hide_full_access_warning"] is True
+    assert applied["features"]["x"] is True
