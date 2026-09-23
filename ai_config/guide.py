@@ -227,7 +227,12 @@ refusing on a session id that no longer exists strands the thread. A
 thread left untouched that long also lists as `⚠ 可能已過期` — read it
 before working from it, because the work in it may have shipped
 elsewhere. A finished thread stays on disk as a record but leaves the
-list. Writing again reopens a claimed thread, keeping the date it was
+list. Threads are rarely closed by hand — the usual flow is handoff, `/clear`,
+pickup — so a handoff with nothing left under Next closes the thread
+with `done` instead of writing a note, and any thread untouched for a
+month is archived like a closed one. The plugin's `thread-handoff` skill
+carries the same steps for when someone says "交接" or "接著做"
+instead of typing the command. Writing again reopens a claimed thread, keeping the date it was
 first opened, which `list` shows as how long it has been waiting.
 
 ### Anchoring the usage window
