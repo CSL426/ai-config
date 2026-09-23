@@ -1924,6 +1924,10 @@ def test_attribution_stays_disabled_in_the_database() -> None:
 
     includeCoAuthoredBy is deprecated and never covered the session link
     at all; attribution replaces it and covers all three.
+
+    sessionUrl: true is the switch turned ON. This test once asserted it,
+    guarding the wrong value: every new session was told to end commits
+    with a Claude-Session line, and one reached a pushed commit.
     """
     import json
 
@@ -1934,7 +1938,7 @@ def test_attribution_stays_disabled_in_the_database() -> None:
     attribution = settings.get("attribution")
 
     assert isinstance(attribution, dict), "attribution 不見了,三台都會重新開始加"
-    assert attribution.get("sessionUrl") is True
+    assert attribution.get("sessionUrl") is False, "sessionUrl: true 會叫每個 session 加 Claude-Session"
     assert attribution.get("commit") == ""
     assert attribution.get("pr") == ""
     assert "includeCoAuthoredBy" not in settings, "已棄用,由 attribution 取代"
