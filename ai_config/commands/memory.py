@@ -170,8 +170,15 @@ def _handoff(rest: list[str]) -> int:
             )
             return 0
         if action == "claim" and len(args) == 1:
-            note = hand.claim(args[0])
+            note, displaced = hand.claim(args[0])
             log_success(f"已認領:{note.thread}")
+            # 接走的是別人放著沒收的線,說出前一個持有者,接手的人才
+            # 知道這份進度可能停在半路,不是寫完才交出來的
+            if displaced:
+                log_warn(
+                    f"這條線原本由 {hand.short_id(displaced)} 持有,超過 "
+                    f"{hand.STALE_AFTER_HOURS} 小時沒有動靜,已接手"
+                )
             print()
             print(note.body)
             return 0
@@ -217,6 +224,18 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
 
     if cwd is not None and not cwd.is_dir():
         raise ValueError(f"找不到這個專案目錄:{cwd}")
+    # 每個 session 開工都會走這裡,所以歸檔掛在這:結束很久的線自己
+    # 讓開,不必有人記得清。搬不動就算了,列表比歸檔重要
+    try:
+        archived = hand.archive_finished()
+    except OSError:
+        archived = []
+    # 這些檔案有進版控,不說一聲的話下次 push 會冒出沒人解釋的改名
+    if archived:
+        log_info(
+            f"已把 {len(archived)} 條結束超過 {hand.ARCHIVE_AFTER_DAYS} 天的線"
+            f"移到 {hand.ARCHIVE_DIR_NAME}/:{'、'.join(archived)}"
+        )
     # 結束的線留在磁碟上當紀錄,但這裡問的是「有什麼可以接手」,
     # 把它們一起列出來只會讓人多判斷一次哪條還活著
     notes = [
@@ -229,11 +248,14 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
         return 0
     for note in notes:
         mark = {hand.OPEN: "○", hand.CLAIMED: "◐"}.get(note.state, "○")
-        held = f" ← {note.claimed_by[:8]}" if note.claimed_by else ""
+        held = f" ← {hand.short_id(note.claimed_by)}" if note.claimed_by else ""
         age = hand.age_in_days(note.created)
         # 一條線放了幾天,就是該不該接它的理由;當天開的不用說
         waited = f"  ({age} 天前開的)" if age else ""
-        print(f"  {mark} {note.name}{held}{waited}")
+        # 擱著沒動的線跟剛寫好的長得一樣,而裡面的進度可能早就被
+        # 別處的工作蓋過去了。接手前該先讀一遍,不是照著做
+        stale = "  ⚠ 可能已過期" if hand.is_stale(note) else ""
+        print(f"  {mark} {note.name}{held}{waited}{stale}")
         print(f"    {hand.summary(note.body)}")
     return 0
 

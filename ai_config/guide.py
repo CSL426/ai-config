@@ -215,7 +215,14 @@ headings let `list` show what is still open instead of the first line,
 and keep what was checked apart from what was guessed. Claiming
 records the session id, so a second session is told who holds it rather
 than silently taking it, and a finished thread is refused rather than
-resurrected. A finished thread stays on disk as a record but leaves the
+resurrected. A thread closed more than a month ago moves to
+`handoff/archive/` the next time the list runs, keeping the record out
+of the working directory. A claim nobody has touched for a day is taken over
+instead, naming who held it: sessions end without running `done`, and
+refusing on a session id that no longer exists strands the thread. A
+thread left untouched that long also lists as `⚠ 可能已過期` — read it
+before working from it, because the work in it may have shipped
+elsewhere. A finished thread stays on disk as a record but leaves the
 list. Writing again reopens a claimed thread, keeping the date it was
 first opened, which `list` shows as how long it has been waiting.
 

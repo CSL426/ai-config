@@ -1,5 +1,6 @@
 """交接是每條工作線各一份;日誌解決不了「我這條線做到哪」。"""
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -55,7 +56,7 @@ def test_chinese_thread_names_stay_distinct(notebook: Path) -> None:
 def test_claiming_marks_the_holder(notebook: Path) -> None:
     handoff.write("記憶改善", "內容")
 
-    note = handoff.claim("記憶改善")
+    note, _ = handoff.claim("記憶改善")
 
     assert note.state == handoff.CLAIMED
     assert note.claimed_by == "session-one"
@@ -76,7 +77,7 @@ def test_the_same_session_can_reclaim_its_own(notebook: Path) -> None:
     handoff.write("記憶改善", "內容")
     handoff.claim("記憶改善")
 
-    assert handoff.claim("記憶改善").claimed_by == "session-one"
+    assert handoff.claim("記憶改善")[0].claimed_by == "session-one"
 
 
 def test_done_takes_it_off_the_pile(notebook: Path) -> None:
@@ -317,3 +318,257 @@ def test_a_note_without_headings_lists_as_before(
     assert command.run_memory(["handoff", "list"]) == 0
 
     assert "第一行就是摘要" in capsys.readouterr().out
+
+
+def _age_note(path: Path, field: str, days: int) -> None:
+    """Backdate one timestamp field, the way a note left sitting would look."""
+    from datetime import UTC, datetime, timedelta
+
+    stamp = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _rewrite(path, lambda text: re.sub(
+        rf"^{field}: .*$", f"{field}: {stamp}", text, count=1, flags=re.MULTILINE
+    ))
+
+
+def test_a_claim_left_sitting_can_be_taken_over(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A claim is a status line, not a lock, but nothing ever released one.
+
+    Sessions end without running `done`: the terminal closes, the context
+    runs out. The note keeps a holder that no longer exists, and every
+    later session is refused by a session id that died days ago.
+    """
+    handoff.write("卡住的", "內容")
+    handoff.claim("卡住的")
+    _age_note(handoff.handoff_dir() / "卡住的.md", "updated", 2)
+
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    note, _ = handoff.claim("卡住的")
+
+    assert note.claimed_by == "session-two"
+
+
+def test_a_fresh_claim_is_still_protected(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Timing out a stale claim must not open up a live one."""
+    handoff.write("有人在做", "內容")
+    handoff.claim("有人在做")
+
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    with pytest.raises(ValueError, match="已被其他 session 認領"):
+        handoff.claim("有人在做")
+
+
+def test_a_stale_claim_says_who_held_it(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Taking over silently hides that someone else was on this thread."""
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("卡住的", "內容")
+    handoff.claim("卡住的")
+    _age_note(handoff.handoff_dir() / "卡住的.md", "updated", 2)
+
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    assert command.run_memory(["handoff", "claim", "卡住的"]) == 0
+
+    told = capsys.readouterr().out
+    # 前持有者印的是縮寫,不是整串 id;要的是接手的人看得出有人在過
+    assert handoff.short_id("session-one") in told
+    assert "已接手" in told
+
+
+def test_a_thread_nobody_touched_is_flagged_as_stale(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An abandoned thread lists exactly like one written an hour ago.
+
+    One sat open for four days while the work in it shipped elsewhere;
+    it still read as pickup work, and the version it was waiting on was
+    fifteen releases back.
+    """
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("放很久的", "內容")
+    _age_note(handoff.handoff_dir() / "放很久的.md", "updated", 4)
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    assert "可能已過期" in capsys.readouterr().out
+
+
+def test_a_thread_touched_today_is_not_flagged(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("剛寫的", "內容")
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    assert "可能已過期" not in capsys.readouterr().out
+
+
+def test_a_shortened_id_does_not_end_mid_segment() -> None:
+    """A blind slice left "session-", which reads as a truncated word.
+
+    Real ids are uuids and cut cleanly at the first segment; the stub
+    only showed up on the shorter ids used in tests and logs.
+    """
+    assert handoff.short_id("d4b49a91-38e2-4f31-900a-24d0ae63b153") == "d4b49a91"
+    assert handoff.short_id("session-one") == "session"
+    assert handoff.short_id("abc") == "abc"
+
+
+def test_a_thread_done_long_enough_is_archived(notebook: Path) -> None:
+    """Finished threads stay as a record, but not in the working directory.
+
+    They are never listed again, so they only make the directory harder
+    to scan and slower to load. Archiving keeps the record and takes it
+    out of the way.
+    """
+    handoff.write("做完很久的", "內容")
+    handoff.done("做完很久的")
+    _age_note(handoff.handoff_dir() / "做完很久的.md", "updated", 40)
+
+    moved = handoff.archive_finished()
+
+    assert moved == ["做完很久的"]
+    assert not (handoff.handoff_dir() / "做完很久的.md").exists()
+    assert (handoff.archive_dir() / "做完很久的.md").is_file()
+
+
+def test_a_recently_finished_thread_stays_put(notebook: Path) -> None:
+    """Closing a thread and changing your mind happens the same day."""
+    handoff.write("剛做完的", "內容")
+    handoff.done("剛做完的")
+
+    assert handoff.archive_finished() == []
+    assert (handoff.handoff_dir() / "剛做完的.md").is_file()
+
+
+def test_open_and_claimed_threads_are_never_archived(notebook: Path) -> None:
+    """Only a thread someone closed is finished; age alone means nothing."""
+    handoff.write("放著沒做的", "內容")
+    _age_note(handoff.handoff_dir() / "放著沒做的.md", "updated", 90)
+    handoff.write("認領著的", "內容")
+    handoff.claim("認領著的")
+    _age_note(handoff.handoff_dir() / "認領著的.md", "updated", 90)
+
+    assert handoff.archive_finished() == []
+    assert len(list(handoff.handoff_dir().glob("*.md"))) == 2
+
+
+def test_an_archived_thread_leaves_the_listing(notebook: Path) -> None:
+    """load_all reads the working directory, so archiving must remove it there."""
+    handoff.write("歸檔的", "內容")
+    handoff.done("歸檔的")
+    _age_note(handoff.handoff_dir() / "歸檔的.md", "updated", 40)
+
+    handoff.archive_finished()
+
+    assert handoff.load_all() == []
+
+
+def test_archiving_does_not_overwrite_an_older_record(notebook: Path) -> None:
+    """A thread name can come back; the archived record must survive it.
+
+    Threads are named by hand and reused ("收尾", "release"), so a
+    straight move would silently drop whichever record moved first.
+    """
+    handoff.write("同名的", "第一次")
+    handoff.done("同名的")
+    _age_note(handoff.handoff_dir() / "同名的.md", "updated", 40)
+    handoff.archive_finished()
+
+    handoff.write("同名的", "第二次")
+    handoff.done("同名的")
+    _age_note(handoff.handoff_dir() / "同名的.md", "updated", 40)
+    handoff.archive_finished()
+
+    kept = sorted(p.read_text(encoding="utf-8") for p in handoff.archive_dir().glob("*.md"))
+    assert len(kept) == 2
+    assert any("第一次" in text for text in kept)
+    assert any("第二次" in text for text in kept)
+
+
+def test_listing_archives_what_is_long_finished(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Archiving has to run by itself; nobody remembers a cleanup command."""
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("陳年舊事", "內容")
+    handoff.done("陳年舊事")
+    _age_note(handoff.handoff_dir() / "陳年舊事.md", "updated", 40)
+    handoff.write("還在做的", "內容")
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    capsys.readouterr()
+    assert (handoff.archive_dir() / "陳年舊事.md").is_file()
+    assert not (handoff.handoff_dir() / "陳年舊事.md").exists()
+
+
+def test_a_broken_archive_does_not_break_the_listing(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The list is what the session needs; tidying failing must not hide it."""
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+
+    def refuse(*args: object, **kwargs: object) -> list[str]:
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(handoff, "archive_finished", refuse)
+    handoff.write("還在做的", "進度")
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    assert "還在做的" in capsys.readouterr().out
+
+
+def test_archiving_says_what_it_moved(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """These files are versioned, so a silent move becomes an unexplained rename."""
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("陳年舊事", "內容")
+    handoff.done("陳年舊事")
+    _age_note(handoff.handoff_dir() / "陳年舊事.md", "updated", 40)
+    handoff.write("還在做的", "內容")
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    assert "陳年舊事" in capsys.readouterr().out
