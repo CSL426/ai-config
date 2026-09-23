@@ -572,3 +572,28 @@ def test_archiving_says_what_it_moved(
     assert command.run_memory(["handoff", "list"]) == 0
 
     assert "陳年舊事" in capsys.readouterr().out
+
+
+def test_the_summary_does_not_keep_half_a_bold_marker() -> None:
+    """Next items are written as "1. **Do X**。rest"; the list showed "Do X**".
+
+    Only the leading asterisks were stripped, so every bolded item ended
+    in a stray "**" — reported from the openVman session's list.
+    """
+    body = "## Next\n1. **優先：push 並開 PR。** 五個 commit 還在本機。\n"
+
+    line = handoff.summary(body)
+
+    assert "**" not in line
+    assert "優先：push 並開 PR" in line
+
+
+def test_the_fallback_summary_skips_headings() -> None:
+    """A note opening with its own heading listed as "## 這條線在做什麼".
+
+    Without a Next or Unknowns section the list falls back to the first
+    line, and the first line was the heading — which says nothing.
+    """
+    body = "## 這條線在做什麼\n\n追 MVP114 的 KPI 差異\n"
+
+    assert handoff.summary(body) == "追 MVP114 的 KPI 差異"
