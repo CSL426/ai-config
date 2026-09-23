@@ -235,6 +235,10 @@ call at chosen times (four by default) to put the boundaries where the day
 needs them; `keepalive status` reports every tool, `disable` removes one
 schedule, `send` calls once now. The tool is claude, codex or agy, and
 claude when left out.
+A failed call logs the tool's own error line, such as an exhausted
+usage limit, rather than just its exit code. A failed call also anchors
+nothing: the next real use starts the window instead, which is how the
+boundaries drift off the chosen times.
 
 Each tool is anchored separately, with its own times, schedule and log:
 three accounts, three windows, no reason for their boundaries to line up.
