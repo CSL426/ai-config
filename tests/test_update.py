@@ -14,6 +14,15 @@ from test_commands import make_full_repo
 # test_console_main_usage_entrypoint. Import inside each test instead.
 
 
+
+@pytest.fixture(autouse=True)
+def _no_plugin_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests fake subprocess.run for the binary; the plugin step has its own file."""
+    from ai_config.commands import update
+
+    monkeypatch.setattr(update, "_update_plugin", lambda: None)
+
+
 def test_update_from_source_explains_and_fails(tmp_path: Path) -> None:
     repo_dir, home_dir = make_full_repo(tmp_path)
 

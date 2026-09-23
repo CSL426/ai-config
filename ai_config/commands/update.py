@@ -344,7 +344,50 @@ def run_update(requested_version: "str | None" = None) -> int:
             log_error("已經有一個更新正在進行")
             log_info("等它結束後再試一次;同時更新會寫壞執行檔")
             return 1
-        return _run_update(requested_version)
+        result = _run_update(requested_version)
+    if result == 0:
+        _update_plugin()
+    return result
+
+
+_PLUGIN = "acg@acg"
+
+
+def _claude_binary() -> "str | None":
+    found = shutil.which("claude")
+    if found:
+        return found
+    fallback = Path.home() / ".local" / "bin" / "claude"
+    return str(fallback) if fallback.is_file() else None
+
+
+def _update_plugin() -> None:
+    """Bring the Claude Code plugin along; the binary alone left it behind.
+
+    Three machines sat on plugin 1.0.63 while acg was at 1.0.79: nothing
+    but a person remembering ever ran `claude plugin update`. Best effort
+    -- a machine without Claude Code, or without the plugin, is not an
+    update failure.
+    """
+    from ..subproc import UTF8
+
+    claude = _claude_binary()
+    if claude is None:
+        return
+    try:
+        done = subprocess.run(
+            [claude, "plugin", "update", _PLUGIN],
+            capture_output=True, text=True, **UTF8, timeout=120, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log_warn(f"plugin 沒有更新:{exc}")
+        return
+    output = (done.stdout or done.stderr or "").strip().splitlines()
+    last = output[-1] if output else ""
+    if done.returncode == 0:
+        log_info(f"plugin:{last}" if last else "plugin 已是最新")
+    else:
+        log_warn(f"plugin 沒有更新:{last or f'exit {done.returncode}'}")
 
 
 def _run_update(requested_version: "str | None" = None) -> int:
