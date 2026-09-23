@@ -21,6 +21,8 @@ def core(monkeypatch):
         "installed": Mock(return_value=True),
         "existing_ccs": Mock(return_value="ccs-test"),
         "last_runs": Mock(return_value=["completed"]),
+        "last_by_account": Mock(return_value={}),
+        "current_window": Mock(return_value=None),
     }
     for name, method in methods.items():
         monkeypatch.setattr(keepalive, name, method)
@@ -158,4 +160,35 @@ def test_state_read_failure_returns_safe_fallback(core, method, exception):
         "ccs": "",
         "recent": [],
         "tools": {},
+        "window": None,
     }
+
+
+def test_the_page_gets_the_window_and_each_account(core, monkeypatch):
+    """The CLI showed the real window and every codex account; the page did not.
+
+    Features landed in the CLI and the page was judged not to need them,
+    so the one place most people look still showed a single log line.
+    """
+    from datetime import datetime
+
+    start = datetime(2026, 9, 23, 9, 50).astimezone()
+    reset = datetime(2026, 9, 23, 14, 50).astimezone()
+    monkeypatch.setattr(keepalive, "current_window", lambda now=None: (start, reset))
+    monkeypatch.setattr(keepalive, "drift", lambda s, times, now: "07:00")
+    monkeypatch.setattr(
+        keepalive, "last_by_account",
+        lambda tool="claude": {".codex-set": "exit 0: hi"} if tool == "codex" else {},
+    )
+
+    state = _keepalive_state()
+
+    assert state["window"] == {"start": "09:50", "reset": "14:50", "drift": "07:00"}
+    assert state["tools"]["codex"]["accounts"] == {".codex-set": "exit 0: hi"}
+
+
+def test_no_recorded_window_is_none(core, monkeypatch):
+    monkeypatch.setattr(keepalive, "current_window", lambda now=None: None)
+    monkeypatch.setattr(keepalive, "last_by_account", lambda tool="claude": {})
+
+    assert _keepalive_state()["window"] is None

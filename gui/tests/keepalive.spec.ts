@@ -88,3 +88,27 @@ test("bridge 例外會顯示錯誤並恢復控制項", async ({ page }) => {
   await expect(page.locator("#keepalive-save")).toBeEnabled();
   await expect(page.locator("#memory-feedback")).toContainText("connection lost");
 });
+
+test("顯示實際視窗、偏離排程的警告與各帳號結果", async ({ page }) => {
+  await openMemory(page, {
+    ...active,
+    window: { start: "09:50", reset: "14:50", drift: "07:00" },
+    tools: {
+      claude: { installed: true, times: ["07:00"], recent: [], accounts: {} },
+      codex: {
+        installed: true, times: ["07:00"], recent: [],
+        accounts: { ".codex-set": "exit 1: ERROR: usage limit", ".codex-csl": "exit 0: hi" },
+      },
+    },
+  });
+  await expect(page.locator("#keepalive-window")).toHaveText("目前視窗 09:50–14:50");
+  await expect(page.locator("#keepalive-drift")).toContainText("不是從排程的 07:00 開始");
+  await expect(page.locator("#keepalive-accounts li")).toHaveCount(2);
+  await expect(page.locator("#keepalive-accounts")).toContainText("codex .codex-csl：exit 0: hi");
+});
+
+test("視窗準時開始就不警告", async ({ page }) => {
+  await openMemory(page, { ...active, window: { start: "07:00", reset: "12:00", drift: "" } });
+  await expect(page.locator("#keepalive-window")).toHaveText("目前視窗 07:00–12:00");
+  await expect(page.locator("#keepalive-drift")).toBeEmpty();
+});

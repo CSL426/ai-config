@@ -319,6 +319,9 @@ claude plugin install acg@acg</textarea>
             <input type="text" id="keepalive-times" placeholder="07:00 12:05 17:10 22:15" />
             <button class="btn" id="keepalive-save">更新</button>
             <p class="package-hint" id="keepalive-recent"></p>
+            <p class="package-hint" id="keepalive-window"></p>
+            <p class="package-hint keepalive-drift" id="keepalive-drift" role="status"></p>
+            <ul class="keepalive-accounts" id="keepalive-accounts"></ul>
           </div>
           <label class="autopush-row">
             <input type="checkbox" id="handoff-reminder-toggle" />
@@ -332,6 +335,11 @@ claude plugin install acg@acg</textarea>
             <input type="number" id="handoff-reminder-threshold" min="1" max="99" step="1" value="70" />
             <button class="btn" id="handoff-reminder-save">更新門檻</button>
             <p class="package-hint" id="handoff-reminder-hint" role="status"></p>
+          </div>
+          <div class="handoff-threads">
+            <span class="autopush-title">待接手的工作線</span>
+            <ul id="handoff-threads"></ul>
+            <p class="package-hint" id="handoff-threads-empty"></p>
           </div>
           <label class="autopush-row">
             <input type="checkbox" id="remember-codex-toggle" />

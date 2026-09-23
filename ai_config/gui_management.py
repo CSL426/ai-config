@@ -16,7 +16,7 @@ from .locking import apply_lock
 def _keepalive_state() -> dict:
     """Never let the scheduler take down the whole memory page."""
     blank = {"installed": False, "times": [], "model": "", "ccs": "",
-             "recent": [], "tools": {}}
+             "recent": [], "tools": {}, "window": None}
     try:
         from . import keepalive
 
@@ -25,13 +25,49 @@ def _keepalive_state() -> dict:
             settings = keepalive.load(name)
             tools[name] = {"installed": keepalive.installed(name),
                            "times": list(settings.times),
-                           "recent": keepalive.last_runs(tool=name)}
+                           "recent": keepalive.last_runs(tool=name),
+                           "accounts": keepalive.last_by_account(name)}
         first = tools[keepalive.DEFAULT_TOOL]
         return {"installed": first["installed"], "times": first["times"],
                 "model": keepalive.load().model, "ccs": keepalive.existing_ccs(),
-                "recent": first["recent"], "tools": tools}
+                "recent": first["recent"], "tools": tools,
+                "window": _keepalive_window(first["times"])}
     except (ImportError, OSError, RuntimeError, ValueError):
         return blank
+
+
+def _keepalive_window(times) -> "dict | None":
+    """The window Claude last reported, beside the time it should have started."""
+    from datetime import datetime
+
+    from . import keepalive
+
+    window = keepalive.current_window()
+    if window is None:
+        return None
+    start, reset = window
+    now = datetime.now().astimezone()
+    return {"start": f"{start:%H:%M}", "reset": f"{reset:%H:%M}",
+            "drift": keepalive.drift(start, tuple(times), now)}
+
+
+def _handoff_threads() -> list:
+    """Every live thread, with what `handoff list` shows for it.
+
+    The page had the reminder switch and no threads at all, so a stale
+    claim or a thread gone quiet for days was invisible there.
+    """
+    try:
+        from . import handoff
+
+        notes = [note for note in handoff.load_all() if note.state != handoff.DONE]
+        return [{"thread": note.thread, "project": note.project, "state": note.state,
+                 "holder": handoff.short_id(note.claimed_by) if note.claimed_by else "",
+                 "age_days": handoff.age_in_days(note.created),
+                 "stale": handoff.is_stale(note),
+                 "summary": handoff.summary(note.body)} for note in notes]
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return []
 
 
 def _autopush_state() -> dict:
@@ -227,7 +263,8 @@ class ManagementApi:
                  "shared_status": "missing", "tracked": False, "git_status": "untracked",
                  "index_unlisted": [], "index_dangling": [], "secret_notes": [],
                  "keepalive": {"installed": False, "times": [], "model": "",
-                               "ccs": "", "recent": []},
+                               "ccs": "", "recent": [], "window": None},
+                 "handoffs": [],
                  "autopush": {"installed": False, "last_push": "", "reason": "",
                               "slot": "", "host": "", "others": []},
                  "handoff_reminder": None, "remember_hosts": None,
@@ -283,6 +320,7 @@ class ManagementApi:
                     "secret_notes": state.secret_notes,
                     "autopush": _autopush_state(),
                     "keepalive": _keepalive_state(),
+                    "handoffs": _handoff_threads(),
                     "handoff_reminder": _handoff_reminder_state(),
                     "remember_hosts": _remember_hosts_state(),
                     "locations": locations,
