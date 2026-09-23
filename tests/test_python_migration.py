@@ -741,7 +741,7 @@ def test_codex_hook_trust_stays_on_each_machine() -> None:
     )
     live = (
         'personality = "old"\n\n'
-        '[hooks.state."C:/work/.codex/hooks.json:pre_tool_use:0:0"]\n'
+        '[hooks.state."remember@remember-dev:hooks/hooks.codex.json:session_start:0:0"]\n'
         'trusted_hash = "sha256:windows"\n'
     )
 
@@ -754,3 +754,55 @@ def test_codex_hook_trust_stays_on_each_machine() -> None:
     assert "sha256:linux" not in applied
     import tomllib
     assert tomllib.loads(applied)["features"]["x"] is True
+
+
+def test_apply_drops_hook_trust_for_paths_this_machine_lacks(tmp_path: Path) -> None:
+    """Making [hooks.state.*] local protected what earlier syncs had left.
+
+    Windows and gb10 kept a trust entry for /home/human/openVman/... —
+    brought over before hook trust stopped syncing, then preserved as
+    their own. The file it trusts does not exist there, so it can never
+    be used, and codex warned about the settings misplaced under it on
+    every start.
+    """
+    from ai_config.tools.codex import merge_codex_config
+
+    here = tmp_path / "work" / ".codex" / "hooks.json"
+    here.parent.mkdir(parents=True)
+    here.write_text("{}", encoding="utf-8")
+    live = (
+        f'[hooks.state."{here.as_posix()}:pre_tool_use:0:0"]\n'
+        'trusted_hash = "sha256:here"\n\n'
+        '[hooks.state."/nowhere/else/.codex/hooks.json:pre_tool_use:0:0"]\n'
+        'trusted_hash = "sha256:gone"\n'
+        'model = "gpt-5.5"\n\n'
+        '[hooks.state."remember@remember-dev:hooks/hooks.codex.json:session_start:0:0"]\n'
+        'trusted_hash = "sha256:plugin"\n'
+    )
+
+    applied = merge_codex_config('personality = "pragmatic"\n', live)
+
+    assert "sha256:here" in applied
+    assert "sha256:plugin" in applied
+    assert "sha256:gone" not in applied
+    assert "gpt-5.5" not in applied
+
+
+def test_apply_strips_settings_misplaced_under_hook_trust() -> None:
+    """Only trust belongs there; a model written under it is ignored with a warning."""
+    from ai_config.tools.codex import merge_codex_config
+
+    live = (
+        '[hooks.state."remember@remember-dev:hooks/hooks.codex.json:session_start:0:0"]\n'
+        'trusted_hash = "sha256:plugin"\n'
+        'model = "gpt-5.5"\n'
+        'model_reasoning_effort = "xhigh"\n'
+    )
+
+    applied = merge_codex_config('personality = "pragmatic"\n', live)
+
+    import tomllib
+    entry = tomllib.loads(applied)["hooks"]["state"][
+        "remember@remember-dev:hooks/hooks.codex.json:session_start:0:0"
+    ]
+    assert entry == {"trusted_hash": "sha256:plugin"}
