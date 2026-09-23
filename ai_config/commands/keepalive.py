@@ -1,7 +1,7 @@
 """`acg keepalive`: anchor this machine's usage windows."""
 
 from .. import keepalive
-from ..console import log_error, log_header, log_info, log_success
+from ..console import log_error, log_header, log_info, log_success, log_warn
 from ..paths import ENTRYPOINT
 
 _USAGE = (
@@ -30,6 +30,27 @@ def _report(tool: str) -> None:
     recent = keepalive.last_runs(tool=tool)
     if recent:
         print(f"    {recent[-1]}")
+    if tool == keepalive.DEFAULT_TOOL:
+        _report_window(settings.times)
+
+
+def _report_window(times) -> None:
+    """Where the window actually is, next to where the schedule meant it to be."""
+    from datetime import datetime
+
+    window = keepalive.current_window()
+    if window is None:
+        return
+    start, reset = window
+    print(f"    目前視窗 {start:%H:%M}–{reset:%H:%M}")
+    expected = keepalive.drift(start, times, datetime.now().astimezone())
+    if expected:
+        # 起點不是排程時間,代表那一次呼叫沒錨定到;通常是更早有別的用量
+        # (別台機器、網頁、手機)先開了視窗
+        log_warn(
+            f"視窗不是從排程的 {expected} 開始:那次呼叫落在別人開的視窗裡,"
+            "同帳號在更早的時間有其他用量"
+        )
 
 
 def _status(tool: "str | None") -> int:

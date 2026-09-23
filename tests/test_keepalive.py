@@ -246,3 +246,83 @@ def test_a_success_still_logs_the_reply(
 
     last = keepalive.log_path().read_text(encoding="utf-8").strip().splitlines()[-1]
     assert last.endswith("exit 0: hi")
+
+
+def test_the_window_claude_reports_is_remembered(state: Path) -> None:
+    """The status line is the only place the real reset time shows up.
+
+    A reset four hours off the schedule could only be spotted by reading
+    it off the screen; nothing kept it, so nothing could compare it.
+    """
+    from datetime import datetime
+
+    reset = datetime(2026, 9, 23, 14, 50).astimezone()
+    keepalive.record_window({"rate_limits": {"five_hour": {"resets_at": int(reset.timestamp())}}})
+
+    start, end = keepalive.current_window(now=datetime(2026, 9, 23, 10, 27).astimezone())
+    assert (start.hour, start.minute) == (9, 50)
+    assert (end.hour, end.minute) == (14, 50)
+
+
+def test_an_iso_reset_time_is_read_too(state: Path) -> None:
+    keepalive.record_window(
+        {"rate_limits": {"five_hour": {"resets_at": "2026-09-23T06:50:00Z"}}}
+    )
+
+    window = keepalive.current_window(
+        now=datetime_utc(2026, 9, 23, 2, 27)
+    )
+    assert window is not None
+    assert window[1] == datetime_utc(2026, 9, 23, 6, 50)
+
+
+def test_a_payload_without_limits_records_nothing(state: Path) -> None:
+    keepalive.record_window({"model": {"id": "x"}})
+
+    assert keepalive.current_window() is None
+
+
+def test_a_window_off_the_schedule_is_called_out(state: Path) -> None:
+    """07:00 was the anchor; a window starting 09:50 means the call anchored nothing."""
+    from datetime import datetime
+
+    now = datetime(2026, 9, 23, 10, 27).astimezone()
+    start = datetime(2026, 9, 23, 9, 50).astimezone()
+
+    assert keepalive.drift(start, ("07:00", "12:05"), now) == "07:00"
+
+
+def test_a_window_on_the_schedule_is_not(state: Path) -> None:
+    from datetime import datetime
+
+    now = datetime(2026, 9, 23, 10, 27).astimezone()
+    start = datetime(2026, 9, 23, 7, 0).astimezone()
+
+    assert keepalive.drift(start, ("07:00", "12:05"), now) == ""
+
+
+def datetime_utc(*parts: int):
+    from datetime import UTC, datetime
+
+    return datetime(*parts, tzinfo=UTC)
+
+
+def test_status_shows_the_window_and_its_drift(
+    state: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from datetime import datetime, timedelta
+
+    from ai_config.commands import keepalive as command
+
+    now = datetime.now().astimezone()
+    anchor = (now - timedelta(hours=1)).replace(second=0, microsecond=0)
+    keepalive.save(keepalive.Settings(times=(anchor.strftime("%H:%M"),)))
+    late = now + timedelta(hours=3)
+    keepalive.record_window({"rate_limits": {"five_hour": {"resets_at": int(late.timestamp())}}})
+    monkeypatch.setattr(keepalive, "installed", lambda tool="claude": True)
+
+    command._report("claude")
+
+    out = capsys.readouterr().out
+    assert f"目前視窗 {(late - keepalive.WINDOW):%H:%M}–{late:%H:%M}" in out
+    assert f"不是從排程的 {anchor:%H:%M} 開始" in out

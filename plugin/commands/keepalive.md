@@ -22,6 +22,11 @@ allowed-tools: Bash(acg keepalive status), Bash(ai-config keepalive status)
 什麼時候恢復),照著講給使用者聽。失敗的那一次**沒有錨定視窗**,邊界會改由下一次
 真正使用的時間決定——reset 時間偏離排程,通常就是這樣來的。
 
+claude 那行底下的「目前視窗 HH:MM–HH:MM」是 Claude Code 自己回報的實際視窗。
+如果跳出「視窗不是從排程的 … 開始」,表示那次 keepalive 雖然成功,卻落在一個更早就被
+打開的視窗裡——同一個帳號在別台機器、網頁或手機上先用過了。額度屬於帳號,
+所以要去問的是「那個時間誰用了這個帳號」,不是 keepalive 壞了。
+
 沒啟用就照實說,啟用方式是 `acg keepalive enable [HH:MM ...] [工具]`,不指定
 工具就是 claude,不指定時間就用預設的四個。**不要自己幫他決定時間**,那取決於
 他幾點在電腦前。
