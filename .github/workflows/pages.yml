@@ -36,6 +36,7 @@ jobs:
           cp docs/slides/tokens.css _site/tokens.css
           cp docs/slides/slides.css _site/slides.css
           cp docs/slides/gui-desktop.png _site/gui-desktop.png
+          cp docs/slides/gui-main.png _site/gui-main.png
           touch _site/.nojekyll
 
       - name: Configure GitHub Pages
