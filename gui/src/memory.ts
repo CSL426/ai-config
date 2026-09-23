@@ -220,7 +220,7 @@ function renderKeepalive(info: MemoryInfo): void {
   renderKeepaliveWindow(state);
   const hint = state.ccs
     ? `claude-scheduler 的排程還在（${state.ccs}），兩個都開會一天點兩次火。`
-    : "在選定的時間送一句即丟的提示，讓五小時視窗的邊界避開工作時段。";
+    : "在選定的時間對 Claude、Codex、Antigravity 各送一句即丟的提示，讓五小時視窗的邊界避開工作時段。";
   $("#keepalive-hint").textContent = hint;
 
   const row = $("#keepalive-times-row");

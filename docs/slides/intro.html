@@ -193,14 +193,14 @@
       <div class="story-copy">
         <h2>換個會話，<span class="highlight">接上同一條線</span></h2>
         <p class="lede">handoff 留下做到哪裡、卡在哪裡，以及下一步。</p>
-        <p class="tiny-note">日誌記錄專案發生過什麼；交接則是一條工作線一份。先列出待接工作，選定後才認領。</p>
+        <p class="tiny-note">日誌記錄專案發生過什麼；交接則是一條工作線一份。交接、清空對話、再接手：同一個會話會自動接回自己留下的那條線。</p>
         <p class="tiny-note">Claude Code 可另開 context 提醒；提醒本身不會自動寫交接。</p>
       </div>
       <div class="picture callouts" aria-label="工作線交接指令">
         <div class="callout"><strong>1 · 留進度</strong><p><code>acg memory handoff write "工作線" "進度與下一步"</code></p></div>
-        <div class="callout"><strong>2 · 列出，再認領</strong><p><code>acg memory handoff list</code><br><code>acg memory handoff claim "工作線"</code></p></div>
+        <div class="callout"><strong>2 · 接手</strong><p><code>acg memory handoff claim</code>　接回這個會話自己的線<br><code>acg memory handoff claim "工作線"</code>　指定別條</p></div>
         <div class="callout"><strong>3 · 做完再結案</strong><p><code>acg memory handoff done "工作線"</code></p></div>
-        <p class="tiny-note">已被其他會話持有時會告知持有者，不會直接搶走。</p>
+        <p class="tiny-note">別人正在做的線不會被搶走；超過一天沒動的可以接手，並說出前一位持有者。久未更新的線標上「可能已過期」，結案滿一個月自動歸檔。</p>
       </div>
     </div>
   </section>
@@ -225,15 +225,15 @@
   <section class="slide">
     <div class="story-grid">
       <div class="story-copy">
-        <h2>選個時間，讓 Claude<span class="highlight">先打聲招呼</span></h2>
-        <p class="lede">keepalive 定時送出一句短提示，協助安排用量視窗的起點。</p>
-        <p class="tiny-note">預設停用，只用這台已登入的 Claude。時間、模型與執行日誌留在本機，各台分別設定。</p>
+        <h2>選個時間，讓 AI<span class="highlight">先打聲招呼</span></h2>
+        <p class="lede">keepalive 定時對 Claude、Codex、Antigravity 送出一句短提示，讓用量視窗從你選的時間開始。</p>
+        <p class="tiny-note">預設停用。每次都挑該工具清單裡最便宜的模型；Codex 有好幾個帳號時，每個帳號各喚醒一次。時間與日誌留在本機，同一個帳號開一台就夠。</p>
       </div>
       <div class="picture callouts" aria-label="keepalive 管理指令">
         <div class="callout"><strong>設定這台的時間</strong><p><code>acg keepalive enable 07:00 12:05</code></p></div>
-        <div class="callout"><strong>查狀態，或立即送一次</strong><p><code>acg keepalive status</code><br><code>acg keepalive send</code></p></div>
+        <div class="callout"><strong>查狀態，或立即送一次</strong><p><code>acg keepalive status</code>　顯示實際的視窗，沒對準排程會提醒<br><code>acg keepalive send</code></p></div>
         <div class="callout"><strong>不需要時停用</strong><p><code>acg keepalive disable</code></p></div>
-        <p class="tiny-note">這是定時呼叫 Claude 的功能，不會同步設定，也不執行你的工作任務。</p>
+        <p class="tiny-note">呼叫失敗時會記下工具自己的錯誤訊息，例如額度用完、何時恢復。它不同步設定，也不執行你的工作任務。</p>
       </div>
     </div>
   </section>
@@ -263,12 +263,12 @@
       <div class="story-copy callouts">
         <h2>也有 Desktop 版，不必打指令</h2>
         <div class="callout"><strong>狀況一眼看見</strong><p>同步方式、登入與變更都在同一個畫面。</p></div>
-        <div class="callout"><strong>記憶與工作交接</strong><p>管理共用記憶、設定交接提醒，調整自動推送與 keepalive。</p></div>
+        <div class="callout"><strong>記憶與工作交接</strong><p>管理共用記憶與自動推送；看得到實際的用量視窗與待接手的工作線。</p></div>
         <div class="callout"><strong>手動上傳先預覽</strong><p>預覽沒問題，再按下確認。</p></div>
       </div>
       <figure class="picture">
-        <img class="gui-shot" src="./gui-desktop.png" width="880" height="680" alt="acg Desktop 實際介面，顯示 Google Drive 同步狀況、變更摘要與上傳前預覽">
-        <figcaption>Desktop 同步畫面示意；記憶與排程管理位於其他分頁。</figcaption>
+        <img class="gui-shot" src="./gui-desktop.png" width="880" height="680" alt="acg Desktop 記憶頁，顯示三個工具的喚醒時間、實際用量視窗與沒對準排程的提醒、Codex 兩個帳號各自的結果，以及待接手的工作線與過期標示">
+        <figcaption>Desktop 記憶頁（範例資料）：用量視窗與待接手的工作線。同步與上傳在主畫面。</figcaption>
       </figure>
     </div>
   </section>
