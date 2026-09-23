@@ -101,7 +101,9 @@ def test_settings_keeps_local_memory_choice(checkout, local_enabled):
     assert result.returncode == 0, result.stdout + result.stderr
     actual = (home / ".claude/CLAUDE.md").read_text()
     assert "new rules" in actual
-    assert (BLOCK in actual) == local_enabled
+    # 有沒有區塊照這台自己的選擇;內容一律是目前版本的規則
+    assert ("<!-- acg:memory:begin -->" in actual) == local_enabled
+    assert "local memory" not in actual
     assert "repo memory" not in actual
 
 
@@ -119,11 +121,15 @@ def test_malformed_memory_aborts_before_any_tool_write(checkout, broken):
 
 
 def test_memory_merge_preserves_unrelated_raw_bytes():
+    """Bytes around the block stay as they were; the block takes live's line endings."""
+    from ai_config.memory import RULES_BLOCK
+
     block = BLOCK.encode()
     source = b"\xef\xbb\xbfnew\r\n" + block + b"\r\nafter\r\n"
     live_block = block.replace(b"local memory", b"local\r\nmemory")
+    current = RULES_BLOCK.strip().encode().replace(b"\n", b"\r\n")
     assert preserve_memory_block(source, live_block) == (
-        b"\xef\xbb\xbfnew\r\n" + live_block + b"\r\nafter\r\n"
+        b"\xef\xbb\xbfnew\r\n" + current + b"\r\nafter\r\n"
     )
 
 
