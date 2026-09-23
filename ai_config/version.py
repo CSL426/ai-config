@@ -8,6 +8,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from ._build import COMMIT_SHA
+from .subproc import UTF8
 
 
 def current_commit() -> str | None:
@@ -21,7 +22,7 @@ def current_commit() -> str | None:
                 result = subprocess.run(
                     ["git", "-C", str(source), "rev-parse", "--verify", "HEAD"],
                     capture_output=True,
-                    text=True,
+                    text=True, **UTF8,
                     timeout=2,
                     check=False,
                 )

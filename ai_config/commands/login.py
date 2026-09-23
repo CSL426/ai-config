@@ -16,6 +16,7 @@ from ..ghauth import (
     unbind_account,
 )
 from ..paths import ENTRYPOINT, SCRIPT_DIR
+from ..subproc import UTF8
 
 
 def _remote_url() -> str:
@@ -24,7 +25,7 @@ def _remote_url() -> str:
     result = subprocess.run(
         ["git", "-C", str(SCRIPT_DIR), "config", "--get", "remote.origin.url"],
         capture_output=True,
-        text=True,
+        text=True, **UTF8,
         check=False,
     )
     return result.stdout.strip() if result.returncode == 0 else ""

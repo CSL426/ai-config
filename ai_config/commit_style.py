@@ -20,6 +20,7 @@ import subprocess
 import sys
 
 from . import hooks
+from .subproc import UTF8
 
 TYPES = ("feat", "fix", "refactor", "docs", "test", "chore", "perf", "ci")
 MAX_SUBJECT = 72
@@ -113,7 +114,7 @@ def _recent_subjects(cwd: str) -> str:
     try:
         return subprocess.run(
             ["git", "-C", cwd, "log", "--format=%s", "-10"],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True, text=True, **UTF8, timeout=5, check=False,
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""

@@ -31,6 +31,7 @@ from pathlib import Path
 
 from .paths import standalone_install_path
 from .safety import is_reparse_point
+from .subproc import UTF8
 
 # acg 在 GitHub 註冊的 OAuth App(CSL426 帳號下,名稱 acg)的 client ID。
 # device flow 只用 client ID,不需要 client secret;ID 本身不是機密,gh 也是
@@ -787,7 +788,7 @@ def store_token(token: str) -> tuple[bool, str]:
             ],
             input=token,
             capture_output=True,
-            text=True,
+            text=True, **UTF8,
             check=False,
             timeout=60,
         )

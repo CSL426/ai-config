@@ -24,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .paths import HOME
+from .subproc import NATIVE, UTF8
 
 DEFAULT_TIMES = ("07:00", "12:05", "17:10", "22:15")
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
@@ -284,7 +285,7 @@ def send(tool: str = DEFAULT_TOOL) -> int:
     _append_log(f"calling {tool}", tool)
     try:
         result = subprocess.run(
-            args, capture_output=True, text=True, timeout=120, check=False,
+            args, capture_output=True, text=True, **UTF8, timeout=120, check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         _append_log(f"failed to start: {exc}", tool)
@@ -339,7 +340,7 @@ def existing_ccs() -> str:
     """
     if platform_name() == "linux":
         found = subprocess.run(
-            ["crontab", "-l"], capture_output=True, text=True, check=False,
+            ["crontab", "-l"], capture_output=True, text=True, **UTF8, check=False,
         )
         if "claude-scheduler" in (found.stdout or ""):
             return "crontab(# BEGIN claude-scheduler)"
@@ -350,7 +351,7 @@ def existing_ccs() -> str:
         return str(hits[0]) if hits else ""
     found = subprocess.run(
         ["schtasks", "/Query", "/FO", "LIST"],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, **NATIVE, check=False,
     )
     return "ClaudeScheduler_*" if "ClaudeScheduler" in (found.stdout or "") else ""
 
@@ -365,14 +366,14 @@ def _enable_systemd(times, tool: str = DEFAULT_TOOL) -> list:
     lines = [f"寫入 {directory / (unit + '.timer')}"]
     reloaded = subprocess.run(
         ["systemctl", "--user", "daemon-reload"],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, **UTF8, check=False,
     )
     if reloaded.returncode != 0:
         lines.append("systemctl daemon-reload 失敗,請手動執行")
         return lines
     started = subprocess.run(
         ["systemctl", "--user", "enable", "--now", f"{unit}.timer"],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, **UTF8, check=False,
     )
     if started.returncode != 0:
         lines.append(f"啟用 timer 失敗:{(started.stderr or '').strip()}")
@@ -395,7 +396,7 @@ def _enable_launchd(times, tool: str = DEFAULT_TOOL) -> list:
     )
     loaded = subprocess.run(
         ["launchctl", "bootstrap", target, str(path)],
-        capture_output=True, text=True, check=False, timeout=30,
+        capture_output=True, text=True, **UTF8, check=False, timeout=30,
     )
     if loaded.returncode != 0:
         return [f"寫入 {path}", f"載入 LaunchAgent 失敗:{(loaded.stderr or '').strip()}"]
@@ -405,7 +406,7 @@ def _enable_launchd(times, tool: str = DEFAULT_TOOL) -> list:
 def _enable_schtasks(times, tool: str = DEFAULT_TOOL) -> list:
     lines = []
     for argv in schtasks_argv(times, tool):
-        done = subprocess.run(argv, capture_output=True, text=True, check=False)
+        done = subprocess.run(argv, capture_output=True, text=True, **NATIVE, check=False)
         if done.returncode != 0:
             lines.append(f"建立排程失敗:{(done.stderr or '').strip()}")
             return lines
@@ -452,7 +453,7 @@ def _remove_ccs() -> list:
     """Strip claude-scheduler's own schedule, once the user has said to."""
     if platform_name() == "linux":
         current = subprocess.run(
-            ["crontab", "-l"], capture_output=True, text=True, check=False,
+            ["crontab", "-l"], capture_output=True, text=True, **UTF8, check=False,
         ).stdout or ""
         kept, skipping = [], False
         for line in current.splitlines():
@@ -464,7 +465,7 @@ def _remove_ccs() -> list:
                 kept.append(line)
         subprocess.run(
             ["crontab", "-"], input="\n".join(kept) + "\n",
-            capture_output=True, text=True, check=False,
+            capture_output=True, text=True, **UTF8, check=False,
         )
         return ["已移除 claude-scheduler 的 crontab 排程"]
     return ["請自行移除 claude-scheduler 的排程(acg 只清得掉 crontab 那種)"]
@@ -515,7 +516,7 @@ def installed(tool: str = DEFAULT_TOOL) -> bool:
     label = _TASK if tool == DEFAULT_TOOL else f"{_TASK} {tool}"
     found = subprocess.run(
         ["schtasks", "/Query", "/FO", "LIST"],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, **NATIVE, check=False,
     )
     return label in (found.stdout or "")
 

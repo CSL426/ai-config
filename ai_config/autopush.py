@@ -23,6 +23,7 @@ from pathlib import Path
 from .console import log_info
 from .memory import memory_dir
 from .paths import HOME, SCRIPT_DIR, WINDOWS_MODE
+from .subproc import NATIVE, UTF8
 
 DEFAULT_HOUR = 4
 DEFAULT_STALE_HOURS = 12
@@ -70,7 +71,7 @@ def _memory_has_changes() -> bool:
         result = subprocess.run(
             ["git", "-C", str(SCRIPT_DIR), "status", "--porcelain=v1",
              "--untracked-files=all", "--", memory_dir().name],
-            capture_output=True, text=True, check=False, timeout=30,
+            capture_output=True, text=True, **UTF8, check=False, timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -90,7 +91,7 @@ def _git(*args: str, timeout: float = 120) -> "subprocess.CompletedProcess | Non
     try:
         return subprocess.run(
             ["git", "-C", str(SCRIPT_DIR), *args],
-            capture_output=True, text=True, check=False, timeout=timeout,
+            capture_output=True, text=True, **UTF8, check=False, timeout=timeout,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
     except (OSError, subprocess.SubprocessError):
@@ -189,7 +190,7 @@ def _scheduled_at() -> "tuple[int, int] | None":
             return int(when["Hour"]), int(when["Minute"])
         listed = subprocess.run(
             ["schtasks", "/Query", "/TN", _TASK, "/XML"],
-            capture_output=True, text=True, check=False, timeout=60,
+            capture_output=True, text=True, **NATIVE, check=False, timeout=60,
         )
         if listed.returncode != 0:
             return None
@@ -320,7 +321,7 @@ def platform_name() -> str:
 def _systemctl(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["systemctl", "--user", *args],
-        capture_output=True, text=True, check=False, timeout=30,
+        capture_output=True, text=True, **UTF8, check=False, timeout=30,
     )
 
 
@@ -419,7 +420,7 @@ def _enable_launchd(hour: int, stale_hours: float, minute: int = 0) -> list[str]
     )
     loaded = subprocess.run(
         ["launchctl", "bootstrap", target, str(path)],
-        capture_output=True, text=True, check=False, timeout=30,
+        capture_output=True, text=True, **UTF8, check=False, timeout=30,
     )
     if loaded.returncode != 0:
         lines.append(f"載入 LaunchAgent 失敗:{(loaded.stderr or '').strip()}")
@@ -431,7 +432,7 @@ def _enable_launchd(hour: int, stale_hours: float, minute: int = 0) -> list[str]
 def _enable_schtasks(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
     created = subprocess.run(
         schtasks_argv(hour, stale_hours, minute),
-        capture_output=True, text=True, check=False, timeout=60,
+        capture_output=True, text=True, **NATIVE, check=False, timeout=60,
     )
     if created.returncode != 0:
         raise RuntimeError(
@@ -459,7 +460,7 @@ def _limit_windows_runtime() -> bool:
     try:
         done = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, check=False, timeout=60,
+            capture_output=True, text=True, **NATIVE, check=False, timeout=60,
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -491,7 +492,7 @@ def disable() -> list[str]:
         return [f"移除 {path}"]
     removed = subprocess.run(
         ["schtasks", "/Delete", "/F", "/TN", _TASK],
-        capture_output=True, text=True, check=False, timeout=60,
+        capture_output=True, text=True, **NATIVE, check=False, timeout=60,
     )
     if removed.returncode != 0:
         return ["沒有排定的自動推送"]
@@ -508,7 +509,7 @@ def status() -> dict:
     else:
         listed = subprocess.run(
             ["schtasks", "/Query", "/TN", _TASK],
-            capture_output=True, text=True, check=False, timeout=60,
+            capture_output=True, text=True, **NATIVE, check=False, timeout=60,
         )
         installed = listed.returncode == 0
     last = _read_last_push()
@@ -561,6 +562,6 @@ def _schedule_installed() -> bool:
         return launchd_path().is_file()
     listed = subprocess.run(
         ["schtasks", "/Query", "/TN", _TASK],
-        capture_output=True, text=True, check=False, timeout=30,
+        capture_output=True, text=True, **NATIVE, check=False, timeout=30,
     )
     return listed.returncode == 0
