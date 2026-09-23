@@ -315,10 +315,15 @@ def summary(body: str, limit: int = 70) -> str:
         for name, text in sections.items():
             if not name.startswith(wanted) or not text:
                 continue
-            first = text.splitlines()[0].lstrip("-* ").strip()
+            # 待辦常寫成「1. **做 X**。說明」;只剝開頭會留下半個粗體記號
+            first = text.splitlines()[0].replace("**", "").lstrip("-* ").strip()
             if first:
                 return f"{mark_label(name)}{first}"[:limit]
-    lines = body.splitlines()
+    # 退回第一行時要跳過標題:「## 這條線在做什麼」本身什麼都沒說
+    lines = [
+        line.strip() for line in body.splitlines()
+        if line.strip() and not _HEADING.match(line)
+    ]
     return (lines[0] if lines else "")[:limit]
 
 
