@@ -19,6 +19,7 @@ from pathlib import Path
 from ..console import log_error, log_info, log_success
 from ..gui_management import ManagementApi
 from ..paths import ALL_TOOLS
+from ..subproc import NATIVE, UTF8
 
 PUSH_SCOPES = (*ALL_TOOLS, "all", "memory")
 
@@ -321,7 +322,7 @@ class GuiApi(ManagementApi):
         result = subprocess.run(
             ["git", "-C", str(SCRIPT_DIR), "config", "--get", "remote.origin.url"],
             capture_output=True,
-            text=True,
+            text=True, **UTF8,
             check=False,
         )
         if result.returncode != 0:
@@ -786,7 +787,7 @@ def create_desktop_shortcut() -> int:
     result = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         capture_output=True,
-        text=True,
+        text=True, **NATIVE,
         check=False,
     )
     if result.returncode != 0:
