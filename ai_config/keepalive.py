@@ -193,13 +193,10 @@ def _quote(part: str) -> str:
 
 
 def _invocation(tool: str = DEFAULT_TOOL) -> list:
-    from .paths import SCRIPT_DIR
+    from . import paths
 
-    binary = SCRIPT_DIR / ("ai-config.exe" if os.name == "nt" else "ai-config")
     suffix = [] if tool == DEFAULT_TOOL else [tool]
-    if getattr(sys, "frozen", False) and binary.is_file():
-        return [str(binary), "keepalive", "send", *suffix]
-    return [sys.executable, "-m", "ai_config", "keepalive", "send", *suffix]
+    return [*paths.scheduled_command(), "keepalive", "send", *suffix]
 
 
 def unit_name(tool: str = DEFAULT_TOOL) -> str:
