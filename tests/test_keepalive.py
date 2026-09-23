@@ -326,3 +326,95 @@ def test_status_shows_the_window_and_its_drift(
     out = capsys.readouterr().out
     assert f"目前視窗 {(late - keepalive.WINDOW):%H:%M}–{late:%H:%M}" in out
     assert f"不是從排程的 {anchor:%H:%M} 開始" in out
+
+
+@pytest.fixture
+def homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A home with codex accounts laid out the way the shell function switches them."""
+    home = tmp_path / "home"
+    (home / ".codex-set").mkdir(parents=True)
+    (home / ".codex-set" / "auth.json").write_text('{"a": "set"}', encoding="utf-8")
+    (home / ".codex-csl").mkdir()
+    (home / ".codex-csl" / "auth.json").write_text('{"a": "csl"}', encoding="utf-8")
+    (home / ".codex").mkdir()
+    try:
+        (home / ".codex" / "auth.json").symlink_to(home / ".codex-set" / "auth.json")
+    except OSError:
+        (home / ".codex" / "auth.json").write_text('{"a": "set"}', encoding="utf-8")
+    (home / ".codex-empty").mkdir()
+    monkeypatch.setattr(keepalive, "HOME", home)
+    return home
+
+
+def test_every_codex_account_is_found_once(homes: Path) -> None:
+    """Accounts switch by CODEX_HOME in a shell function the schedule never loads.
+
+    The scheduled call used the default home, which links to one account;
+    the other was never woken. Each home holding credentials is an
+    account, and two homes sharing the same credentials are one.
+    """
+    found = keepalive.codex_homes()
+
+    names = sorted(path.name for path in found)
+    assert len(found) == 2
+    assert ".codex-csl" in names
+    assert ".codex-empty" not in names
+
+
+def test_each_codex_account_gets_its_own_call(
+    state: Path, homes: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    seen = []
+
+    def run(argv, **kwargs):
+        seen.append((kwargs.get("env") or {}).get("CODEX_HOME"))
+        return subprocess.CompletedProcess(argv, 0, "hi\n", "")
+
+    monkeypatch.setattr(keepalive.subprocess, "run", run)
+
+    assert keepalive.send("codex") == 0
+
+    assert sorted(Path(home).name for home in seen) in (
+        [".codex", ".codex-csl"], [".codex-csl", ".codex-set"],
+    )
+    logged = keepalive.log_path("codex").read_text(encoding="utf-8")
+    assert ".codex-csl" in logged
+
+
+def test_one_account_failing_is_reported_but_the_others_still_run(
+    state: Path, homes: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    calls = []
+
+    def run(argv, **kwargs):
+        home = (kwargs.get("env") or {}).get("CODEX_HOME", "")
+        calls.append(home)
+        code = 1 if home.endswith("-csl") else 0
+        return subprocess.CompletedProcess(argv, code, "hi\n", "ERROR: usage limit\n")
+
+    monkeypatch.setattr(keepalive.subprocess, "run", run)
+
+    assert keepalive.send("codex") == 1
+    assert len(calls) == 2
+
+
+def test_status_lists_the_last_result_of_each_account(state: Path) -> None:
+    path = keepalive.log_path("codex")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "[t1] calling codex (.codex-set)\n[t1] exit 1: ERROR: usage limit\n"
+        "[t1] calling codex (.codex-csl)\n[t1] exit 0: hi\n"
+        "[t2] calling codex (.codex-set)\n[t2] exit 0: hi\n",
+        encoding="utf-8",
+    )
+
+    latest = keepalive.last_by_account("codex")
+
+    assert latest == {
+        ".codex-set": "[t2] exit 0: hi",
+        ".codex-csl": "[t1] exit 0: hi",
+    }

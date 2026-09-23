@@ -13,6 +13,10 @@ allowed-tools: Bash(acg keepalive status), Bash(ai-config keepalive status)
 讓邊界避開工作時段。每次都用那個工具最弱的模型、最低的思考強度——這通呼叫
 存在的意義只是「它發生過」。
 
+codex 有好幾個帳號時(`~/.codex-set`、`~/.codex-csl` 這類各自有 `auth.json` 的目錄),
+每個帳號各自喚醒,status 會各列一行。帳號是自動找的,新增一個 `~/.codex-xxx`
+不用改任何設定。
+
 兩個維度都是獨立的,不要建議「統一」:
 
 - **每台機器各自設定**,因為各台作息不同

@@ -273,22 +273,61 @@ def _append_log(message: str, tool: str = DEFAULT_TOOL) -> None:
         pass
 
 
+def codex_homes() -> list:
+    """Each codex account on this machine, once: every ~/.codex* home with credentials.
+
+    Accounts switch by CODEX_HOME inside a shell function, which a
+    scheduled call never loads -- it used the default home and woke only
+    the account that home links to. Homes sharing one credentials file
+    are one account; the home holding the real file is kept, since that
+    is the one the shell function points CODEX_HOME at.
+    """
+    import hashlib
+
+    seen: dict = {}
+    for home in sorted(HOME.glob(".codex*")):
+        auth = home / "auth.json"
+        if not home.is_dir() or not auth.is_file():
+            continue
+        try:
+            key = hashlib.sha256(auth.read_bytes()).hexdigest()
+        except OSError:
+            continue
+        kept = seen.get(key)
+        if kept is None or ((kept / "auth.json").is_symlink() and not auth.is_symlink()):
+            seen[key] = home
+    return sorted(seen.values())
+
+
 def send(tool: str = DEFAULT_TOOL) -> int:
-    """Make the call. A failure is logged and nothing else.
+    """Make the call, once per account. A failure is logged and nothing else.
 
     Missing one costs a window that starts later than intended, which is
     not worth waking anyone for.
     """
     _check_tool(tool)
-    settings = load(tool)
-    args = run_args(settings, tool)
-    _append_log(f"calling {tool}", tool)
+    args = run_args(load(tool), tool)
+    homes = codex_homes() if tool == "codex" else []
+    if not homes:
+        return _call(args, tool, tool, None)
+    worst = 0
+    for home in homes:
+        env = {**os.environ, "CODEX_HOME": str(home)}
+        label = f"{tool} ({home.name})"
+        # 一個帳號額度用完不該讓其他帳號跳過喚醒
+        worst = max(worst, _call(args, tool, label, env))
+    return worst
+
+
+def _call(args: list, tool: str, label: str, env: "dict | None") -> int:
+    _append_log(f"calling {label}", tool)
     try:
         result = subprocess.run(
-            args, capture_output=True, text=True, **UTF8, timeout=120, check=False,
+            args, capture_output=True, text=True, **UTF8,
+            timeout=120, check=False, env=env,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        _append_log(f"failed to start: {exc}", tool)
+        _append_log(f"failed to start {label}: {exc}", tool)
         return 1
     _append_log(f"exit {result.returncode}: {_outcome(result)}", tool)
     return result.returncode
@@ -609,3 +648,24 @@ def drift(start: datetime, times, now: datetime) -> str:
     if expected is None or abs(start - expected) <= _DRIFT_TOLERANCE:
         return ""
     return expected.strftime("%H:%M")
+
+
+_CALLING = re.compile(r"calling \S+ \((.+)\)$")
+
+
+def last_by_account(tool: str = DEFAULT_TOOL) -> dict:
+    """The latest result for each account a call was made for, keyed by its home."""
+    try:
+        lines = log_path(tool).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    latest: dict = {}
+    account = None
+    for line in lines:
+        called = _CALLING.search(line)
+        if called:
+            account = called.group(1)
+        elif account and (" exit " in line or "failed to start" in line):
+            latest[account] = line
+            account = None
+    return latest

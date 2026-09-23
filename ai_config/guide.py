@@ -250,6 +250,11 @@ had opened earlier — another machine, the web or the phone. The reset
 time is recorded by the status-line wrapper, so it needs the handoff
 reminder enabled.
 
+For codex, every `~/.codex*` home holding an `auth.json` is an account and
+gets its own call with that `CODEX_HOME` — accounts switched by a shell
+function are never seen by a schedule, which loads no shell profile.
+Homes sharing one credentials file count once. `status` lists each
+account's last result.
 Each tool is anchored separately, with its own times, schedule and log:
 three accounts, three windows, no reason for their boundaries to line up.
 Every call uses the weakest model and the least thinking that tool offers,
