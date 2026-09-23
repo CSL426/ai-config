@@ -354,6 +354,17 @@ def with_block(text: str) -> str:
     return RULES_BLOCK
 
 
+def _umask() -> int:
+    """This process's umask. Reading it means setting it, so it is put back.
+
+    Safe here because the CLI is single-threaded; a thread writing a
+    file in the microsecond between these two calls would use 0o022.
+    """
+    value = os.umask(0o022)
+    os.umask(value)
+    return value
+
+
 def _write_text_atomic(path: Path, content: str) -> None:
     assert_plain_path(path, directory=False)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -369,6 +380,11 @@ def _write_text_atomic(path: Path, content: str) -> None:
             raise RuntimeError(f"File changed during update: {path}")
         if path.exists():
             shutil.copymode(path, temporary)
+        else:
+            # mkstemp 固定給 0600,而那是這個檔案往後的權限 —— 只有既有
+            # 檔案才會走上面那行。同步目錄裡半數檔案因此比旁邊的更嚴,
+            # 換一台機器或換個使用者就讀不到
+            os.chmod(temporary, 0o666 & ~_umask())
         os.replace(temporary, path)
         observer = WRITE_OBSERVER.get()
         if observer is not None:

@@ -157,3 +157,50 @@ def test_invalid_remember_json_preserved(tmp_path):
     assert result.returncode == 1
     assert config.read_text() == "{invalid json"
     assert not (repo / "memory").exists()
+
+
+def test_a_new_file_is_not_born_private(tmp_path: Path) -> None:
+    """mkstemp makes 0600, and only an existing file's mode was copied.
+
+    So the first write decided a file's permissions forever: notes and
+    rules written through here came out 0600 while everything beside
+    them was 0644. Half the handoff directory was unreadable to the
+    group that owned the rest of it.
+    """
+    import os
+    import stat
+
+    if os.name == "nt":
+        pytest.skip("POSIX permissions only")
+
+    born = tmp_path / "new.md"
+    memory._write_text_atomic(born, "內容")
+
+    mode = stat.S_IMODE(born.stat().st_mode)
+    expected = 0o666 & ~_current_umask()
+    assert mode == expected, f"新檔權限 {oct(mode)},應該是 {oct(expected)}"
+
+
+def test_an_existing_files_mode_is_kept(tmp_path: Path) -> None:
+    """A file someone tightened on purpose must not be widened by a rewrite."""
+    import os
+    import stat
+
+    if os.name == "nt":
+        pytest.skip("POSIX permissions only")
+
+    private = tmp_path / "secret.md"
+    private.write_text("第一版", encoding="utf-8")
+    private.chmod(0o600)
+
+    memory._write_text_atomic(private, "第二版")
+
+    assert stat.S_IMODE(private.stat().st_mode) == 0o600
+
+
+def _current_umask() -> int:
+    import os
+
+    value = os.umask(0o022)
+    os.umask(value)
+    return value
