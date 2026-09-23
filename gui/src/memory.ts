@@ -217,6 +217,7 @@ function renderKeepalive(info: MemoryInfo): void {
     installed: false, times: [], model: "", ccs: "", recent: [], tools: {},
   };
   toggle.checked = state.installed;
+  renderKeepaliveWindow(state);
   const hint = state.ccs
     ? `claude-scheduler 的排程還在（${state.ccs}），兩個都開會一天點兩次火。`
     : "在選定的時間送一句即丟的提示，讓五小時視窗的邊界避開工作時段。";
@@ -237,6 +238,58 @@ function renderKeepalive(info: MemoryInfo): void {
     summary.length ? summary.join("；") : "",
     recent.length ? `最近：${recent[recent.length - 1]}` : "還沒有執行紀錄。",
   ].filter(Boolean).join(" · ");
+}
+
+function renderKeepaliveWindow(state: MemoryInfo["keepalive"]): void {
+  // Claude Code 回報的實際視窗;不是從排程時間開始,就是那次呼叫沒錨定到
+  const window = state.window ?? null;
+  $("#keepalive-window").textContent = window
+    ? `目前視窗 ${window.start}–${window.reset}`
+    : "";
+  $("#keepalive-drift").textContent = window?.drift
+    ? `視窗不是從排程的 ${window.drift} 開始：那次呼叫落在別人開的視窗裡，同帳號在更早的時間有其他用量。`
+    : "";
+  // 一個工具有好幾個帳號時(codex 的 ~/.codex-set、~/.codex-csl),各帳號結果分開列
+  const list = $("#keepalive-accounts");
+  list.replaceChildren();
+  for (const [tool, one] of Object.entries(state.tools ?? {})) {
+    for (const [home, line] of Object.entries(one.accounts ?? {})) {
+      const item = document.createElement("li");
+      const label = document.createElement("code");
+      label.textContent = `${tool} ${home}`;
+      item.append(label, `：${line}`);
+      list.append(item);
+    }
+  }
+}
+
+function renderHandoffs(info: MemoryInfo): void {
+  const threads = info.handoffs ?? [];
+  const list = $("#handoff-threads");
+  list.replaceChildren();
+  for (const thread of threads) {
+    const item = document.createElement("li");
+    item.className = "handoff-thread";
+    item.dataset.stale = String(thread.stale);
+    const name = document.createElement("strong");
+    name.textContent = thread.thread;
+    const meta = document.createElement("span");
+    meta.className = "handoff-thread-meta";
+    meta.textContent = [
+      thread.project,
+      thread.holder ? `◐ ${thread.holder} 持有` : "○ 沒人接",
+      thread.age_days ? `${thread.age_days} 天前開的` : "",
+      thread.stale ? "⚠ 可能已過期" : "",
+    ].filter(Boolean).join(" · ");
+    const summary = document.createElement("span");
+    summary.className = "handoff-thread-summary";
+    summary.textContent = thread.summary;
+    item.append(name, meta, summary);
+    list.append(item);
+  }
+  $("#handoff-threads-empty").textContent = threads.length
+    ? ""
+    : "目前沒有待接手的工作線。";
 }
 
 function renderAutopush(info: MemoryInfo): void {
@@ -336,6 +389,7 @@ export async function refreshMemory(): Promise<void> {
     renderAutopush(info);
     renderKeepalive(info);
     renderHandoffReminder(info);
+    renderHandoffs(info);
   renderRememberHosts(info);
     const data = $("#memory-data");
     data.replaceChildren();

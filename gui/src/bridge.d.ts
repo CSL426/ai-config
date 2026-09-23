@@ -69,8 +69,14 @@ export interface MemoryInfo extends RunResult {
     ccs: string; recent: string[];
     tools: Record<string, {
       installed: boolean; times: string[]; recent: string[];
+      accounts?: Record<string, string>;
     }>;
+    window?: { start: string; reset: string; drift: string } | null;
   };
+  handoffs?: {
+    thread: string; project: string; state: string; holder: string;
+    age_days: number; stale: boolean; summary: string;
+  }[];
   handoff_reminder: {
     enabled: boolean; threshold: number; installed: boolean; reason?: string;
   } | null;
