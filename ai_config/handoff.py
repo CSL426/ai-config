@@ -27,6 +27,13 @@ from .memory import (
 from .safety import is_reparse_point
 
 HANDOFF_DIR_NAME = "handoff"
+ARCHIVE_DIR_NAME = "archive"
+# 結束的線還會被回頭查:那個決定當初怎麼下的、驗過什麼。放一個月
+# 才收走,夠久到不會擋住還在用的記憶,也不必記得手動清
+ARCHIVE_AFTER_DAYS = 30
+# 一條線放到隔天還沒人動,寫它的 session 幾乎不可能還在。認領是狀態列
+# 不是鎖,逾時就讓下一個人接走,只是要說出前一個持有者是誰
+STALE_AFTER_HOURS = 24
 OPEN = "open"
 CLAIMED = "claimed"
 DONE = "done"
@@ -41,6 +48,10 @@ _FRONT = "---\n"
 
 def handoff_dir() -> Path:
     return memory_dir() / HANDOFF_DIR_NAME
+
+
+def archive_dir() -> Path:
+    return handoff_dir() / ARCHIVE_DIR_NAME
 
 
 def _slug(text: str) -> str:
@@ -124,6 +135,35 @@ def age_in_days(created: str) -> int:
     return max((datetime.now(UTC) - opened).days, 0)
 
 
+def hours_since(stamp: str) -> "float | None":
+    """Hours since a timestamp; None when it cannot be read."""
+    try:
+        then = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+    return max((datetime.now(UTC) - then).total_seconds() / 3600, 0.0)
+
+
+def short_id(value: str, keep: int = 8) -> str:
+    """A session id short enough to read, cut at a segment boundary.
+
+    Ids are uuids, whose first hyphenated segment identifies them. A
+    blind slice lands mid-segment on anything shaped differently and
+    leaves a trailing hyphen that reads as a truncated word.
+    """
+    if len(value) <= keep:
+        return value
+    head = value[:keep]
+    # 切在分隔符上,而不是固定字元數:切一半的片段看起來像壞掉的字串
+    return head.rstrip("-_") if "-" in head or "_" in head else head
+
+
+def is_stale(note: "Handoff") -> bool:
+    """Whether nobody has touched this thread for long enough to doubt it."""
+    idle = hours_since(note.updated)
+    return idle is not None and idle >= STALE_AFTER_HOURS
+
+
 def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -144,6 +184,37 @@ def load_all(project: str = "") -> list[Handoff]:
             continue
         notes.append(note)
     return sorted(notes, key=lambda n: n.updated, reverse=True)
+
+
+def archive_finished(older_than_days: int = ARCHIVE_AFTER_DAYS) -> list[str]:
+    """Move long-finished threads into archive/, and say which moved.
+
+    A closed thread never lists again, so it only makes the directory
+    harder to read. The record is kept, not deleted: closed threads get
+    reread months later for why a decision went the way it did.
+    """
+    root = handoff_dir()
+    if not root.is_dir():
+        return []
+    moved = []
+    for note in load_all():
+        if note.state != DONE or age_in_days(note.updated) < older_than_days:
+            continue
+        target = archive_dir() / note.path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # 工作線名稱是人取的,「收尾」「release」會重複用。直接搬會
+        # 讓先歸檔的那份無聲消失,所以撞名就加上結束的日期
+        if target.exists():
+            stamp = note.updated[:10] or _now()[:10]
+            target = target.with_name(f"{note.path.stem}.{stamp}.md")
+            spare = 2
+            while target.exists():
+                target = target.with_name(f"{note.path.stem}.{stamp}-{spare}.md")
+                spare += 1
+        assert_plain_path(target, directory=False)
+        os.replace(note.path, target)
+        moved.append(note.thread)
+    return moved
 
 
 def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
@@ -185,23 +256,33 @@ def _load_or_fail(name: str) -> Handoff:
     return note
 
 
-def claim(name: str) -> Handoff:
-    """Take over a thread. Refuses a closed one, or one another session holds."""
+def claim(name: str) -> "tuple[Handoff, str]":
+    """Take over a thread, and say whose stale claim it displaced.
+
+    Refuses a closed thread, or one another session is actively holding.
+    A claim nobody has touched for STALE_AFTER_HOURS is taken over
+    instead of refused: sessions end without running `done`, and the
+    holder recorded on the note is then a session id that no longer
+    exists. Refusing on it strands the thread for good.
+    """
     note = _load_or_fail(name)
     me = session_id()
     # 結束的線不再是工作。認領它會把紀錄翻回活線並蓋掉持有者,
     # 而會走到這一步的多半是把列表符號讀錯了,不是真的要重開
     if note.state == DONE:
         raise ValueError(f"這則交接已結束:{name}")
+    displaced = ""
     if note.state == CLAIMED and note.claimed_by and note.claimed_by != me:
-        raise ValueError(
-            f"這則交接已被其他 session 認領:{note.claimed_by}"
-        )
+        if not is_stale(note):
+            raise ValueError(
+                f"這則交接已被其他 session 認領:{note.claimed_by}"
+            )
+        displaced = note.claimed_by
     note.state = CLAIMED
     note.claimed_by = me
     note.updated = _now()
     _write_text_atomic(note.path, _render(note))
-    return note
+    return note, displaced
 
 
 def done(name: str) -> Handoff:
