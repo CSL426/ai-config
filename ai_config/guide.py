@@ -210,8 +210,10 @@ project appends to the same files, so it cannot answer "where did my
 thread get to". A handoff is per-thread: `{entrypoint} memory handoff
 write "<thread>" "<where it got to, what is next>"` before a session
 ends, `handoff list [path]` to see what is waiting (a path reads another
-project's threads), `handoff claim <thread>`
-to take one over, `handoff done <thread>` when it is finished. A note is
+project's threads), `handoff claim [thread]`
+to take one over (with no name, the one thread this session's name left
+— the name survives `/clear`, so handoff, `/clear`, pickup needs no
+choosing), `handoff done <thread>` when it is finished. A note is
 free text, but `## Goal / State / Verified / Refuted / Unknowns / Next`
 headings let `list` show what is still open instead of the first line,
 and keep what was checked apart from what was guessed. Claiming
