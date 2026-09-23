@@ -451,3 +451,69 @@ def test_without_a_launcher_the_schedule_uses_this_interpreter(
     monkeypatch.setattr(sys, "frozen", False, raising=False)
 
     assert keepalive._invocation()[:3] == [sys.executable, "-m", "ai_config"]
+
+
+def _models_cache(home: Path, models: list) -> None:
+    import json
+
+    (home / "models_cache.json").write_text(json.dumps({"models": models}), encoding="utf-8")
+
+
+def test_codex_picks_the_least_promoted_listed_model(tmp_path: Path) -> None:
+    """A keepalive call exists to have happened; it should cost the least on offer.
+
+    Nothing names a model: the choice comes from the account's own list,
+    so a model that is retired or renamed is simply no longer picked.
+    """
+    _models_cache(tmp_path, [
+        {"slug": "big", "priority": 1, "visibility": "list", "supported_in_api": True},
+        {"slug": "small", "priority": 12, "visibility": "list", "supported_in_api": True},
+        {"slug": "hidden", "priority": 40, "visibility": "hide", "supported_in_api": True},
+    ])
+
+    assert keepalive.cheapest_codex_model(tmp_path) == "small"
+
+
+def test_codex_without_a_cache_leaves_the_model_alone(tmp_path: Path) -> None:
+    assert keepalive.cheapest_codex_model(tmp_path) is None
+
+
+def test_agy_picks_the_oldest_low_flash() -> None:
+    listing = (
+        "Fetching available models...\n"
+        "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+        "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n"
+        "gemini-3.6-flash-low\tGemini 3.6 Flash (Low)\n"
+        "gemini-3.1-pro-low\tGemini 3.1 Pro (Low)\n"
+        "claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)\n"
+    )
+
+    assert keepalive.cheapest_agy_model(listing) == "gemini-3.6-flash-low"
+
+
+def test_agy_with_an_unreadable_listing_leaves_the_model_alone() -> None:
+    assert keepalive.cheapest_agy_model("") is None
+
+
+def test_each_codex_account_is_called_with_its_cheapest_model(
+    state: Path, homes: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    _models_cache(homes / ".codex-csl", [
+        {"slug": "csl-small", "priority": 9, "visibility": "list", "supported_in_api": True},
+    ])
+    seen = {}
+
+    def run(argv, **kwargs):
+        seen[Path((kwargs.get("env") or {}).get("CODEX_HOME", "")).name] = list(argv)
+        return subprocess.CompletedProcess(argv, 0, "hi\n", "")
+
+    monkeypatch.setattr(keepalive.subprocess, "run", run)
+
+    keepalive.send("codex")
+
+    csl = seen[".codex-csl"]
+    assert csl[csl.index("-m") + 1] == "csl-small"
+    assert "-m" not in next(v for k, v in seen.items() if k != ".codex-csl")
+    assert "csl-small" in keepalive.log_path("codex").read_text(encoding="utf-8")

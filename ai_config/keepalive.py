@@ -270,6 +270,58 @@ def _append_log(message: str, tool: str = DEFAULT_TOOL) -> None:
         pass
 
 
+def cheapest_codex_model(home: Path) -> "str | None":
+    """The least promoted model this account lists, or None to leave codex's own.
+
+    The call exists to have happened, so it should cost the least on
+    offer. The cache carries no prices; the listing order is the only
+    signal, and the model promoted last is the best guess at the
+    cheapest. Taken from the account's own list, never named here, so a
+    retired model is simply no longer picked.
+    """
+    try:
+        cache = json.loads((home / "models_cache.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    models = cache.get("models") if isinstance(cache, dict) else None
+    listed = [
+        model for model in models or []
+        if isinstance(model, dict) and model.get("slug")
+        and model.get("visibility") == "list" and model.get("supported_in_api", True)
+        and isinstance(model.get("priority"), int)
+    ]
+    if not listed:
+        return None
+    return max(listed, key=lambda model: model["priority"])["slug"]
+
+
+def cheapest_agy_model(listing: str) -> "str | None":
+    """The weakest model `agy models` lists: a flash, at low, from the oldest line."""
+    ids = [line.split("\t", 1)[0].strip() for line in listing.splitlines() if "\t" in line]
+    ids = [model for model in ids if model]
+    if not ids:
+        return None
+    flash = [model for model in ids if "flash" in model] or ids
+    low = [model for model in flash if model.endswith("-low")] or flash
+
+    def version(model: str) -> tuple:
+        found = re.search(r"(\d+(?:\.\d+)*)", model)
+        return tuple(int(part) for part in found.group(1).split(".")) if found else (999,)
+
+    return min(low, key=version)
+
+
+def _agy_listing() -> str:
+    try:
+        done = subprocess.run(
+            [tool_binary("agy"), "models"], capture_output=True, text=True, **UTF8,
+            timeout=60, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout or ""
+
+
 def codex_homes() -> list:
     """Each codex account on this machine, once: every ~/.codex* home with credentials.
 
@@ -304,15 +356,24 @@ def send(tool: str = DEFAULT_TOOL) -> int:
     """
     _check_tool(tool)
     args = run_args(load(tool), tool)
+    if tool == "agy":
+        model = cheapest_agy_model(_agy_listing())
+        if model:
+            args = [args[0], "--model", model, *args[1:]]
+        return _call(args, tool, f"{tool} {model}" if model else tool, None)
     homes = codex_homes() if tool == "codex" else []
     if not homes:
         return _call(args, tool, tool, None)
     worst = 0
     for home in homes:
         env = {**os.environ, "CODEX_HOME": str(home)}
+        # 每個帳號看得到的模型不一樣,各自從自己的清單挑
+        model = cheapest_codex_model(home)
+        chosen = [*args[:-1], "-m", model, args[-1]] if model else args
         label = f"{tool} ({home.name})"
+        _append_log(f"model {model or '(codex 預設)'}", tool)
         # 一個帳號額度用完不該讓其他帳號跳過喚醒
-        worst = max(worst, _call(args, tool, label, env))
+        worst = max(worst, _call(chosen, tool, label, env))
     return worst
 
 

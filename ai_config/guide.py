@@ -258,7 +258,11 @@ account's last result.
 Each tool is anchored separately, with its own times, schedule and log:
 three accounts, three windows, no reason for their boundaries to line up.
 Every call uses the weakest model and the least thinking that tool offers,
-because the call exists to have happened. Off unless a machine turns it
+because the call exists to have happened. The model is picked from the
+tool's own list, never named in the code: claude uses haiku, agy the
+oldest low flash from `agy models`, and each codex account the model its
+own `models_cache.json` promotes last, at low effort — the cache has no
+prices, so for codex that is a best guess. The log names the pick. Off unless a machine turns it
 on, and settings stay local — each machine keeps different hours, so
 syncing them would have one machine's answer overwrite another's. The
 window belongs to the account rather than the machine, so one machine

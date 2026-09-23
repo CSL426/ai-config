@@ -13,6 +13,10 @@ allowed-tools: Bash(acg keepalive status), Bash(ai-config keepalive status)
 讓邊界避開工作時段。每次都用那個工具最弱的模型、最低的思考強度——這通呼叫
 存在的意義只是「它發生過」。
 
+模型一律挑最便宜的,而且是從工具自己的清單裡挑,程式裡沒寫任何模型名稱:claude 用
+haiku,agy 從 `agy models` 挑最舊的 flash low,codex 每個帳號從自己的
+`models_cache.json` 挑排序最後的那個(快取沒有價格,這是推測)。日誌會記下挑了哪個。
+
 codex 有好幾個帳號時(`~/.codex-set`、`~/.codex-csl` 這類各自有 `auth.json` 的目錄),
 每個帳號各自喚醒,status 會各列一行。帳號是自動找的,新增一個 `~/.codex-xxx`
 不用改任何設定。
