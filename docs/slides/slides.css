@@ -79,9 +79,9 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .route-card.git { transform: translateY(var(--space-lg)) rotate(1deg); }
 .route-card h3 { font-size: var(--text-lg); line-height: 1.16; margin-bottom: var(--space-xs); }
 .route-card p { color: var(--color-ink-soft); }
-.route-card .route-symbol { display: block; width: 3.2rem; height: 0.55rem; margin-bottom: var(--space-md); border-radius: 999rem; }
-.drive .route-symbol { background: var(--color-sky); }
-.git .route-symbol { background: var(--color-pear); }
+.route-logo { display: block; height: 2.5rem; width: auto; margin-bottom: var(--space-md); fill: currentColor; }
+.drive .route-logo { color: var(--color-sky-deep); }
+.git .route-logo { color: var(--color-coral); }
 
 .workflow { width: min(100%, 72rem); margin-inline: auto; }
 .workflow h2 { max-width: none; text-align: center; margin-inline: auto; }
@@ -111,7 +111,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .loop-copy .workflow-line { grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; gap: var(--space-xs); margin-top: var(--space-md); }
 .loop-copy .workflow-arrow { display: none; }
 .loop-copy .workflow-step { width: auto; min-width: 0; min-height: 0; padding: var(--space-xs) var(--space-sm); transform: none; }
-.logo-credit { color: var(--color-muted); }
+.logo-credit { position: absolute; right: clamp(1rem, 3vw, 2.5rem); bottom: calc(var(--space-xl) + 2.75rem); max-width: min(90%, 28rem); margin: 0; color: var(--color-muted); font-size: var(--text-xs, 0.75rem); text-align: end; }
 .callouts { display: grid; gap: var(--space-md); }
 .callout { padding-bottom: var(--space-md); border-bottom: var(--rule) solid var(--color-rule); }
 .callout:last-child { border-bottom: 0; }
