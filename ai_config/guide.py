@@ -243,6 +243,12 @@ A failed call logs the tool's own error line, such as an exhausted
 usage limit, rather than just its exit code. A failed call also anchors
 nothing: the next real use starts the window instead, which is how the
 boundaries drift off the chosen times.
+For claude, `status` also shows the window Claude Code last reported
+(`目前視窗 09:50–14:50`) and warns when it did not start at a scheduled
+time: the call then landed inside a window something else on the account
+had opened earlier — another machine, the web or the phone. The reset
+time is recorded by the status-line wrapper, so it needs the handoff
+reminder enabled.
 
 Each tool is anchored separately, with its own times, schedule and log:
 three accounts, three windows, no reason for their boundaries to line up.
