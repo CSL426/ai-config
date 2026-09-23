@@ -710,3 +710,21 @@ def test_a_thread_idle_for_a_week_stays_listed(notebook: Path) -> None:
     _age_note(handoff.handoff_dir() / "一週沒動.md", "updated", 7)
 
     assert handoff.archive_finished() == []
+
+
+def test_the_hint_after_writing_points_at_pickup(
+    notebook: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Sessions repeat this line to the user verbatim.
+
+    It named only the raw claim command, so a session told the user to
+    type `acg memory handoff claim '...'` when /acg:pickup, or just saying
+    "接著做", does the same thing.
+    """
+    from ai_config.commands import memory as command
+
+    assert command._handoff(["write", "排程", "內容"]) == 0
+
+    out = capsys.readouterr().out
+    assert "/acg:pickup" in out
+    assert out.index("/acg:pickup") < out.index("memory handoff claim")

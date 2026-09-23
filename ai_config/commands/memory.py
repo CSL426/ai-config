@@ -163,9 +163,12 @@ def _handoff(rest: list[str]) -> int:
         if action == "write" and len(args) >= 2:
             note = hand.write(args[0], " ".join(args[1:]))
             log_success(f"已記下交接:{note.thread}")
+            # 接手的人用的是 /acg:pickup 或一句「接著做」;這行會被 session
+            # 照抄給使用者,只給指令會讓人以為得自己打。指令留著給沒有 plugin 的環境,
             # 名稱含空格時要引號,否則照著貼會被拆成多個參數
+            log_info("接手:清空對話後用 /acg:pickup,或直接說「接著做」")
             log_info(
-                f"下個 session 用 {ENTRYPOINT} memory handoff claim "
+                f"沒有 plugin 時:{ENTRYPOINT} memory handoff claim "
                 f"{shlex.quote(note.name)}"
             )
             return 0
