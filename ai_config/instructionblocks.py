@@ -24,9 +24,20 @@ def _block_span(content: bytes) -> tuple[int, int] | None:
 
 
 def preserve_memory_block(source: bytes, live: bytes) -> bytes:
-    """Use source rules and exactly the live managed block, if any."""
+    """Use source rules, with the memory block only where the machine has one.
+
+    Whether memory is enabled is this machine's choice, so presence comes
+    from live. The words do not: keeping live's copy verbatim meant no
+    change to the rules ever reached a machine that already had them, so
+    the block is always the current one.
+    """
+    from .memory import RULES_BLOCK
+
     source_span, live_span = _block_span(source), _block_span(live)
-    block = live[live_span[0]:live_span[1]] if live_span else b""
+    block = RULES_BLOCK.strip().encode("utf-8") if live_span else b""
+    if live_span and b"\r\n" in live[live_span[0]:live_span[1]]:
+        # Windows 上的 live 檔是 CRLF;區塊跟著用,檔案才不會混兩種換行
+        block = block.replace(b"\n", b"\r\n")
     if source_span:
         return source[:source_span[0]] + block + source[source_span[1]:]
     if not block:
