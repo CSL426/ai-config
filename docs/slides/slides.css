@@ -105,6 +105,13 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 
 .gui-layout { grid-template-columns: minmax(17rem, 0.65fr) minmax(27rem, 1.35fr); }
 .gui-shot { display: block; width: 100%; height: auto; border-radius: var(--radius-md); }
+.tool-logos { list-style: none; margin: var(--space-md) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); }
+.tool-logos li { display: inline-flex; align-items: center; gap: var(--space-2xs); color: var(--color-ink-soft); font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 500; }
+.tool-logos svg { width: 1.25rem; height: 1.25rem; flex: none; fill: currentColor; }
+.loop-copy .workflow-line { grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; gap: var(--space-xs); margin-top: var(--space-md); }
+.loop-copy .workflow-arrow { display: none; }
+.loop-copy .workflow-step { width: auto; min-width: 0; min-height: 0; padding: var(--space-xs) var(--space-sm); transform: none; }
+.logo-credit { color: var(--color-muted); }
 .callouts { display: grid; gap: var(--space-md); }
 .callout { padding-bottom: var(--space-md); border-bottom: var(--rule) solid var(--color-rule); }
 .callout:last-child { border-bottom: 0; }
