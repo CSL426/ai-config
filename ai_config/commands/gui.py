@@ -745,23 +745,21 @@ def _package_output_dir() -> Path:
     return downloads if downloads.is_dir() else Path.home()
 
 
-def create_desktop_shortcut() -> int:
-    """Put a Start-menu shortcut on Windows so the exe is findable.
+def _shortcut_target() -> Path:
+    """The launcher `acg update` swaps in place, else the running executable.
 
-    The executable installs under ~/.local/bin, which nobody browses to;
-    without this the desktop app is only reachable by typing a command,
-    which is exactly the audience it is not for.
+    The running exe sits in versions/<x>/; a shortcut there points at an
+    old version after the next update, and at nothing once it is pruned.
     """
-    if sys.platform != "win32":
-        log_error("捷徑目前只支援 Windows")
-        return 1
+    from .. import paths
 
-    target = Path(sys.executable if getattr(sys, "frozen", False) else sys.argv[0])
-    target = target.resolve()
-    if not target.is_file():
-        log_error(f"找不到執行檔:{target}")
-        return 1
+    launcher = paths.standalone_install_path()
+    if launcher.is_file():
+        return launcher
+    return Path(sys.executable if getattr(sys, "frozen", False) else sys.argv[0]).resolve()
 
+
+def _windows_shortcuts(target: Path) -> int:
     start_menu = (
         Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming"))
         / "Microsoft/Windows/Start Menu/Programs"
@@ -771,19 +769,24 @@ def create_desktop_shortcut() -> int:
     except OSError as exc:
         log_error(f"無法建立開始選單資料夾:{exc}")
         return 1
-
-    shortcut = start_menu / "acg.lnk"
-    # 用 PowerShell 的 WScript.Shell 建 .lnk,不必額外依賴 pywin32
-    script = (
-        "$s = (New-Object -ComObject WScript.Shell)."
-        f"CreateShortcut('{shortcut}');"
+    # 桌面位置要問系統:OneDrive 會把它搬走,寫死 ~/Desktop 會建在沒人看的地方
+    body = (
         f"$s.TargetPath = '{target}';"
         "$s.Arguments = 'gui';"
         f"$s.WorkingDirectory = '{target.parent}';"
         f"$s.IconLocation = '{target}';"
         "$s.Description = 'acg — AI 設定同步';"
-        "$s.Save()"
+        "$s.Save();"
     )
+    script = (
+        "$shell = New-Object -ComObject WScript.Shell;"
+        "foreach ($dir in @([Environment]::GetFolderPath('Desktop'), "
+        f"'{start_menu}')) {{"
+        "$s = $shell.CreateShortcut((Join-Path $dir 'acg.lnk'));"
+        f"{body}"
+        "}"
+    )
+    # 用 PowerShell 的 WScript.Shell 建 .lnk,不必額外依賴 pywin32
     result = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         capture_output=True,
@@ -793,10 +796,55 @@ def create_desktop_shortcut() -> int:
     if result.returncode != 0:
         log_error(f"建立捷徑失敗:{result.stderr.strip() or result.stdout.strip()}")
         return 1
-
-    log_success(f"已建立捷徑:{shortcut}")
-    log_info("在開始選單搜尋「acg」就能開啟")
+    log_success("已在桌面與開始選單建立 acg 捷徑")
     return 0
+
+
+def _linux_shortcuts(target: Path) -> int:
+    entry = (
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=acg\n"
+        "Comment=AI 設定同步\n"
+        f"Exec={target} gui\n"
+        "Terminal=false\n"
+        "Categories=Utility;\n"
+    )
+    home = Path.home()
+    places = [home / ".local/share/applications"]
+    # 有桌面資料夾才放;伺服器常常沒有,硬建一個沒人會看
+    if (home / "Desktop").is_dir():
+        places.append(home / "Desktop")
+    try:
+        for place in places:
+            place.mkdir(parents=True, exist_ok=True)
+            shortcut = place / "acg.desktop"
+            shortcut.write_text(entry, encoding="utf-8")
+            shortcut.chmod(0o755)
+    except OSError as exc:
+        log_error(f"建立捷徑失敗:{exc}")
+        return 1
+    log_success("已在應用程式選單" + ("與桌面" if len(places) > 1 else "") + "建立 acg 捷徑")
+    return 0
+
+
+def create_desktop_shortcut() -> int:
+    """Put acg where people look for apps: the desktop and the app menu.
+
+    The executable installs under ~/.local/bin, which nobody browses to;
+    without this the desktop app is only reachable by typing a command,
+    which is exactly the audience it is not for.
+    """
+    target = _shortcut_target()
+    if not target.is_file():
+        log_error(f"找不到執行檔:{target}")
+        return 1
+    if sys.platform == "win32":
+        return _windows_shortcuts(target)
+    if sys.platform.startswith("linux"):
+        return _linux_shortcuts(target)
+    log_error("捷徑目前支援 Windows 與 Linux")
+    return 1
 
 
 _DETACH_ENV = "AI_CONFIG_GUI_DETACHED"

@@ -39,6 +39,7 @@ project, status, pull, push, and sync.
 | `list` | managed tools, file counts, backup snapshot count |
 | `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send> [tool]` | anchor this machine's usage window for claude, codex or agy; off by default, settings stay local |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
+| `gui [--shortcut]` | open the desktop app; `--shortcut` puts acg on the desktop and in the app menu (Windows, Linux; the Windows installer does it on first install) |
 | `setup` | configure the data repo remote and verify push access |
 | `update [version]` | install the latest release, or a pinned one (also downgrades); refuses to start while another update is running; also runs `claude plugin update acg@acg` so the slash commands keep up |
 | `skill` | print this guide |
