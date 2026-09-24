@@ -173,16 +173,10 @@ def _handoff(rest: list[str]) -> int:
             )
             return 0
         if action == "claim" and len(args) <= 1:
-            # 不帶名稱就認領這個 session 名稱留下的那條線
-            note, displaced = hand.claim(args[0] if args else "")
-            log_success(f"已認領:{note.thread}")
-            # 接走的是別人放著沒收的線,說出前一個持有者,接手的人才
-            # 知道這份進度可能停在半路,不是寫完才交出來的
-            if displaced:
-                log_warn(
-                    f"這條線原本由 {hand.short_id(displaced)} 持有,超過 "
-                    f"{hand.STALE_AFTER_HOURS} 小時沒有動靜,已接手"
-                )
+            # 不帶名稱就接這個 session 名稱留下的那條線。接走就結案:
+            # 這份筆記的任務是交到下一個人手上,收工時由接手的人再寫一份
+            note = hand.claim(args[0] if args else "")
+            log_success(f"已接手:{note.thread}(這則交接已結案,收工時再寫新的)")
             print()
             print(note.body)
             return 0
@@ -251,15 +245,13 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
         log_info(f"{where}沒有待接手的工作線")
         return 0
     for note in notes:
-        mark = {hand.OPEN: "○", hand.CLAIMED: "◐"}.get(note.state, "○")
-        held = f" ← {hand.short_id(note.claimed_by)}" if note.claimed_by else ""
         age = hand.age_in_days(note.created)
         # 一條線放了幾天,就是該不該接它的理由;當天開的不用說
         waited = f"  ({age} 天前開的)" if age else ""
         # 擱著沒動的線跟剛寫好的長得一樣,而裡面的進度可能早就被
         # 別處的工作蓋過去了。接手前該先讀一遍,不是照著做
         stale = "  ⚠ 可能已過期" if hand.is_stale(note) else ""
-        print(f"  {mark} {note.name}{held}{waited}{stale}")
+        print(f"  ○ {note.name}{waited}{stale}")
         print(f"    {hand.summary(note.body)}")
     return 0
 

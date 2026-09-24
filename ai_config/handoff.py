@@ -5,10 +5,11 @@ The journal answers "what happened in this project". It cannot answer
 to the same files. A handoff is per-thread instead: one file, written
 when a session stops, claimed by the session that continues it.
 
-Claiming is a status line, not a lock: it records a holder so the next
-session can see the thread is taken, and refuses a note another session
-already holds. Two machines are caught by push refusing to overwrite a
-moved upstream.
+Picking a thread up closes it: the note is delivered, and it records who
+took it. There is no "held" state to go stale -- the session that took it
+writes a new handoff when it stops, and a second session asking for the
+same note is told who already took it. Two machines are caught by push
+refusing to overwrite a moved upstream.
 """
 
 import json
@@ -32,13 +33,11 @@ ARCHIVE_DIR_NAME = "archive"
 # 結束的線還會被回頭查:那個決定當初怎麼下的、驗過什麼。放一個月
 # 才收走,夠久到不會擋住還在用的記憶,也不必記得手動清
 ARCHIVE_AFTER_DAYS = 30
-# 一條線放到隔天還沒人動,寫它的 session 幾乎不可能還在。認領是狀態列
-# 不是鎖,逾時就讓下一個人接走,只是要說出前一個持有者是誰
+# 一條線放到隔天還沒人接,裡面的進度可能已被別處的工作蓋過去
 STALE_AFTER_HOURS = 24
 OPEN = "open"
-CLAIMED = "claimed"
 DONE = "done"
-_STATES = (OPEN, CLAIMED, DONE)
+_STATES = (OPEN, DONE)
 
 _FIELD = re.compile(r"^([a-z_]+):\s*(.*)$", re.MULTILINE)
 # 只擋路徑分隔符與控制字元。中文工作線名稱要能直接當檔名,不然
@@ -104,6 +103,7 @@ class Handoff:
     author: str
     claimed_by: str
     session_name: str
+    claimed_name: str
     created: str
     updated: str
     body: str
@@ -125,6 +125,8 @@ def _parse(path: Path) -> "Handoff | None":
         return None
     fields = dict(_FIELD.findall(front))
     state = fields.get("state", "").strip()
+    # 舊版有「持有中」這個狀態;持有者多半早就不在了,當成還沒人接
+    state = OPEN if state == "claimed" else state
     updated = fields.get("updated", "").strip()
     return Handoff(
         path=path,
@@ -134,6 +136,7 @@ def _parse(path: Path) -> "Handoff | None":
         author=fields.get("author", "").strip(),
         claimed_by=fields.get("claimed_by", "").strip(),
         session_name=fields.get("session_name", "").strip(),
+        claimed_name=fields.get("claimed_name", "").strip(),
         # 這個欄位比筆記晚出現,舊的沒有。退回 updated 只會讓那幾則
         # 看起來像剛開的,不會讀不出來
         created=fields.get("created", "").strip() or updated,
@@ -154,6 +157,8 @@ def _render(note: Handoff) -> str:
         lines.append(f"claimed_by: {note.claimed_by}\n")
     if note.session_name:
         lines.append(f"session_name: {note.session_name}\n")
+    if note.claimed_name:
+        lines.append(f"claimed_name: {note.claimed_name}\n")
     lines.append(f"created: {note.created}\n")
     lines.append(f"updated: {note.updated}\n")
     lines.append(_FRONT)
@@ -276,6 +281,7 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
         author=session_id() or (existing.author if existing else ""),
         claimed_by="",
         session_name=session_name() or (existing.session_name if existing else ""),
+        claimed_name="",
         # 重寫一條線是接著做,不是另一條新的線
         created=existing.created if existing else now,
         updated=now,
@@ -318,34 +324,33 @@ def _own_thread() -> Handoff:
     return candidates[0]
 
 
-def claim(name: str = "") -> "tuple[Handoff, str]":
-    """Take over a thread, and say whose stale claim it displaced.
+def taker(note: "Handoff") -> str:
+    """Who picked this thread up, as readably as the note allows."""
+    if note.claimed_name:
+        return note.claimed_name
+    return short_id(note.claimed_by) if note.claimed_by else ""
 
-    Refuses a closed thread, or one another session is actively holding.
-    A claim nobody has touched for STALE_AFTER_HOURS is taken over
-    instead of refused: sessions end without running `done`, and the
-    holder recorded on the note is then a session id that no longer
-    exists. Refusing on it strands the thread for good.
+
+def claim(name: str = "") -> Handoff:
+    """Pick a thread up: deliver its note and close it, recording who took it.
+
+    The note has done its job once someone has read it. Keeping it open
+    as "held" only left a state to go stale when that session ended
+    without writing; the taker writes a fresh handoff when it stops.
     """
     note = _load_or_fail(name) if name else _own_thread()
     name = name or note.thread
-    me = session_id()
-    # 結束的線不再是工作。認領它會把紀錄翻回活線並蓋掉持有者,
-    # 而會走到這一步的多半是把列表符號讀錯了,不是真的要重開
     if note.state == DONE:
+        who = taker(note)
+        if who:
+            raise ValueError(f"這條線已經被 {who} 接走了:{name}")
         raise ValueError(f"這則交接已結束:{name}")
-    displaced = ""
-    if note.state == CLAIMED and note.claimed_by and note.claimed_by != me:
-        if not is_stale(note):
-            raise ValueError(
-                f"這則交接已被其他 session 認領:{note.claimed_by}"
-            )
-        displaced = note.claimed_by
-    note.state = CLAIMED
-    note.claimed_by = me
+    note.state = DONE
+    note.claimed_by = session_id()
+    note.claimed_name = session_name()
     note.updated = _now()
     _write_text_atomic(note.path, _render(note))
-    return note, displaced
+    return note
 
 
 def done(name: str) -> Handoff:

@@ -62,7 +62,6 @@ def _handoff_threads() -> list:
 
         notes = [note for note in handoff.load_all() if note.state != handoff.DONE]
         return [{"thread": note.thread, "project": note.project, "state": note.state,
-                 "holder": handoff.short_id(note.claimed_by) if note.claimed_by else "",
                  "age_days": handoff.age_in_days(note.created),
                  "stale": handoff.is_stale(note),
                  "summary": handoff.summary(note.body)} for note in notes]

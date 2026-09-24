@@ -214,27 +214,22 @@ ends, `handoff list [path]` to see what is waiting (a path reads another
 project's threads), `handoff claim [thread]`
 to take one over (with no name, the one thread this session's name left
 — the name survives `/clear`, so handoff, `/clear`, pickup needs no
-choosing), `handoff done <thread>` when it is finished. A note is
-free text, but `## Goal / State / Verified / Refuted / Unknowns / Next`
-headings let `list` show what is still open instead of the first line,
-and keep what was checked apart from what was guessed. Claiming
-records the session id, so a second session is told who holds it rather
-than silently taking it, and a finished thread is refused rather than
-resurrected. A thread closed more than a month ago moves to
-`handoff/archive/` the next time the list runs, keeping the record out
-of the working directory. A claim nobody has touched for a day is taken over
-instead, naming who held it: sessions end without running `done`, and
-refusing on a session id that no longer exists strands the thread. A
-thread left untouched that long also lists as `⚠ 可能已過期` — read it
-before working from it, because the work in it may have shipped
-elsewhere. A finished thread stays on disk as a record but leaves the
-list. Threads are rarely closed by hand — the usual flow is handoff, `/clear`,
-pickup — so a handoff with nothing left under Next closes the thread
-with `done` instead of writing a note, and any thread untouched for a
-month is archived like a closed one. The plugin's `thread-handoff` skill
-carries the same steps for when someone says "交接" or "接著做"
-instead of typing the command. Writing again reopens a claimed thread, keeping the date it was
-first opened, which `list` shows as how long it has been waiting.
+choosing), `handoff done <thread>` to close one nobody will pick up. A
+note is free text, but `## Goal / State / Verified / Refuted / Unknowns /
+Next` headings let `list` show what is still open instead of the first
+line, and keep what was checked apart from what was guessed. Picking a
+thread up closes it and records who took it (session name, else id):
+the note has done its job once read, and the taker writes a fresh
+handoff when it stops. There is no "held" state to go stale, so a
+second session asking for the same thread is told who took it rather
+than taking it again. A thread nobody picks up for a day lists as
+`⚠ 可能已過期` — read it before working from it, because the work in it
+may have shipped elsewhere. Closed threads, and any thread untouched for
+a month, move to `handoff/archive/` the next time the list runs; the
+record is kept. The plugin's `thread-handoff` skill carries the same
+steps for when someone says "交接" or "接著做" instead of typing the
+command. Writing the same thread again opens it anew, keeping the date
+it was first opened, which `list` shows as how long it has been waiting.
 
 ### Anchoring the usage window
 

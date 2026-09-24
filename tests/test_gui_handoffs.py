@@ -24,17 +24,19 @@ def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_live_threads_are_listed_with_what_the_cli_shows(notebook: Path) -> None:
     """The page had a reminder switch and no threads at all."""
     handoff.write("做到一半", "## Next\n- **補測試**。然後發版")
-    handoff.claim("做到一半")
+    handoff.write("接走的", "內容")
+    handoff.claim("接走的")
     handoff.write("做完的", "內容")
     handoff.done("做完的")
 
     threads = _handoff_threads()
 
+    # 接走就結案,只剩還沒人接的
     assert [t["thread"] for t in threads] == ["做到一半"]
     one = threads[0]
     assert one["project"] == "o--r"
-    assert one["state"] == "claimed"
-    assert one["holder"] == "d4b49a91"
+    assert one["state"] == "open"
+    assert "holder" not in one
     assert one["stale"] is False
     assert one["summary"] == "還剩:補測試。然後發版"
 

@@ -277,7 +277,6 @@ function renderHandoffs(info: MemoryInfo): void {
     meta.className = "handoff-thread-meta";
     meta.textContent = [
       thread.project,
-      thread.holder ? `◐ ${thread.holder} 持有` : "○ 沒人接",
       thread.age_days ? `${thread.age_days} 天前開的` : "",
       thread.stale ? "⚠ 可能已過期" : "",
     ].filter(Boolean).join(" · ");
