@@ -151,6 +151,11 @@ def main(argv: "list[str] | None" = None) -> int:
 
         handler = run_statusline if args[0] == "__handoff-statusline" else run_hook
         return handler(args[1:])
+    if args and args[0] == "__channel":
+        # Claude Code 的 channel:stdout 是 MCP 協定通道,任何提示都不能印
+        from .channel import run as run_channel
+
+        return run_channel()
     if args and args[0] == "__commit-style":
         from .commit_style import run_hook
 

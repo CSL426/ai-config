@@ -5,7 +5,7 @@ from ..console import log_error, log_info, log_success
 from ..paths import ENTRYPOINT
 
 _USAGE = (
-    "Usage: {entry} msg list | send <名稱或 id> <訊息> [--wait [秒]]"
+    "Usage: {entry} msg list | send <名稱或 id> <訊息> [--wait [秒]] [--from <我的名稱>]"
 )
 _DEFAULT_WAIT = 300.0
 
@@ -13,18 +13,31 @@ _DEFAULT_WAIT = 300.0
 def _list() -> int:
     peers = messaging.list_peers()
     if not peers:
-        log_info("沒有找到在線上、收得到訊息的 session")
+        log_info("沒有找到在線上的 session")
         log_info("Codex 要用 codex --remote unix:// 開,才會掛上 daemon")
         return 0
     for peer in peers:
+        mark = "○" if peer.unreachable else "●"
+        tool = f"{peer.tool} {peer.account}".strip()
         name = peer.name or "(未命名)"
-        print(f"  {peer.tool} {peer.account:<8} {name}  [{peer.id[:13]}]  {peer.status}  {peer.cwd}")
+        where = f"  {peer.cwd}" if peer.cwd else ""
+        print(f"  {mark} {tool:<10} {name}  [{peer.id[:13]}]  {peer.status}{where}")
+    if any(peer.unreachable for peer in peers):
+        log_info("● 收得到訊息;○ 目前收不到,送給它會說明原因")
     return 0
 
 
 def _send(args: list) -> int:
     wait = 0.0
+    sender = ""
     rest = list(args)
+    if "--from" in rest:
+        index = rest.index("--from")
+        if index + 1 >= len(rest):
+            log_error(_USAGE.format(entry=ENTRYPOINT))
+            return 1
+        sender = rest[index + 1]
+        del rest[index:index + 2]
     if "--wait" in rest:
         index = rest.index("--wait")
         rest.pop(index)
@@ -39,7 +52,7 @@ def _send(args: list) -> int:
         log_error(_USAGE.format(entry=ENTRYPOINT))
         return 1
     target, text = rest
-    peer, reply = messaging.send(target, text, wait=wait)
+    peer, reply = messaging.send(target, text, wait=wait, sender=sender)
     log_success(f"已送到 {peer.label}({peer.tool} {peer.account})")
     if wait:
         print()
