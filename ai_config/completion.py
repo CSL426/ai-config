@@ -16,6 +16,7 @@ COMMANDS = (
     "share",
     "config",
     "memory",
+    "msg",
     "gui",
     "desktop",
     "skill",

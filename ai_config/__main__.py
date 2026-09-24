@@ -85,6 +85,9 @@ def usage() -> None:
     print("                  call a tool at chosen times so its five-hour usage")
     print("                  window starts where the day needs it; per machine,")
     print("                  and each tool keeps its own times (default: claude)")
+    print("  msg list | send <名稱或 id> <訊息> [--wait [秒]]")
+    print("                  talk to another live session by name (Codex for now;")
+    print("                  start codex with --remote unix:// so it can be reached)")
     print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
     print("                  adopt [專案路徑|all|--scan [目錄]] sync one project's")
     print("                    or find every unsynced one below a directory")
@@ -123,7 +126,7 @@ def usage() -> None:
     print("    claude plugin marketplace add CSL426/ai-config")
     print("    claude plugin install acg@acg")
     print("  /acg:status /acg:sync /acg:save /acg:share /acg:memory")
-    print("  /acg:handoff /acg:handoffs /acg:pickup /acg:keepalive")
+    print("  /acg:handoff /acg:handoffs /acg:pickup /acg:keepalive /acg:msg")
     print()
     print(f"{BOLD}Tools:{NC}")
     print("  claude          Claude Code (~/.claude/)")
@@ -326,6 +329,10 @@ def main(argv: "list[str] | None" = None) -> int:
 
         return run_hooks(args[1:])
 
+    if cmd == "msg":
+        from .commands.msg import run_msg
+
+        return run_msg(args[1:])
     if cmd == "keepalive":
         from .commands.keepalive import run_keepalive
 
