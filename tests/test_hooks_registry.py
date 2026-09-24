@@ -1,6 +1,7 @@
 """One registry strips and restores every acg hook, whatever registers next."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -95,3 +96,40 @@ def test_the_command_lists_and_toggles(
 def test_an_unknown_name_is_refused(home: Path) -> None:
     assert run_hooks(["enable", "nope"]) == 1
     assert run_hooks(["bogus"]) == 1
+
+
+def test_hooks_point_at_the_launcher_not_a_version_directory(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # versions/<x>/ 會被清掉;指向那裡的 hook 會讓每個 prompt 都 ENOENT
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    launcher = bin_dir / ("ai-config.exe" if os.name == "nt" else "ai-config")
+    launcher.write_text("")
+    monkeypatch.setenv("AI_CONFIG_BIN_DIR", str(bin_dir))
+
+    hooks.configure(hooks.COMMIT_STYLE, True)
+
+    entry = _settings(home)["hooks"]["PreToolUse"][0]["hooks"][0]
+    assert entry["command"] == str(launcher)
+
+
+def test_refresh_repoints_a_hook_left_at_a_pruned_version(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks.configure(hooks.COMMIT_STYLE, True)
+    document = _settings(home)
+    entry = document["hooks"]["PreToolUse"][0]["hooks"][0]
+    entry["command"] = str(tmp_path / "versions" / "1.0.75" / "ai-config")
+    (home / "settings.json").write_text(json.dumps(document), encoding="utf-8")
+
+    assert hooks.refresh() == [hooks.COMMIT_STYLE.name]
+    assert "1.0.75" not in (home / "settings.json").read_text(encoding="utf-8")
+    assert hooks.refresh() == []
+
+
+def test_refresh_never_installs_a_hook_that_was_off(home: Path) -> None:
+    (home / "settings.json").write_text("{}", encoding="utf-8")
+
+    assert hooks.refresh() == []
+    assert _settings(home) == {}

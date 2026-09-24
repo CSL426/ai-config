@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import memory
 from .locking import apply_lock
-from .paths import NATIVE_WINDOWS
+from .paths import NATIVE_WINDOWS, scheduled_command
 
 STATUS_COMMAND = "__handoff-statusline"
 HOOK_COMMAND = "__handoff-reminder"
@@ -171,6 +171,13 @@ def status() -> dict:
     return _status(_settings())
 
 
+def refresh() -> None:
+    """Rewrite an enabled reminder so it points at the current launcher."""
+    current = status()
+    if current["enabled"]:
+        configure(True, current["threshold"])
+
+
 def configure(enabled: bool, threshold: int = DEFAULT_THRESHOLD) -> dict:
     from .commands.memory import _backup
 
@@ -183,10 +190,8 @@ def configure(enabled: bool, threshold: int = DEFAULT_THRESHOLD) -> dict:
         if enabled:
             original = result.get("statusLine")
             _decode(_encode(original))
-            executable = sys.executable.replace("\\", "/")
-            argv = [executable]
-            if not getattr(sys, "frozen", False):
-                argv += ["-m", "ai_config"]
+            # 固定入口,不是 sys.executable:後者可能是會被清掉的版本目錄
+            argv = [str(part).replace("\\", "/") for part in scheduled_command()]
             result["statusLine"] = {
                 **(original or {}), "type": "command",
                 "command": _shell_command(argv + [
@@ -201,7 +206,7 @@ def configure(enabled: bool, threshold: int = DEFAULT_THRESHOLD) -> dict:
                 if not isinstance(rows, list):
                     raise ValueError(f"Claude {event} hooks 必須是陣列")  # noqa: TRY004
                 rows.append({"hooks": [{
-                    "type": "command", "command": sys.executable,
+                    "type": "command", "command": argv[0],
                     "args": argv[1:] + [HOOK_COMMAND],
                     "statusMessage": MARKER, "timeout": 5,
                 }]})

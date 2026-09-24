@@ -28,3 +28,34 @@ def _shared_table_stays_out_of_the_real_notebook(
     # patch 底層的 gethostname 而不是 host_name():host_name 自己也有測試要跑真的
     monkeypatch.setattr(schedule_table.socket, "gethostname", lambda: "test-host")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+
+@pytest.fixture(autouse=True)
+def _no_real_launcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hooks and timers point at ~/.local/bin/ai-config when it exists.
+
+    On a machine with acg installed that made the written commands depend
+    on the machine running the tests, not on the test.
+    """
+    monkeypatch.setenv("AI_CONFIG_BIN_DIR", str(tmp_path / "no-launcher-bin"))
+
+
+@pytest.fixture(autouse=True)
+def _claude_settings_stay_out_of_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing a test does in-process may write ~/.claude or its backups.
+
+    A test of `update` reached the hook repair it now ends with, and
+    rewrote this machine's real settings.json to point every hook at a
+    pytest temp directory. Tests that need a Claude home set their own,
+    which overrides this.
+    """
+    from ai_config import hooks, locking, memory
+    from ai_config.commands import memory as memory_command
+
+    guard = tmp_path / "claude-home-guard"
+    monkeypatch.setattr(memory, "CLAUDE_HOME", guard)
+    monkeypatch.setattr(hooks, "CLAUDE_HOME", guard)
+    monkeypatch.setattr(locking, "BACKUP_BASE", tmp_path / "backup-guard")
+    monkeypatch.setattr(memory_command, "BACKUP_BASE", tmp_path / "backup-guard")
