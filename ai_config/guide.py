@@ -231,6 +231,20 @@ steps for when someone says "交接" or "接著做" instead of typing the
 command. Writing the same thread again opens it anew, keeping the date
 it was first opened, which `list` shows as how long it has been waiting.
 
+### Talking to another live session
+
+`{entrypoint} msg list` shows the sessions that can be reached right now;
+`{entrypoint} msg send <name or id> "<text>" [--wait [seconds]]` delivers
+into one by name, tagged with who sent it, and with `--wait` prints the
+answer once that session's turn ends (default five minutes). Only Codex
+can receive so far: a Codex TUI is reachable when it was started with
+`--remote unix://`, which attaches it to its account's app-server daemon
+(the user's `codex` shell function adds that for interactive launches).
+Sub-agent threads are left out of the list. A name that matches more than
+one session is refused rather than guessed; use the id. A reply that
+failed says why, e.g. the account's usage limit. The daemon protocol is
+Codex's own and may change between releases.
+
 ### Anchoring the usage window
 
 A five-hour usage window starts at the account's first call of the day, so
