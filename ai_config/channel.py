@@ -124,7 +124,24 @@ class Channel:
             self.write({"jsonrpc": "2.0", "id": ident, "result": {}})
 
 
+def _exit_on_signal() -> None:
+    """Turn hangup and terminate into a normal exit, so the socket is removed.
+
+    Closing the terminal kills the server with a signal; the default
+    action skips the cleanup and leaves the socket behind.
+    """
+    import signal
+
+    def stop(_signum, _frame):
+        raise SystemExit(0)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), stop)
+
+
 def run() -> int:
+    _exit_on_signal()
     pid = _claude_pid()
     channel = Channel()
     if pid is not None:
