@@ -1,6 +1,5 @@
 """Behaviour tests for the self-update command."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -91,55 +90,126 @@ def test_update_rejects_extra_arguments(tmp_path: Path) -> None:
     assert result.returncode == 1
 
 
-def test_windows_handoff_redirects_output_away_from_console(monkeypatch) -> None:
+def _fake_windows_run(monkeypatch, returncode: int = 0) -> dict:
     from ai_config.commands import update
 
     calls = {}
 
-    class Popen:
-        def __init__(self, cmd, **kwargs):
-            calls["kwargs"] = kwargs
+    class Completed:
+        pass
 
-    monkeypatch.setattr(update.subprocess, "Popen", Popen)
-    monkeypatch.setattr(update, "current_version", lambda: "1.0.12")
-    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.14")
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
+        done = Completed()
+        done.returncode = returncode
+        done.stdout = "* Updated: C:\\bin\\ai-config.exe" if "stdout" in kwargs else None
+        return done
+
+    def no_popen(*_args, **_kwargs):
+        raise AssertionError("更新不再交給背景行程")
+
+    monkeypatch.setattr(update.subprocess, "run", fake_run)
+    monkeypatch.setattr(update.subprocess, "Popen", no_popen)
     monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
+    return calls
+
+
+def test_windows_update_runs_in_the_foreground(monkeypatch, capsys) -> None:
+    from ai_config.commands import update
+
+    calls = _fake_windows_run(monkeypatch)
+    monkeypatch.setattr(update.sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
 
     assert update.run_update() == 0
-    # Inheriting the console is what painted installer output over the prompt.
-    assert calls["kwargs"]["stdout"] is not None
-    assert calls["kwargs"]["stderr"] == update.subprocess.STDOUT
-    assert calls["kwargs"]["stdin"] == update.subprocess.DEVNULL
-
-
-def test_windows_handoff_script_marks_completion() -> None:
-    from ai_config.commands import update
-
-    script = update._windows_update_script(4321)
-
-    # Without a terminal line, a reader cannot tell "done" from "still running".
-    assert "finished successfully" in script
-    assert "FAILED" in script
+    assert calls["cmd"][:5] == [
+        "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+    ]
+    script = calls["cmd"][5]
+    # 等待本行程結束才安裝,正是使用者看不到進度與結果的原因
+    assert "Wait-Process" not in script
+    assert "install.ps1" in script
+    assert "Remove-Item" in script
     assert script.count("{") == script.count("}")
+    # 安裝程式的輸出要直接出現在這個視窗
+    assert "stdout" not in calls["kwargs"]
+    assert "handed off" not in capsys.readouterr().out
 
 
-def test_windows_handoff_forwards_pinned_version(monkeypatch) -> None:
+def test_windows_update_from_the_desktop_app_hides_and_captures(
+    monkeypatch, capsys,
+) -> None:
     from ai_config.commands import update
 
-    calls = {}
+    calls = _fake_windows_run(monkeypatch)
+    monkeypatch.setattr(update.sys.stdout, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
 
-    class Popen:
-        def __init__(self, cmd, **kwargs):
-            calls["cmd"] = cmd
+    assert update.run_update() == 0
+    # 沒有主控台就不能繼承:會彈出黑色視窗,輸出也回不到 App
+    assert calls["kwargs"]["stdout"] == update.subprocess.PIPE
+    assert calls["kwargs"]["stdin"] == update.subprocess.DEVNULL
+    assert "OutputEncoding" in calls["cmd"][5]
 
-    monkeypatch.setattr(update.subprocess, "Popen", Popen)
+
+def test_windows_update_forwards_pinned_version(monkeypatch) -> None:
+    from ai_config.commands import update
+
+    calls = _fake_windows_run(monkeypatch)
     monkeypatch.setattr(update, "current_version", lambda: "1.0.14")
-    monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
 
     assert update.run_update("1.0.12") == 0
     assert "v1.0.12" in " ".join(calls["cmd"])
+
+
+def test_windows_update_reports_installer_failure(monkeypatch, capsys) -> None:
+    from ai_config.commands import update
+
+    _fake_windows_run(monkeypatch, returncode=1)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
+
+    assert update.run_update() == 1
+    assert "更新失敗" in capsys.readouterr().err
+
+
+def test_windows_update_reports_missing_powershell(monkeypatch, capsys) -> None:
+    from ai_config.commands import update
+
+    _fake_windows_run(monkeypatch)
+
+    def no_powershell(*_args, **_kwargs):
+        raise OSError("PowerShell unavailable")
+
+    monkeypatch.setattr(update.subprocess, "run", no_powershell)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
+
+    assert update.run_update() == 1
+    assert "PowerShell unavailable" in capsys.readouterr().err
+
+
+def test_replaced_binaries_are_removed_at_start(tmp_path, monkeypatch) -> None:
+    from ai_config.commands import update
+
+    exe = tmp_path / "ai-config.exe"
+    exe.write_bytes(b"new")
+    aside = tmp_path / "ai-config.exe.old-0123abcd"
+    aside.write_bytes(b"old")
+    unrelated = tmp_path / "acg.cmd"
+    unrelated.write_text("@echo off")
+    monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(exe))
+
+    update.remove_replaced_binaries()
+
+    assert not aside.exists()
+    assert exe.exists() and unrelated.exists()
 
 
 def test_update_frozen_installs_requested_version(monkeypatch) -> None:
@@ -235,58 +305,6 @@ def test_update_frozen_honours_repository_override(monkeypatch) -> None:
 
     assert update.run_update() == 0
     assert "someone/fork" in " ".join(calls["cmd"])
-
-
-def test_update_frozen_native_windows_hands_off_to_powershell(
-    monkeypatch, capsys
-) -> None:
-    from ai_config.commands import update
-
-    calls = {}
-
-    def fake_popen(command, **kwargs):
-        calls["command"] = command
-        calls["kwargs"] = kwargs
-        return object()
-
-    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
-    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
-    monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
-
-    assert update.run_update() == 0
-    assert calls["command"][:5] == [
-        "powershell.exe",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-    ]
-    script = calls["command"][5]
-    assert f"Wait-Process -Id {os.getpid()}" in script
-    assert "install.ps1" in script
-    assert "Invoke-WebRequest" in script
-    assert "Remove-Item" in script
-    assert "handed off to PowerShell" in capsys.readouterr().out
-
-
-def test_update_frozen_native_windows_reports_handoff_failure(
-    monkeypatch, capsys
-) -> None:
-    from ai_config.commands import update
-
-    def fail_popen(*_args, **_kwargs):
-        raise OSError("PowerShell unavailable")
-
-    monkeypatch.setattr(update.subprocess, "Popen", fail_popen)
-    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
-    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
-    monkeypatch.setattr(update, "NATIVE_WINDOWS", True)
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
-
-    assert update.run_update() == 1
-    assert "PowerShell unavailable" in capsys.readouterr().err
 
 
 def test_update_frozen_skips_download_when_current(monkeypatch, capsys) -> None:

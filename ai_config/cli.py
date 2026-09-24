@@ -122,6 +122,9 @@ def standalone_main() -> int:
         # 不能印任何提示;從沒有主控台的 Desktop 叫起來時 Windows 會配一個新
         # 主控台,看起來像雙擊,若照一般流程就會往 stdout 印「按 Enter 關閉」
         return console_main()
+    from .commands.update import remove_replaced_binaries
+
+    remove_replaced_binaries()
     no_arguments = len(sys.argv) <= 1
     if no_arguments and gui_assets_bundled():
         code = _run_gui_guarded()
@@ -138,7 +141,8 @@ def standalone_main() -> int:
         print("    acg status")
         print()
     code = console_main()
-    if code == 0:
+    # 剛跑完 update 時,執行中的仍是舊版;再問一次「要不要更新」是自相矛盾
+    if code == 0 and sys.argv[1:2] != ["update"]:
         # 指令做完才提示:中途插話會打斷正在讀輸出的人
         from .commands.update import maybe_notify_update
 
