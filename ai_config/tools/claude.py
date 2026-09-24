@@ -10,6 +10,7 @@ from ..categories import selected_paths
 from ..console import log_error, log_header, log_info, log_success
 from ..fsops import copy_file_to_stage, mirror_dir, overlay_dir_to_stage, safe_cp
 from ..hooks import preserve_hooks, without_hooks
+from ..instructionblocks import gather_memory_block
 from ..localsettings import (
     filter_settings,
     merge_settings,
@@ -126,7 +127,14 @@ def init() -> bool:
                     "settings.json (filtered, machine-local settings excluded)"
                 )
             else:
+                stored = (dst / name).read_bytes() if (dst / name).is_file() else b""
                 safe_cp(src / name, dst / name)
+                if name == "CLAUDE.md":
+                    # 規則區塊的文字以資料庫為準;還沒更新的機器不能把舊版推回去
+                    gathered = (dst / name).read_bytes()
+                    kept = gather_memory_block(gathered, stored)
+                    if kept != gathered:
+                        (dst / name).write_bytes(kept)
                 log_success(name)
         elif (dst / name).is_file():
             (dst / name).unlink()

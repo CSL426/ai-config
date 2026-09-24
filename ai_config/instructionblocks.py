@@ -46,6 +46,29 @@ def preserve_memory_block(source: bytes, live: bytes) -> bytes:
     return source + separator + block + b"\n"
 
 
+def gather_memory_block(live: bytes, stored: bytes) -> bytes:
+    """What gather writes back: live's rules, with the database's block text.
+
+    The block is acg's own text, never edited by hand. A machine that has
+    not applied the latest release yet still carries the previous wording,
+    and copying it back reverted the database for every other machine.
+    Presence stays this machine's choice; the words come from the
+    database, or from this release when the database has none yet.
+    """
+    from .memory import RULES_BLOCK
+
+    live_span, stored_span = _block_span(live), _block_span(stored)
+    if not live_span:
+        return live
+    if stored_span:
+        block = stored[stored_span[0]:stored_span[1]].replace(b"\r\n", b"\n")
+    else:
+        block = RULES_BLOCK.strip().encode("utf-8")
+    if b"\r\n" in live[live_span[0]:live_span[1]]:
+        block = block.replace(b"\n", b"\r\n")
+    return live[:live_span[0]] + block + live[live_span[1]:]
+
+
 def prepare_instruction_blocks(
     stages: Mapping[str, Path], *, category: str = "all"
 ) -> None:
