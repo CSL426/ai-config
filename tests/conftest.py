@@ -51,11 +51,13 @@ def _claude_settings_stay_out_of_home(
     pytest temp directory. Tests that need a Claude home set their own,
     which overrides this.
     """
-    from ai_config import hooks, locking, memory
+    from ai_config import hooks, locking, memory, paths
     from ai_config.commands import memory as memory_command
 
     guard = tmp_path / "claude-home-guard"
     monkeypatch.setattr(memory, "CLAUDE_HOME", guard)
     monkeypatch.setattr(hooks, "CLAUDE_HOME", guard)
+    # 在呼叫時才從 paths 讀的模組(例如列出正在跑的 Claude session)
+    monkeypatch.setattr(paths, "CLAUDE_HOME", guard)
     monkeypatch.setattr(locking, "BACKUP_BASE", tmp_path / "backup-guard")
     monkeypatch.setattr(memory_command, "BACKUP_BASE", tmp_path / "backup-guard")

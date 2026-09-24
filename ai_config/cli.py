@@ -116,7 +116,7 @@ def standalone_main() -> int:
     """
     if sys.argv[1:2] in (
         ["__git-credential"], ["__memory-project-entry"],
-        ["__handoff-statusline"], ["__handoff-reminder"],
+        ["__handoff-statusline"], ["__handoff-reminder"], ["__channel"],
     ):
         # git 把我們當 credential helper 呼叫:stdout 是憑證協定的通道,
         # 不能印任何提示;從沒有主控台的 Desktop 叫起來時 Windows 會配一個新

@@ -14,6 +14,7 @@ reported plainly rather than papered over.
 import base64
 import json
 import os
+import re
 import secrets
 import shlex
 import shutil
@@ -44,6 +45,9 @@ class Peer:
     cwd: str
     status: str
     home: "Path | None" = None
+    pid: int = 0
+    # 收不到時說明原因;空字串代表送得進去
+    unreachable: str = ""
 
     @property
     def label(self) -> str:
@@ -188,8 +192,103 @@ def codex_peers() -> list:
     return peers
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def channel_dir() -> Path:
+    """Where acg's Claude channel servers leave their delivery sockets."""
+    base = os.environ.get("XDG_STATE_HOME") or str(HOME / ".local" / "state")
+    return Path(base) / "acg" / "msg" / "claude"
+
+
+def channel_socket(claude_pid: int) -> Path:
+    return channel_dir() / f"{claude_pid}.sock"
+
+
+def claude_peers() -> list:
+    """Running Claude Code sessions, from the records Claude keeps per process.
+
+    sessions/<pid>.json is Claude Code's internal state, not an interface;
+    anything unreadable is skipped rather than guessed at.
+    """
+    from .paths import CLAUDE_HOME
+
+    peers = []
+    for path in sorted((CLAUDE_HOME / "sessions").glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            pid = int(record["pid"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if record.get("kind") not in (None, "interactive") or not _pid_alive(pid):
+            continue
+        reachable = channel_socket(pid).exists()
+        peers.append(Peer(
+            tool="claude", id=str(record.get("sessionId") or pid),
+            name=str(record.get("name") or ""), account="", cwd=str(record.get("cwd") or ""),
+            status=str(record.get("status") or ""), home=None, pid=pid,
+            # 送信不需要 channel,只有收信要;說清楚免得對方以為自己的送信壞了
+            unreachable="" if reachable else "這個 session 不是用 acg channel 開的,只能發訊息、收不到",
+        ))
+    return peers
+
+
+_TITLE = re.compile(r'^title:\s*"(.*)"\s*$', re.MULTILINE)
+
+
+def agy_peers() -> list:
+    """Antigravity conversations open in a TUI right now.
+
+    An open conversation holds a flock on presence/<id>.lock; the files
+    themselves stay behind long after, so only the held lock counts.
+    Nothing can be delivered into an open TUI: it keeps its own state and
+    a message sent past it forks the conversation.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return []  # Windows 上沒有 flock;先不列
+    root = HOME / ".gemini" / "antigravity-cli"
+    peers = []
+    for lock in sorted((root / "presence").glob("*.lock")):
+        try:
+            with open(lock, "rb") as handle:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    held = True
+                else:
+                    held = False
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+        except OSError:
+            continue
+        if not held:
+            continue
+        conversation = lock.stem
+        title = ""
+        try:
+            found = _TITLE.search((root / "annotations" / f"{conversation}.pbtxt").read_text(encoding="utf-8"))
+            title = found.group(1) if found else ""
+        except OSError:
+            pass
+        peers.append(Peer(
+            tool="agy", id=conversation, name=title, account="", cwd="", status="open",
+            unreachable="Antigravity 開著的對話收不到外部訊息;它能用 acg msg send 主動傳話",
+        ))
+    return peers
+
+
 def list_peers() -> list:
-    return codex_peers()
+    return [*claude_peers(), *codex_peers(), *agy_peers()]
 
 
 def resolve(target: str, peers: "list | None" = None) -> Peer:
@@ -216,13 +315,42 @@ def sender_name() -> str:
     return session_name() or "(未具名的 session)"
 
 
-def compose(text: str, sender: str, reply_hint: bool) -> "tuple[str, str]":
-    """The delivered text, and the tag that finds its turn again."""
+def compose(text: str, sender: str, reply_as: str = "") -> "tuple[str, str]":
+    """The delivered text, and the tag that finds its turn again.
+
+    reply_as is the recipient's own name: its reply must say who it is
+    from, and a Codex or Antigravity shell has no session name to find.
+    """
     tag = secrets.token_hex(3)
     body = f"[acg 訊息 #{tag},來自 {sender}]\n{text}"
-    if reply_hint:
-        body += f"\n\n(回覆請執行:acg msg send {shlex.quote(sender)} \"<內容>\")"
+    if reply_as:
+        body += (
+            "\n\n(要回覆就執行:acg msg send "
+            f"{shlex.quote(sender)} \"<內容>\" --from {shlex.quote(reply_as)})"
+        )
     return body, tag
+
+
+def _can_receive(name: str) -> bool:
+    """Whether a reply addressed to this sender would reach anyone."""
+    try:
+        return any(not peer.unreachable for peer in list_peers() if name in (peer.name, peer.id))
+    except OSError:
+        return False
+
+
+def send_claude(peer: Peer, sender: str, text: str) -> None:
+    path = channel_socket(peer.pid)
+    try:
+        with socket.socket(socket.AF_UNIX) as conn:
+            conn.settimeout(10)
+            conn.connect(str(path))
+            conn.sendall(json.dumps({"from": sender, "text": text}, ensure_ascii=False).encode() + b"\n")
+            answer = conn.recv(64).strip()
+    except OSError as exc:
+        raise MessagingError(f"送不進 {peer.label} 的 channel:{exc}") from exc
+    if answer != b"ok":
+        raise MessagingError(f"{peer.label} 的 channel 拒收了這則訊息")
 
 
 def _codex_binary() -> str:
@@ -290,13 +418,22 @@ def wait_codex_reply(peer: Peer, tag: str, timeout: float, poll: float = 2.0) ->
     raise MessagingError(f"等了 {int(timeout)} 秒還沒有回覆;訊息已送達,稍後可在對方的畫面看")
 
 
-def send(target: str, text: str, wait: float = 0.0) -> "tuple[Peer, str]":
+def send(
+    target: str, text: str, wait: float = 0.0, sender: str = "",
+) -> "tuple[Peer, str]":
     """Deliver, and when asked, wait for the reply; returns (peer, reply)."""
     if not text.strip():
         raise MessagingError("訊息不能是空的")
     peer = resolve(target)
-    # 第一步只有 Codex 收件;Claude 還收不到,附回覆指令只會讓對方撞牆
-    body, tag = compose(text, sender_name(), reply_hint=False)
+    if peer.unreachable:
+        raise MessagingError(f"{peer.label} 收不到訊息:{peer.unreachable}")
+    sender = sender.strip() or sender_name()
+    if peer.tool == "claude":
+        # channel 會把寄件人放進標籤屬性,內容不必再包一層
+        send_claude(peer, sender, text)
+        return peer, ""
+    # 寄件人收不到信的話,附回覆指令只會讓對方撞牆
+    body, tag = compose(text, sender, reply_as=peer.label if _can_receive(sender) else "")
     send_codex(peer, body)
     if wait <= 0:
         return peer, ""
