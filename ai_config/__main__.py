@@ -247,14 +247,14 @@ def main(argv: "list[str] | None" = None) -> int:
     # gui 放在設定檢查之前:未設定時 GUI 內建首次設定表單
     if cmd in ("gui", "desktop"):
         if args[1:] == ["--shortcut"]:
-            from .commands.gui import create_desktop_shortcut
+            from .desktop import create_desktop_shortcut
 
             return create_desktop_shortcut()
         wait = args[1:] == ["--wait"]
         if not wait and len(args) != 1:
             log_error(f"Usage: {ENTRYPOINT} {cmd} [--shortcut] [--wait]")
             return 1
-        from .commands.gui import detach_and_run_gui, run_gui
+        from .desktop import detach_and_run_gui, run_gui
 
         # 預設放進背景,讓終端機立刻拿回控制權;--wait 保留前景模式,
         # 錯誤訊息才看得到

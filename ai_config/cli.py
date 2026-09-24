@@ -94,7 +94,7 @@ def _parent_uses_same_executable() -> bool:
 
 def gui_assets_bundled() -> bool:
     """True when this build ships the GUI frontend (Windows release only)."""
-    from ai_config.commands.gui import gui_index_path
+    from ai_config.desktop import gui_index_path
 
     return gui_index_path().is_file()
 
@@ -160,7 +160,7 @@ def standalone_main() -> int:
 
 def _run_gui_guarded() -> int:
     """Start the desktop app, turning any failure into a readable message."""
-    from ai_config.commands.gui import run_gui
+    from ai_config.desktop import run_gui
 
     try:
         return run_gui()
