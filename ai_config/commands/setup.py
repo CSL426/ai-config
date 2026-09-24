@@ -499,6 +499,42 @@ def _explain_push_access(remote_url: str) -> None:
         log_info(f"可以用 {ENTRYPOINT} login 連結有權限的 GitHub 帳號")
 
 
+def _ensure_commit_identity(repository: Path, account: "str | None" = None) -> None:
+    """Give the data repository a committer when this machine has none.
+
+    Scheduled memory pushes commit with no one at the keyboard; on a
+    machine without a global user.name/user.email that commit fails
+    every night and nothing on screen says why. Only the missing half is
+    filled in, only in this repository, so a real identity always wins.
+    """
+    import getpass
+    import socket
+
+    def current(key: str) -> str:
+        found = _run_git("config", "--get", key, cwd=repository, check=False)
+        return found.stdout.strip() if found.returncode == 0 else ""
+
+    name, email = current("user.name"), current("user.email")
+    if name and email:
+        return
+    if account:
+        defaults = (account, f"{account}@users.noreply.github.com")
+    else:
+        user = getpass.getuser() or "acg"
+        host = socket.gethostname().split(".")[0] or "localhost"
+        defaults = (user, f"{user}@{host}")
+    for key, value, default in (
+        ("user.name", name, defaults[0]),
+        ("user.email", email, defaults[1]),
+    ):
+        if not value:
+            _run_git("config", "--local", key, default, cwd=repository)
+    log_info(
+        "這台沒有 git 身分;已替資料儲存庫設定 "
+        f"{name or defaults[0]} <{email or defaults[1]}>(只影響這個儲存庫)"
+    )
+
+
 def setup_repository(
     data_dir: Path,
     repo_url: "str | None" = None,
@@ -581,6 +617,7 @@ def setup_repository(
                     check=False,
                 )
         raise
+    _ensure_commit_identity(repository, account)
     log_success(f"Data repository configured: {repository}")
     if read_only:
         log_warn("This machine is read-only; acg push is not available here")
@@ -678,6 +715,7 @@ def setup_gdrive_repository(
         gdrive_folder_id=folder_id,
         gdrive_space=space,
     )
+    _ensure_commit_identity(data_dir)
     log_success(f"Data repository configured for Google Drive: {data_dir}")
     log_info(f"Saved configuration: {saved_path}")
     return data_dir

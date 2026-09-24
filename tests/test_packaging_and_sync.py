@@ -2044,3 +2044,49 @@ def test_plugin_skills_are_named_and_do_not_shadow_a_command() -> None:
         assert name == path.parent.name, path
         assert "description:" in front, path
         assert name not in commands, f"{name} 跟指令撞名"
+
+
+def _no_git_identity(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    empty = tmp_path / "empty-gitconfig"
+    empty.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME",
+                "GIT_COMMITTER_EMAIL", "EMAIL"):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_setup_gives_a_machine_without_identity_one_for_the_data_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 排程的記憶推送沒人在場;沒有身分,commit 每晚失敗而且沒人看得到
+    _no_git_identity(monkeypatch, tmp_path)
+    repo = tmp_path / "data"
+    run_git(tmp_path, "init", "-q", str(repo))
+
+    setup_cli._ensure_commit_identity(repo, "someone")
+
+    assert run_git(repo, "config", "--local", "user.name").strip() == "someone"
+    assert run_git(repo, "config", "--local", "user.email").strip() == (
+        "someone@users.noreply.github.com"
+    )
+    run_git(repo, "commit", "-q", "--allow-empty", "-m", "scheduled")
+
+
+def test_setup_leaves_an_existing_identity_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _no_git_identity(monkeypatch, tmp_path)
+    (tmp_path / "empty-gitconfig").write_text(
+        "[user]\n\tname = Real Person\n\temail = real@example.com\n", encoding="utf-8",
+    )
+    repo = tmp_path / "data"
+    run_git(tmp_path, "init", "-q", str(repo))
+
+    setup_cli._ensure_commit_identity(repo, "someone")
+
+    local = subprocess.run(
+        ["git", "-C", str(repo), "config", "--local", "--get", "user.name"],
+        capture_output=True, text=True, check=False,
+    )
+    assert local.returncode == 1, "已有身分就不該在儲存庫裡蓋一層"
