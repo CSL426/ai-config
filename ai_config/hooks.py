@@ -38,6 +38,8 @@ class Hook:
     matcher: str = ""
     # Some hooks take a fixed argument after the command name.
     extra_args: tuple[str, ...] = field(default_factory=tuple)
+    # 有些參數要在安裝當下才算得出來(例如這台的資料庫路徑)
+    dynamic_args: "Callable[[], tuple[str, ...]] | None" = None
 
 
 REGISTRY: dict[str, Hook] = {}
@@ -54,6 +56,8 @@ MEMORY_ENTRY = register(Hook(
     events=("SessionStart", "UserPromptSubmit"),
     command="__memory-project-entry",
     summary="開會話時修復專案日誌入口(記憶啟用時自動裝)",
+    # 入口只認這台的資料庫路徑;少了它 hook 會安靜地什麼都不做
+    dynamic_args=lambda: (str(memory.SCRIPT_DIR),),
 ))
 
 HANDOFF_REMINDER = register(Hook(
@@ -184,13 +188,16 @@ def read_settings() -> dict:
     return document
 
 
-def _entry(hook: Hook) -> dict:
+def hook_entry(hook: Hook) -> dict:
     # sys.executable 可能是 versions/<版號>/ 裡的實體檔;那個目錄會被清掉,
     # hook 就指向不存在的檔案。固定入口每次更新都會換成新版。
     argv = scheduled_command()
     entry = {
         "type": "command", "command": argv[0],
-        "args": argv[1:] + [hook.command, *hook.extra_args],
+        "args": argv[1:] + [
+            hook.command, *hook.extra_args,
+            *(hook.dynamic_args() if hook.dynamic_args else ()),
+        ],
         "statusMessage": hook.marker, "timeout": hook.timeout,
     }
     row = {"hooks": [entry]}
@@ -225,7 +232,7 @@ def configure(hook: Hook, enabled: bool) -> bool:
                 rows = events.setdefault(event, [])
                 if not isinstance(rows, list):
                     raise ValueError(f"Claude {event} hooks 必須是陣列")  # noqa: TRY004
-                rows.append(copy.deepcopy(_entry(hook)))
+                rows.append(copy.deepcopy(hook_entry(hook)))
         if result != document:
             memory._write_text_atomic(
                 settings_path(),
@@ -246,7 +253,7 @@ def refresh() -> list[str]:
     for hook in REGISTRY.values():
         if not installed(document, hook):
             continue
-        wanted = _entry(hook)["hooks"][0]
+        wanted = hook_entry(hook)["hooks"][0]
         for event in hook.events:
             for row in document.get("hooks", {}).get(event, []):
                 for entry in row.get("hooks", []) if isinstance(row, dict) else []:

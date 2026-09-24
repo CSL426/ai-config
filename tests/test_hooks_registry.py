@@ -133,3 +133,50 @@ def test_refresh_never_installs_a_hook_that_was_off(home: Path) -> None:
 
     assert hooks.refresh() == []
     assert _settings(home) == {}
+
+
+def test_refresh_leaves_a_correct_memory_entry_alone(
+    home: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Windows 上它本來就對,apply 卻說「已改指向」,而且改寫時把資料庫路徑拔掉了
+    hooks.configure(hooks.MEMORY_ENTRY, True)
+    before = (home / "settings.json").read_text(encoding="utf-8")
+
+    assert hooks.refresh() == []
+    assert (home / "settings.json").read_text(encoding="utf-8") == before
+
+
+def test_the_memory_entry_carries_the_data_directory(home: Path) -> None:
+    from ai_config import memory
+
+    hooks.configure(hooks.MEMORY_ENTRY, True)
+
+    entry = _settings(home)["hooks"]["SessionStart"][0]["hooks"][0]
+    # 入口只認這台的資料庫路徑;少了它 hook 什麼都不做
+    assert entry["args"][-2:] == ["__memory-project-entry", str(memory.SCRIPT_DIR)]
+
+
+def test_refresh_puts_back_a_data_directory_that_was_dropped(home: Path) -> None:
+    from ai_config import memory
+
+    hooks.configure(hooks.MEMORY_ENTRY, True)
+    document = _settings(home)
+    for event in ("SessionStart", "UserPromptSubmit"):
+        document["hooks"][event][0]["hooks"][0]["args"] = ["__memory-project-entry"]
+    (home / "settings.json").write_text(json.dumps(document), encoding="utf-8")
+
+    assert hooks.refresh() == ["memory-entry"]
+    entry = _settings(home)["hooks"]["UserPromptSubmit"][0]["hooks"][0]
+    assert entry["args"][-1] == str(memory.SCRIPT_DIR)
+
+
+def test_enabling_memory_installs_what_the_registry_describes(
+    home: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import memory_hooks
+
+    monkeypatch.setattr(memory_hooks.memory, "CLAUDE_HOME", home)
+    (home / "settings.json").write_text("{}", encoding="utf-8")
+    memory_hooks.install(enabling=True)
+
+    assert hooks.refresh() == [], "兩邊的定義不一致,refresh 就會把對的改掉"

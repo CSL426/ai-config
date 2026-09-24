@@ -42,10 +42,8 @@ def settings_text(*, enabling: bool) -> str | None:
         raise ValueError("Claude settings.json must contain an object")  # noqa: TRY004
     result = without_hooks(document)
     if enabling:
-        args = []
-        if not getattr(sys, "frozen", False):
-            args += ["-m", "ai_config"]
-        args += [COMMAND, str(memory.SCRIPT_DIR)]
+        # 跟登記表同一份定義:兩邊各寫一套,refresh 就會把對的改成錯的
+        row = hooks.hook_entry(hooks.MEMORY_ENTRY)
         events = result.setdefault("hooks", {})
         if not isinstance(events, dict):
             raise ValueError("Claude hooks must contain an object")
@@ -53,10 +51,7 @@ def settings_text(*, enabling: bool) -> str | None:
             rows = events.setdefault(event, [])
             if not isinstance(rows, list):
                 raise ValueError(f"Claude {event} hooks must contain an array")  # noqa: TRY004
-            rows.append({"hooks": [{
-                "type": "command", "command": sys.executable, "args": args,
-                "statusMessage": MARKER, "timeout": 10,
-            }]})
+            rows.append(json.loads(json.dumps(row)))
     if result == document:
         return original
     if not result and not enabling:
