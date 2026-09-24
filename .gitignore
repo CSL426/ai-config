@@ -39,3 +39,4 @@ __pycache__/
 
 # 手動測試用的建置產物,不進版控
 /acg-test.exe
+docs/slides/art/*.png
