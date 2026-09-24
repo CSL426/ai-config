@@ -438,3 +438,41 @@ def send(
     if wait <= 0:
         return peer, ""
     return peer, wait_codex_reply(peer, tag, wait)
+
+
+def channel_config_path() -> Path:
+    """The --mcp-config file that gives one Claude session acg's channel.
+
+    Not a user-scope MCP registration: that would start the server in
+    every session, and a session launched without --channels ignores the
+    events, so it would list as reachable while dropping every message.
+    """
+    base = os.environ.get("XDG_DATA_HOME") or str(HOME / ".local" / "share")
+    return Path(base) / "ai-config" / "claude-channel.json"
+
+
+def write_channel_config(command: "list | None" = None) -> Path:
+    from .paths import scheduled_command
+
+    argv = [*(command or scheduled_command()), "__channel"]
+    server = {"command": str(argv[0]), "args": [str(part) for part in argv[1:]]}
+    path = channel_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"mcpServers": {"acg": server}}, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+# 只有互動式開 Claude 才帶 channel:-p 沒人能按掉每次都會跳的警告,子指令也用不到
+SHELL_FUNCTION = """claude() {{
+  case "${{1:-}}" in
+    agents|attach|auth|auto-mode|doctor|gateway|import|install|logs|mcp|plugin|plugins|project|respawn|rm|setup-token|stop|kill|ultrareview|update|-p|--print|-v|--version|-h|--help)
+      command claude "$@"; return ;;
+  esac
+  case " $* " in *" -p "*|*" --print "*) command claude "$@"; return ;; esac
+  command claude --mcp-config {config} \\
+    --dangerously-load-development-channels server:acg "$@"
+}}"""
+
+
+def shell_function() -> str:
+    return SHELL_FUNCTION.format(config=shlex.quote(str(channel_config_path())))
