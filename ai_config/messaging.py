@@ -222,6 +222,13 @@ def claude_peers() -> list:
     """
     from .paths import CLAUDE_HOME
 
+    # 被 signal 直接殺掉的 channel 來不及收尾;行程已經不在的 socket 順手清掉
+    for stale in channel_dir().glob("*.sock") if channel_dir().is_dir() else ():
+        try:
+            if not _pid_alive(int(stale.stem)):
+                stale.unlink()
+        except (ValueError, OSError):
+            continue
     peers = []
     for path in sorted((CLAUDE_HOME / "sessions").glob("*.json")):
         try:

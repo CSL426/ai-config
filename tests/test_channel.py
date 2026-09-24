@@ -106,3 +106,44 @@ def test_the_reply_line_names_the_recipient_so_its_answer_has_a_sender() -> None
     assert f"#{tag}" in body
     assert "acg msg send acg \"<內容>\" --from '審查'" in body
     assert "--from" not in messaging.compose("x", "acg")[0]
+
+
+def test_a_socket_left_by_a_killed_session_is_cleared(
+    state: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "claude"
+    (home / "sessions").mkdir(parents=True)
+    monkeypatch.setattr(paths, "CLAUDE_HOME", home)
+    stale = messaging.channel_socket(999999)
+    stale.parent.mkdir(parents=True)
+    stale.write_text("")
+
+    messaging.claude_peers()
+
+    assert not stale.exists()
+
+
+def test_a_terminal_closing_still_removes_the_socket(state: Path) -> None:
+    import signal
+    import subprocess
+
+    script = (
+        "import os, sys, time\n"
+        "from ai_config import channel, messaging\n"
+        "channel._claude_pid = lambda: 4242\n"
+        "sys.exit(channel.run())\n"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", script], stdin=subprocess.PIPE,
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+    )
+    path = messaging.channel_socket(4242)
+    for _ in range(100):
+        if path.exists():
+            break
+        import time
+        time.sleep(0.05)
+    assert path.exists()
+    proc.send_signal(signal.SIGHUP)
+    proc.wait(timeout=10)
+    assert not path.exists()
