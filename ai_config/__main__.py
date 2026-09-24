@@ -467,6 +467,9 @@ def main(argv: "list[str] | None" = None) -> int:
         selected = [t for t in ALL_TOOLS if tool in ("all", t)]
         if not apply_tools(selected, category=category):
             return 1
+        from .hooks import refresh_all
+
+        refresh_all()
         print()
         log_success(f"Apply complete. Verify with: {CYAN}{ENTRYPOINT} status{NC}")
     elif cmd == "project":

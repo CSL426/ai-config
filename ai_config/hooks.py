@@ -16,12 +16,11 @@ hook does.
 
 import copy
 import json
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from . import memory
-from .paths import CLAUDE_HOME
+from .paths import CLAUDE_HOME, scheduled_command
 
 PREFIX = "acg："
 
@@ -186,9 +185,9 @@ def read_settings() -> dict:
 
 
 def _entry(hook: Hook) -> dict:
-    argv = [sys.executable]
-    if not getattr(sys, "frozen", False):
-        argv += ["-m", "ai_config"]
+    # sys.executable 可能是 versions/<版號>/ 裡的實體檔;那個目錄會被清掉,
+    # hook 就指向不存在的檔案。固定入口每次更新都會換成新版。
+    argv = scheduled_command()
     entry = {
         "type": "command", "command": argv[0],
         "args": argv[1:] + [hook.command, *hook.extra_args],
@@ -233,6 +232,48 @@ def configure(hook: Hook, enabled: bool) -> bool:
                 json.dumps(result, ensure_ascii=False, indent=2) + "\n",
             )
         return installed(result, hook)
+
+
+def refresh() -> list[str]:
+    """Point installed hooks at the current launcher; returns what changed.
+
+    A hook written by an older release can name a version directory that
+    has since been pruned, and Claude Code then fails every prompt with
+    ENOENT. Only hooks already installed are touched.
+    """
+    document = read_settings()
+    stale = []
+    for hook in REGISTRY.values():
+        if not installed(document, hook):
+            continue
+        wanted = _entry(hook)["hooks"][0]
+        for event in hook.events:
+            for row in document.get("hooks", {}).get(event, []):
+                for entry in row.get("hooks", []) if isinstance(row, dict) else []:
+                    if _owned_by(entry, hook.marker) and (
+                        entry.get("command") != wanted["command"]
+                        or entry.get("args") != wanted["args"]
+                    ):
+                        stale.append(hook.name)
+    names = list(dict.fromkeys(stale))
+    for name in names:
+        configure(REGISTRY[name], True)
+    return names
+
+
+def refresh_all() -> None:
+    """Best-effort repair after apply/update; a broken settings.json is reported elsewhere."""
+    from . import handoff_reminder
+    from .console import log_info, log_warn
+
+    try:
+        changed = refresh()
+        handoff_reminder.refresh()
+    except Exception as exc:  # noqa: BLE001 — 順手的修正不能讓 apply/update 失敗
+        log_warn(f"hook 路徑沒有更新:{exc}")
+        return
+    if changed:
+        log_info(f"已把 hook 改指向目前的執行檔:{', '.join(changed)}")
 
 
 def states() -> list[tuple[Hook, bool]]:

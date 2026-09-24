@@ -356,6 +356,9 @@ def run_update(requested_version: "str | None" = None) -> int:
         result = _run_update(requested_version)
     if result == 0:
         _update_plugin()
+        from ..hooks import refresh_all
+
+        refresh_all()
     return result
 
 
