@@ -30,11 +30,12 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   transition: opacity var(--dur-enter) var(--ease-out), transform var(--dur-enter) var(--ease-out), visibility 0s var(--dur-enter);
 }
 .slide.is-active { visibility: visible; opacity: 1; transform: translateY(0); transition: opacity var(--dur-enter) var(--ease-out), transform var(--dur-enter) var(--ease-out); }
-.slide h1, .slide h2 { min-width: 0; overflow-wrap: anywhere; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; text-wrap: balance; }
+.slide h1, .slide h2 { min-width: 0; overflow-wrap: normal; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; text-wrap: balance; }
 .slide h1 { font-size: var(--text-display); max-width: 11ch; }
 .slide h2 { font-size: var(--text-xl); max-width: 17ch; margin-bottom: var(--space-md); }
-.lede { color: var(--color-ink-soft); font-size: var(--text-md); max-width: 30ch; }
-.tiny-note { color: var(--color-muted); font-size: var(--text-sm); max-width: 55ch; }
+.lede { color: var(--color-ink-soft); font-size: var(--text-md); max-width: 30ch; text-wrap: pretty; }
+.tiny-note { color: var(--color-muted); font-size: var(--text-sm); max-width: 55ch; text-wrap: pretty; }
+.nowrap { white-space: nowrap; }
 .accent { color: var(--color-sky-deep); }
 .highlight { background: var(--color-pear-soft); box-decoration-break: clone; -webkit-box-decoration-break: clone; padding-inline: 0.14em; }
 
@@ -72,19 +73,20 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .carry-group strong { display: block; margin-bottom: var(--space-2xs); font-size: var(--text-md); }
 .carry-group p { color: var(--color-ink-soft); }
 
-.route-choice { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: var(--space-md); }
+.route-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
 .route-card { min-height: 100%; padding: var(--space-lg); border: var(--rule) solid var(--color-rule); border-radius: var(--radius-md); background: var(--color-paper); }
 .route-card.drive { transform: rotate(-1deg); }
 .route-card.git { transform: translateY(var(--space-lg)) rotate(1deg); }
 .route-card h3 { font-size: var(--text-lg); line-height: 1.16; margin-bottom: var(--space-xs); }
-.route-card p { color: var(--color-ink-soft); }
+.route-card p { color: var(--color-ink-soft); text-wrap: pretty; }
 .route-logo { display: block; height: 2.5rem; width: auto; margin-bottom: var(--space-md); fill: currentColor; }
 .drive .route-logo { color: var(--color-sky-deep); }
 .git .route-logo { color: var(--color-coral); }
 
 .workflow { width: min(100%, 72rem); margin-inline: auto; }
 .workflow h2 { max-width: none; text-align: center; margin-inline: auto; }
-.workflow .lede { margin-inline: auto; text-align: center; }
+.workflow .lede { margin-inline: auto; max-width: 44ch; text-align: center; }
+.workflow-note { margin: var(--space-lg) auto 0; text-align: center; }
 .workflow-line { display: grid; grid-template-columns: repeat(7, auto); align-items: center; justify-content: center; gap: clamp(0.35rem, 1.1vw, 1rem); margin-top: var(--space-xl); }
 .workflow-step { display: grid; place-items: center; gap: var(--space-xs); min-width: clamp(8rem, 16vw, 12rem); padding: var(--space-lg) var(--space-sm); border: var(--rule) solid var(--color-rule); border-radius: var(--radius-md); background: var(--color-paper-2); text-align: center; }
 .workflow-step:nth-child(1) { transform: rotate(-1deg); }
@@ -133,7 +135,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .callout { padding-bottom: var(--space-md); border-bottom: var(--rule) solid var(--color-rule); }
 .callout:last-child { border-bottom: 0; }
 .callout strong { display: block; font-size: var(--text-md); margin-bottom: var(--space-2xs); }
-.callout p { color: var(--color-ink-soft); }
+.callout p { color: var(--color-ink-soft); text-wrap: pretty; }
 
 .close-slide { justify-items: center; text-align: center; }
 .close-slide h2 { max-width: 16ch; margin-bottom: var(--space-lg); }
@@ -181,3 +183,46 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   .route-card { padding: var(--space-md); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }
+
+/* 私人置物櫃:存放位置的標誌 */
+.store-logos { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-md); margin-top: var(--space-md); color: var(--color-ink-soft); font-size: var(--text-sm); }
+.store-logo { height: 1.3rem; width: auto; margin-right: 0.35rem; vertical-align: -0.25rem; fill: currentColor; }
+.store-logo.drive { color: var(--color-sky-deep); }
+.store-logo.git { color: var(--color-coral); }
+
+/* 記憶:三台電腦 × 全域與專案 */
+.mem-layout { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); }
+.mem-grid { display: grid; grid-template-columns: 4.6rem repeat(3, minmax(0, 1fr)); gap: var(--space-xs); align-items: stretch; }
+.mem-dev { display: grid; gap: 0.15rem; padding: var(--space-xs); border: 1px solid var(--color-ink); border-radius: var(--radius-sm); background: var(--color-paper); font-weight: 700; text-align: center; }
+.mem-tools { color: var(--color-muted); font-size: var(--text-xs); font-weight: 400; }
+.mem-row-name { align-self: center; font: 700 var(--text-sm)/1.2 var(--font-mono); }
+.mem-band { display: grid; align-content: center; gap: 0.2rem; min-height: 3.2rem; padding: var(--space-xs) var(--space-sm); border: 1px solid var(--color-ink); border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: 700; }
+.mem-band small { color: var(--color-ink-soft); font-size: var(--text-xs); font-weight: 400; }
+.mem-band.global { grid-column: 2 / span 3; background: var(--color-pear); }
+.mem-band.shop { grid-column: 2 / span 2; background: var(--color-sky-soft); }
+.mem-band.blog { grid-column: 4; background: var(--color-mint-soft); }
+.mem-empty { min-height: 3.2rem; border: 1px dashed var(--color-rule); border-radius: var(--radius-sm); }
+.mem-empty.c1 { grid-column: 2; }
+.mem-empty.c2 { grid-column: 3; }
+.mem-empty.c3 { grid-column: 4; }
+.mem-locker { grid-column: 2 / span 3; margin-top: var(--space-xs); padding: var(--space-xs); border: 1px solid var(--color-ink); border-radius: var(--radius-sm); background: var(--color-pear-soft); font-size: var(--text-sm); font-weight: 700; text-align: center; }
+
+/* 傳話:三張會話卡 */
+.msg-cards { display: grid; justify-items: center; gap: var(--space-2xs); }
+.msg-card { width: min(100%, 18rem); padding: var(--space-sm) var(--space-md); border: 1px solid var(--color-ink); border-radius: var(--radius-md); background: var(--color-paper); font-weight: 700; }
+.msg-card b { margin-right: 0.35rem; }
+.msg-card.claude b { color: var(--color-coral); }
+.msg-card.codex b { color: var(--color-mint); }
+.msg-card.agy { background: var(--color-paper-2); }
+.msg-link { display: grid; justify-items: center; font-size: var(--text-lg); line-height: 1; }
+.msg-link small { color: var(--color-ink-soft); font-size: var(--text-xs); }
+
+/* 安裝指令:長網址在手機上要能換行,不撐出水平捲動 */
+.install-line { display: grid; gap: 0.2rem; margin-top: var(--space-sm); }
+.install-line code { padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius-sm); background: var(--color-paper-2); font-size: var(--text-xs); overflow-wrap: anywhere; }
+
+@media (max-width: 52rem) {
+  .mem-layout { grid-template-columns: 1fr; }
+  .mem-grid { grid-template-columns: 3.8rem repeat(3, minmax(0, 1fr)); }
+  .mem-tools { display: none; }
+}
