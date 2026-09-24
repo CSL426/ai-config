@@ -484,6 +484,28 @@ body {
   flex: 0 0 auto;
 }
 
+.setup-intro {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.setup-art {
+  flex: 0 0 auto;
+  block-size: 6.5rem;
+  inline-size: auto;
+}
+
+.setup-intro .package-hint {
+  margin: var(--space-xs) 0 0;
+}
+
+@media (max-width: 32rem) {
+  .setup-art {
+    block-size: 4.5rem;
+  }
+}
+
 .setup-title {
   margin: 0;
   font-family: var(--font-display);

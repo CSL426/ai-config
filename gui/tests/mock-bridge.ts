@@ -18,7 +18,7 @@ export const skills = Array.from({ length: 36 }, (_, index) => ({
   shareable: true,
 }));
 
-export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
+export async function boot(page: Page, replies: Record<string, Reply[]> = {}, configured = true) {
   await page.addInitScript(({ entries, overrides }) => {
     const success = { code: 0, output: "✓ 完成", error: null, backup_path: null, recovery_required: false };
     const defaults: Record<string, Reply> = {
@@ -121,7 +121,9 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}) {
     Object.assign(window, { pywebview: { api } });
   }, { entries: skills, overrides: replies });
   await page.goto("/");
-  await expect(page.locator("[data-cmd=status]")).toBeEnabled();
+  // 未設定時狀態按鈕刻意停用，改等首次設定畫面出現。
+  if (configured) await expect(page.locator("[data-cmd=status]")).toBeEnabled();
+  else await expect(page.locator("#setup")).toBeVisible();
 }
 
 export async function queue(page: Page, method: string, ...replies: Reply[]) {
