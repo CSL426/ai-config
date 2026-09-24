@@ -5,7 +5,7 @@ from ..console import log_error, log_info, log_success
 from ..paths import ENTRYPOINT
 
 _USAGE = (
-    "Usage: {entry} msg list | send <名稱或 id> <訊息> [--wait [秒]] [--from <我的名稱>]"
+    "Usage: {entry} msg list | setup | send <名稱或 id> <訊息> [--wait [秒]] [--from <我的名稱>]"
 )
 _DEFAULT_WAIT = 300.0
 
@@ -60,11 +60,23 @@ def _send(args: list) -> int:
     return 0
 
 
+def _setup() -> int:
+    path = messaging.write_channel_config()
+    log_success(f"已寫入 Claude channel 設定:{path}")
+    log_info("把下面這段加進 ~/.bashrc,之後照常打 claude,別的 session 就能傳話進來;")
+    log_info("每次開 Claude 會多一個 development channel 警告,按 Enter 即可(官方規定,關不掉)")
+    print()
+    print(messaging.shell_function())
+    return 0
+
+
 def run_msg(args: list) -> int:
     action = args[0] if args else "list"
     try:
         if action == "list" and len(args) <= 1:
             return _list()
+        if action == "setup" and len(args) == 1:
+            return _setup()
         if action == "send":
             return _send(args[1:])
     except messaging.MessagingError as exc:
