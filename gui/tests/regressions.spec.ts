@@ -202,3 +202,21 @@ test("技能載入失敗可明確重試", async ({ page }) => {
   await expect(page.locator("#skill-list").getByRole("checkbox")).toHaveCount(36);
   await expect(page.locator("#skill-retry")).toBeHidden();
 });
+
+test("首次設定顯示插圖，窄視窗不造成水平捲動", async ({ page }) => {
+  for (const width of [900, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await boot(page, { get_info: [{
+      version: "1.0.0", repo: "/tmp/acg-test-data", provider: "",
+      build_commit: "0123456789abcdef0123456789abcdef01234567",
+      tools: ["claude", "codex", "agy"], configured: false, config_error: "",
+    }] }, false);
+    const art = page.locator(".setup-art");
+    await expect(page.locator("#setup")).toBeVisible();
+    await expect(art).toBeVisible();
+    expect(await art.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+    expect(await page.evaluate(() =>
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+    )).toBe(true);
+  }
+});

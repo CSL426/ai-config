@@ -133,7 +133,13 @@ claude plugin install acg@acg</textarea>
       <button class="btn btn-ghost" id="info-retry" hidden>重新連線</button>
 
       <section class="setup" id="setup" hidden aria-label="首次設定">
-        <h2 class="setup-title">首次設定</h2>
+        <div class="setup-intro">
+          <img class="setup-art" src="./src/assets/setup-empty.webp" width="480" height="357" alt="" />
+          <div>
+            <h2 class="setup-title">首次設定</h2>
+            <p class="package-hint">這台還沒接上你的設定置物櫃。選一種同步方式，連上後規則與技能就會跟過來。</p>
+          </div>
+        </div>
         <div class="setup-provider-selector" role="radiogroup" aria-label="同步類型">
           <label class="provider-option">
             <input type="radio" name="setup-provider" value="git" checked />
