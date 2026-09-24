@@ -11,7 +11,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import tomllib
 import zipfile
 from collections.abc import Iterator
@@ -221,21 +220,27 @@ def normalize_version(requested: str) -> "str | None":
     return candidate if candidate.startswith("v") else f"v{candidate}"
 
 
-def _windows_update_script(parent_pid: int, tag: "str | None" = None) -> str:
+def _windows_update_script(
+    tag: "str | None" = None, interactive: bool = True,
+) -> str:
     installer_url = _powershell_literal(_installer_url("install.ps1"))
     pin = (
         f"$env:AI_CONFIG_VERSION = {_powershell_literal(tag)}"
         if tag
         else "# no pinned version"
     )
+    # 沒有主控台時進度條沒人看,Windows PowerShell 畫它還會拖慢下載好幾倍
+    # 輸出被收回 Python 時,中文錯誤訊息要用 UTF-8 送,不然是 cp950 亂碼
+    progress = (
+        "# progress shown" if interactive else
+        "$ProgressPreference = 'SilentlyContinue'; "
+        "[Console]::OutputEncoding = [Text.Encoding]::UTF8"
+    )
     return "\n".join(
         (
             "$ErrorActionPreference = 'Stop'",
+            progress,
             pin,
-            (
-                f"Wait-Process -Id {parent_pid} "
-                "-ErrorAction SilentlyContinue"
-            ),
             (
                 "$installer = Join-Path ([IO.Path]::GetTempPath()) "
                 "('install-ai-config-' + "
@@ -247,17 +252,10 @@ def _windows_update_script(parent_pid: int, tag: "str | None" = None) -> str:
                 f"-Uri {installer_url} -OutFile $installer"
             ),
             "  & $installer",
-            # A terminal line lets a reader tell "finished" from "still running".
-            (
-                "  if ($LASTEXITCODE -eq 0) { "
-                "Write-Output 'ai-config update: finished successfully' } "
-                "else { Write-Output "
-                "\"ai-config update: FAILED (exit $LASTEXITCODE)\" }"
-            ),
             "  exit $LASTEXITCODE",
             "}",
             "catch {",
-            "  Write-Output \"ai-config update: FAILED ($($_.Exception.Message))\"",
+            "  Write-Output \"x $($_.Exception.Message)\"",
             "  exit 1",
             "}",
             "finally {",
@@ -270,46 +268,57 @@ def _windows_update_script(parent_pid: int, tag: "str | None" = None) -> str:
     )
 
 
-def _spawn_windows_updater(command: list, output) -> None:
-    subprocess.Popen(
-        command,
-        stdout=output,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-    )
+def _run_windows_update(tag: "str | None" = None) -> int:
+    """Install in the foreground, in this console, and wait for it.
 
-
-def _launch_windows_update(tag: "str | None" = None) -> int:
+    Windows will not overwrite a running exe, which is why this used to
+    hand off to a background PowerShell and exit: the user got no
+    progress, no result, and a prompt to go check the version by hand.
+    Windows does allow *renaming* a running exe, so the installer moves
+    this one aside and writes the new one in its place while we wait.
+    """
+    # The desktop app has no console: an inherited one would pop up a
+    # window, and the app reads what this prints, not what PowerShell does.
+    interactive = sys.stdout.isatty()
     command = [
         "powershell.exe",
         "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        _windows_update_script(os.getpid(), tag),
+        _windows_update_script(tag, interactive),
     ]
-    # The handoff outlives this process, so its output must not go to the shared
-    # console: the shell has already redrawn its prompt by then, and installer
-    # lines would land on top of it looking like a crash. Log to a file instead.
-    # The pid keeps two runs from overwriting each other's log; without it
-    # a failure could not be told apart from the run that followed it
-    log_path = Path(tempfile.gettempdir()) / f"ai-config-update.{os.getpid()}.log"
+    kwargs: dict = {}
+    if not interactive:
+        from ..subproc import UTF8
+
+        kwargs.update(
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL, text=True, **UTF8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
     try:
-        # The child inherits the handle, so closing it here is safe and correct.
-        with open(log_path, "w", encoding="utf-8") as log_file:
-            _spawn_windows_updater(command, log_file)
+        completed = subprocess.run(command, check=False, **kwargs)
     except OSError as exc:
-        log_error(f"Could not start the PowerShell updater: {exc}")
+        log_error(f"無法啟動 PowerShell 安裝程式:{exc}")
         return 1
-    log_success("Update handed off to PowerShell; it continues in the background")
-    log_info(
-        "This process must exit first so Windows releases the lock on the "
-        "running executable, so there is no progress bar here"
-    )
-    log_info(f"It usually takes a few seconds. Progress: {log_path}")
-    log_info(f"Confirm it finished with: {ENTRYPOINT} version")
-    return 0
+    if not interactive and completed.stdout:
+        print(completed.stdout.rstrip())
+    if completed.returncode != 0:
+        log_error("更新失敗;目前的執行檔沒有被換掉")
+    return completed.returncode
+
+
+def remove_replaced_binaries() -> None:
+    """Delete the exes an update moved aside; the running one refuses, which is fine."""
+    if not (NATIVE_WINDOWS and getattr(sys, "frozen", False)):
+        return
+    executable = Path(sys.executable)
+    for leftover in executable.parent.glob(f"{executable.name}.old-*"):
+        try:
+            leftover.unlink()
+        except OSError:
+            pass
 
 
 def run_update_list() -> int:
@@ -455,7 +464,7 @@ def _run_update(requested_version: "str | None" = None) -> int:
     if uv_installation is not None:
         return _update_uv(uv_installation, tag or f"v{latest}")
     if NATIVE_WINDOWS:
-        return _launch_windows_update(tag)
+        return _run_windows_update(tag)
 
     url = _installer_url("install.sh")
     log_info(f"Fetching installer from {url}")

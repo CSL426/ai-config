@@ -581,3 +581,24 @@ def test_gui_restores_console_when_runtime_import_fails(
 
     assert gui_module.run_gui() == 1
     show.assert_called_once_with()
+
+
+@pytest.mark.parametrize(("argv", "offered"), [
+    (["acg.exe", "update"], False),
+    (["acg.exe", "status"], True),
+])
+def test_update_is_not_followed_by_an_offer_to_update(
+    monkeypatch: pytest.MonkeyPatch, argv: list, offered: bool,
+) -> None:
+    # 執行中的仍是舊版,剛交出去的更新還沒生效;再問一次等於要人重複更新
+    from ai_config.commands import update
+
+    calls = []
+    monkeypatch.setattr(cli, "launched_by_double_click", lambda: False)
+    monkeypatch.setattr(cli, "gui_assets_bundled", lambda: False)
+    monkeypatch.setattr(cli, "console_main", lambda: 0)
+    monkeypatch.setattr(update, "maybe_notify_update", lambda: calls.append(True))
+    monkeypatch.setattr(cli.sys, "argv", argv)
+
+    assert cli.standalone_main() == 0
+    assert bool(calls) is offered

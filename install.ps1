@@ -36,7 +36,7 @@ function Install-GitBashLauncher([string]$Name, [string]$Executable) {
     $ExecutableName = Split-Path -Leaf $Executable
     $Content = (
         '#!/usr/bin/env bash' + "`n" +
-        'exec "$(dirname -- "$0")/' + $ExecutableName + '" "$@"' + "`n"
+        'AI_CONFIG_ENTRYPOINT=' + $Name + ' exec "$(dirname -- "$0")/' + $ExecutableName + '" "$@"' + "`n"
     )
     Write-Utf8NoBom $Launcher $Content
 }
@@ -44,7 +44,8 @@ function Install-GitBashLauncher([string]$Name, [string]$Executable) {
 function Install-CommandAlias([string]$Name, [string]$Executable) {
     $AliasPath = Join-Path $BinDir "$Name.cmd"
     $ExecutableName = Split-Path -Leaf $Executable
-    $Content = '@echo off' + "`r`n" + '"%~dp0' + $ExecutableName + '" %*' + "`r`n"
+    # 不設這個,提示訊息會叫人打 ai-config,而使用者打的是 acg
+    $Content = '@echo off' + "`r`n" + 'setlocal' + "`r`n" + 'set "AI_CONFIG_ENTRYPOINT=' + $Name + '"' + "`r`n" + '"%~dp0' + $ExecutableName + '" %*' + "`r`n"
     Write-Utf8NoBom $AliasPath $Content
 }
 
@@ -62,6 +63,37 @@ function Copy-WithRetry([string]$Source, [string]$Destination) {
     }
 }
 
+function Replace-Binary([string]$Source, [string]$Destination) {
+    # `ai-config update` runs this while its own exe is still executing.
+    # Windows refuses to overwrite a running exe but lets it be renamed, so
+    # move it aside and put the new one in its place. The slow copy goes to a
+    # side name first: between the two renames the path is empty only for an
+    # instant, not for the whole copy, and a hook that starts the exe then
+    # would otherwise find nothing there.
+    $Staged = "$Destination.new"
+    Copy-WithRetry $Source $Staged
+    $Aside = $null
+    if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+        $Aside = "$Destination.old-" + [guid]::NewGuid().ToString('N')
+        Move-Item -LiteralPath $Destination -Destination $Aside
+    }
+    try {
+        Move-Item -LiteralPath $Staged -Destination $Destination
+    }
+    catch {
+        if ($Aside) { Move-Item -LiteralPath $Aside -Destination $Destination -Force }
+        Remove-Item -LiteralPath $Staged -Force -ErrorAction SilentlyContinue
+        throw
+    }
+    # 沒在執行的舊檔當場刪掉;還在執行的刪不掉,留給下次啟動清
+    if ($Aside) { Remove-Item -LiteralPath $Aside -Force -ErrorAction SilentlyContinue }
+}
+
+function Remove-ReplacedBinaries([string]$Destination) {
+    Get-ChildItem -Path "$Destination.old-*" -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
 function Install-Binary([string]$Source, [string]$Destination) {
     Adopt-ExistingBinary $Destination
     $Resolved = Get-BinaryVersion $Source
@@ -74,7 +106,7 @@ function Install-Binary([string]$Source, [string]$Destination) {
     $VersionRoot = Join-Path $VersionsDir $Resolved
     New-Item -ItemType Directory -Force -Path $VersionRoot | Out-Null
     Copy-WithRetry $Source (Join-Path $VersionRoot 'ai-config.exe')
-    Copy-WithRetry (Join-Path $VersionRoot 'ai-config.exe') $Destination
+    Replace-Binary (Join-Path $VersionRoot 'ai-config.exe') $Destination
     New-Item -ItemType Directory -Force -Path $ShareDir | Out-Null
     Write-Utf8NoBom $ActiveMarker $Resolved
     Remove-StaleVersions $Resolved
@@ -101,9 +133,8 @@ function Adopt-ExistingBinary([string]$Destination) {
     # still overwrites a file that may be running.
     if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) { return }
     if (Test-Path -LiteralPath $ActiveMarker) { return }
-    # The process that ran `update` has only just exited, so Windows may still
-    # hold this file. Asking it for a version right away answers nothing, and
-    # the version it would have named is the one worth keeping.
+    # A freshly unpacked onefile build can fail its first start for a moment;
+    # the version it would have named is the one worth keeping, so wait for it.
     if (-not (Wait-ExecutableReady $Destination)) {
         Write-Warn "The installed binary did not start; keeping no copy of it"
         return
@@ -246,6 +277,7 @@ $Destination = Join-Path $BinDir 'ai-config.exe'
 $Operation = if (Test-Path -LiteralPath $Destination -PathType Leaf) { 'Update' } else { 'Installation' }
 $BinaryVerb = if ($Operation -eq 'Update') { 'Updated' } else { 'Installed' }
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+Remove-ReplacedBinaries $Destination
 
 if ($LocalBinary) {
     if (-not (Test-Path -LiteralPath $LocalBinary -PathType Leaf)) {
