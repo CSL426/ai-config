@@ -191,7 +191,7 @@
         <p class="tiny-note">預設停用。每次都挑該工具清單裡最便宜的模型；Codex 有好幾個帳號時，每個帳號各喚醒一次。時間與日誌留在本機，同一個帳號開一台就夠。</p>
       </div>
       <div class="picture callouts" aria-label="keepalive 管理指令">
-        <div class="callout"><strong>設定這台的時間</strong><p><code>acg keepalive enable 07:00 12:05</code></p></div>
+        <div class="callout"><strong>設定這台的時間</strong><p><code>acg keepalive enable 07:00 12:00 17:00 22:00</code></p></div>
         <div class="callout"><strong>查狀態，或立即送一次</strong><p><code>acg keepalive status</code>　顯示實際的視窗，沒對準排程會提醒<br><code>acg keepalive send</code></p></div>
         <div class="callout"><strong>不需要時停用</strong><p><code>acg keepalive disable</code></p></div>
         <p class="tiny-note">呼叫失敗時會記下工具自己的錯誤訊息，例如額度用完、何時恢復。它不同步設定，也不執行你的工作任務。</p>
@@ -205,7 +205,7 @@
         <h2>9 點上班，<br>為什麼<span class="accent">7 點就先喚醒</span></h2>
         <p class="lede">額度每 5 小時重設一次，從當天第一次使用開始算。</p>
         <p>9 點才開始用，上班時間只拿得到<strong>兩輪</strong>；7 點先喚醒，同樣的上班時間就有<strong>三輪</strong>。</p>
-        <p class="tiny-note">排程 07:00、12:05、17:10 就是這樣算的：每次晚 5 分鐘，確定上一輪已經結束。換成你自己的上班時間，往前推就好。</p>
+        <p class="tiny-note">Claude 的視窗從整點起算，排 07:00、12:00、17:00 就剛好接上；Codex 從呼叫那一秒起算，要晚幾分鐘（例如 12:05、17:10）才不會落在上一輪裡。換成你自己的上班時間，往前推就好。</p>
       </div>
       <figure class="picture timeline" aria-label="9 點才開始用與 7 點先喚醒的額度視窗對照">
         <div class="timeline-row">
