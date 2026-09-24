@@ -16,7 +16,7 @@ import pytest
 
 import ai_config.__main__ as cli
 from ai_config.applyplan import StalePreview
-from ai_config.commands.gui import GuiApi
+from ai_config.gui_api import GuiApi
 
 
 @pytest.fixture
@@ -239,7 +239,7 @@ def test_package_skills_rejects_bad_input(api: GuiApi) -> None:
 def test_package_skills_packages_each_and_reports(
     api: GuiApi, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import ai_config.commands.gui as gui_mod
+    import ai_config.gui_api as gui_mod
     import ai_config.package as package_mod
 
     def fake_package(name, out_dir):
@@ -264,7 +264,7 @@ def test_package_skills_packages_each_and_reports(
 def test_package_output_dir_falls_back_to_home(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from ai_config.commands.gui import _package_output_dir
+    from ai_config.gui_api import _package_output_dir
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     assert _package_output_dir() == tmp_path
@@ -603,7 +603,7 @@ def test_relogin_rejects_unavailable_actions_without_oauth(
 def test_frozen_build_without_assets_points_at_pip(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     # 打包版但沒有前端資源:不能叫使用者去 build 不存在的原始碼
     monkeypatch.setattr(gui_module.sys, "_MEIPASS", str(tmp_path), raising=False)
@@ -619,7 +619,7 @@ def test_frozen_build_without_assets_points_at_pip(
 def test_source_checkout_without_assets_says_to_build(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.delattr(gui_module.sys, "_MEIPASS", raising=False)
     monkeypatch.setattr(gui_module, "_ASSETS_DIR", tmp_path / "missing")
@@ -633,8 +633,8 @@ def test_shortcut_on_linux_adds_a_menu_entry_and_a_desktop_icon(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Linux desktops find apps through .desktop files, not the binary's folder."""
+    from ai_config import desktop as gui_module
     from ai_config import paths
-    from ai_config.commands import gui as gui_module
 
     launcher = tmp_path / "bin" / "ai-config"
     launcher.parent.mkdir()
@@ -664,8 +664,8 @@ def test_shortcut_points_at_the_launcher_updates_keep_current(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The running exe lives in versions/<x>/; a shortcut there dies on the next update."""
+    from ai_config import desktop as gui_module
     from ai_config import paths
-    from ai_config.commands import gui as gui_module
 
     running = tmp_path / "versions" / "1.0.1" / "ai-config.exe"
     running.parent.mkdir(parents=True)
@@ -702,7 +702,7 @@ def test_shortcut_points_at_the_launcher_updates_keep_current(
 def test_shortcut_builds_a_powershell_command(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     exe = tmp_path / "ai-config.exe"
     exe.write_text("binary", encoding="utf-8")
@@ -741,7 +741,7 @@ def test_shortcut_builds_a_powershell_command(
 def test_shortcut_reports_a_powershell_failure(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     exe = tmp_path / "ai-config.exe"
     exe.write_text("binary", encoding="utf-8")
@@ -778,7 +778,7 @@ def test_unshare_skills_validates_and_builds_argv(
 def test_settings_info_reports_local_config_only(
     api: GuiApi, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     def fail(*args: object, **kwargs: object) -> None:
         raise AssertionError("settings_info must not touch the network")
@@ -803,7 +803,7 @@ def test_settings_info_reports_local_config_only(
 def test_settings_info_redacts_remote_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     class Result:
         returncode = 0
@@ -833,7 +833,7 @@ def test_browser_login_without_client_id_points_at_gh(
 def test_terminal_login_opens_a_terminal_running_gh(
     api: GuiApi, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.setattr(gui_module.sys, "platform", "linux")
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")

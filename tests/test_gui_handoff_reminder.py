@@ -3,7 +3,7 @@
 import pytest
 
 from ai_config import handoff_reminder
-from ai_config.commands.gui import GuiApi
+from ai_config.gui_api import GuiApi
 from ai_config.gui_management import _handoff_reminder_state
 
 

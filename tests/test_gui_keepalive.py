@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from ai_config import keepalive
-from ai_config.commands.gui import GuiApi
+from ai_config.gui_api import GuiApi
 from ai_config.gui_management import _keepalive_state
 
 

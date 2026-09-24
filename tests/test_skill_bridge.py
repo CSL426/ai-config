@@ -8,7 +8,7 @@ import pytest
 import ai_config.__main__ as cli
 from ai_config import paths
 from ai_config.commands import skill
-from ai_config.commands.gui import GuiApi
+from ai_config.gui_api import GuiApi
 
 
 @pytest.fixture

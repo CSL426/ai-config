@@ -4,7 +4,7 @@ export interface RememberHostState {
   trusted: boolean | null; detail: string;
 }
 
-/** Python 端 GuiApi(ai_config/commands/gui.py)的型別契約 — 前後端唯一介面。 */
+/** Python 端 GuiApi(ai_config/gui_api.py)的型別契約 — 前後端唯一介面。 */
 
 export type AcgCommand = "status" | "apply" | "pull" | "push";
 

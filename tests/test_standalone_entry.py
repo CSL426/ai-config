@@ -87,7 +87,7 @@ def test_not_double_click_outside_windows(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_double_click_opens_gui_when_bundled(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     opened = []
     monkeypatch.setattr(cli, "launched_by_double_click", lambda: True)
@@ -117,7 +117,7 @@ def test_double_click_with_arguments_stays_cli(monkeypatch: pytest.MonkeyPatch) 
 def test_gui_index_prefers_pyinstaller_bundle(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     bundled = tmp_path / "gui_assets"
     bundled.mkdir()
@@ -128,7 +128,7 @@ def test_gui_index_prefers_pyinstaller_bundle(
 
 
 def test_gui_index_falls_back_to_package_dir(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.delattr(gui_module.sys, "_MEIPASS", raising=False)
     assert gui_module.gui_index_path() == gui_module._ASSETS_DIR / "index.html"
@@ -137,7 +137,7 @@ def test_gui_index_falls_back_to_package_dir(monkeypatch: pytest.MonkeyPatch) ->
 def test_double_click_holds_window_when_gui_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     prompts: list[str] = []
     monkeypatch.setattr(cli, "launched_by_double_click", lambda: True)
@@ -156,7 +156,7 @@ def test_double_click_holds_window_when_gui_fails(
 def test_double_click_reports_a_gui_crash(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.setattr(cli, "launched_by_double_click", lambda: True)
     monkeypatch.setattr(cli, "gui_assets_bundled", lambda: True)
@@ -179,7 +179,7 @@ def test_gui_reports_a_webview_start_failure(
     import sys as real_sys
     import types
 
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     index = tmp_path / "index.html"
     index.write_text("<h1>x</h1>", encoding="utf-8")
@@ -203,7 +203,7 @@ def test_gui_reports_a_webview_start_failure(
 def test_bundled_build_opens_the_app_without_double_click_detection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     opened = []
     # 偵測失敗(回 False)時仍然要開視窗:那個判斷只有一次 Win32 呼叫,
@@ -225,7 +225,7 @@ def test_double_click_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_desktop_is_an_alias_for_gui(monkeypatch: pytest.MonkeyPatch) -> None:
     import ai_config.__main__ as main_module
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     seen = []
     monkeypatch.setattr(gui_module, "run_gui", lambda: seen.append("ran") or 0)
@@ -241,7 +241,7 @@ def test_desktop_detaches_by_default_and_waits_on_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import ai_config.__main__ as main_module
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     ran = []
     monkeypatch.setattr(gui_module, "run_gui", lambda: ran.append("fg") or 0)
@@ -259,7 +259,7 @@ def test_desktop_detaches_by_default_and_waits_on_request(
 def test_detach_skips_when_already_detached(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.setenv(gui_module._DETACH_ENV, "1")
     # 子行程再呼叫一次不能又分離出去,否則會無限產生行程
@@ -269,7 +269,7 @@ def test_detach_skips_when_already_detached(
 def test_detach_stays_foreground_without_assets(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.delenv(gui_module._DETACH_ENV, raising=False)
     monkeypatch.setattr(gui_module, "gui_index_path", lambda: tmp_path / "none")
@@ -278,7 +278,7 @@ def test_detach_stays_foreground_without_assets(
 
 
 def test_detach_starts_a_new_session(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.setenv("DISPLAY", ":test")
     index = tmp_path / "index.html"
@@ -303,7 +303,7 @@ def test_detach_starts_a_new_session(tmp_path, monkeypatch: pytest.MonkeyPatch) 
 def test_hide_console_is_a_noop_off_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.setattr(gui_module.sys, "platform", "linux")
     assert gui_module.hide_console() is False
@@ -333,7 +333,7 @@ def test_update_warns_when_running_an_unmanaged_copy(
 def test_detach_hides_the_console_before_exiting(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.setenv("DISPLAY", ":test")
     index = tmp_path / "index.html"
@@ -368,7 +368,7 @@ def test_detach_hides_the_console_before_exiting(
 def test_console_ownership_preserves_shells(
     tmp_path, monkeypatch, pids, frozen, parent_image, expected
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     executable = tmp_path / "app.exe"
     executable.touch()
@@ -437,7 +437,7 @@ def test_console_ownership_rejects_unverifiable_parent(monkeypatch, failure) -> 
 
 
 def test_frozen_detach_owns_its_bundle(tmp_path, monkeypatch) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     index = tmp_path / "index.html"
     index.touch()
@@ -501,7 +501,7 @@ def test_native_console_recognizes_same_executable_parent(tmp_path) -> None:
 
 
 def test_gui_restores_console_when_window_creation_fails(tmp_path, monkeypatch) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.setenv("DISPLAY", ":test")
     index = tmp_path / "index.html"
@@ -526,7 +526,7 @@ def test_gui_reports_missing_display_before_starting_native_backend(
     monkeypatch,
     capsys,
 ):
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     index = tmp_path / "index.html"
     index.touch()
@@ -547,7 +547,7 @@ def test_installed_gui_missing_assets_does_not_suggest_building_another_checkout
     monkeypatch,
     capsys,
 ):
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     monkeypatch.setattr(gui_module, "__file__", str(tmp_path / "pkg/commands/gui.py"))
     monkeypatch.setattr(gui_module, "gui_index_path", lambda: tmp_path / "missing")
@@ -562,7 +562,7 @@ def test_installed_gui_missing_assets_does_not_suggest_building_another_checkout
 def test_gui_restores_console_when_runtime_import_fails(
     tmp_path, monkeypatch, error
 ) -> None:
-    from ai_config.commands import gui as gui_module
+    from ai_config import desktop as gui_module
 
     index = tmp_path / "index.html"
     index.touch()

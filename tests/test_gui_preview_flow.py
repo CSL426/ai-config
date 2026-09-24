@@ -16,7 +16,7 @@ from ai_config.safety import is_reparse_point
 DRIVER = """
 import json, sys
 from pathlib import Path
-from ai_config.commands.gui import GuiApi
+from ai_config.gui_api import GuiApi
 from ai_config.paths import HOME as home
 api = GuiApi()
 steps = json.loads(sys.argv[1])
