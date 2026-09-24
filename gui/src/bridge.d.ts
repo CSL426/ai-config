@@ -74,7 +74,7 @@ export interface MemoryInfo extends RunResult {
     window?: { start: string; reset: string; drift: string } | null;
   };
   handoffs?: {
-    thread: string; project: string; state: string; holder: string;
+    thread: string; project: string; state: string;
     age_days: number; stale: boolean; summary: string;
   }[];
   handoff_reminder: {

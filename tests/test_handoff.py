@@ -53,31 +53,40 @@ def test_chinese_thread_names_stay_distinct(notebook: Path) -> None:
     assert sorted(n.thread for n in handoff.load_all()) == ["GUI 改版", "記憶改善"]
 
 
-def test_claiming_marks_the_holder(notebook: Path) -> None:
+def test_picking_up_closes_the_thread_and_records_who(notebook: Path) -> None:
     handoff.write("記憶改善", "內容")
 
-    note, _ = handoff.claim("記憶改善")
+    note = handoff.claim("記憶改善")
 
-    assert note.state == handoff.CLAIMED
+    assert note.state == handoff.DONE
     assert note.claimed_by == "session-one"
+    assert handoff.load_all()[0].state == handoff.DONE
 
 
-def test_another_session_cannot_steal_a_claim(
+def test_a_second_pickup_is_told_who_took_it(
     notebook: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # 接走就結案;第二個人要的不是同一份筆記,是知道誰在做
     handoff.write("記憶改善", "內容")
     handoff.claim("記憶改善")
 
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
-    with pytest.raises(ValueError, match="已被其他 session 認領"):
+    with pytest.raises(ValueError, match="已經被 session 接走"):
         handoff.claim("記憶改善")
 
 
-def test_the_same_session_can_reclaim_its_own(notebook: Path) -> None:
-    handoff.write("記憶改善", "內容")
-    handoff.claim("記憶改善")
+def test_a_note_held_under_the_old_rules_can_be_picked_up(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 舊版的「持有中」多半是早就結束的 session 留下的
+    handoff.write("舊的", "內容")
+    path = handoff.handoff_dir() / "舊的.md"
+    text = path.read_text(encoding="utf-8").replace("state: open", "state: claimed")
+    path.write_text(text + "", encoding="utf-8")
+    assert handoff.load_all()[0].state == handoff.OPEN
 
-    assert handoff.claim("記憶改善")[0].claimed_by == "session-one"
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    assert handoff.claim("舊的").claimed_by == "session-two"
 
 
 def test_done_takes_it_off_the_pile(notebook: Path) -> None:
@@ -328,59 +337,6 @@ def _age_note(path: Path, field: str, days: int) -> None:
     _rewrite(path, lambda text: re.sub(
         rf"^{field}: .*$", f"{field}: {stamp}", text, count=1, flags=re.MULTILINE
     ))
-
-
-def test_a_claim_left_sitting_can_be_taken_over(
-    notebook: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A claim is a status line, not a lock, but nothing ever released one.
-
-    Sessions end without running `done`: the terminal closes, the context
-    runs out. The note keeps a holder that no longer exists, and every
-    later session is refused by a session id that died days ago.
-    """
-    handoff.write("卡住的", "內容")
-    handoff.claim("卡住的")
-    _age_note(handoff.handoff_dir() / "卡住的.md", "updated", 2)
-
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
-    note, _ = handoff.claim("卡住的")
-
-    assert note.claimed_by == "session-two"
-
-
-def test_a_fresh_claim_is_still_protected(
-    notebook: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Timing out a stale claim must not open up a live one."""
-    handoff.write("有人在做", "內容")
-    handoff.claim("有人在做")
-
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
-    with pytest.raises(ValueError, match="已被其他 session 認領"):
-        handoff.claim("有人在做")
-
-
-def test_a_stale_claim_says_who_held_it(
-    notebook: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Taking over silently hides that someone else was on this thread."""
-    from ai_config.commands import memory as command
-
-    monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
-    )
-    handoff.write("卡住的", "內容")
-    handoff.claim("卡住的")
-    _age_note(handoff.handoff_dir() / "卡住的.md", "updated", 2)
-
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
-    assert command.run_memory(["handoff", "claim", "卡住的"]) == 0
-
-    told = capsys.readouterr().out
-    # 前持有者印的是縮寫,不是整串 id;要的是接手的人看得出有人在過
-    assert handoff.short_id("session-one") in told
-    assert "已接手" in told
 
 
 def test_a_thread_nobody_touched_is_flagged_as_stale(
@@ -652,10 +608,12 @@ def test_a_session_picks_up_its_own_thread_without_being_told(
 
     named("session-after-clear", "acg", pid=100)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-after-clear")
-    note, _ = handoff.claim()
+    note = handoff.claim()
 
     assert note.thread == "排程"
     assert note.claimed_by == "session-after-clear"
+    # 接手的 session 名稱要留著,「被誰接走」才讀得懂
+    assert note.claimed_name == "acg"
 
 
 def test_without_a_matching_thread_claim_asks_for_a_name(named) -> None:
@@ -684,7 +642,7 @@ def test_claim_without_a_name_works_from_the_command_line(
 
     assert command.run_memory(["handoff", "claim"]) == 0
 
-    assert "已認領:排程" in capsys.readouterr().out
+    assert "已接手:排程" in capsys.readouterr().out
 
 
 def test_a_thread_nobody_touched_for_a_month_is_archived_too(notebook: Path) -> None:

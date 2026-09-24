@@ -18,16 +18,17 @@ async function openWith(page: Page, handoffs: object[] | null) {
 
 test("列出待接手的工作線與過期標示", async ({ page }) => {
   await openWith(page, [
-    { thread: "排程", project: "CSL426--ai-config", state: "claimed", holder: "c53003dd",
+    { thread: "排程", project: "CSL426--ai-config", state: "open",
       age_days: 0, stale: false, summary: "還剩:等 Windows 回報" },
-    { thread: "admin 拆分", project: "CreateIntelligens--openVman", state: "claimed", holder: "37dc968b",
+    { thread: "admin 拆分", project: "CreateIntelligens--openVman", state: "open",
       age_days: 7, stale: true, summary: "還剩:push 並開 PR" },
   ]);
   const rows = page.locator(".handoff-thread");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(1)).toHaveAttribute("data-stale", "true");
   await expect(rows.nth(1)).toContainText("7 天前開的 · ⚠ 可能已過期");
-  await expect(rows.nth(0)).toContainText("◐ c53003dd 持有");
+  // 接走就結案,列表上不會有「誰持有」這回事
+  await expect(rows.nth(0)).not.toContainText("持有");
   await expect(page.locator("#handoff-threads-empty")).toBeEmpty();
 });
 
