@@ -59,22 +59,43 @@
   </section>
 
   <section class="slide">
+    <div class="workflow">
+      <h2>平常<span class="accent">只做四件事</span></h2>
+      <div class="workflow-line" aria-label="日常同步四步驟">
+        <div class="workflow-step"><strong>下載</strong><code>acg pull</code></div><span class="workflow-arrow" aria-hidden="true">›</span>
+        <div class="workflow-step"><strong>看差異</strong><code>acg status</code></div><span class="workflow-arrow" aria-hidden="true">›</span>
+        <div class="workflow-step"><strong>套用</strong><code>acg apply</code></div><span class="workflow-arrow" aria-hidden="true">›</span>
+        <div class="workflow-step"><strong>上傳</strong><code>acg push</code></div>
+      </div>
+      <p class="tiny-note workflow-note">上傳前先列出要存什麼，你確認才送出；套用前先備份，遇到衝突會直接告訴你。</p>
+    </div>
+  </section>
+
+  <section class="slide">
     <div class="story-grid gui-layout">
-      <div class="story-copy loop-copy">
-        <h2>平常<br><span class="accent nowrap">只做四件事</span></h2>
-        <div class="workflow-line" aria-label="日常同步四步驟">
-          <div class="workflow-step"><strong>下載</strong><code>acg pull</code></div><span class="workflow-arrow" aria-hidden="true">›</span>
-          <div class="workflow-step"><strong>看差異</strong><code>acg status</code></div><span class="workflow-arrow" aria-hidden="true">›</span>
-          <div class="workflow-step"><strong>套用</strong><code>acg apply</code></div><span class="workflow-arrow" aria-hidden="true">›</span>
-          <div class="workflow-step"><strong>上傳</strong><code>acg push</code></div>
-        </div>
-        <p class="tiny-note">上傳前先列出要存什麼，你確認才送出；套用前先備份，遇到衝突會直接告訴你。</p>
-        <p class="tiny-note">不打指令也行：Windows 下載 <code>acg.exe</code> 點兩下就開 Desktop；其他系統目前是實驗版。</p>
+      <div class="story-copy callouts">
+        <h2>不想打指令？<br><span class="accent nowrap">Desktop 也行</span></h2>
+        <div class="callout"><strong>一般使用者也能用</strong><p>不必先學會指令。打開 Desktop 就先看狀況，下載、上傳、套用各一顆按鈕。</p></div>
+        <div class="callout"><strong>三個工具，一個畫面</strong><p>Claude Code、Codex、Antigravity 的同步狀況、登入與變更，都在同一頁查看。</p></div>
+        <div class="callout"><strong>Windows 免安裝</strong><p>下載 <code>acg.exe</code> 點兩下就開；也能從指令列 <code>acg gui</code> 開啟。其他系統目前是實驗版。</p></div>
       </div>
       <figure class="picture">
         <img class="gui-shot" src="./gui-main.png" width="1040" height="620" alt="acg Desktop 主畫面：開啟時自動檢查三個工具，Codex 標示有差異可點進去看；下方是下載、上傳、套用三個按鈕">
-        <figcaption>Desktop 主畫面（範例資料）：開啟就先檢查，有差異的點進去看。</figcaption>
+        <figcaption>Desktop 主畫面（範例資料）：開啟就檢查三個工具，有差異的點進去看。</figcaption>
       </figure>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="story-grid reverse">
+      <div class="story-copy">
+        <h2>或者，直接把目的<br><span class="accent">告訴 AI</span></h2>
+        <p class="lede">說你想完成什麼就好。AI 會先讀指南、檢查狀況，再跟你確認要動哪些。</p>
+        <div class="ai-steps" aria-label="AI 操作三步驟"><span>先讀 acg 指南</span><span>檢查狀況</span><span>確認操作範圍</span></div>
+      </div>
+      <div class="picture">
+        <div class="art" style="--ratio: 1200 / 595"><img src="./img/13-ask.webp" width="1200" height="595" alt="一個人對小機器人說話，機器人翻著說明書，旁邊依序是讀說明、檢查、動手三個圓點" decoding="async"><p class="bubble" style="--x: 37.7%; --y: 22.6%">「幫我把這台的 AI 設定同步好。」</p></div>
+      </div>
     </div>
   </section>
 
@@ -173,26 +194,19 @@
     </div>
   </section>
 
-  <section class="slide">
-    <div class="story-grid reverse">
-      <div class="story-copy">
-        <h2>從這裡<br><span class="accent nowrap">開始</span></h2>
-        <p class="lede">裝好 acg，它會接著問你設定要放在哪裡。</p>
-        <p class="install-line"><strong>Linux / macOS</strong><code>curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | bash</code></p>
-        <p class="install-line"><strong>Windows（PowerShell）</strong><code>irm https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 | iex</code></p>
-        <p class="tiny-note">完整說明與 Desktop 下載：<a href="https://github.com/CSL426/ai-config">github.com/CSL426/ai-config</a>。不想自己來：把這個網址給你的 AI，說「幫我在這台裝好並設定 acg」。</p>
-      </div>
-      <div class="picture">
-        <div class="art" style="--ratio: 1200 / 595"><img src="./img/13-ask.webp" width="1200" height="595" alt="一個人對小機器人說話，機器人翻著說明書，旁邊依序是讀說明、檢查、動手三個圓點" decoding="async"><p class="bubble" style="--x: 37.7%; --y: 22.6%">「幫我在這台裝好並設定 acg。」</p></div>
-      </div>
-    </div>
+  <section class="slide close-slide">
+    <h2>從這裡<span class="accent">開始</span></h2>
+    <p class="lede">裝好 acg，它會接著問你設定要放在哪裡。</p>
+    <p class="install-line"><strong>Linux / macOS</strong><code>curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | bash</code></p>
+    <p class="install-line"><strong>Windows（PowerShell）</strong><code>irm https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 | iex</code></p>
+    <p class="tiny-note">指令列、Desktop，或直接請 AI：「幫我在這台裝好並設定 acg」（先把 <a href="https://github.com/CSL426/ai-config">github.com/CSL426/ai-config</a> 給它）。三條路都通。</p>
   </section>
 </main>
 
 <footer class="deck-chrome">
   <span class="brand">ai-config · acg</span>
   <nav class="slide-strip" id="slide-strip" aria-label="投影片進度"></nav>
-  <span class="counter" id="counter">01 ∕ 10</span>
+  <span class="counter" id="counter">01 ∕ 12</span>
 </footer>
 
 <script>
