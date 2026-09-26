@@ -24,6 +24,7 @@ from .console import log_info
 from .memory import memory_dir
 from .paths import HOME, SCRIPT_DIR, WINDOWS_MODE
 from .subproc import NATIVE, UTF8
+from .systemd_timer import forget_missed_runs
 
 DEFAULT_HOUR = 4
 DEFAULT_STALE_HOURS = 12
@@ -393,6 +394,7 @@ def _enable_systemd(hour: int, stale_hours: float, minute: int = 0) -> list[str]
     (directory / f"{_UNIT}.service").write_text(service, encoding="utf-8")
     (directory / f"{_UNIT}.timer").write_text(timer, encoding="utf-8")
     lines = [f"寫入 {directory / (_UNIT + '.timer')}"]
+    forget_missed_runs(f"{_UNIT}.timer")
     reload_result = _systemctl("daemon-reload")
     if reload_result.returncode != 0:
         lines.append("systemctl daemon-reload 失敗,請手動執行")
