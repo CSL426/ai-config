@@ -28,6 +28,8 @@ def _shared_table_stays_out_of_the_real_notebook(
     # patch 底層的 gethostname 而不是 host_name():host_name 自己也有測試要跑真的
     monkeypatch.setattr(schedule_table.socket, "gethostname", lambda: "test-host")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    # systemd timer 的 stamp 檔在這裡;重排時會去碰它
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data-home"))
 
 
 @pytest.fixture(autouse=True)

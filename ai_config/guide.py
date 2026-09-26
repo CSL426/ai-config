@@ -184,8 +184,8 @@ Pull still downloads the entire repository, including shared memory.
 
 `{entrypoint} memory autopush enable [hour]` registers a daily run with the
 platform's own scheduler: a systemd user timer on Linux (with `Persistent=true`,
-so a machine that was off catches up), a LaunchAgent on macOS, a scheduled task
-on Windows. Default hour is 04:00. Everything it writes lives under the user's
+so a machine that was off catches up; changing the time does not count as a
+missed run), a LaunchAgent on macOS, a scheduled task on Windows. Default hour is 04:00. Everything it writes lives under the user's
 home and `autopush disable` removes it.
 
 The run calls `memory push --if-stale 12`, which stops before touching git when

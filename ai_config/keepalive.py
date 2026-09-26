@@ -25,6 +25,7 @@ from pathlib import Path
 
 from .paths import HOME
 from .subproc import NATIVE, UTF8
+from .systemd_timer import forget_missed_runs
 
 DEFAULT_TIMES = ("07:00", "12:05", "17:10", "22:15")
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
@@ -461,6 +462,7 @@ def _enable_systemd(times, tool: str = DEFAULT_TOOL) -> list:
     (directory / f"{unit}.service").write_text(service, encoding="utf-8")
     (directory / f"{unit}.timer").write_text(timer, encoding="utf-8")
     lines = [f"寫入 {directory / (unit + '.timer')}"]
+    forget_missed_runs(f"{unit}.timer")
     reloaded = subprocess.run(
         ["systemctl", "--user", "daemon-reload"],
         capture_output=True, text=True, **UTF8, check=False,
