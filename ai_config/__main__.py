@@ -100,7 +100,7 @@ def usage() -> None:
     print("                  handoff list [專案路徑]|write <線> <內容>|claim [線]|done <線>")
     print("                    hand one work thread to the session that follows")
     print("                  handoff remind status|enable [百分比]|disable")
-    print("                    Claude context reminder (default 70%; no automatic write)")
+    print("                    Claude context reminder; memory enable turns it on at 70%")
     print("                  push --allow-secrets skip the credential-content check")
     print("  desktop         Launch the desktop app (bundled on Windows)")
     print("                  --shortcut add desktop and app-menu shortcuts (Windows, Linux)")

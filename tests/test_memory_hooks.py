@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from test_memory_safety import isolated_memory  # noqa: F401
 
-from ai_config import memory, memory_hooks, memory_plan
+from ai_config import handoff_reminder, memory, memory_hooks, memory_plan
 from ai_config.commands import memory as command
 
 
@@ -203,12 +203,59 @@ def test_enable_preview_lists_hooks_and_disable_preserves_others(
     assert any(c["destination"] == str(path) for c in plan.changes)
     assert command.execute("enable").code == 0
     installed = json.loads(path.read_text())
-    assert memory_hooks.without_hooks(installed) == original
+    assert handoff_reminder.without_settings(
+        memory_hooks.without_hooks(installed)
+    ) == original
     assert installed["model"] == "local-model"
     memory_hooks.install(enabling=True)
     assert json.loads(path.read_text()) == installed
     assert command.execute("disable").code == 0
     assert json.loads(path.read_text()) == original
+
+
+def test_memory_enable_turns_the_handoff_reminder_on_and_disable_off(
+    isolated_memory,  # noqa: F811
+):
+    path = memory_hooks.settings_path()
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"model": "local-model"}))
+
+    reasons = [c["reason"] for c in memory_plan.plan("enable").changes
+               if c["destination"] == str(path)]
+    assert reasons and "開啟交接提醒(門檻 70%)" in reasons[0]
+    assert command.execute("enable").code == 0
+    state = handoff_reminder.status()
+    assert state == {"enabled": True, "threshold": 70, "installed": True}
+
+    reasons = [c["reason"] for c in memory_plan.plan("disable").changes
+               if c["destination"] == str(path)]
+    assert reasons and "移除交接提醒" in reasons[0]
+    assert command.execute("disable").code == 0
+    assert handoff_reminder.status()["enabled"] is False
+    assert json.loads(path.read_text()) == {"model": "local-model"}
+
+
+def test_memory_enable_keeps_a_chosen_reminder_threshold(isolated_memory):  # noqa: F811
+    memory.CLAUDE_HOME.mkdir(parents=True)
+    handoff_reminder.configure(True, 85)
+    line = json.loads(memory_hooks.settings_path().read_text())["statusLine"]
+
+    assert command.execute("enable").code == 0
+
+    assert handoff_reminder.status()["threshold"] == 85
+    assert json.loads(memory_hooks.settings_path().read_text())["statusLine"] == line
+
+
+def test_a_broken_reminder_does_not_block_memory_enable(
+    isolated_memory, monkeypatch,  # noqa: F811
+):
+    def refuse(*_args, **_kwargs):
+        raise ValueError("無法辨識原本的 status line")
+
+    monkeypatch.setattr(handoff_reminder, "follow_memory", refuse)
+
+    assert command.execute("enable").code == 0
+    assert memory.MEMORY_LINK.exists()
 
 
 def test_sync_filters_source_hooks_and_keeps_local_hooks(isolated_memory):  # noqa: F811

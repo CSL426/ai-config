@@ -217,12 +217,39 @@ def installed(document: dict, hook: Hook) -> bool:
     return False
 
 
+def current(document: dict, hook: Hook) -> bool:
+    """Installed exactly as hook_entry() would write it, once per event.
+
+    Reinstalling strips and appends, which moves the row behind whatever
+    another feature added since; without this check a second install
+    rewrites settings.json only to change the order.
+    """
+    wanted = hook_entry(hook)
+    events = document.get("hooks")
+    if not isinstance(events, dict):
+        return False
+    for event in hook.events:
+        rows = events.get(event)
+        if not isinstance(rows, list):
+            return False
+        owned = [
+            row for row in rows
+            if isinstance(row, dict) and isinstance(row.get("hooks"), list)
+            and any(_owned_by(h, hook.marker) for h in row["hooks"])
+        ]
+        if owned != [wanted]:
+            return False
+    return True
+
+
 def configure(hook: Hook, enabled: bool) -> bool:
     """Install or remove one hook here; returns whether it ends up installed."""
     from .locking import apply_lock
 
     with apply_lock():
         document = read_settings()
+        if enabled and current(document, hook):
+            return True
         result = _strip(document, lambda h: not _owned_by(h, hook.marker))
         if enabled:
             events = result.setdefault("hooks", {})

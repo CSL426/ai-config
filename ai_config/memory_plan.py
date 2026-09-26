@@ -4,6 +4,7 @@ Plans inspect the same inputs as the mutations. They never execute a mutation
 against temporary paths: journal collision names depend on the real directory.
 """
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -48,6 +49,34 @@ class MemoryPlan:
         self.relevant_paths.extend(
             path for path in (source, destination, physical) if path is not None
         )
+
+
+def _settings_change(
+    result: MemoryPlan, hooks_text: str | None, *, enabling: bool, reason: str,
+) -> None:
+    """One entry for settings.json: the journal hook plus the handoff reminder.
+
+    hooks_text is the file after the journal hook step (None: no file).
+    Execution does the same two steps in the same order, so the preview
+    is what lands.
+    """
+    from . import handoff_reminder
+
+    path = memory_hooks.settings_path()
+    updated = hooks_text
+    try:
+        document = json.loads(hooks_text) if hooks_text is not None else {}
+        after, threshold = handoff_reminder.follow_memory(document, enabling)
+    except ValueError as exc:
+        result.warnings.append(f"交接提醒不會跟著調整:{exc}")
+    else:
+        if threshold is not None:
+            note = f"開啟交接提醒(門檻 {threshold}%)" if enabling else "移除交接提醒"
+            reason = f"{reason}；{note}" if reason else note
+            updated = (json.dumps(after, ensure_ascii=False, indent=2) + "\n"
+                       if after or enabling else None)
+    if reason:
+        _text_change(result, path, updated, reason, tool="claude")
 
 
 def _text_change(
@@ -329,13 +358,15 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
         _ignore_change(result)
         if memory.remember_installed():
             _journal_config(result)
-            _text_change(
-                result, memory_hooks.settings_path(),
-                memory_hooks.settings_text(enabling=True),
-                "安裝本機日誌入口 hook，搬移後仍能從專案內查看", tool="claude",
+            _settings_change(
+                result, memory_hooks.settings_text(enabling=True), enabling=True,
+                reason="安裝本機日誌入口 hook，搬移後仍能從專案內查看",
             )
         else:
             result.warnings.append("remember 未安裝；不變更日誌設定，也不安裝外掛。")
+            path = memory_hooks.settings_path()
+            current = memory._read_text(path) if path.exists() else None
+            _settings_change(result, current, enabling=True, reason="")
         result.warnings.append(
             "規則已安裝後，請開新會話驗證；agy CLI 載入仍須實際驗收。"
         )
@@ -344,10 +375,9 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
         if not memory.source_rules_path().is_file():
             result.warnings.append("資料庫沒有 claude/CLAUDE.md，無法同步該規則來源。")
     elif action == "disable":
-        _text_change(
-            result, memory_hooks.settings_path(),
-            memory_hooks.settings_text(enabling=False),
-            "移除 acg 的本機日誌入口 hook，保留其他 hooks", tool="claude",
+        _settings_change(
+            result, memory_hooks.settings_text(enabling=False), enabling=False,
+            reason="移除 acg 的本機日誌入口 hook，保留其他 hooks",
         )
         _rules(result, enabling=False)
         if state == "ok":

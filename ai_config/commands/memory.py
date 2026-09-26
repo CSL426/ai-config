@@ -602,6 +602,7 @@ def _enable() -> int:
             log_warn(f"remember 的 data_dir 已另外設定為 {other},未更動")
     if memory.codex_override_path().is_file():
         log_warn(f"{tilde(memory.codex_override_path())} 存在,Codex 可能讀不到共用規則")
+    _switch_reminder(True)
 
     _offer_hosts()
 
@@ -609,6 +610,28 @@ def _enable() -> int:
     log_success("共用記憶已啟用;開新的 AI 會話後生效")
     log_info(f"保存記憶:{ENTRYPOINT} memory push")
     return 0
+
+
+def _switch_reminder(enabled: bool) -> None:
+    """The handoff reminder rides along with shared memory.
+
+    A broken reminder is not a reason to refuse shared memory; it is
+    reported and left alone.
+    """
+    from .. import handoff_reminder as remind
+
+    try:
+        threshold = remind.follow_memory_locked(enabled)
+    except (OSError, ValueError) as exc:
+        log_warn(f"交接提醒沒有{'開啟' if enabled else '關閉'}:{exc}")
+        return
+    if threshold is None:
+        return
+    if enabled:
+        log_success(f"交接提醒已開啟:Claude context 用量達 {threshold}% 時提醒寫交接")
+        log_info(f"不需要的話:{ENTRYPOINT} memory handoff remind disable")
+    else:
+        log_success("移除交接提醒")
 
 
 _HOST_LABELS = {"codex": "Codex", "agy": "Antigravity"}
@@ -681,6 +704,7 @@ def _host(command: str, host: str) -> int:
 def _disable() -> int:
     log_header("Disable shared memory")
     memory_hooks.install(enabling=False)
+    _switch_reminder(False)
     for path in memory.instruction_paths():
         if memory.remove_block(path):
             log_success(f"移除規則區塊 {tilde(path)}")

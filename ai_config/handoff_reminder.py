@@ -186,37 +186,71 @@ def configure(enabled: bool, threshold: int = DEFAULT_THRESHOLD) -> dict:
     threshold = _threshold(threshold)
     with apply_lock():
         document = _settings()
-        result = without_settings(document)
-        if enabled:
-            original = result.get("statusLine")
-            _decode(_encode(original))
-            # 固定入口,不是 sys.executable:後者可能是會被清掉的版本目錄
-            argv = [str(part).replace("\\", "/") for part in scheduled_command()]
-            result["statusLine"] = {
-                **(original or {}), "type": "command",
-                "command": _shell_command(argv + [
-                    STATUS_COMMAND, _encode(original), str(threshold),
-                ]),
-            }
-            events = result.setdefault("hooks", {})
-            if not isinstance(events, dict):
-                raise ValueError("Claude hooks 必須是物件")
-            for event in EVENTS:
-                rows = events.setdefault(event, [])
-                if not isinstance(rows, list):
-                    raise ValueError(f"Claude {event} hooks 必須是陣列")  # noqa: TRY004
-                rows.append({"hooks": [{
-                    "type": "command", "command": argv[0],
-                    "args": argv[1:] + [HOOK_COMMAND],
-                    "statusMessage": MARKER, "timeout": 5,
-                }]})
+        result = _with_settings(document, enabled, threshold)
         if result != document:
             path = memory.CLAUDE_HOME / "settings.json"
             _backup([path])
-            memory._write_text_atomic(
-                path, json.dumps(result, ensure_ascii=False, indent=2) + "\n",
-            )
+            _write_settings(result)
         return _status(result)
+
+
+def follow_memory(document: dict, enabling: bool) -> tuple[dict, int | None]:
+    """Settings after shared memory is switched, and the threshold if it moved.
+
+    The reminder rides along with shared memory. An already-working
+    reminder keeps its threshold; a half-installed one is repaired with
+    the threshold it had rather than reset to the default.
+    """
+    state = _status(document)
+    if state["enabled"] == enabling and (state["installed"] or not enabling):
+        return document, None
+    threshold = state["threshold"] if state["enabled"] else DEFAULT_THRESHOLD
+    return _with_settings(document, enabling, threshold), threshold
+
+
+def follow_memory_locked(enabling: bool) -> int | None:
+    """follow_memory() written to disk; the caller holds the lock and a backup."""
+    document = _settings()
+    result, threshold = follow_memory(document, enabling)
+    if result != document:
+        _write_settings(result)
+    return threshold
+
+
+def _write_settings(document: dict) -> None:
+    memory._write_text_atomic(
+        memory.CLAUDE_HOME / "settings.json",
+        json.dumps(document, ensure_ascii=False, indent=2) + "\n",
+    )
+
+
+def _with_settings(document: dict, enabled: bool, threshold: int) -> dict:
+    result = without_settings(document)
+    if not enabled:
+        return result
+    original = result.get("statusLine")
+    _decode(_encode(original))
+    # 固定入口,不是 sys.executable:後者可能是會被清掉的版本目錄
+    argv = [str(part).replace("\\", "/") for part in scheduled_command()]
+    result["statusLine"] = {
+        **(original or {}), "type": "command",
+        "command": _shell_command(argv + [
+            STATUS_COMMAND, _encode(original), str(threshold),
+        ]),
+    }
+    events = result.setdefault("hooks", {})
+    if not isinstance(events, dict):
+        raise ValueError("Claude hooks 必須是物件")  # noqa: TRY004
+    for event in EVENTS:
+        rows = events.setdefault(event, [])
+        if not isinstance(rows, list):
+            raise ValueError(f"Claude {event} hooks 必須是陣列")  # noqa: TRY004
+        rows.append({"hooks": [{
+            "type": "command", "command": argv[0],
+            "args": argv[1:] + [HOOK_COMMAND],
+            "statusMessage": MARKER, "timeout": 5,
+        }]})
+    return result
 
 
 def _session_path(payload: dict):

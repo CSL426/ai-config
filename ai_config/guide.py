@@ -321,12 +321,15 @@ reviews new hooks itself: after installing, open codex once and type
 
 ### Remind before context compaction (Claude Code only)
 
+`{entrypoint} memory enable` turns the reminder on at 70% (a threshold
+already chosen is kept) and `memory disable` removes it.
 `{entrypoint} memory handoff remind status` shows this machine's reminder
-configuration. Opt in with `{entrypoint} memory handoff remind enable` (70%),
-or `enable 80` to choose a whole-number threshold from 1 to 99. Turn it off
-with `{entrypoint} memory handoff remind disable`. The desktop memory page
-and `/acg:handoff remind status|enable [percentage]|disable` manage the same
-local setting; enabling shared memory does not enable reminders.
+configuration. `{entrypoint} memory handoff remind enable 80` chooses a
+whole-number threshold from 1 to 99, and
+`{entrypoint} memory handoff remind disable` turns it off while shared memory
+stays on. The desktop memory page and
+`/acg:handoff remind status|enable [percentage]|disable` manage the same
+local setting.
 
 The reminder reads Claude Code's official context percentage from its
 statusLine input and preserves the existing status-line output. Once usage

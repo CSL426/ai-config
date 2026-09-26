@@ -40,6 +40,8 @@ def settings_text(*, enabling: bool) -> str | None:
     if not isinstance(document, dict):
         # The lifecycle reports invalid persisted configuration as ValueError.
         raise ValueError("Claude settings.json must contain an object")  # noqa: TRY004
+    if enabling and hooks.current(document, hooks.MEMORY_ENTRY):
+        return original
     result = without_hooks(document)
     if enabling:
         # 跟登記表同一份定義:兩邊各寫一套,refresh 就會把對的改成錯的
