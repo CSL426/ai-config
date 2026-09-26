@@ -39,7 +39,8 @@ OPEN = "open"
 DONE = "done"
 _STATES = (OPEN, DONE)
 
-_FIELD = re.compile(r"^([a-z_]+):\s*(.*)$", re.MULTILINE)
+# 不能用 \s*:它會跨過換行,空欄位就把下一行整行吃成自己的值
+_FIELD = re.compile(r"^([a-z_]+):[ \t]*(.*)$", re.MULTILINE)
 # 只擋路徑分隔符與控制字元。中文工作線名稱要能直接當檔名,不然
 # 全部會被濾成同一個 fallback,三條線互相覆蓋
 _UNSAFE = re.compile(r"[\x00-\x1f/\\:*?\"<>|]+")
