@@ -1,6 +1,6 @@
 {
   "name": "acg",
-  "version": "1.0.92",
+  "version": "1.0.93",
   "description": "Cross-AI CLI configuration manager and sync engine for Claude Code, Codex and Antigravity.",
   "author": {
     "name": "CSL426"
