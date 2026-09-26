@@ -3,6 +3,7 @@
 import builtins
 import ctypes
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -602,3 +603,30 @@ def test_update_is_not_followed_by_an_offer_to_update(
 
     assert cli.standalone_main() == 0
     assert bool(calls) is offered
+
+
+def test_standalone_usage_names_the_installed_command() -> None:
+    # paths 在 import 時就固定入口名稱;standalone_main 先 import update
+    # 的話,使用說明會印成 ./ai-config.sh。要用全新的直譯器才測得到
+    env = os.environ.copy()
+    env.pop("AI_CONFIG_ENTRYPOINT", None)
+    env["PYTHONPATH"] = str(Path(cli.__file__).resolve().parents[1])
+    env["PYTHONUTF8"] = "1"
+    script = (
+        "import sys; sys.argv = ['acg', 'memory', 'handoff', 'bogus']\n"
+        "from ai_config.cli import standalone_main\n"
+        "raise SystemExit(standalone_main())\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert "Usage: acg memory handoff" in output
+    assert "ai-config.sh" not in output and "ai-config.ps1" not in output

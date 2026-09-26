@@ -31,6 +31,18 @@ def _shared_table_stays_out_of_the_real_notebook(
 
 
 @pytest.fixture(autouse=True)
+def _entrypoint_name_does_not_leak(monkeypatch: pytest.MonkeyPatch) -> None:
+    """console_main and standalone_main write the name into os.environ.
+
+    A test calling them in-process left "acg" behind, and every later
+    subprocess test then printed acg where it expected ./ai-config.sh.
+    """
+    # setenv first so undo restores the variable to absent, not to ""
+    monkeypatch.setenv("AI_CONFIG_ENTRYPOINT", "")
+    monkeypatch.delenv("AI_CONFIG_ENTRYPOINT")
+
+
+@pytest.fixture(autouse=True)
 def _no_real_launcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Hooks and timers point at ~/.local/bin/ai-config when it exists.
 

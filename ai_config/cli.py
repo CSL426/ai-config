@@ -4,7 +4,9 @@ import sys
 _ENTRYPOINT_NAMES = {"ai-config", "acg"}
 
 
-def console_main() -> int:
+def _claim_entrypoint_name() -> None:
+    # paths.ENTRYPOINT is read once at import, so this must run before
+    # anything imports paths — otherwise usage says "./ai-config.sh".
     # argv[0] is only trustworthy when launched via an installed script;
     # pytest and `python -m ai_config` would otherwise leak "__main__.py".
     name = os.path.basename(sys.argv[0]) if sys.argv and sys.argv[0] else ""
@@ -12,6 +14,10 @@ def console_main() -> int:
     if name not in _ENTRYPOINT_NAMES:
         name = "ai-config"
     os.environ.setdefault("AI_CONFIG_ENTRYPOINT", name)
+
+
+def console_main() -> int:
+    _claim_entrypoint_name()
     from ai_config import __main__ as command
 
     command.ENTRYPOINT = os.environ["AI_CONFIG_ENTRYPOINT"]
@@ -114,6 +120,7 @@ def standalone_main() -> int:
     open when this process owns the console, since that console dies with
     the process and would take the output with it.
     """
+    _claim_entrypoint_name()
     if sys.argv[1:2] in (
         ["__git-credential"], ["__memory-project-entry"],
         ["__handoff-statusline"], ["__handoff-reminder"], ["__channel"],
