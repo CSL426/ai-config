@@ -176,7 +176,7 @@ function handoffReminderHint(state: MemoryInfo["handoff_reminder"]): string {
   if (state.enabled) {
     return `Context 用量達 ${state.threshold}% 時提醒交接。`;
   }
-  return "目前未啟用。預設門檻為 70%。";
+  return "目前未啟用。啟用共用記憶時會一併以 70% 開啟。";
 }
 
 function renderHandoffReminder(info: MemoryInfo): void {

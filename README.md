@@ -230,7 +230,8 @@ The plugin carries only commands. The `acg` skill itself arrives through
 ### Handoff reminders before context compaction
 
 Claude Code can remind you to record a handoff when its context usage reaches
-a chosen percentage. Enable it separately on each machine:
+a chosen percentage. `acg memory enable` turns it on at 70% on that machine
+(a threshold already chosen is kept) and `acg memory disable` removes it:
 
 ```bash
 acg memory handoff remind status
@@ -240,8 +241,8 @@ acg memory handoff remind disable
 ```
 
 The desktop memory page and `/acg:handoff remind status|enable [percentage]|disable`
-manage the same setting. The feature is off by default and is specific to
-Claude Code. It reads the official context percentage through a statusLine
+manage the same setting. `remind disable` turns it off while shared memory
+stays on. The feature is specific to Claude Code. It reads the official context percentage through a statusLine
 wrapper that preserves your existing status-line output. Settings and readings
 stay on this machine.
 

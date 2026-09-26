@@ -8,8 +8,10 @@ Claude Code context 接近滿載時，提醒目前 session 整理進度與下一
 提醒只注入提示；實際儲存仍使用既有 `memory handoff write` 或 `/acg:handoff`。
 不要求事先認領工作線，不推測目前應寫入哪一條工作線。
 
-功能預設停用，每台機器獨立選擇啟用。設定、session 讀值及提醒狀態留在本機，
-不進入共用資料庫。Codex、Antigravity 不安裝此提醒；一般記憶啟用不連帶開啟提醒。
+`acg memory enable` 會一併以 70% 開啟提醒(已設定的門檻保留),`acg memory disable`
+會一併移除;`remind disable` 可以只關提醒、保留共用記憶。每台機器各自設定,
+設定、session 讀值及提醒狀態留在本機，不進入共用資料庫。Codex、Antigravity 不安裝此提醒。
+提醒設定壞掉時只警告，不阻擋共用記憶啟用。
 
 ## 管理入口
 

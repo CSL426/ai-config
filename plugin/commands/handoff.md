@@ -23,7 +23,7 @@ acg memory handoff remind disable
 `remind` 未指定動作時查詢 `status`。`enable` 預設門檻 70%，可接受 1 到 99
 的整數。上面的 80 是指定門檻的範例，應使用使用者要求的數值。
 
-這是 Claude Code 專用、本機選擇啟用的功能。讀取官方 context 使用百分比，
+這是 Claude Code 專用的本機功能。`acg memory enable` 會一併以 70% 開啟(已設定的門檻保留),`acg memory disable` 會移除;只想關提醒就用 `remind disable`。讀取官方 context 使用百分比，
 保留既有 statusLine 輸出，在送出提示或工具完成時，到門檻只提醒一次；
 壓縮後重設。無讀值、null 或讀值過期時略過，不要求事先 claim 工作線。
 提醒不會自動寫入交接；PreCompact 只重設狀態，不要求模型寫交接，也不阻擋壓縮。
