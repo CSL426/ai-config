@@ -286,6 +286,24 @@ def test_a_note_with_windows_line_endings_still_loads(notebook: Path) -> None:
     assert notes[0].body == "內容"
 
 
+def test_an_empty_field_does_not_swallow_the_next_line(notebook: Path) -> None:
+    """A note written outside a session has "author:" with nothing after it.
+
+    The field pattern let whitespace cross the newline, so author read as
+    "created: <date>", and done() wrote that back as a corrupt header.
+    """
+    handoff.write("無人署名", "內容")
+    path = handoff.handoff_dir() / "無人署名.md"
+    _rewrite(path, lambda text: re.sub(r"author: .*\n", "author: \n", text))
+
+    handoff.done("無人署名")
+    note = handoff.load_all()[0]
+
+    assert note.author == ""
+    assert note.created.startswith("20")
+    assert "author: created:" not in path.read_text(encoding="utf-8")
+
+
 def test_free_text_is_still_accepted(notebook: Path) -> None:
     """The template is a suggestion; seven notes predate it."""
     note = handoff.write("舊式的", "就是一段話,沒有標題")
