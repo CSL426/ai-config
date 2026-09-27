@@ -19,7 +19,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from . import memory
+from . import memory_paths
 from .paths import CLAUDE_HOME, scheduled_command
 
 PREFIX = "acg："
@@ -57,7 +57,7 @@ MEMORY_ENTRY = register(Hook(
     command="__memory-project-entry",
     summary="開會話時修復專案日誌入口(記憶啟用時自動裝)",
     # 入口只認這台的資料庫路徑;少了它 hook 會安靜地什麼都不做
-    dynamic_args=lambda: (str(memory.SCRIPT_DIR),),
+    dynamic_args=lambda: (str(memory_paths.SCRIPT_DIR),),
 ))
 
 HANDOFF_REMINDER = register(Hook(
@@ -179,7 +179,7 @@ def settings_path():
 
 def read_settings() -> dict:
     path = settings_path()
-    memory.assert_plain_path(path, directory=False)
+    memory_paths.assert_plain_path(path, directory=False)
     if not path.exists():
         return {}
     document = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -261,7 +261,7 @@ def configure(hook: Hook, enabled: bool) -> bool:
                     raise ValueError(f"Claude {event} hooks 必須是陣列")  # noqa: TRY004
                 rows.append(copy.deepcopy(hook_entry(hook)))
         if result != document:
-            memory._write_text_atomic(
+            memory_paths._write_text_atomic(
                 settings_path(),
                 json.dumps(result, ensure_ascii=False, indent=2) + "\n",
             )

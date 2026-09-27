@@ -16,7 +16,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .memory import memory_dir
+from .memory_paths import memory_dir
 
 TABLE_DIR = "autopush-schedule"
 DEFAULT_HOUR = 4

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .memory import (
+from .memory_paths import (
     _read_text,
     _write_text_atomic,
     assert_plain_path,

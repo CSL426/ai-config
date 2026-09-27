@@ -4,6 +4,9 @@ import os
 import sys
 import time
 
+# 子指令認得的說明旗標;遇到就印用法、回傳 0
+HELP_FLAGS = frozenset({"--help", "-h"})
+
 
 def _configure_utf8_output() -> None:
     for stream in (sys.stdout, sys.stderr):

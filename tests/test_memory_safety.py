@@ -7,8 +7,9 @@ import pytest
 from test_apply_projection import run_ai_config, write
 from test_commands import make_full_repo
 
-from ai_config import memory
+from ai_config import memory_paths
 from ai_config.commands import memory as command
+from ai_config.commands import memory_lifecycle
 
 
 def symlink(link: Path, target: Path, *, directory: bool = False) -> None:
@@ -60,7 +61,7 @@ def test_backup_keeps_all_rule_versions_and_unique_snapshots(tmp_path):
     agy = home / ".gemini/config/rules/acg-memory.md"
     write(live, "Unique live rules\n")
     write(codex, "Unique Codex rules\n")
-    write(agy, memory.RULES_BLOCK + "Custom agy text\n")
+    write(agy, memory_paths.RULES_BLOCK + "Custom agy text\n")
     originals = {p: p.read_bytes() for p in (live, source, codex, agy)}
     assert run_ai_config(repo, home, "memory", "enable").returncode == 0
     snapshots = list((home / ".ai-config-backup").glob("memory-*/manifest.json"))
@@ -88,8 +89,8 @@ def test_codex_entry_installed_and_removed_without_losing_rules(tmp_path, shared
     source = repo / "codex/AGENTS.md"
     write(source, "Codex source\n")
     assert run_ai_config(repo, home, "memory", "enable").returncode == 0
-    assert memory.BLOCK_BEGIN in codex.read_text()
-    assert memory.BLOCK_BEGIN in source.read_text()
+    assert memory_paths.BLOCK_BEGIN in codex.read_text()
+    assert memory_paths.BLOCK_BEGIN in source.read_text()
     status = run_ai_config(repo, home, "memory", "status")
     assert "Codex 規則已安裝" in status.stdout
     assert run_ai_config(repo, home, "memory", "disable").returncode == 0
@@ -122,11 +123,11 @@ def isolated_memory(tmp_path, monkeypatch):
         "AGY_CONFIG_RULES": home / ".gemini/config/rules",
         "REMEMBER_USER_CONFIG": home / ".remember/config.json",
     }.items():
-        monkeypatch.setattr(memory, name, value)
-    monkeypatch.setattr(memory, "claude_source_dir", lambda: repo / "claude")
-    monkeypatch.setattr(command, "MEMORY_LINK", memory.MEMORY_LINK)
+        monkeypatch.setattr(memory_paths, name, value)
+    monkeypatch.setattr(memory_paths, "claude_source_dir", lambda: repo / "claude")
+    monkeypatch.setattr(memory_lifecycle, "MEMORY_LINK", memory_paths.MEMORY_LINK)
     backup = home / ".ai-config-backup"
-    monkeypatch.setattr(command, "BACKUP_BASE", backup)
+    monkeypatch.setattr(memory_lifecycle, "BACKUP_BASE", backup)
     from ai_config import locking
     monkeypatch.setattr(locking, "BACKUP_BASE", backup)
     return repo, home
@@ -141,12 +142,12 @@ def test_enable_failure_restores_rules_and_removes_new_link(isolated_memory, mon
     def fail():
         raise OSError("injected failure")
 
-    monkeypatch.setattr(memory, "install_agy_rules", fail)
+    monkeypatch.setattr(memory_paths, "install_agy_rules", fail)
     assert command.run_memory(["enable"]) == 1
     assert live.read_text() == "Original rules\n"
     assert (repo / "claude/CLAUDE.md").read_text() == "Source\n"
-    assert not memory.MEMORY_LINK.exists()
-    assert not memory.index_path().exists()
+    assert not memory_paths.MEMORY_LINK.exists()
+    assert not memory_paths.index_path().exists()
 
 
 def test_invalid_remember_json_preserved(tmp_path):
@@ -174,7 +175,7 @@ def test_a_new_file_is_not_born_private(tmp_path: Path) -> None:
         pytest.skip("POSIX permissions only")
 
     born = tmp_path / "new.md"
-    memory._write_text_atomic(born, "內容")
+    memory_paths._write_text_atomic(born, "內容")
 
     mode = stat.S_IMODE(born.stat().st_mode)
     expected = 0o666 & ~_current_umask()
@@ -193,7 +194,7 @@ def test_an_existing_files_mode_is_kept(tmp_path: Path) -> None:
     private.write_text("第一版", encoding="utf-8")
     private.chmod(0o600)
 
-    memory._write_text_atomic(private, "第二版")
+    memory_paths._write_text_atomic(private, "第二版")
 
     assert stat.S_IMODE(private.stat().st_mode) == 0o600
 

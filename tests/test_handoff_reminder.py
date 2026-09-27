@@ -9,9 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from ai_config import cli, locking, memory
+from ai_config import cli, locking, memory_paths
 from ai_config import handoff_reminder as remind
 from ai_config.commands import memory as command
+from ai_config.commands import memory_lifecycle
 from ai_config.tools.claude import (
     filter_claude_settings,
     merge_claude_settings,
@@ -24,9 +25,9 @@ def settings(tmp_path, monkeypatch):
     home = tmp_path / "claude"
     home.mkdir()
     backup = tmp_path / "backup"
-    monkeypatch.setattr(memory, "CLAUDE_HOME", home)
+    monkeypatch.setattr(memory_paths, "CLAUDE_HOME", home)
     monkeypatch.setattr(locking, "BACKUP_BASE", backup)
-    monkeypatch.setattr(command, "BACKUP_BASE", backup)
+    monkeypatch.setattr(memory_lifecycle, "BACKUP_BASE", backup)
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     path = home / "settings.json"
     path.write_text(json.dumps({
@@ -52,7 +53,7 @@ def test_install_restore_and_back_up_without_touching_other_hooks(settings):
     assert remind.without_settings(json.loads(installed)) == original
     remind.configure(False)
     assert json.loads(settings.read_text()) == original
-    assert len(list(command.BACKUP_BASE.glob("memory-*/manifest.json"))) == 2
+    assert len(list(memory_lifecycle.BACKUP_BASE.glob("memory-*/manifest.json"))) == 2
 
 
 def test_enable_without_display_and_disable_restores_absence(settings):
@@ -67,11 +68,11 @@ def test_failed_install_preserves_settings_and_backup(settings, monkeypatch):
     original = settings.read_bytes()
     def fail(*_args):
         raise OSError("write failed")
-    monkeypatch.setattr(memory, "_write_text_atomic", fail)
+    monkeypatch.setattr(memory_paths, "_write_text_atomic", fail)
     with pytest.raises(OSError, match="write failed"):
         remind.configure(True)
     assert settings.read_bytes() == original
-    assert len(list(command.BACKUP_BASE.glob("memory-*/manifest.json"))) == 1
+    assert len(list(memory_lifecycle.BACKUP_BASE.glob("memory-*/manifest.json"))) == 1
 
 
 def test_incomplete_hooks_report_and_repair(settings):
@@ -112,7 +113,7 @@ def test_reminder_once_across_hooks_and_transient_usage_then_compaction(settings
     assert remind.reminder(payload()) is None
     remind.record(payload(73), 70)
     assert remind.reminder(payload()) is not None
-    assert not (memory.CLAUDE_HOME / "shared-memory").exists()
+    assert not (memory_paths.CLAUDE_HOME / "shared-memory").exists()
 
 
 @pytest.mark.parametrize("used", [None, True, -1, 101, "75", float("nan"), float("inf")])
