@@ -843,7 +843,7 @@ def test_refused_clone_explains_private_repository_and_accounts(monkeypatch) -> 
     )
     monkeypatch.setattr(setup_git.shutil, "which", lambda name: "/usr/bin/gh")
     monkeypatch.setattr(
-        "ai_config.ghauth._logged_in_accounts", lambda: ("first", ["first", "second"])
+        "ai_config.ghauth_login._logged_in_accounts", lambda: ("first", ["first", "second"])
     )
     message = setup_git._explain_refused_clone(refused, "https://github.com/o/r.git")
     assert "私有" in message and "--account" in message

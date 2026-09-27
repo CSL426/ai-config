@@ -76,7 +76,8 @@ class GuiApi(ManagementApi):
         Called on demand rather than at window open: it shells out to gh
         and asks GitHub, which is too slow to sit in the startup path.
         """
-        from .ghauth import check_push_access, describe, device_login_available
+        from .ghauth_access import check_push_access, describe
+        from .ghauth_login import device_login_available
         from .paths import SCRIPT_DIR
 
         status = check_push_access(self._redacted_remote(), SCRIPT_DIR)
@@ -97,7 +98,7 @@ class GuiApi(ManagementApi):
         """Begin the device flow and open GitHub in the browser."""
         import webbrowser
 
-        from .ghauth import (
+        from .ghauth_login import (
             TERMINAL_LOGIN_HINT,
             GhAuthError,
             device_login_available,
@@ -134,7 +135,7 @@ class GuiApi(ManagementApi):
         import shlex
         import shutil
 
-        from .ghauth import login_command
+        from .ghauth_login import login_command
 
         if shutil.which("gh") is None:
             return {
@@ -186,13 +187,9 @@ class GuiApi(ManagementApi):
 
     def github_poll_login(self, device_code: str = "", interval: int = 5) -> dict:
         """One poll step; the page decides how long to keep waiting."""
-        from .ghauth import (
-            GhAuthError,
-            bind_account,
-            check_push_access,
-            poll_device_login,
-            store_token,
-        )
+        from .ghauth_access import check_push_access
+        from .ghauth_binding import bind_account
+        from .ghauth_login import GhAuthError, poll_device_login, store_token
         from .paths import SCRIPT_DIR
 
         if not isinstance(device_code, str) or not device_code:
@@ -226,7 +223,8 @@ class GuiApi(ManagementApi):
 
     def github_use_account(self, account: str = "") -> dict:
         """Bind an account gh already knows to the data repository."""
-        from .ghauth import bind_account, check_push_access
+        from .ghauth_access import check_push_access
+        from .ghauth_binding import bind_account
         from .paths import SCRIPT_DIR
 
         if not isinstance(account, str) or not account.strip():

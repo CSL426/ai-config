@@ -99,6 +99,8 @@ def _run_memory(args: list[str]) -> int:
         return memory_handoff._handoff(rest)
     log_error(USAGE)
     return 1
+
+
 _AUTOPUSH_USAGE = (
     f"Usage: {ENTRYPOINT} memory autopush [status | enable [時] | disable]"
 )
