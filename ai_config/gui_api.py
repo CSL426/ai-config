@@ -280,7 +280,7 @@ class GuiApi(ManagementApi):
 
         signed_in = False
         if provider == "gdrive":
-            from .gdrive import load_token
+            from .gdrive_auth import load_token
 
             signed_in = bool((load_token() or {}).get("access_token"))
 
@@ -405,7 +405,7 @@ class GuiApi(ManagementApi):
             configured_gdrive_space,
             configured_remote_provider,
         )
-        from .gdrive import run_oauth_flow
+        from .gdrive_auth import run_oauth_flow
         from .paths import CONFIG_ERROR
 
         if not self._lock.acquire(blocking=False):

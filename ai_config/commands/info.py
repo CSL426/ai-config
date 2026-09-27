@@ -75,7 +75,7 @@ def run_config_info() -> int:
         log_info(f"Branch: {branch}{upstream_text}")
 
     log_header("Google Drive")
-    from ..gdrive import (
+    from ..gdrive_auth import (
         GDRIVE_CLIENT_ID,
         GDriveAuthError,
         get_client_id,

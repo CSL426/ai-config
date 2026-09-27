@@ -104,7 +104,7 @@ def do_sync(tool: str) -> int:
 
     try:
         if configured_remote_provider() == "gdrive":
-            from ..gdrive import gdrive_pull
+            from ..gdrive_sync import gdrive_pull
 
             return gdrive_pull(SCRIPT_DIR, tool)
 

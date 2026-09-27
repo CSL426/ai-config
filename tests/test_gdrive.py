@@ -1,4 +1,4 @@
-"""Unit tests for Google Drive sync provider (ai_config/gdrive.py)."""
+"""Unit tests for the Google Drive sync provider (gdrive_auth, gdrive_client, gdrive_sync)."""
 
 import json
 import os
@@ -12,7 +12,8 @@ import pytest
 from push_helpers import patch_push
 
 from ai_config import push_preflight, push_publish
-from ai_config.commands.setup import SetupError, setup_gdrive_repository
+from ai_config.commands.setup_gdrive import setup_gdrive_repository
+from ai_config.commands.setup_git import SetupError
 from ai_config.config import (
     ConfigError,
     configured_gdrive_space,
@@ -22,23 +23,21 @@ from ai_config.config import (
     normalize_gdrive_space,
     save_data_repo,
 )
-from ai_config.gdrive import (
+from ai_config.gdrive_auth import (
     GDRIVE_CLIENT_ID,
     GDRIVE_CLIENT_SECRET,
     GDRIVE_SCOPE,
     GDriveAuthError,
-    GDriveClient,
     GDriveError,
     delete_token,
-    gdrive_pull,
-    gdrive_push_upload,
     generate_pkce,
     get_client_id,
     get_valid_access_token,
     load_token,
-    make_drive_request,
     save_token,
 )
+from ai_config.gdrive_client import GDriveClient, make_drive_request
+from ai_config.gdrive_sync import gdrive_pull, gdrive_push_upload
 from ai_config.paths import EXCLUDED_FILES
 
 
@@ -76,7 +75,7 @@ def test_client_secret_constant_is_empty_in_source() -> None:
 def test_refresh_includes_client_secret_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.gdrive import refresh_access_token
+    from ai_config.gdrive_auth import refresh_access_token
 
     monkeypatch.setenv("AI_CONFIG_GDRIVE_CLIENT_ID", "dummy-id")
     monkeypatch.setenv("AI_CONFIG_GDRIVE_CLIENT_SECRET", "dummy-secret")
@@ -227,7 +226,7 @@ def test_setup_gdrive_verification_flow(
         def get_folder_id(self) -> str:
             return "folder_abc"
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     setup_gdrive_repository(data_dir, " Backups / ai-config ")
 
@@ -269,7 +268,7 @@ def test_setup_gdrive_verification_failure_does_not_save_config(
         def verify_setup_access(self) -> None:
             raise GDriveError("Setup verification test failed")
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", FailingDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", FailingDriveClient)
 
     with pytest.raises(SetupError) as exc_info:
         setup_gdrive_repository(data_dir)
@@ -321,7 +320,7 @@ def test_gdrive_pull_empty_remote(
         def find_file(self, name: str) -> Any:
             return None
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     ret = gdrive_pull(repo_dir, "all")
     assert ret == 1
@@ -344,7 +343,7 @@ def test_gdrive_pull_already_up_to_date(
         def find_file(self, name: str) -> Any:
             return None
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     ret = gdrive_pull(repo_dir, "all")
     assert ret == 0
@@ -396,7 +395,7 @@ def test_gdrive_pull_fast_forwardable(
         def download_file_bytes(self, file_id: str) -> bytes:
             return bundle_bytes
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     ret = gdrive_pull(local_repo, "all")
     assert ret == 0
@@ -438,7 +437,7 @@ def test_gdrive_push_upload_success(
             uploaded["head_commit"] = commit_sha
             return {}
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     ret = gdrive_push_upload(repo_dir)
     assert ret == 0
@@ -458,7 +457,7 @@ def test_gdrive_push_upload_diverged(
         def get_head_info(self) -> Any:
             return {"commit": "0000000000000000000000000000000000000000"}
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     ret = gdrive_push_upload(repo_dir)
     assert ret == 1
@@ -540,7 +539,7 @@ def test_gdrive_pull_rejects_diverged_history(
         def download_file_bytes(self, file_id: str) -> bytes:
             return bundle.read_bytes()
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     assert gdrive_pull(local_repo, "all") == 1
     assert subprocess.run(
@@ -594,7 +593,7 @@ def test_gdrive_pull_rejects_bundle_head_mismatch(
         def download_file_bytes(self, file_id: str) -> bytes:
             return bundle.read_bytes()
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     assert gdrive_pull(local_repo, "all") == 1
     assert "does not match head.json" in capsys.readouterr().err
@@ -633,7 +632,7 @@ def test_gdrive_push_rechecks_uploaded_revision(
             head_updated = True
             return {}
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     assert gdrive_push_upload(repo_dir) == 1
     assert not head_updated
@@ -698,7 +697,7 @@ def test_drive_request_retries_403_three_times(
         return Response()
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
-    monkeypatch.setattr("ai_config.gdrive.time.sleep", lambda delay: None)
+    monkeypatch.setattr("ai_config.gdrive_client.time.sleep", lambda delay: None)
 
     status, _, _ = make_drive_request("https://example.invalid", environ=environ)
     assert status == 200
@@ -721,7 +720,7 @@ def test_gdrive_preflight_counts_commits_when_remote_is_empty(
         def get_head_info(self) -> Any:
             return None
 
-    monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
+    monkeypatch.setattr("ai_config.gdrive_client.GDriveClient", MockDriveClient)
 
     preflight = push_preflight._push_preflight(["claude"])
     assert preflight is not None
@@ -858,7 +857,7 @@ def test_gdrive_can_create_first_commit_in_unborn_repository(
     monkeypatch.setenv("AI_CONFIG_PROVIDER", "gdrive")
     patch_push(monkeypatch, "SCRIPT_DIR", repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
-    monkeypatch.setattr("ai_config.gdrive.gdrive_push_upload", lambda path: 0)
+    monkeypatch.setattr("ai_config.gdrive_sync.gdrive_push_upload", lambda path: 0)
     reviewed_diff = push_preflight._staged_diff()
     assert reviewed_diff is not None
 
@@ -905,7 +904,7 @@ def _drive_responder(
         calls.append((method, url, data))
         return 200, {}, handler(method, url, data)
 
-    monkeypatch.setattr("ai_config.gdrive.make_drive_request", fake_request)
+    monkeypatch.setattr("ai_config.gdrive_client.make_drive_request", fake_request)
     return calls
 
 
@@ -1062,7 +1061,11 @@ def test_normalize_gdrive_space() -> None:
 
 
 def test_scope_depends_on_space() -> None:
-    from ai_config.gdrive import SCOPE_HIDDEN, SCOPE_VISIBLE, scope_for_space
+    from ai_config.gdrive_auth import (
+        SCOPE_HIDDEN,
+        SCOPE_VISIBLE,
+        scope_for_space,
+    )
 
     assert scope_for_space("visible") == SCOPE_VISIBLE
     assert scope_for_space("hidden") == SCOPE_HIDDEN
@@ -1130,7 +1133,11 @@ def test_hidden_space_uploads_into_appdatafolder(
 def test_token_scope_check_follows_configured_space(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config.gdrive import SCOPE_HIDDEN, SCOPE_VISIBLE, token_has_scope
+    from ai_config.gdrive_auth import (
+        SCOPE_HIDDEN,
+        SCOPE_VISIBLE,
+        token_has_scope,
+    )
 
     environ = {
         "HOME": str(tmp_path),

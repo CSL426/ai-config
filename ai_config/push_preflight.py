@@ -146,7 +146,7 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
         return None
 
     if configured_remote_provider() == "gdrive":
-        from .gdrive import GDriveClient
+        from .gdrive_client import GDriveClient
 
         if branch.stdout.strip() != "main":
             log_error("Google Drive data repository must use the main branch.")
@@ -533,7 +533,7 @@ def _push_snapshot() -> "_PushSnapshot | None":
     branch_name = branch.stdout.strip()
 
     if configured_remote_provider() == "gdrive":
-        from .gdrive import GDriveClient
+        from .gdrive_client import GDriveClient
 
         if branch_name != "main":
             log_error("Google Drive data repository must use the main branch.")

@@ -77,7 +77,7 @@ def _push_existing_commits(selected: list[str], ahead: int) -> int:
         return 1
 
     if configured_remote_provider() == "gdrive":
-        from .gdrive import gdrive_push_upload
+        from .gdrive_sync import gdrive_push_upload
         return gdrive_push_upload(SCRIPT_DIR)
 
     push = _run_repo_git(
@@ -219,7 +219,7 @@ def _commit_and_push(
         print(commit_output)
 
     if configured_remote_provider() == "gdrive":
-        from .gdrive import gdrive_push_upload
+        from .gdrive_sync import gdrive_push_upload
         return gdrive_push_upload(SCRIPT_DIR)
 
     push = _run_repo_git("push")

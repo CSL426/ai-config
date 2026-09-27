@@ -32,7 +32,15 @@ CLI、GUI、Windows 原生行為與安全邊界不變。每一階段都要先搬
   `console.HELP_FLAGS`。
 - Phase 3 驗證：1183 tests 通過、12 個 skip；`rg` 確認沒有 `ai_config.memory`
   的舊引用。
-- Phase 4–5：尚未開始。
+- Phase 4 Setup 與 Google Drive：已完成。`gdrive.py` 已刪除，分成
+  `gdrive_auth.py`（OAuth PKCE、token）、`gdrive_client.py`（API 請求、資料夾）、
+  `gdrive_sync.py`（pull／push bundle）。`commands/setup.py` 縮成 CLI 入口，
+  實作分到 `commands/setup_git.py` 與 `commands/setup_gdrive.py`。release
+  workflow 注入 client ID 的目標改成 `gdrive_auth.py`，並新增
+  `test_release_injection.py`：workflow 用 sed 寫入的每個常數都必須在目標檔裡。
+  順手移除 workflow 裡早已失效的 GitHub client ID 注入（ffcea05 起改為寫死）。
+- Phase 4 驗證：1186 tests 通過（多 3 個注入檢查）、12 個 skip。
+- Phase 5：尚未開始。
 
 ## 不變的契約
 
