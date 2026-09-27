@@ -18,18 +18,18 @@ def _keepalive_state() -> dict:
     blank = {"installed": False, "times": [], "model": "", "ccs": "",
              "recent": [], "tools": {}, "window": None}
     try:
-        from . import keepalive
+        from . import keepalive_scheduler, keepalive_settings, keepalive_window
 
         tools = {}
-        for name in keepalive.TOOLS:
-            settings = keepalive.load(name)
-            tools[name] = {"installed": keepalive.installed(name),
+        for name in keepalive_settings.TOOLS:
+            settings = keepalive_settings.load(name)
+            tools[name] = {"installed": keepalive_scheduler.installed(name),
                            "times": list(settings.times),
-                           "recent": keepalive.last_runs(tool=name),
-                           "accounts": keepalive.last_by_account(name)}
-        first = tools[keepalive.DEFAULT_TOOL]
+                           "recent": keepalive_window.last_runs(tool=name),
+                           "accounts": keepalive_window.last_by_account(name)}
+        first = tools[keepalive_settings.DEFAULT_TOOL]
         return {"installed": first["installed"], "times": first["times"],
-                "model": keepalive.load().model, "ccs": keepalive.existing_ccs(),
+                "model": keepalive_settings.load().model, "ccs": keepalive_scheduler.existing_ccs(),
                 "recent": first["recent"], "tools": tools,
                 "window": _keepalive_window(first["times"])}
     except (ImportError, OSError, RuntimeError, ValueError):
@@ -40,15 +40,15 @@ def _keepalive_window(times) -> "dict | None":
     """The window Claude last reported, beside the time it should have started."""
     from datetime import datetime
 
-    from . import keepalive
+    from . import keepalive_window
 
-    window = keepalive.current_window()
+    window = keepalive_window.current_window()
     if window is None:
         return None
     start, reset = window
     now = datetime.now().astimezone()
     return {"start": f"{start:%H:%M}", "reset": f"{reset:%H:%M}",
-            "drift": keepalive.drift(start, tuple(times), now)}
+            "drift": keepalive_window.drift(start, tuple(times), now)}
 
 
 def _handoff_threads() -> list:
@@ -398,14 +398,17 @@ class ManagementApi:
         if not self._lock.acquire(blocking=False):
             return outcome(1, "另一個動作正在執行", "BUSY")
         try:
-            from . import keepalive
+            from . import (
+                keepalive_scheduler,
+                keepalive_settings,
+            )
 
-            which = tool if isinstance(tool, str) and tool else keepalive.DEFAULT_TOOL
+            which = tool if isinstance(tool, str) and tool else keepalive_settings.DEFAULT_TOOL
             if not wanted:
-                code, lines = keepalive.disable(which)
+                code, lines = keepalive_scheduler.disable(which)
             else:
                 chosen = tuple(times) if isinstance(times, list) else ()
-                code, lines = keepalive.enable(chosen, tool=which)
+                code, lines = keepalive_scheduler.enable(chosen, tool=which)
             message = "\n".join(lines)
             if code != 0:
                 return {**outcome(code, message, "KEEPALIVE_REFUSED"),
