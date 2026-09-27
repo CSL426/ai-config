@@ -274,3 +274,16 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   .aside-art { width: min(100%, 12rem); }
   .workflow-guard img { width: 8rem; }
 }
+
+/* 迷因彩蛋小貼紙:跨在卡片的角上、一半在外面,像真的貼上去,也不會蓋到卡片內容 */
+.meme-sticker { position: absolute; z-index: 2; transform: rotate(var(--rot, 0deg)); transition: transform var(--dur-short) var(--ease-out); }
+.meme-sticker.at-br { right: -1.25rem; bottom: -1.25rem; }
+.meme-sticker.at-tr { right: -1.25rem; top: -1.5rem; }
+.meme-sticker:hover { transform: scale(1.15) rotate(var(--rot, 0deg)); }
+.meme-sticker img { display: block; width: auto; height: clamp(3rem, 7vw, 5rem); filter: drop-shadow(0 0.15rem 0.35rem rgba(18, 23, 27, 0.16)); }
+@media (max-width: 52rem) {
+  /* 手機兩側只有 1rem 留白,往外凸太多會被切掉 */
+  .meme-sticker.at-br { right: -0.5rem; bottom: -0.9rem; }
+  .meme-sticker.at-tr { right: -0.5rem; top: -1rem; }
+  .meme-sticker img { height: clamp(2.4rem, 8vw, 3.8rem); }
+}
