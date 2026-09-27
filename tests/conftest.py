@@ -1,6 +1,8 @@
 """Make the in-repo ai_config package importable regardless of whether (or
 how) ai-config is installed — tests must not depend on a pip/pipx install."""
 
+import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +12,46 @@ if str(REPO_ROOT) not in sys.path:
 
 
 import pytest
+
+# 在任何 fixture 改 HOME 之前就記下真的位置
+_REAL_SETTINGS = (
+    Path(os.environ.get("HOME", str(Path.home()))) / ".claude" / "settings.json"
+)
+
+
+def _settings_fingerprint() -> "str | None":
+    try:
+        return hashlib.sha256(_REAL_SETTINGS.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    session.config.stash[_SETTINGS_KEY] = _settings_fingerprint()
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Fail the run if it rewrote this machine's real Claude settings.
+
+    The fixtures below redirect the modules they know about, but a module
+    that binds CLAUDE_HOME at import, or a subprocess that inherits HOME,
+    slips past them. On 2026-09-24 that pointed every hook at a pytest
+    temp directory and nothing failed; this turns it into a red run.
+    """
+    before = session.config.stash.get(_SETTINGS_KEY, None)
+    if _settings_fingerprint() == before:
+        return
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    message = (
+        f"this test run changed the real {_REAL_SETTINGS}; "
+        "a test is writing outside its temporary home"
+    )
+    if reporter is not None:
+        reporter.write_line(f"ERROR: {message}", red=True, bold=True)
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+_SETTINGS_KEY = pytest.StashKey["str | None"]()
 
 
 @pytest.fixture(autouse=True)
