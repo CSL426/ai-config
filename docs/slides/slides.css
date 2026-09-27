@@ -239,6 +239,10 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 /* 記憶：三個機器人共讀，放在文字欄底下當輔助插圖 */
 .aside-art { display: block; width: min(100%, 17rem); height: auto; margin-top: var(--space-xs); }
 
+/* 收尾：機器人謝幕；高度跟著視窗走，手機上才不會把整頁撐出捲軸 */
+.close-art { margin: 0 0 var(--space-sm); }
+.close-art img { display: block; width: auto; height: clamp(6rem, 24dvh, 13rem); margin-inline: auto; }
+
 /* 收尾：整份的最後一句 */
 .close-line { margin-top: var(--space-md); color: var(--color-ink); font-size: var(--text-md); font-weight: 700; line-height: 1.3; text-wrap: balance; }
 
@@ -259,6 +263,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   .workflow-guard img { width: clamp(8rem, 36vw, 10rem); }
   .workflow-guard .workflow-note { text-align: center; }
   .aside-art { width: min(100%, 13rem); margin-inline: auto; }
+  .close-art img { height: clamp(5rem, 15dvh, 8rem); }
 }
 @media (max-width: 34rem) {
   /* 手機寬度下表格已經要捲動，輔助插圖先讓位給表格 */
