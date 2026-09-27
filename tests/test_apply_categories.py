@@ -122,7 +122,7 @@ def test_malformed_memory_aborts_before_any_tool_write(checkout, broken):
 
 def test_memory_merge_preserves_unrelated_raw_bytes():
     """Bytes around the block stay as they were; the block takes live's line endings."""
-    from ai_config.memory import RULES_BLOCK
+    from ai_config.memory_paths import RULES_BLOCK
 
     block = BLOCK.encode()
     source = b"\xef\xbb\xbfnew\r\n" + block + b"\r\nafter\r\n"

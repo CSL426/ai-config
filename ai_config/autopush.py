@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .console import log_info
-from .memory import memory_dir
+from .memory_paths import memory_dir
 from .paths import HOME, SCRIPT_DIR, WINDOWS_MODE
 from .subproc import NATIVE, UTF8
 from .systemd_timer import forget_missed_runs

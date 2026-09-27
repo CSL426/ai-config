@@ -8,7 +8,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import memory, memory_hooks
+from . import memory_hooks, memory_index, memory_journal, memory_paths
 
 ACTIONS = frozenset({"enable", "disable", "adopt", "release"})
 
@@ -89,7 +89,7 @@ def _text_change(
     target: Path | None = None,
 ) -> None:
     actual = target or path
-    current = memory._read_text(actual) if actual.exists() else None
+    current = memory_paths._read_text(actual) if actual.exists() else None
     if current == updated:
         return
     operation = (
@@ -107,8 +107,8 @@ def _text_change(
 
 
 def _ignore_change(result: MemoryPlan) -> None:
-    path = memory.memory_dir() / ".gitignore"
-    current = memory._read_text(path)
+    path = memory_paths.memory_dir() / ".gitignore"
+    current = memory_paths._read_text(path)
     lines = [line for line in current.splitlines() if line != "journal/"]
     if "/journal/" not in lines:
         lines.append("/journal/")
@@ -116,20 +116,20 @@ def _ignore_change(result: MemoryPlan) -> None:
 
 
 def _index_and_link(result: MemoryPlan) -> None:
-    if not memory.index_path().is_file():
+    if not memory_paths.index_path().is_file():
         _text_change(
-            result, memory.index_path(), memory.INDEX_TEMPLATE, "建立共用記憶索引"
+            result, memory_paths.index_path(), memory_index.INDEX_TEMPLATE, "建立共用記憶索引"
         )
-        topics = memory.memory_dir() / memory.TOPICS_NAME
+        topics = memory_paths.memory_dir() / memory_paths.TOPICS_NAME
         if not topics.exists():
             result.change("mkdir", topics, "建立全域主題目錄")
-    if memory.link_state()[0] == "missing":
+    if memory_paths.link_state()[0] == "missing":
         result.change(
             "link",
-            memory.MEMORY_LINK,
+            memory_paths.MEMORY_LINK,
             "三個工具共用的記憶入口",
-            source=memory.memory_dir(),
-            target=memory.memory_dir(),
+            source=memory_paths.memory_dir(),
+            target=memory_paths.memory_dir(),
             shared=True,
         )
 
@@ -137,8 +137,8 @@ def _index_and_link(result: MemoryPlan) -> None:
 def _journal_config(result: MemoryPlan, *, remove: bool = False) -> None:
     import json
 
-    state, _value = memory.journal_config_state()
-    config = memory._read_user_config() or {}
+    state, _value = memory_journal.journal_config_state()
+    config = memory_paths._read_user_config() or {}
     if remove:
         if state != "ours":
             return
@@ -149,11 +149,11 @@ def _journal_config(result: MemoryPlan, *, remove: bool = False) -> None:
     else:
         if state == "ours":
             return
-        config["data_dir"] = memory.JOURNAL_TEMPLATE
+        config["data_dir"] = memory_journal.JOURNAL_TEMPLATE
         updated = json.dumps(config, ensure_ascii=False, indent=2) + "\n"
     _text_change(
         result,
-        memory.REMEMBER_USER_CONFIG,
+        memory_paths.REMEMBER_USER_CONFIG,
         updated,
         "更新 remember data_dir",
         tool="claude",
@@ -161,20 +161,20 @@ def _journal_config(result: MemoryPlan, *, remove: bool = False) -> None:
 
 
 def _rules(result: MemoryPlan, *, enabling: bool) -> None:
-    for path in [*memory.instruction_paths(), memory.agy_rules_path()]:
-        target = memory.rules_target(path)
-        current = memory._read_text(target)
+    for path in [*memory_paths.instruction_paths(), memory_paths.agy_rules_path()]:
+        target = memory_paths.rules_target(path)
+        current = memory_paths._read_text(target)
         if enabling:
-            updated = memory.with_block(current)
-        elif not memory.has_block(current):
+            updated = memory_paths.with_block(current)
+        elif not memory_paths.has_block(current):
             continue
         else:
-            updated = memory.without_block(current)
-            if path == memory.agy_rules_path() and not updated.strip():
+            updated = memory_paths.without_block(current)
+            if path == memory_paths.agy_rules_path() and not updated.strip():
                 updated = None
         tool = (
             "agy"
-            if path == memory.agy_rules_path()
+            if path == memory_paths.agy_rules_path()
             else "codex"
             if path.name == "AGENTS.md"
             else "claude"
@@ -182,7 +182,7 @@ def _rules(result: MemoryPlan, *, enabling: bool) -> None:
         reason = "安裝 acg 管理規則" if enabling else "移除 acg 管理規則，保留其他內容"
         if target != path:
             reason += "；此檔案亦由 Claude 使用"
-        if path.is_relative_to(memory.SCRIPT_DIR):
+        if path.is_relative_to(memory_paths.SCRIPT_DIR):
             reason += "；修改資料來源，不包含在 memory push"
         _text_change(result, path, updated, reason, tool=tool, target=target)
 
@@ -190,14 +190,14 @@ def _rules(result: MemoryPlan, *, enabling: bool) -> None:
 def _journal(result: MemoryPlan) -> None:
     assert result.project is not None
     root = result.project
-    link = memory.journal_link(root)
-    target = memory.project_journal_dir(memory.project_key(root))
-    legacy = memory.legacy_journal_dir(root)
+    link = memory_journal.journal_link(root)
+    target = memory_journal.project_journal_dir(memory_paths.project_key(root))
+    legacy = memory_journal.legacy_journal_dir(root)
     result.relevant_paths.extend(p for p in (link, target, legacy) if p is not None)
-    state, detail = memory.journal_state(root)
+    state, detail = memory_journal.journal_state(root)
     if state == "foreign":
         raise RuntimeError(f"日誌連結已指向別處:{detail}")
-    memory._check_journal_tree(target)
+    memory_journal._check_journal_tree(target)
     if result.action == "release":
         if state != "adopted":
             return
@@ -220,10 +220,10 @@ def _journal(result: MemoryPlan) -> None:
         # 已收編:只剩專案內的 .remember 入口可能要補
         _entry_changes(result, root, target)
         return
-    memory._check_journal_tree(link)
-    migrate = memory._is_legacy_journal(legacy)
+    memory_journal._check_journal_tree(link)
+    migrate = memory_journal._is_legacy_journal(legacy)
     if migrate:
-        memory._check_journal_tree(legacy)
+        memory_journal._check_journal_tree(legacy)
     if not target.exists():
         result.change("mkdir", target, "建立可同步的專案日誌")
     # Track virtual destinations so later sources get exactly the same collision
@@ -243,7 +243,7 @@ def _journal(result: MemoryPlan) -> None:
         sources.append(legacy)
     for source in sources:
         for entry in sorted(source.iterdir()):
-            if source == legacy and entry.name in (".gitignore", memory.MIGRATED_NOTE):
+            if source == legacy and entry.name in (".gitignore", memory_journal.MIGRATED_NOTE):
                 continue
             dest = destination(entry.name, source.parent.name)
             occupied[dest.name] = entry
@@ -261,7 +261,7 @@ def _journal(result: MemoryPlan) -> None:
     prior_ignore = occupied.get(".gitignore")
     if (
         prior_ignore is not None
-        and prior_ignore.read_bytes() != memory.JOURNAL_GITIGNORE.encode()
+        and prior_ignore.read_bytes() != memory_journal.JOURNAL_GITIGNORE.encode()
     ):
         dest = destination(".gitignore", "journal")
         result.change("move", dest, "保留原日誌忽略設定", source=ignore)
@@ -270,7 +270,7 @@ def _journal(result: MemoryPlan) -> None:
         result.change("add", ignore, "寫入日誌同步忽略設定")
     _ignore_change(result)
     if migrate:
-        note = legacy / memory.MIGRATED_NOTE
+        note = legacy / memory_journal.MIGRATED_NOTE
         text = f"Memory data migrated to:\n  {target}\nThis directory is now empty; you may delete it.\n"
         _text_change(result, note, text, "記錄舊日誌搬移目的地")
     result.change(
@@ -287,11 +287,11 @@ def _entry_changes(
     result: MemoryPlan, root: Path, target: Path, *, migrating: bool = False
 ) -> None:
     """<project>/.remember becomes a link to the journal shown to people."""
-    entry = memory.project_entry(root)
+    entry = memory_journal.project_entry(root)
     if entry is None:
         return
     result.relevant_paths.append(entry)
-    state, detail = memory.project_entry_state(root, target)
+    state, detail = memory_journal.project_entry_state(root, target)
     if state == "ok":
         return
     if state == "foreign":
@@ -300,14 +300,14 @@ def _entry_changes(
     if state == "stale":
         result.change("unlink", entry, "移除舊的 .remember 連結", target=Path(detail))
     elif state == "plain":
-        leftovers = [] if migrating else memory._entry_leftovers(entry)
+        leftovers = [] if migrating else memory_journal._entry_leftovers(entry)
         if leftovers:
             raise RuntimeError(
                 ".remember 仍有未搬移的內容:" + ", ".join(p.name for p in leftovers[:5])
             )
         result.change("rmdir", entry, "移除只剩搬移通知的 .remember 目錄")
     result.change("link", entry, "專案內直接看到日誌", source=target, target=target)
-    exclude = memory.project_git_exclude(root)
+    exclude = memory_journal.project_git_exclude(root)
     if exclude is not None:
         path, text = exclude
         _text_change(result, path, text, "專案的 git 不再列出 .remember")
@@ -320,43 +320,43 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
     if action in {"adopt", "release"}:
         if project is None:
             raise ValueError("adopt/release requires an explicit project path")
-        memory.assert_plain_path(project, directory=True)
+        memory_paths.assert_plain_path(project, directory=True)
         if not project.is_dir():
             raise ValueError(f"Project directory does not exist: {project}")
-        project = memory.project_root(project)
-        memory.assert_plain_path(project, directory=True)
+        project = memory_paths.project_root(project)
+        memory_paths.assert_plain_path(project, directory=True)
     elif project is not None:
         raise ValueError("enable/disable does not accept a project")
-    memory.preflight_memory()
-    memory.preflight_rules(enabling=action == "enable")
-    state, detail = memory.link_state()
+    memory_paths.preflight_memory()
+    memory_paths.preflight_rules(enabling=action == "enable")
+    state, detail = memory_paths.link_state()
     if state not in {"ok", "missing"}:
         raise RuntimeError(f"共用記憶連結衝突:{detail}")
-    config_state, config_value = memory.journal_config_state()
+    config_state, config_value = memory_journal.journal_config_state()
     if action in {"enable", "adopt"} and config_state == "other":
         raise RuntimeError(f"remember 的 data_dir 已另外設定為 {config_value}")
     result = MemoryPlan(action, project)
-    result.relevant_values = {"remember_installed": memory.remember_installed()}
+    result.relevant_values = {"remember_installed": memory_journal.remember_installed()}
     result.relevant_paths = [
-        memory.memory_dir(),
-        memory.MEMORY_LINK,
-        *memory.instruction_paths(),
-        memory.source_rules_path(),
-        memory.SCRIPT_DIR / "codex" / "AGENTS.md",
-        memory.agy_rules_path(),
-        memory.codex_override_path(),
-        memory.REMEMBER_USER_CONFIG,
+        memory_paths.memory_dir(),
+        memory_paths.MEMORY_LINK,
+        *memory_paths.instruction_paths(),
+        memory_paths.source_rules_path(),
+        memory_paths.SCRIPT_DIR / "codex" / "AGENTS.md",
+        memory_paths.agy_rules_path(),
+        memory_paths.codex_override_path(),
+        memory_paths.REMEMBER_USER_CONFIG,
     ]
     if action in {"enable", "disable"}:
         result.relevant_paths.append(memory_hooks.settings_path())
     result.relevant_paths.extend(
-        memory.rules_target(path) for path in memory.instruction_paths()
+        memory_paths.rules_target(path) for path in memory_paths.instruction_paths()
     )
     if action == "enable":
         _index_and_link(result)
         _rules(result, enabling=True)
         _ignore_change(result)
-        if memory.remember_installed():
+        if memory_journal.remember_installed():
             _journal_config(result)
             _settings_change(
                 result, memory_hooks.settings_text(enabling=True), enabling=True,
@@ -365,14 +365,14 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
         else:
             result.warnings.append("remember 未安裝；不變更日誌設定，也不安裝外掛。")
             path = memory_hooks.settings_path()
-            current = memory._read_text(path) if path.exists() else None
+            current = memory_paths._read_text(path) if path.exists() else None
             _settings_change(result, current, enabling=True, reason="")
         result.warnings.append(
             "規則已安裝後，請開新會話驗證；agy CLI 載入仍須實際驗收。"
         )
-        if memory.codex_override_path().is_file():
+        if memory_paths.codex_override_path().is_file():
             result.warnings.append("AGENTS.override.md 會遮蔽 Codex 的共用規則。")
-        if not memory.source_rules_path().is_file():
+        if not memory_paths.source_rules_path().is_file():
             result.warnings.append("資料庫沒有 claude/CLAUDE.md，無法同步該規則來源。")
     elif action == "disable":
         _settings_change(
@@ -383,21 +383,21 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
         if state == "ok":
             result.change(
                 "unlink",
-                memory.MEMORY_LINK,
+                memory_paths.MEMORY_LINK,
                 "移除共用入口，保留資料",
-                target=memory.memory_dir(),
+                target=memory_paths.memory_dir(),
                 shared=True,
             )
         _journal_config(result, remove=True)
         result.warnings.append("記憶內容保留；已搬移的日誌不搬回本機。")
     else:
         if action == "adopt":
-            if not memory.remember_installed():
+            if not memory_journal.remember_installed():
                 raise RuntimeError("找不到 remember plugin，無法接管日誌")
             _index_and_link(result)
             _journal_config(result)
         _journal(result)
-        if project is not None and not memory.project_key(project).stable:
+        if project is not None and not memory_paths.project_key(project).stable:
             result.warnings.append("專案鍵值依本機目錄名稱，跨機器一致性未保證。")
     result.relevant_paths = list(dict.fromkeys(result.relevant_paths))
     return result

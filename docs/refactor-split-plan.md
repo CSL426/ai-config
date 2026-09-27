@@ -22,7 +22,17 @@ CLI、GUI、Windows 原生行為與安全邊界不變。每一階段都要先搬
 - Phase 2 驗證：1183 tests 通過、12 個 skip，與拆分前相同；`ruff`、
   `bash -n install.sh`、`git diff --check` 通過；`rg` 確認沒有對
   `commands.push` 私有函式的舊引用。
-- Phase 3–5：尚未開始。
+- Phase 3 Memory：已完成。`ai_config/memory.py` 已刪除，分成 `memory_paths.py`
+  （路徑、規則區塊、預檢與檔案寫入）、`memory_journal.py`（remember 日誌、
+  adopt／release、專案入口）、`memory_index.py`（索引、drift、secret、status
+  掃描）。會被測試替換的常數（`CLAUDE_HOME`、`SCRIPT_DIR`、`HOME` 等）只由
+  `memory_paths` 擁有，其他模組以 `memory_paths.X` 在呼叫時讀取，所以替換一處
+  就生效。`commands/memory.py` 縮成 158 行的 dispatcher，實作分到
+  `commands/memory_lifecycle.py` 與 `commands/memory_handoff.py`；說明旗標集中為
+  `console.HELP_FLAGS`。
+- Phase 3 驗證：1183 tests 通過、12 個 skip；`rg` 確認沒有 `ai_config.memory`
+  的舊引用。
+- Phase 4–5：尚未開始。
 
 ## 不變的契約
 

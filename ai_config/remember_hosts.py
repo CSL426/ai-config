@@ -23,7 +23,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import memory
+from . import memory_journal, memory_paths
 from .paths import CODEX_HOME, HOME
 
 CODEX_MARKETPLACE_REPO = "Digital-Process-Tools/claude-remember"
@@ -68,7 +68,7 @@ def _newest_version_dir(root: Path) -> "Path | None":
 
 def claude_plugin_root() -> "Path | None":
     """Claude Code's installed remember, the scripts Antigravity is pointed at."""
-    return _newest_version_dir(memory.REMEMBER_PLUGIN_CACHE)
+    return _newest_version_dir(memory_journal.REMEMBER_PLUGIN_CACHE)
 
 
 # --- Codex ---------------------------------------------------------------
@@ -243,9 +243,9 @@ def _load_agy_hooks() -> dict:
 
 
 def _write_agy_hooks(data: dict) -> None:
-    memory.assert_plain_path(AGY_HOOKS, directory=False)
+    memory_paths.assert_plain_path(AGY_HOOKS, directory=False)
     AGY_HOOKS.parent.mkdir(parents=True, exist_ok=True)
-    memory._write_text_atomic(
+    memory_paths._write_text_atomic(
         AGY_HOOKS, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     )
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_config import memory
+from ai_config import memory_journal
 from ai_config import remember_hosts as hosts
 
 
@@ -16,7 +16,7 @@ def homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(hosts, "CODEX_HOME", codex)
     monkeypatch.setattr(hosts, "AGY_HOOKS", tmp_path / ".gemini" / "config" / "hooks.json")
     cache = tmp_path / "claude-cache" / "remember"
-    monkeypatch.setattr(memory, "REMEMBER_PLUGIN_CACHE", cache)
+    monkeypatch.setattr(memory_journal, "REMEMBER_PLUGIN_CACHE", cache)
     # CI 上沒有 codex / agy 指令;測試談的是 acg 的行為,不是那台有什麼
     monkeypatch.setattr(hosts, "available", lambda host: True)
     monkeypatch.setattr(hosts, "_codex_has_plugins", lambda: True)
@@ -123,14 +123,14 @@ def test_agy_install_keeps_other_plugins_and_remove_leaves_them(homes: Path) -> 
 
 def test_agy_entry_points_at_missing_scripts_is_reported(homes: Path) -> None:
     hosts.install_agy()
-    for script in (memory.REMEMBER_PLUGIN_CACHE / "0.32.0" / "scripts").iterdir():
+    for script in (memory_journal.REMEMBER_PLUGIN_CACHE / "0.32.0" / "scripts").iterdir():
         script.unlink()
     state = hosts.agy_state()
     assert state.installed is True and "腳本不存在" in state.detail
 
 
 def test_agy_without_claude_remember_cannot_install(homes: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(memory, "REMEMBER_PLUGIN_CACHE", homes / "nowhere")
+    monkeypatch.setattr(memory_journal, "REMEMBER_PLUGIN_CACHE", homes / "nowhere")
     with pytest.raises(RuntimeError, match="沒有 remember plugin"):
         hosts.install_agy()
 
@@ -145,11 +145,11 @@ def test_corrupt_agy_hooks_file_is_never_overwritten(homes: Path) -> None:
 
 
 def test_status_reports_each_host(homes: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from ai_config.commands import memory as command
+    from ai_config.commands import memory_lifecycle
 
     _codex_cache(homes, "0.33.0")
     _codex_config(homes, '[plugins."remember@remember-dev"]\nenabled = true\n')
-    command._report_hosts()
+    memory_lifecycle._report_hosts()
     out = capsys.readouterr().out
     assert "Codex 已裝 remember 0.33.0" in out and "/hooks" in out
     assert "Antigravity 尚未裝 remember" in out
@@ -168,9 +168,10 @@ def test_hosts_without_the_cli_are_neither_reported_nor_offered(
     homes: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     from ai_config.commands import memory as command
+    from ai_config.commands import memory_lifecycle
 
     monkeypatch.setattr(hosts, "available", lambda host: host != "agy")
-    command._report_hosts()
+    memory_lifecycle._report_hosts()
     out = capsys.readouterr().out
     assert "Codex" in out and "Antigravity" not in out
     assert command.run_memory(["enable", "agy"]) == 1

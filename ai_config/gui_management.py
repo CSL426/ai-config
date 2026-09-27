@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import memory, paths, review
+from . import memory_index, memory_journal, memory_paths, paths, review
 from .applyplan import StalePreview
 from .locking import apply_lock
 
@@ -170,8 +170,8 @@ class ManagementApi:
         expected, root, key, repository = self._project
         if (not secrets.compare_digest(token, expected)
                 or str(paths.SCRIPT_DIR) != repository or not root.is_dir()
-                or memory.project_root(root) != root
-                or memory.project_key(root) != key):
+                or memory_paths.project_root(root) != root
+                or memory_paths.project_key(root) != key):
             raise StalePreview("專案位置或遠端已變動，請重新選擇")
         return root
 
@@ -207,8 +207,8 @@ class ManagementApi:
             chosen = Path(selected[0]).resolve(strict=True)
             if not chosen.is_dir():
                 raise ValueError("請選擇專案資料夾")
-            root = memory.project_root(chosen)
-            key = memory.project_key(root)
+            root = memory_paths.project_root(chosen)
+            key = memory_paths.project_key(root)
             token = secrets.token_urlsafe(24)
             self._discard_previews()
             self._project = (token, root, key, str(paths.SCRIPT_DIR))
@@ -276,12 +276,12 @@ class ManagementApi:
             if paths.CONFIG_ERROR or not (paths.SCRIPT_DIR / "claude").is_dir():
                 return {**empty, **outcome(1, "請先設定資料庫", "NOT_CONFIGURED")}
             project = self._project_path(project_token) if project_token is not None else None
-            state = memory.inspect(project or paths.HOME)
+            state = memory_index.inspect(project or paths.HOME)
             entries = []
-            for tool, path in (("claude", memory.live_rules_path()),
-                               ("codex", memory.codex_rules_path()),
-                               ("agy", memory.agy_rules_path())):
-                entry = memory.entry_status(path)
+            for tool, path in (("claude", memory_paths.live_rules_path()),
+                               ("codex", memory_paths.codex_rules_path()),
+                               ("agy", memory_paths.agy_rules_path())):
+                entry = memory_index.entry_status(path)
                 entries.append({"tool": tool, "path": str(path),
                                 "status": entry["status"], "reason": entry["reason"],
                                 "cli_installed": bool(shutil.which(tool))})
@@ -305,7 +305,7 @@ class ManagementApi:
             candidates = [("全域記憶", state.directory)]
             if project is not None:
                 candidates += [("專案記憶", state.project_dir),
-                               ("專案日誌", memory.project_journal_dir(state.project))]
+                               ("專案日誌", memory_journal.project_journal_dir(state.project))]
             for label, location in candidates:
                 token = secrets.token_urlsafe(24)
                 self._locations[token] = (location, str(paths.SCRIPT_DIR), project_token)
@@ -325,7 +325,7 @@ class ManagementApi:
                     "locations": locations,
                     "project": {"root": str(project), "key": state.project.key,
                                 "stable": state.project.stable, "memory_path": str(state.project_dir),
-                                "journal_path": str(memory.project_journal_dir(state.project)),
+                                "journal_path": str(memory_journal.project_journal_dir(state.project)),
                                 "journal_status": state.journal, "remember_installed": state.remember}
                     if project else None}
         except (OSError, RuntimeError, ValueError) as exc:
@@ -454,7 +454,7 @@ class ManagementApi:
                 raise StalePreview("資料庫已切換，請重新整理")
             if project_token is not None:
                 self._project_path(project_token)
-            memory.assert_plain_path(location, directory=True)
+            memory_paths.assert_plain_path(location, directory=True)
             if not location.is_dir():
                 raise FileNotFoundError(f"尚未建立資料夾：{location}")
             command = "explorer" if sys.platform == "win32" else "open" if sys.platform == "darwin" else "xdg-open"
@@ -494,7 +494,7 @@ class ManagementApi:
                             raise ValueError("此操作不接受專案參數")
                         project = None
                     candidate = plan(action, project)
-                    scope = {"action": action, "project_key": memory.project_key(project).key if project else None}
+                    scope = {"action": action, "project_key": memory_paths.project_key(project).key if project else None}
                     identity = review.fingerprint(candidate.relevant_paths,
                                                   [candidate.relevant_values, review.git_state(paths.SCRIPT_DIR)])
             if not candidate.changes:
@@ -543,7 +543,7 @@ class ManagementApi:
 
                     backup = execute(candidate)
                     return outcome(output="套用完成", backup=backup)
-                from .commands.memory import execute
+                from .commands.memory_lifecycle import execute
                 from .memory_plan import plan
 
                 fresh = plan(candidate.action, candidate.project)

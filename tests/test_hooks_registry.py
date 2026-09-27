@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_config import hooks
+from ai_config import hooks, memory_paths
 from ai_config.commands.hooks import run_hooks
 from ai_config.tools.claude import filter_claude_settings, merge_claude_settings
 
@@ -16,7 +16,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     claude = tmp_path / ".claude"
     claude.mkdir()
     monkeypatch.setattr(hooks, "CLAUDE_HOME", claude)
-    monkeypatch.setattr(hooks.memory, "CLAUDE_HOME", claude)
+    monkeypatch.setattr(memory_paths, "CLAUDE_HOME", claude)
     return claude
 
 
@@ -147,17 +147,17 @@ def test_refresh_leaves_a_correct_memory_entry_alone(
 
 
 def test_the_memory_entry_carries_the_data_directory(home: Path) -> None:
-    from ai_config import memory
+    from ai_config import memory_paths
 
     hooks.configure(hooks.MEMORY_ENTRY, True)
 
     entry = _settings(home)["hooks"]["SessionStart"][0]["hooks"][0]
     # 入口只認這台的資料庫路徑;少了它 hook 什麼都不做
-    assert entry["args"][-2:] == ["__memory-project-entry", str(memory.SCRIPT_DIR)]
+    assert entry["args"][-2:] == ["__memory-project-entry", str(memory_paths.SCRIPT_DIR)]
 
 
 def test_refresh_puts_back_a_data_directory_that_was_dropped(home: Path) -> None:
-    from ai_config import memory
+    from ai_config import memory_paths
 
     hooks.configure(hooks.MEMORY_ENTRY, True)
     document = _settings(home)
@@ -167,7 +167,7 @@ def test_refresh_puts_back_a_data_directory_that_was_dropped(home: Path) -> None
 
     assert hooks.refresh() == ["memory-entry"]
     entry = _settings(home)["hooks"]["UserPromptSubmit"][0]["hooks"][0]
-    assert entry["args"][-1] == str(memory.SCRIPT_DIR)
+    assert entry["args"][-1] == str(memory_paths.SCRIPT_DIR)
 
 
 @pytest.mark.parametrize(
@@ -201,7 +201,7 @@ def test_enabling_memory_installs_what_the_registry_describes(
 ) -> None:
     from ai_config import memory_hooks
 
-    monkeypatch.setattr(memory_hooks.memory, "CLAUDE_HOME", home)
+    monkeypatch.setattr(memory_paths, "CLAUDE_HOME", home)
     (home / "settings.json").write_text("{}", encoding="utf-8")
     memory_hooks.install(enabling=True)
 

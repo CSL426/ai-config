@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_config import handoff, memory
+from ai_config import handoff, memory_paths
 
 
 def _rewrite(path: Path, edit: "Callable[[str], str]") -> None:
@@ -26,10 +26,10 @@ def _rewrite(path: Path, edit: "Callable[[str], str]") -> None:
 def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "memory"
     root.mkdir(parents=True)
-    monkeypatch.setattr(memory, "memory_dir", lambda: root)
+    monkeypatch.setattr(memory_paths, "memory_dir", lambda: root)
     monkeypatch.setattr(handoff, "memory_dir", lambda: root)
     monkeypatch.setattr(
-        handoff, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t")
+        handoff, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t")
     )
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-one")
     return root
@@ -137,9 +137,9 @@ def test_the_hint_quotes_a_name_with_spaces(
     notebook: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # 提示是給人照著貼的:名稱有空格卻沒引號,貼上去會被拆成多個參數
-    from ai_config.commands import memory as command
+    from ai_config.commands import memory_handoff
 
-    assert command._handoff(["write", "含 空格 的線", "內容"]) == 0
+    assert memory_handoff._handoff(["write", "含 空格 的線", "內容"]) == 0
     assert "'含 空格 的線'" in capsys.readouterr().out
 
 
@@ -151,11 +151,11 @@ def test_listing_takes_another_projects_path(
     other = tmp_path / "other-project"
     other.mkdir()
 
-    def by_path(cwd: "Path | None" = None) -> memory.ProjectKey:
+    def by_path(cwd: "Path | None" = None) -> memory_paths.ProjectKey:
         name = "other--repo" if cwd == other else "o--r"
-        return memory.ProjectKey(name, True, "t")
+        return memory_paths.ProjectKey(name, True, "t")
 
-    monkeypatch.setattr(memory, "project_key", by_path)
+    monkeypatch.setattr(memory_paths, "project_key", by_path)
     monkeypatch.setattr(handoff, "project_key", by_path)
     handoff.write("本線", "這裡的進度")
     handoff.write("別線", "那邊的進度", cwd=other)
@@ -188,7 +188,7 @@ def test_a_finished_thread_leaves_the_pickup_list(
 
     # list 問的是 memory.project_key;fixture 只換了 handoff 那邊的
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
     handoff.write("還在做的", "進行中")
     handoff.write("做完的", "已結束")
@@ -257,7 +257,7 @@ def test_the_list_says_how_long_a_thread_has_waited(
     from ai_config.commands import memory as command
 
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
     handoff.write("放很久的", "內容")
     path = handoff.handoff_dir() / "放很久的.md"
@@ -320,7 +320,7 @@ def test_the_list_surfaces_what_is_left(
     from ai_config.commands import memory as command
 
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
     handoff.write("有格式的", "## Goal\n做完 X\n\n## Next\n- 補上聲紋註冊\n- 調 bitrate")
 
@@ -338,7 +338,7 @@ def test_a_note_without_headings_lists_as_before(
     from ai_config.commands import memory as command
 
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
     handoff.write("沒標題的", "第一行就是摘要\n後面還有別的")
 
@@ -371,7 +371,7 @@ def test_a_thread_nobody_touched_is_flagged_as_stale(
     from ai_config.commands import memory as command
 
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
     handoff.write("放很久的", "內容")
     _age_note(handoff.handoff_dir() / "放很久的.md", "updated", 4)
@@ -389,7 +389,7 @@ def test_a_thread_touched_today_is_not_flagged(
     from ai_config.commands import memory as command
 
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
     handoff.write("剛寫的", "內容")
 
@@ -490,7 +490,7 @@ def test_listing_archives_what_is_long_finished(
     from ai_config.commands import memory as command
 
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
     handoff.write("陳年舊事", "內容")
     handoff.done("陳年舊事")
@@ -513,7 +513,7 @@ def test_a_broken_archive_does_not_break_the_listing(
     from ai_config.commands import memory as command
 
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
 
     def refuse(*args: object, **kwargs: object) -> list[str]:
@@ -536,7 +536,7 @@ def test_archiving_says_what_it_moved(
     from ai_config.commands import memory as command
 
     monkeypatch.setattr(
-        memory, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t"),
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
     )
     handoff.write("陳年舊事", "內容")
     handoff.done("陳年舊事")
@@ -697,9 +697,9 @@ def test_the_hint_after_writing_points_at_pickup(
     type `acg memory handoff claim '...'` when /acg:pickup, or just saying
     "接著做", does the same thing.
     """
-    from ai_config.commands import memory as command
+    from ai_config.commands import memory_handoff
 
-    assert command._handoff(["write", "排程", "內容"]) == 0
+    assert memory_handoff._handoff(["write", "排程", "內容"]) == 0
 
     out = capsys.readouterr().out
     assert "/acg:pickup" in out

@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import memory
+from . import memory_paths
 from .locking import apply_lock
 from .paths import NATIVE_WINDOWS, scheduled_command
 
@@ -135,8 +135,8 @@ def preserve_settings(source: dict, target: dict) -> dict:
 
 
 def _settings() -> dict:
-    path = memory.CLAUDE_HOME / "settings.json"
-    memory.assert_plain_path(path, directory=False)
+    path = memory_paths.CLAUDE_HOME / "settings.json"
+    memory_paths.assert_plain_path(path, directory=False)
     value = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
     if not isinstance(value, dict):
         raise ValueError("Claude settings.json 必須是物件")  # noqa: TRY004
@@ -179,7 +179,7 @@ def refresh() -> None:
 
 
 def configure(enabled: bool, threshold: int = DEFAULT_THRESHOLD) -> dict:
-    from .commands.memory import _backup
+    from .commands.memory_lifecycle import _backup
 
     if type(enabled) is not bool:
         raise ValueError("提醒開關必須是布林值")
@@ -188,7 +188,7 @@ def configure(enabled: bool, threshold: int = DEFAULT_THRESHOLD) -> dict:
         document = _settings()
         result = _with_settings(document, enabled, threshold)
         if result != document:
-            path = memory.CLAUDE_HOME / "settings.json"
+            path = memory_paths.CLAUDE_HOME / "settings.json"
             _backup([path])
             _write_settings(result)
         return _status(result)
@@ -218,8 +218,8 @@ def follow_memory_locked(enabling: bool) -> int | None:
 
 
 def _write_settings(document: dict) -> None:
-    memory._write_text_atomic(
-        memory.CLAUDE_HOME / "settings.json",
+    memory_paths._write_text_atomic(
+        memory_paths.CLAUDE_HOME / "settings.json",
         json.dumps(document, ensure_ascii=False, indent=2) + "\n",
     )
 
@@ -262,8 +262,8 @@ def _session_path(payload: dict):
     ):
         raise ValueError("Missing session identity")
     key = hashlib.sha256(session.encode("utf-8")).hexdigest()
-    path = memory.CLAUDE_HOME / ".acg-handoff-reminder" / f"{key}.json"
-    memory.assert_plain_path(path, directory=False)
+    path = memory_paths.CLAUDE_HOME / ".acg-handoff-reminder" / f"{key}.json"
+    memory_paths.assert_plain_path(path, directory=False)
     return path
 
 
@@ -310,7 +310,7 @@ def record(payload: dict, threshold: int) -> float | None:
                 and previous.get("threshold") == threshold
             ),
         }
-        memory._write_text_atomic(path, json.dumps(state))
+        memory_paths._write_text_atomic(path, json.dumps(state))
     return used
 
 
@@ -324,7 +324,7 @@ def reminder(payload: dict) -> dict | None:
         path = _session_path(payload)
         if event in {"PreCompact", "SessionEnd"}:
             if path.exists():
-                memory._unlink_file(path)
+                memory_paths._unlink_file(path)
             return None
         settings = status()
         if not settings["installed"]:
@@ -348,7 +348,7 @@ def reminder(payload: dict) -> dict | None:
         ):
             return None
         state["notified"] = True
-        memory._write_text_atomic(path, json.dumps(state))
+        memory_paths._write_text_atomic(path, json.dumps(state))
         return {"hookSpecificOutput": {
             "hookEventName": event,
             "additionalContext": (

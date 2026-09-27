@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_config import commit_style
+from ai_config import commit_style, memory_paths
 from ai_config.tools.claude import filter_claude_settings, merge_claude_settings
 
 
@@ -64,7 +64,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     claude.mkdir()
     # hook 的安裝與剝除都住在註冊表裡,改那裡就好
     monkeypatch.setattr(commit_style.hooks, "CLAUDE_HOME", claude)
-    monkeypatch.setattr(commit_style.hooks.memory, "CLAUDE_HOME", claude)
+    monkeypatch.setattr(memory_paths, "CLAUDE_HOME", claude)
     return claude
 
 

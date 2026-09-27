@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_config import handoff, memory
+from ai_config import handoff, memory_paths
 from ai_config.gui_management import _handoff_threads
 
 
@@ -12,10 +12,10 @@ from ai_config.gui_management import _handoff_threads
 def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "memory"
     root.mkdir()
-    monkeypatch.setattr(memory, "memory_dir", lambda: root)
+    monkeypatch.setattr(memory_paths, "memory_dir", lambda: root)
     monkeypatch.setattr(handoff, "memory_dir", lambda: root)
     monkeypatch.setattr(
-        handoff, "project_key", lambda cwd=None: memory.ProjectKey("o--r", True, "t")
+        handoff, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t")
     )
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "d4b49a91-38e2-4f31-900a-24d0ae63b153")
     return root

@@ -31,7 +31,7 @@ def preserve_memory_block(source: bytes, live: bytes) -> bytes:
     change to the rules ever reached a machine that already had them, so
     the block is always the current one.
     """
-    from .memory import RULES_BLOCK
+    from .memory_paths import RULES_BLOCK
 
     source_span, live_span = _block_span(source), _block_span(live)
     block = RULES_BLOCK.strip().encode("utf-8") if live_span else b""
@@ -55,7 +55,7 @@ def gather_memory_block(live: bytes, stored: bytes) -> bytes:
     Presence stays this machine's choice; the words come from the
     database, or from this release when the database has none yet.
     """
-    from .memory import RULES_BLOCK
+    from .memory_paths import RULES_BLOCK
 
     live_span, stored_span = _block_span(live), _block_span(stored)
     if not live_span:

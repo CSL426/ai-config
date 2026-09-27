@@ -8,7 +8,7 @@ from push_helpers import patch_push
 from test_apply_projection import run_ai_config, write
 from test_commands import make_full_repo
 
-from ai_config import memory, push_preflight
+from ai_config import memory_journal, memory_paths, push_preflight
 from ai_config.safety import is_reparse_point
 
 
@@ -25,22 +25,22 @@ from ai_config.safety import is_reparse_point
     ],
 )
 def test_parse_project_key(url: str, expected: str) -> None:
-    assert memory.parse_project_key(url) == expected
+    assert memory_paths.parse_project_key(url) == expected
 
 
 def test_block_install_is_idempotent_and_reversible() -> None:
     original = "# My rules\n\nKeep it short.\n"
-    once = memory.with_block(original)
-    assert once.count(memory.BLOCK_BEGIN) == 1
-    assert memory.with_block(once) == once
-    assert memory.without_block(once) == original
-    assert memory.without_block(memory.with_block("")) == ""
+    once = memory_paths.with_block(original)
+    assert once.count(memory_paths.BLOCK_BEGIN) == 1
+    assert memory_paths.with_block(once) == once
+    assert memory_paths.without_block(once) == original
+    assert memory_paths.without_block(memory_paths.with_block("")) == ""
 
 
 def test_project_key_falls_back_to_directory_name(tmp_path: Path) -> None:
     plain = tmp_path / "loose dir"
     plain.mkdir()
-    key = memory.project_key(plain)
+    key = memory_paths.project_key(plain)
     assert key.key == "loose-dir"
     assert key.stable is False
 
@@ -67,16 +67,16 @@ def test_enable_links_and_installs_rules_then_disable_restores(tmp_path: Path) -
     assert link.resolve() == (repo_dir / "memory").resolve()
     assert (repo_dir / "memory" / "MEMORY.md").is_file()
     assert live_rules.read_text(encoding="utf-8").startswith("# live rules\n")
-    assert memory.BLOCK_BEGIN in live_rules.read_text(encoding="utf-8")
+    assert memory_paths.BLOCK_BEGIN in live_rules.read_text(encoding="utf-8")
     source_rules = repo_dir / "claude" / "CLAUDE.md"
-    assert memory.BLOCK_BEGIN in source_rules.read_text(encoding="utf-8")
+    assert memory_paths.BLOCK_BEGIN in source_rules.read_text(encoding="utf-8")
     agy_rules = home_dir / ".gemini" / "config" / "rules" / "acg-memory.md"
-    assert memory.BLOCK_BEGIN in agy_rules.read_text(encoding="utf-8")
+    assert memory_paths.BLOCK_BEGIN in agy_rules.read_text(encoding="utf-8")
 
     # 第二次啟用不能疊出第二個區塊
     again = run_ai_config(repo_dir, home_dir, "memory", "enable")
     assert again.returncode == 0
-    assert live_rules.read_text(encoding="utf-8").count(memory.BLOCK_BEGIN) == 1
+    assert live_rules.read_text(encoding="utf-8").count(memory_paths.BLOCK_BEGIN) == 1
 
     status = run_ai_config(repo_dir, home_dir, "memory", "status")
     assert status.returncode == 0
@@ -170,7 +170,7 @@ def test_pull_blocked_by_unsaved_memory_points_at_memory_push(tmp_path: Path) ->
     ],
 )
 def test_session_slug_matches_claude_projects_naming(path: str, expected: str) -> None:
-    assert memory.session_slug(Path(path)) == expected
+    assert memory_paths.session_slug(Path(path)) == expected
 
 
 def _run_in_project(repo_dir: Path, home_dir: Path, project: Path, *args: str):
@@ -225,7 +225,7 @@ def test_adopt_moves_journal_into_project_memory_and_release_undoes(
     assert (target / "logs/x.log").is_file()
     assert "logs/" in (target / ".gitignore").read_text(encoding="utf-8")
     assert not (target / "logs" / ".gitignore").exists()
-    link = repo_dir / "memory/journal" / memory.session_slug(project)
+    link = repo_dir / "memory/journal" / memory_paths.session_slug(project)
     assert is_reparse_point(link) and link.resolve() == target.resolve()
     # 專案內的 .remember 變成指向共用日誌的連結,打開就看得到同一份資料
     entry = project / ".remember"
@@ -239,7 +239,7 @@ def test_adopt_moves_journal_into_project_memory_and_release_undoes(
     assert "journal/" in (repo_dir / "memory/.gitignore").read_text(encoding="utf-8")
     # 使用者全域設定:加了 data_dir,原本的鍵保留
     config = (home_dir / ".remember/config.json").read_text(encoding="utf-8")
-    assert memory.JOURNAL_TEMPLATE in config and '"model": "sonnet"' in config
+    assert memory_journal.JOURNAL_TEMPLATE in config and '"model": "sonnet"' in config
 
     again = _run_in_project(repo_dir, home_dir, project, "memory", "adopt")
     assert again.returncode == 0 and "已經在共用記憶裡" in again.stdout
@@ -330,16 +330,16 @@ def test_disable_removes_only_our_journal_setting(tmp_path: Path) -> None:
     )
     assert run_ai_config(repo_dir, home_dir, "memory", "enable").returncode == 0
     config_path = home_dir / ".remember/config.json"
-    assert memory.JOURNAL_TEMPLATE in config_path.read_text(encoding="utf-8")
+    assert memory_journal.JOURNAL_TEMPLATE in config_path.read_text(encoding="utf-8")
     assert run_ai_config(repo_dir, home_dir, "memory", "disable").returncode == 0
     assert not config_path.exists()
 
 
 def test_rules_block_is_identical_on_every_machine() -> None:
     # 區塊會寫進同步的 CLAUDE.md;嵌入本機的執行檔名稱會讓每台機器互相改寫
-    assert "acg memory path" in memory.RULES_BLOCK
-    assert "ai-config.sh" not in memory.RULES_BLOCK
-    assert "{" not in memory.RULES_BLOCK
+    assert "acg memory path" in memory_paths.RULES_BLOCK
+    assert "ai-config.sh" not in memory_paths.RULES_BLOCK
+    assert "{" not in memory_paths.RULES_BLOCK
 
 
 def test_home_remember_config_dir_is_not_a_legacy_journal(
@@ -348,9 +348,9 @@ def test_home_remember_config_dir_is_not_a_legacy_journal(
     home = tmp_path / "home"
     (home / ".remember").mkdir(parents=True)
     (home / ".remember" / "config.json").write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(memory, "HOME", home)
-    assert memory.legacy_journal_dir(home) is None
-    assert memory.journal_state(home)[0] == "none"
+    monkeypatch.setattr(memory_paths, "HOME", home)
+    assert memory_journal.legacy_journal_dir(home) is None
+    assert memory_journal.journal_state(home)[0] == "none"
     project = tmp_path / "proj"
     (project / ".remember").mkdir(parents=True)
-    assert memory.legacy_journal_dir(project) == project / ".remember"
+    assert memory_journal.legacy_journal_dir(project) == project / ".remember"
