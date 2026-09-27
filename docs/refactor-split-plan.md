@@ -40,7 +40,22 @@ CLI、GUI、Windows 原生行為與安全邊界不變。每一階段都要先搬
   `test_release_injection.py`：workflow 用 sed 寫入的每個常數都必須在目標檔裡。
   順手移除 workflow 裡早已失效的 GitHub client ID 注入（ffcea05 起改為寫死）。
 - Phase 4 驗證：1186 tests 通過（多 3 個注入檢查）、12 個 skip。
-- Phase 5：尚未開始。
+- Phase 5 CLI dispatch 與次要模組：已完成。
+  - `__main__.py` 縮成 130 行：保留 `usage()`，`main()` 把它交給
+    `cli_dispatch.main()`；分派不 import `__main__`，`python -m ai_config` 才不會
+    載入第二份。
+  - `keepalive.py` 已刪除，分成 `keepalive_settings.py`、`keepalive_runner.py`、
+    `keepalive_scheduler.py`、`keepalive_window.py`。
+  - `ghauth.py` 已刪除，分成 `ghauth_login.py`、`ghauth_binding.py`、
+    `ghauth_helper.py`、`ghauth_access.py`；原 docstring 的三段理由跟著各自的程式走。
+  - 拆 ghauth 時發現 credential helper 綁的是解析後的 `versions/<版號>/` 路徑，
+    版本目錄被清掉後第一次 push 會失敗；已改成綁固定入口，apply／update 會重新
+    指向（3f66b37）。conftest 的整體防護也擴及資料庫的 `.git/config`。
+- Phase 5 驗證：1188 tests 通過、12 個 skip；真實的 `~/.claude/settings.json` 與
+  資料庫 `.git/config` 在整套測試前後不變。
+- 測試拆分：`test_push.py` 已在 Phase 2 從 `test_packaging_and_sync.py` 分出；
+  其餘（`test_windows_sync.py`、`test_gdrive.py`、`test_ghauth.py`、
+  `test_packaging_and_sync.py` 剩下的部分）尚未拆。
 
 ## 不變的契約
 
