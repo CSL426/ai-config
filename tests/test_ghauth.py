@@ -15,8 +15,12 @@ from ai_config import (
     ghauth_binding,
     ghauth_helper,
     ghauth_login,
+    hooks,
 )
 from ai_config.commands import login
+
+# conftest 會在每個測試前換掉它;先在 import 時留住真正的實作
+REAL_BINDING_REFRESH = hooks._refresh_credential_binding
 
 
 @pytest.mark.parametrize(
@@ -1028,3 +1032,43 @@ def test_an_unbound_repository_follows_the_machine_and_says_so(
     assert status.bound == ""
     assert status.account == "machine-wide"
 
+
+
+def test_the_helper_names_the_launcher_not_the_version_it_resolves_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 從 ~/.local/bin 啟動時 sys.executable 是解析後的 versions/<版號>/ 路徑;
+    # 綁定寫那個,更新幾次後目錄被清掉,push 就先失敗一次才被修回來
+    version_dir = tmp_path / "versions" / "1.0.91"
+    version_dir.mkdir(parents=True)
+    running = version_dir / "ai-config"
+    running.write_text("")
+    installed = tmp_path / "bin" / "ai-config"
+    installed.parent.mkdir()
+    try:
+        installed.symlink_to(running)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    monkeypatch.setattr(ghauth_binding.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(ghauth_binding.sys, "executable", str(running))
+    monkeypatch.setattr(ghauth_binding, "standalone_install_path", lambda: installed)
+
+    assert ghauth_binding.helper_executable() == (installed, None)
+
+
+def test_apply_and_update_repoint_the_credential_binding(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config import paths
+
+    # conftest 在測試裡關掉這一步;這裡要測的就是它
+    monkeypatch.setattr(hooks, "_refresh_credential_binding", REAL_BINDING_REFRESH)
+    seen = []
+    monkeypatch.setattr(hooks, "refresh_detail", dict)
+    monkeypatch.setattr(ghauth_binding, "refresh_binding",
+                        lambda repo: seen.append(repo) or True)
+
+    hooks.refresh_all()
+
+    assert seen == [paths.SCRIPT_DIR]
+    assert "credential helper" in capsys.readouterr().out

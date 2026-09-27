@@ -50,8 +50,10 @@ def helper_executable() -> "tuple[Path, Path | None]":
         return running, None
     installed = standalone_install_path()
     try:
-        if installed.is_file() and not installed.samefile(running):
-            return installed, running
+        if installed.is_file():
+            # 同一個檔案時也要回傳固定入口:running 是解析過的
+            # versions/<版號>/ 路徑,那個目錄更新幾次後就被清掉
+            return installed, None if installed.samefile(running) else running
     except OSError:
         pass
     return running, None
