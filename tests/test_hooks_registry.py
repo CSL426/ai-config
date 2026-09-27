@@ -170,6 +170,32 @@ def test_refresh_puts_back_a_data_directory_that_was_dropped(home: Path) -> None
     assert entry["args"][-1] == str(memory.SCRIPT_DIR)
 
 
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        ({"args": ["__memory-project-entry"]}, "已補回 hook 的參數:memory-entry"),
+        ({"command": "/gone/versions/1.0.80/ai-config"},
+         "已把 hook 改指向目前的執行檔:memory-entry"),
+        ({"command": "/gone/ai-config", "args": ["__memory-project-entry"]},
+         "已更新 hook 的執行檔與參數:memory-entry"),
+    ],
+)
+def test_the_repair_message_names_what_was_repaired(
+    home: Path, capsys: pytest.CaptureFixture[str], damage: dict, message: str,
+) -> None:
+    # 1.0.92 拔掉的是參數,訊息卻說改了執行檔;Windows 那邊讀了還以為路徑壞過
+    hooks.configure(hooks.MEMORY_ENTRY, True)
+    document = _settings(home)
+    for event in ("SessionStart", "UserPromptSubmit"):
+        document["hooks"][event][0]["hooks"][0].update(damage)
+    (home / "settings.json").write_text(json.dumps(document), encoding="utf-8")
+
+    hooks.refresh_all()
+
+    output = capsys.readouterr()
+    assert message in output.out + output.err
+
+
 def test_enabling_memory_installs_what_the_registry_describes(
     home: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

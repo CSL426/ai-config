@@ -275,8 +275,18 @@ def refresh() -> list[str]:
     has since been pruned, and Claude Code then fails every prompt with
     ENOENT. Only hooks already installed are touched.
     """
+    return list(refresh_detail())
+
+
+def refresh_detail() -> dict[str, set[str]]:
+    """refresh(), also saying which part of each hook was out of date.
+
+    The parts are "command" and "args". A release that dropped an argument
+    and one that moved the launcher are both repaired here, and telling
+    the user the launcher moved when only an argument came back misleads.
+    """
     document = read_settings()
-    stale = []
+    stale: dict[str, set[str]] = {}
     for hook in REGISTRY.values():
         if not installed(document, hook):
             continue
@@ -284,15 +294,24 @@ def refresh() -> list[str]:
         for event in hook.events:
             for row in document.get("hooks", {}).get(event, []):
                 for entry in row.get("hooks", []) if isinstance(row, dict) else []:
-                    if _owned_by(entry, hook.marker) and (
-                        entry.get("command") != wanted["command"]
-                        or entry.get("args") != wanted["args"]
-                    ):
-                        stale.append(hook.name)
-    names = list(dict.fromkeys(stale))
-    for name in names:
+                    if not _owned_by(entry, hook.marker):
+                        continue
+                    parts = {
+                        part for part in ("command", "args")
+                        if entry.get(part) != wanted[part]
+                    }
+                    if parts:
+                        stale.setdefault(hook.name, set()).update(parts)
+    for name in stale:
         configure(REGISTRY[name], True)
-    return names
+    return stale
+
+
+_REFRESH_MESSAGES = {
+    frozenset({"command"}): "已把 hook 改指向目前的執行檔",
+    frozenset({"args"}): "已補回 hook 的參數",
+    frozenset({"command", "args"}): "已更新 hook 的執行檔與參數",
+}
 
 
 def refresh_all() -> None:
@@ -301,13 +320,16 @@ def refresh_all() -> None:
     from .console import log_info, log_warn
 
     try:
-        changed = refresh()
+        changed = refresh_detail()
         handoff_reminder.refresh()
     except Exception as exc:  # noqa: BLE001 — 順手的修正不能讓 apply/update 失敗
         log_warn(f"hook 路徑沒有更新:{exc}")
         return
-    if changed:
-        log_info(f"已把 hook 改指向目前的執行檔:{', '.join(changed)}")
+    grouped: dict[frozenset, list[str]] = {}
+    for name, parts in changed.items():
+        grouped.setdefault(frozenset(parts), []).append(name)
+    for parts, names in grouped.items():
+        log_info(f"{_REFRESH_MESSAGES[parts]}:{', '.join(names)}")
 
 
 def states() -> list[tuple[Hook, bool]]:
