@@ -27,7 +27,13 @@ from ..console import (
     log_success,
     log_warn,
 )
-from ..paths import ENTRYPOINT, NATIVE_WINDOWS, standalone_install_path
+from ..paths import (
+    ENTRYPOINT,
+    NATIVE_WINDOWS,
+    scheduled_command,
+    standalone_install_path,
+)
+from ..subproc import UTF8
 from ..version import current_version
 
 _DEFAULT_REPOSITORY = "CSL426/ai-config"
@@ -290,8 +296,6 @@ def _run_windows_update(tag: "str | None" = None) -> int:
     ]
     kwargs: dict = {}
     if not interactive:
-        from ..subproc import UTF8
-
         kwargs.update(
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL, text=True, **UTF8,
@@ -356,10 +360,41 @@ def run_update(requested_version: "str | None" = None) -> int:
         result = _run_update(requested_version)
     if result == 0:
         _update_plugin()
+        _refresh_after_update()
+    return result
+
+
+def _refresh_after_update() -> None:
+    """Repair hooks and the credential binding with the version just installed.
+
+    On Windows the update puts the new exe where the running one was, and a
+    onefile build reads its own modules from that path: an import after the
+    swap read the new file at the old offsets and failed with "Error -3
+    while decompressing data". Where it survives, the running copy is still
+    the old code, which is how 1.0.92's update rewrote hooks by its own
+    stale rules. The new launcher does the repair; a checkout has nothing
+    swapped under it and repairs in place.
+    """
+    if not getattr(sys, "frozen", False):
         from ..hooks import refresh_all
 
         refresh_all()
-    return result
+        return
+    try:
+        done = subprocess.run(
+            [*scheduled_command(), "__refresh-hooks"],
+            capture_output=True, text=True, **UTF8, timeout=120, check=False,
+            stdin=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log_warn(f"hook 路徑沒有更新:{exc}")
+        return
+    output = (done.stdout or "") + (done.stderr or "")
+    if output.strip():
+        print(output.rstrip())
+    if done.returncode != 0:
+        log_warn(f"hook 路徑沒有更新;執行 {ENTRYPOINT} apply 會再修一次")
 
 
 _PLUGIN = "acg@acg"
@@ -381,8 +416,6 @@ def _update_plugin() -> None:
     -- a machine without Claude Code, or without the plugin, is not an
     update failure.
     """
-    from ..subproc import UTF8
-
     claude = _claude_binary()
     if claude is None:
         return

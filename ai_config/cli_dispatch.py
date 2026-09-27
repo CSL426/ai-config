@@ -109,6 +109,12 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         from .commands.update import run_update
 
         return run_update(args[1] if len(args) == 2 else None)
+    if cmd == "__refresh-hooks":
+        # 隱藏命令:update 換完執行檔後,由新版來修 hook 與資料庫的綁定
+        from .hooks import refresh_all
+
+        refresh_all()
+        return 0
     if cmd == "__update-check":
         # 隱藏命令:被動更新檢查的背景行程進入點
         from .commands.update import run_update_check_refresh
