@@ -75,8 +75,8 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 
 .route-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
 .route-card { min-height: 100%; padding: var(--space-lg); border: var(--rule) solid var(--color-rule); border-radius: var(--radius-md); background: var(--color-paper); }
-.route-card.drive { transform: rotate(-1deg); }
-.route-card.git { transform: translateY(var(--space-lg)) rotate(1deg); }
+.route-card.drive { transform: rotate(-2deg); }
+.route-card.git { transform: translateY(var(--space-lg)) rotate(2deg); }
 .route-card h3 { font-size: var(--text-lg); line-height: 1.16; margin-bottom: var(--space-xs); }
 .route-card p { color: var(--color-ink-soft); text-wrap: pretty; }
 .route-logo { display: block; height: 2.5rem; width: auto; margin-bottom: var(--space-md); fill: currentColor; }
@@ -89,9 +89,11 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .workflow-note { margin: var(--space-lg) auto 0; text-align: center; }
 .workflow-line { display: grid; grid-template-columns: repeat(7, auto); align-items: center; justify-content: center; gap: clamp(0.35rem, 1.1vw, 1rem); margin-top: var(--space-xl); }
 .workflow-step { display: grid; place-items: center; gap: var(--space-xs); min-width: clamp(8rem, 16vw, 12rem); padding: var(--space-lg) var(--space-sm); border: var(--rule) solid var(--color-rule); border-radius: var(--radius-md); background: var(--color-paper-2); text-align: center; }
-.workflow-step:nth-child(1) { transform: rotate(-1deg); }
-.workflow-step:nth-child(5) { transform: rotate(1deg); }
-.workflow-step:nth-child(7) { transform: rotate(-0.7deg); }
+/* 每張都歪、方向交錯:角度太小看起來像沒對齊,要一眼看得出是刻意的 */
+.workflow-step:nth-child(1) { transform: rotate(-2.5deg); }
+.workflow-step:nth-child(3) { transform: rotate(2deg); }
+.workflow-step:nth-child(5) { transform: rotate(-1.5deg); }
+.workflow-step:nth-child(7) { transform: rotate(2.5deg); }
 .workflow-step strong { font-size: var(--text-md); }
 .workflow-step code { color: var(--color-muted); font-size: var(--text-sm); }
 .workflow-arrow { color: var(--color-sky-deep); font-size: var(--text-lg); font-weight: 700; }
@@ -171,7 +173,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   .slide h1 { font-size: clamp(2.25rem, 12vw, 3.8rem); }
   .slide h2 { font-size: clamp(1.75rem, 8.6vw, 2.65rem); }
   .carry-list, .route-choice { grid-template-columns: 1fr; }
-  .route-card.git { transform: rotate(0.6deg); }
+  .route-card.git { transform: rotate(2deg); }
   .picture { border-radius: var(--radius-md); box-shadow: none; }
   .gui-layout .picture { padding: var(--space-2xs); }
 }
@@ -225,9 +227,9 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .pain-notes { display: grid; gap: var(--space-xs); margin: var(--space-sm) 0 0; padding: 0; list-style: none; max-width: 32rem; }
 .pain-notes li { padding: var(--space-xs) var(--space-sm); border: 1px solid var(--color-ink); border-radius: var(--radius-sm); color: var(--color-ink-soft); font-size: var(--text-sm); text-wrap: pretty; }
 .pain-notes li strong { display: block; color: var(--color-ink); font-size: var(--text-base); }
-.pain-notes li:nth-child(1) { background: var(--color-sky-soft); transform: rotate(-0.6deg); }
-.pain-notes li:nth-child(2) { background: var(--color-coral-soft); transform: rotate(0.5deg); }
-.pain-notes li:nth-child(3) { background: var(--color-pear-soft); transform: rotate(-0.4deg); }
+.pain-notes li:nth-child(1) { background: var(--color-sky-soft); transform: rotate(-1.5deg); }
+.pain-notes li:nth-child(2) { background: var(--color-coral-soft); transform: rotate(1.2deg); }
+.pain-notes li:nth-child(3) { background: var(--color-pear-soft); transform: rotate(-1deg); }
 
 /* 四件事：閘門插圖陪著「先看過再送出」那一句 */
 .workflow-guard { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-md); align-items: center; justify-content: center; width: min(100%, 44rem); margin: var(--space-lg) auto 0; }
