@@ -235,7 +235,7 @@ def _commit_and_push(
 
 def _explain_push_refusal() -> None:
     """Turn a refused push into the specific reason, and the fix."""
-    from .ghauth import check_push_access, describe
+    from .ghauth_access import check_push_access, describe
 
     remote = _run_repo_git("config", "--get", "remote.origin.url")
     if remote.returncode != 0:

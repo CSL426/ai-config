@@ -819,10 +819,10 @@ def test_settings_info_redacts_remote_credentials(
 def test_browser_login_without_client_id_points_at_gh(
     api: GuiApi, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ai_config import ghauth
+    from ai_config import ghauth_login
 
     monkeypatch.delenv("AI_CONFIG_GITHUB_CLIENT_ID", raising=False)
-    monkeypatch.setattr(ghauth, "GITHUB_CLIENT_ID", "")
+    monkeypatch.setattr(ghauth_login, "GITHUB_CLIENT_ID", "")
     result = api.github_start_login()
     assert result["code"] == 1
     # 講替代做法,不丟環境變數名稱

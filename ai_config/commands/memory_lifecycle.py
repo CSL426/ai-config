@@ -393,6 +393,8 @@ def _switch_reminder(enabled: bool) -> None:
         log_info(f"不需要的話:{ENTRYPOINT} memory handoff remind disable")
     else:
         log_success("移除交接提醒")
+
+
 _HOST_LABELS = {"codex": "Codex", "agy": "Antigravity"}
 _TRUST_HINT = "開一次 codex,輸入 /hooks 看過 remember 的 hook 就算信任"
 

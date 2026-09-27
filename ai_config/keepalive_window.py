@@ -96,6 +96,8 @@ def drift(start: datetime, times, now: datetime) -> str:
     if expected is None or abs(start - expected) <= _DRIFT_TOLERANCE:
         return ""
     return expected.strftime("%H:%M")
+
+
 _CALLING = re.compile(r"calling \S+ \((.+)\)$")
 
 

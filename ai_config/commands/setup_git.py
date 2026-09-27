@@ -339,6 +339,8 @@ def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
         )
     if verification_error is not None:
         raise verification_error
+
+
 _CLONE_REFUSED = (
     "repository not found",
     "authentication failed",
@@ -354,7 +356,7 @@ def _clone_options(account: "str | None") -> list[str]:
     uses the bound account; the empty first entry clears global helpers."""
     if not account:
         return []
-    from ..ghauth import helper_value
+    from ..ghauth_binding import helper_value
 
     return [
         "-c",
@@ -367,7 +369,8 @@ def _clone_options(account: "str | None") -> list[str]:
 def _require_known_account(account: "str | None") -> None:
     if not account:
         return
-    from ..ghauth import _logged_in_accounts, account_token
+    from ..ghauth_helper import account_token
+    from ..ghauth_login import _logged_in_accounts
 
     if shutil.which("gh") is None:
         raise SetupError("綁定帳號需要 GitHub CLI (gh),請先安裝並執行 gh auth login")
@@ -399,7 +402,7 @@ def _explain_refused_clone(
             "Windows 可用 winget install GitHub.cli),再重跑 setup 並加上 --account <帳號>"
         )
         return "\n".join(lines)
-    from ..ghauth import _logged_in_accounts
+    from ..ghauth_login import _logged_in_accounts
 
     try:
         _active, accounts = _logged_in_accounts()
@@ -472,7 +475,7 @@ def _clone_or_open(
 
 def _explain_push_access(remote_url: str) -> None:
     """Say why the push was refused, and how to fix it from here."""
-    from ..ghauth import check_push_access, describe
+    from ..ghauth_access import check_push_access, describe
     from ..paths import ENTRYPOINT
 
     status = check_push_access(remote_url)
@@ -532,7 +535,7 @@ def setup_repository(
     repository = _clone_or_open(data_dir, repo_url, remote_name, account)
     if account:
         # 既有 checkout 也能綁:clone 時 -c 寫入的設定,對已存在的 repo 重寫一次
-        from ..ghauth import bind_account
+        from ..ghauth_binding import bind_account
 
         _require_known_account(account)
         bound, detail = bind_account(repository, account)

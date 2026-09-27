@@ -58,7 +58,7 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
     if args and args[0] == "__git-credential":
         # 隱藏命令:git 的 credential helper 進入點,由 acg login 寫進資料庫的
         # 本地 git 設定;向 gh 拿綁定帳號的 token
-        from .ghauth import credential_helper_main
+        from .ghauth_helper import credential_helper_main
 
         return credential_helper_main(args[1:])
     if args and args[0] == "_apply-preview-worker":

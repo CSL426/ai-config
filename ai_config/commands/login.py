@@ -5,15 +5,13 @@ every other repository on the machine are left exactly as they were.
 """
 
 from ..console import log_error, log_header, log_info, log_success, log_warn
-from ..ghauth import (
+from ..ghauth_access import check_push_access, describe
+from ..ghauth_binding import bind_account, unbind_account
+from ..ghauth_login import (
     GhAuthError,
     active_account,
-    bind_account,
-    check_push_access,
-    describe,
     run_interactive_login,
     switch_account,
-    unbind_account,
 )
 from ..paths import ENTRYPOINT, SCRIPT_DIR
 from ..subproc import UTF8
