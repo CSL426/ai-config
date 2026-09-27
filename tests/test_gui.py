@@ -448,7 +448,7 @@ def test_setup_gdrive_builds_argv_and_validates(
 
 @pytest.fixture
 def relogin_config(tmp_path, monkeypatch: pytest.MonkeyPatch):
-    from ai_config import config, gdrive, paths
+    from ai_config import config, gdrive_auth, gdrive_client, paths
 
     monkeypatch.setenv("AI_CONFIG_CONFIG", str(tmp_path / "config.json"))
     monkeypatch.delenv("AI_CONFIG_PROVIDER", raising=False)
@@ -464,7 +464,7 @@ def relogin_config(tmp_path, monkeypatch: pytest.MonkeyPatch):
         gdrive_folder_id="existing-folder-id",
         gdrive_space="hidden",
     )
-    gdrive.token_file_path().write_bytes(
+    gdrive_auth.token_file_path().write_bytes(
         b'{ "access_token": "old-token", "refresh_token": "old-refresh" }\n'
     )
 
@@ -472,10 +472,10 @@ def relogin_config(tmp_path, monkeypatch: pytest.MonkeyPatch):
         pytest.fail("Relogin must only authorize OAuth")
 
     monkeypatch.setattr(cli, "main", forbidden)
-    monkeypatch.setattr(gdrive, "GDriveClient", forbidden)
-    monkeypatch.setattr(gdrive, "get_valid_access_token", forbidden)
-    monkeypatch.setattr(gdrive, "delete_token", forbidden)
-    return config.config_path(), gdrive.token_file_path(), data_file
+    monkeypatch.setattr(gdrive_client, "GDriveClient", forbidden)
+    monkeypatch.setattr(gdrive_auth, "get_valid_access_token", forbidden)
+    monkeypatch.setattr(gdrive_auth, "delete_token", forbidden)
+    return config.config_path(), gdrive_auth.token_file_path(), data_file
 
 
 @pytest.mark.parametrize(
@@ -497,13 +497,13 @@ def test_relogin_only_replaces_token_after_successful_authorization(
     space: str,
     outcome: str,
 ) -> None:
-    from ai_config import config, gdrive
+    from ai_config import config, gdrive_auth
 
     config_file, token_file, data_file = relogin_config
     config.save_data_repo(data_file.parent, gdrive_space=space)
     before = {path: path.read_bytes() for path in relogin_config}
     before_paths = set(config_file.parent.rglob("*"))
-    wanted_scope = gdrive.scope_for_space(space)
+    wanted_scope = gdrive_auth.scope_for_space(space)
     opened = []
 
     class FakeServer:
@@ -514,9 +514,9 @@ def test_relogin_only_replaces_token_after_successful_authorization(
 
         def handle_request(self):
             if outcome == "denied":
-                gdrive._OAuthRedirectHandler.auth_error = "Authorization denied"
+                gdrive_auth._OAuthRedirectHandler.auth_error = "Authorization denied"
             else:
-                gdrive._OAuthRedirectHandler.auth_code = "new-auth-code"
+                gdrive_auth._OAuthRedirectHandler.auth_code = "new-auth-code"
 
         def server_close(self):
             pass
@@ -536,17 +536,17 @@ def test_relogin_only_replaces_token_after_successful_authorization(
             ).encode()
         )
 
-    monkeypatch.setattr(gdrive, "get_client_id", lambda environ: "test-client")
-    monkeypatch.setattr(gdrive, "get_client_secret", lambda environ: "")
-    monkeypatch.setattr(gdrive.socketserver, "TCPServer", FakeServer)
-    monkeypatch.setattr(gdrive.webbrowser, "open", opened.append)
-    monkeypatch.setattr(gdrive.urllib.request, "urlopen", exchange)
+    monkeypatch.setattr(gdrive_auth, "get_client_id", lambda environ: "test-client")
+    monkeypatch.setattr(gdrive_auth, "get_client_secret", lambda environ: "")
+    monkeypatch.setattr(gdrive_auth.socketserver, "TCPServer", FakeServer)
+    monkeypatch.setattr(gdrive_auth.webbrowser, "open", opened.append)
+    monkeypatch.setattr(gdrive_auth.urllib.request, "urlopen", exchange)
     if outcome == "save_failure":
 
         def fail_replace(*args):
             raise OSError("disk full")
 
-        monkeypatch.setattr(gdrive.os, "replace", fail_replace)
+        monkeypatch.setattr(gdrive_auth.os, "replace", fail_replace)
 
     result = api.relogin_gdrive()
 
@@ -560,7 +560,7 @@ def test_relogin_only_replaces_token_after_successful_authorization(
     assert data_file.read_bytes() == before[data_file]
     assert set(config_file.parent.rglob("*")) == before_paths
     if outcome == "success":
-        assert gdrive.load_token()["access_token"] == "new-token"
+        assert gdrive_auth.load_token()["access_token"] == "new-token"
         assert "授權成功" in result["output"]
     else:
         assert token_file.read_bytes() == before[token_file]
@@ -576,7 +576,7 @@ def test_relogin_rejects_unavailable_actions_without_oauth(
     relogin_config,
     blocked_by: str,
 ) -> None:
-    from ai_config import config, gdrive, paths
+    from ai_config import config, gdrive_auth, paths
 
     if blocked_by == "provider":
         config.save_data_repo(relogin_config[2].parent, remote_provider="git")
@@ -589,7 +589,7 @@ def test_relogin_rejects_unavailable_actions_without_oauth(
     def forbidden(**kwargs):
         pytest.fail("Blocked relogin must not open OAuth")
 
-    monkeypatch.setattr(gdrive, "run_oauth_flow", forbidden)
+    monkeypatch.setattr(gdrive_auth, "run_oauth_flow", forbidden)
     try:
         result = api.relogin_gdrive()
         assert result["code"] == 1

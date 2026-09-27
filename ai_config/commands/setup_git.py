@@ -1,0 +1,610 @@
+"""Setting up a Git data repository: clone or open, remote, upstream, identity.
+
+Read and write access are verified before setup reports success, so a
+machine that can only read finds out now rather than at its first push.
+"""
+
+import os
+import re
+import shutil
+import stat
+import subprocess
+import uuid
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from ..config import save_data_repo
+from ..console import log_info, log_success, log_warn
+from ..paths import ENTRYPOINT
+
+
+class SetupError(RuntimeError):
+    """Raised when repository setup cannot be completed safely."""
+
+
+class PushAccessError(SetupError):
+    """Raised when the remote is readable but refuses a write.
+
+    A subclass of SetupError so existing handlers still catch it, but setup
+    treats it as a warning: a machine that can only pull still runs status,
+    pull, and apply.
+    """
+
+
+def _redact_git_output(value: str) -> str:
+    return re.sub(r"(https?://)[^/@\s]+@", r"\1***@", value)
+
+
+def _git_error_detail(
+    result: subprocess.CompletedProcess[str],
+    fallback: str,
+) -> str:
+    detail = result.stderr.strip() or result.stdout.strip() or fallback
+    return _redact_git_output(detail)
+
+
+def _run_git(
+    *args: str,
+    cwd: "Path | None" = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    command = ["git"]
+    if cwd is not None:
+        command.extend(("-C", str(cwd)))
+    command.extend(args)
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise SetupError("Git is required but was not found in PATH.") from exc
+    if check and result.returncode != 0:
+        detail = _git_error_detail(result, "unknown Git error")
+        raise SetupError(f"Git command failed: {detail}")
+    return result
+
+
+def _reject_embedded_http_credentials(repo_url: str) -> None:
+    parsed = urlsplit(repo_url)
+    if parsed.scheme in ("http", "https") and parsed.username is not None:
+        raise SetupError(
+            "Repository URLs containing credentials are not accepted. "
+            "Use Git credential storage or SSH instead."
+        )
+
+
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except OSError:
+        return False
+    if attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or bool(is_junction and is_junction())
+
+
+def _repository_root(data_dir: Path) -> Path:
+    result = _run_git("rev-parse", "--show-toplevel", cwd=data_dir)
+    root = Path(result.stdout.strip()).resolve()
+    try:
+        same_directory = os.path.samefile(root, data_dir)
+    except (OSError, ValueError):
+        same_directory = os.path.normcase(os.path.abspath(root)) == os.path.normcase(
+            os.path.abspath(data_dir)
+        )
+    if not same_directory:
+        raise SetupError(f"Data directory must be the Git repository root: {data_dir}")
+    return root
+
+
+def _remote_url(data_dir: Path, remote_name: str) -> "str | None":
+    result = _run_git(
+        "remote",
+        "get-url",
+        remote_name,
+        cwd=data_dir,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _ensure_remote(
+    data_dir: Path,
+    remote_name: str,
+    repo_url: "str | None",
+    replace_remote: bool,
+) -> str:
+    current = _remote_url(data_dir, remote_name)
+    if repo_url is None:
+        if current is None:
+            raise SetupError(
+                f"Remote {remote_name!r} is missing. "
+                "Provide --repo-url to configure it."
+            )
+        return current
+
+    _reject_embedded_http_credentials(repo_url)
+    if current is None:
+        _run_git("remote", "add", remote_name, repo_url, cwd=data_dir)
+        return repo_url
+    if current == repo_url:
+        return current
+    if not replace_remote:
+        raise SetupError(
+            f"Remote {remote_name!r} already points somewhere else. "
+            "Use --replace-remote to replace it explicitly."
+        )
+    _run_git("remote", "set-url", remote_name, repo_url, cwd=data_dir)
+    return repo_url
+
+
+def _ensure_upstream(data_dir: Path, remote_name: str) -> None:
+    """Bind the current branch to the same-named remote branch.
+
+    A repo that already existed locally (a Google Drive setup, a hand-made
+    `git init`) gets its remote added by setup but never learns which remote
+    branch to track, and the very next `acg pull` refuses to run. Fetch once
+    and set the upstream so setup leaves a pullable repository behind.
+    """
+    branch = _run_git(
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD",
+        cwd=data_dir,
+        check=False,
+    )
+    if branch.returncode != 0:
+        return
+    branch_name = branch.stdout.strip()
+    upstream = _run_git(
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}",
+        cwd=data_dir,
+        check=False,
+    )
+    if upstream.returncode == 0:
+        return
+
+    fetched = _run_git("fetch", remote_name, cwd=data_dir, check=False)
+    if fetched.returncode != 0:
+        log_warn(
+            f"Could not fetch from {remote_name!r}; upstream not set: "
+            f"{_git_error_detail(fetched, 'unknown error')}"
+        )
+        return
+    remote_branch = f"{remote_name}/{branch_name}"
+    exists = _run_git(
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        f"refs/remotes/{remote_branch}",
+        cwd=data_dir,
+        check=False,
+    )
+    if exists.returncode != 0:
+        log_info(
+            f"Remote has no {branch_name!r} branch yet; "
+            "the first acg push will publish it."
+        )
+        return
+
+    has_commits = _run_git(
+        "rev-parse", "--verify", "--quiet", "HEAD", cwd=data_dir, check=False
+    )
+    if has_commits.returncode != 0:
+        # Unborn branch (fresh `git init`): there is no local commit to track
+        # from, so adopt the remote branch outright. Refuse if the tree holds
+        # anything, since reset --hard would overwrite it.
+        dirty = _run_git(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            cwd=data_dir,
+            check=False,
+        )
+        if dirty.stdout.strip():
+            log_warn(
+                "Local repository has no commits but contains files; "
+                f"upstream not set. Commit or remove them, then run: "
+                f"git branch --set-upstream-to={remote_branch} {branch_name}"
+            )
+            return
+        _run_git("reset", "--hard", remote_branch, cwd=data_dir)
+        _run_git(
+            "branch",
+            f"--set-upstream-to={remote_branch}",
+            branch_name,
+            cwd=data_dir,
+        )
+        log_success(f"Checked out {remote_branch} and set it as upstream")
+        return
+
+    _run_git(
+        "branch",
+        f"--set-upstream-to={remote_branch}",
+        branch_name,
+        cwd=data_dir,
+    )
+    log_success(f"Branch {branch_name!r} now tracks {remote_branch}")
+
+
+def _remote_refs(data_dir: Path, remote_name: str) -> str:
+    output = _run_git("ls-remote", "--refs", remote_name, cwd=data_dir).stdout
+    return "\n".join(sorted(output.splitlines()))
+
+
+def verify_read_access(data_dir: Path, remote_name: str = "origin") -> None:
+    """Fetching is the one hard requirement: without it nothing can sync."""
+    result = _run_git(
+        "ls-remote",
+        "--heads",
+        remote_name,
+        cwd=data_dir,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = _git_error_detail(result, "could not reach the remote")
+        raise SetupError(f"Read access verification failed: {detail}")
+
+
+def _push_check_source(data_dir: Path, remote_name: str) -> str:
+    """Pick a commit to push to the temporary verification ref.
+
+    HEAD is the natural choice, but an unborn repository has none; the
+    fetched remote branch works just as well since only write access is
+    being tested, not the content.
+    """
+    head = _run_git(
+        "rev-parse", "--verify", "--quiet", "HEAD", cwd=data_dir, check=False
+    )
+    if head.returncode == 0:
+        return head.stdout.strip()
+    branch = _run_git(
+        "symbolic-ref", "--quiet", "--short", "HEAD", cwd=data_dir, check=False
+    )
+    if branch.returncode == 0:
+        remote_ref = f"refs/remotes/{remote_name}/{branch.stdout.strip()}"
+        fetched = _run_git(
+            "rev-parse", "--verify", "--quiet", remote_ref, cwd=data_dir, check=False
+        )
+        if fetched.returncode == 0:
+            return fetched.stdout.strip()
+    raise SetupError(
+        "Cannot verify push access: the local repository has no commits and "
+        "the remote branch was not fetched."
+    )
+
+
+def verify_push_access(data_dir: Path, remote_name: str = "origin") -> None:
+    local_head = _push_check_source(data_dir, remote_name)
+    refs_before = _remote_refs(data_dir, remote_name)
+    check_ref = f"refs/heads/ai-config-write-check-{uuid.uuid4().hex}"
+    result = _run_git(
+        "push",
+        "--porcelain",
+        remote_name,
+        f"{local_head}:{check_ref}",
+        cwd=data_dir,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = _git_error_detail(result, "permission denied")
+        raise PushAccessError(f"Push permission verification failed: {detail}")
+
+    verification_error = None
+    try:
+        remote_ref = _run_git(
+            "ls-remote",
+            remote_name,
+            check_ref,
+            cwd=data_dir,
+        ).stdout.split()
+        if len(remote_ref) < 2 or remote_ref[0] != local_head:
+            verification_error = SetupError(
+                f"Temporary verification ref was not created correctly: {check_ref}"
+            )
+    finally:
+        cleanup = _run_git(
+            "push",
+            "--porcelain",
+            remote_name,
+            f":{check_ref}",
+            cwd=data_dir,
+            check=False,
+        )
+        if cleanup.returncode != 0:
+            detail = _git_error_detail(cleanup, "unknown error")
+            raise SetupError(
+                "Could not remove temporary verification ref "
+                f"{check_ref}: {detail}. "
+                f"Remove it manually with: git push {remote_name} :{check_ref}"
+            )
+
+    refs_after = _remote_refs(data_dir, remote_name)
+    if refs_after != refs_before:
+        raise SetupError(
+            "Remote refs were not restored after push verification; "
+            "configuration was not saved."
+        )
+    if verification_error is not None:
+        raise verification_error
+_CLONE_REFUSED = (
+    "repository not found",
+    "authentication failed",
+    "could not read username",
+    "permission denied",
+    "403",
+    "publickey",
+)
+
+
+def _clone_options(account: "str | None") -> list[str]:
+    """Config written into the fresh clone so the first fetch already
+    uses the bound account; the empty first entry clears global helpers."""
+    if not account:
+        return []
+    from ..ghauth import helper_value
+
+    return [
+        "-c",
+        "credential.helper=",
+        "-c",
+        f"credential.helper={helper_value(account)}",
+    ]
+
+
+def _require_known_account(account: "str | None") -> None:
+    if not account:
+        return
+    from ..ghauth import _logged_in_accounts, account_token
+
+    if shutil.which("gh") is None:
+        raise SetupError("綁定帳號需要 GitHub CLI (gh),請先安裝並執行 gh auth login")
+    _active, accounts = _logged_in_accounts()
+    if account not in accounts or not account_token(account):
+        known = ", ".join(accounts) or "(none)"
+        raise SetupError(
+            f"gh 沒有 {account} 的登入紀錄(已知帳號:{known});"
+            f"先執行 gh auth login 登入它,再重跑 setup"
+        )
+
+
+def _explain_refused_clone(
+    result: "subprocess.CompletedProcess[str]", repo_url: str
+) -> str:
+    """A private repository answers a clone without credentials with
+    'not found'; say how to get credentials instead of echoing git."""
+    detail = _git_error_detail(result, "unknown Git error")
+    lowered = detail.lower()
+    if not any(marker in lowered for marker in _CLONE_REFUSED):
+        return f"Git command failed: {detail}"
+    lines = [
+        f"無法讀取 {repo_url}:{detail}",
+        "儲存庫可能是私有的,這台還沒有能讀取它的帳號憑證。",
+    ]
+    if shutil.which("gh") is None:
+        lines.append(
+            "請先安裝 GitHub CLI 並登入(https://cli.github.com;"
+            "Windows 可用 winget install GitHub.cli),再重跑 setup 並加上 --account <帳號>"
+        )
+        return "\n".join(lines)
+    from ..ghauth import _logged_in_accounts
+
+    try:
+        _active, accounts = _logged_in_accounts()
+    except (OSError, subprocess.SubprocessError):
+        accounts = []
+    if accounts:
+        lines.append(
+            f"gh 記得這些帳號:{', '.join(accounts)}。"
+            f"用有權限的那個重跑:{ENTRYPOINT} setup --repo-url <URL> --account <帳號>"
+        )
+    else:
+        lines.append(
+            f"先執行 gh auth login,再重跑:{ENTRYPOINT} setup --repo-url <URL> --account <帳號>"
+        )
+    return "\n".join(lines)
+
+
+def _clone(
+    repo_url: str, data_dir: Path, remote_name: str, account: "str | None"
+) -> None:
+    _require_known_account(account)
+    result = _run_git(
+        "clone",
+        *_clone_options(account),
+        "--origin",
+        remote_name,
+        repo_url,
+        str(data_dir),
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SetupError(_explain_refused_clone(result, repo_url))
+
+
+def _clone_or_open(
+    data_dir: Path,
+    repo_url: "str | None",
+    remote_name: str,
+    account: "str | None" = None,
+) -> Path:
+    if data_dir.exists():
+        if _is_reparse_point(data_dir):
+            raise SetupError(
+                f"Data repository root cannot be a symlink or junction: {data_dir}"
+            )
+        if not data_dir.is_dir():
+            raise SetupError(f"Data repository path is not a directory: {data_dir}")
+        probe = _run_git(
+            "rev-parse",
+            "--show-toplevel",
+            cwd=data_dir,
+            check=False,
+        )
+        if probe.returncode == 0:
+            return _repository_root(data_dir)
+        if repo_url is not None and not any(data_dir.iterdir()):
+            _reject_embedded_http_credentials(repo_url)
+            _clone(repo_url, data_dir, remote_name, account)
+            return _repository_root(data_dir)
+        raise SetupError(f"Data directory is not a Git repository: {data_dir}")
+    if repo_url is None:
+        raise SetupError(
+            "The data directory does not exist. Provide --repo-url to clone it."
+        )
+    _reject_embedded_http_credentials(repo_url)
+    data_dir.parent.mkdir(parents=True, exist_ok=True)
+    _clone(repo_url, data_dir, remote_name, account)
+    return _repository_root(data_dir)
+
+
+def _explain_push_access(remote_url: str) -> None:
+    """Say why the push was refused, and how to fix it from here."""
+    from ..ghauth import check_push_access, describe
+    from ..paths import ENTRYPOINT
+
+    status = check_push_access(remote_url)
+    if not status.repository:
+        return
+    for line in describe(status):
+        log_info(line)
+    if status.actionable:
+        log_info(f"可以用 {ENTRYPOINT} login 連結有權限的 GitHub 帳號")
+
+
+def _ensure_commit_identity(repository: Path, account: "str | None" = None) -> None:
+    """Give the data repository a committer when this machine has none.
+
+    Scheduled memory pushes commit with no one at the keyboard; on a
+    machine without a global user.name/user.email that commit fails
+    every night and nothing on screen says why. Only the missing half is
+    filled in, only in this repository, so a real identity always wins.
+    """
+    import getpass
+    import socket
+
+    def current(key: str) -> str:
+        found = _run_git("config", "--get", key, cwd=repository, check=False)
+        return found.stdout.strip() if found.returncode == 0 else ""
+
+    name, email = current("user.name"), current("user.email")
+    if name and email:
+        return
+    if account:
+        defaults = (account, f"{account}@users.noreply.github.com")
+    else:
+        user = getpass.getuser() or "acg"
+        host = socket.gethostname().split(".")[0] or "localhost"
+        defaults = (user, f"{user}@{host}")
+    for key, value, default in (
+        ("user.name", name, defaults[0]),
+        ("user.email", email, defaults[1]),
+    ):
+        if not value:
+            _run_git("config", "--local", key, default, cwd=repository)
+    log_info(
+        "這台沒有 git 身分;已替資料儲存庫設定 "
+        f"{name or defaults[0]} <{email or defaults[1]}>(只影響這個儲存庫)"
+    )
+
+
+def setup_repository(
+    data_dir: Path,
+    repo_url: "str | None" = None,
+    remote_name: str = "origin",
+    replace_remote: bool = False,
+    account: "str | None" = None,
+) -> Path:
+    data_dir = data_dir.expanduser().absolute()
+    read_only = False
+    repository = _clone_or_open(data_dir, repo_url, remote_name, account)
+    if account:
+        # 既有 checkout 也能綁:clone 時 -c 寫入的設定,對已存在的 repo 重寫一次
+        from ..ghauth import bind_account
+
+        _require_known_account(account)
+        bound, detail = bind_account(repository, account)
+        if not bound:
+            raise SetupError(f"綁定帳號失敗:{detail}")
+        log_success(f"資料儲存庫已綁定 GitHub 帳號 {account}(只影響這個儲存庫)")
+    previous_remote = _remote_url(repository, remote_name)
+    remote_changed = repo_url is not None and previous_remote != repo_url
+    try:
+        remote_url = _ensure_remote(
+            repository,
+            remote_name,
+            repo_url,
+            replace_remote,
+        )
+        _reject_embedded_http_credentials(remote_url)
+        if not (repository / "claude").is_dir():
+            raise SetupError(
+                "The repository does not contain the required "
+                "claude/ directory: "
+                f"{repository}"
+            )
+        log_info(f"Verifying access to remote {remote_name!r}")
+        try:
+            verify_read_access(repository, remote_name)
+        except SetupError as exc:
+            if account or not any(m in str(exc).lower() for m in _CLONE_REFUSED):
+                raise
+            raise SetupError(
+                f"{exc}\n儲存庫可能是私有的;用有權限的 GitHub 帳號重跑:"
+                f"{ENTRYPOINT} setup --account <帳號>(需先 gh auth login)"
+            ) from exc
+        log_success("Read access verified")
+        _ensure_upstream(repository, remote_name)
+        try:
+            verify_push_access(repository, remote_name)
+        except PushAccessError as exc:
+            read_only = True
+            log_warn(str(exc))
+            _explain_push_access(remote_url)
+            log_warn(
+                "No push access; configuring this machine as read-only. "
+                "status, pull, and apply work; push does not."
+            )
+        else:
+            log_success("Push access verified; temporary ref was removed")
+        # An explicit Git setup must also switch a previously configured
+        # Google Drive installation back to the Git transport.
+        saved_path = save_data_repo(repository, remote_provider="git")
+    except Exception:
+        if remote_changed:
+            if previous_remote is None:
+                _run_git(
+                    "remote",
+                    "remove",
+                    remote_name,
+                    cwd=repository,
+                    check=False,
+                )
+            else:
+                _run_git(
+                    "remote",
+                    "set-url",
+                    remote_name,
+                    previous_remote,
+                    cwd=repository,
+                    check=False,
+                )
+        raise
+    _ensure_commit_identity(repository, account)
+    log_success(f"Data repository configured: {repository}")
+    if read_only:
+        log_warn("This machine is read-only; acg push is not available here")
+    log_info(f"Saved configuration: {saved_path}")
+    return repository

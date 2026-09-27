@@ -19,6 +19,7 @@ from data_repo_helpers import (
 
 from ai_config.cli import console_main
 from ai_config.commands import setup as setup_cli
+from ai_config.commands import setup_git
 from ai_config.config import save_data_repo
 
 
@@ -229,7 +230,7 @@ def test_interactive_setup_defaults_to_configured_data_repo(
     )
     monkeypatch.setattr(setup_cli, "_has_usable_remote", lambda *_args: True)
     monkeypatch.setattr(
-        setup_cli,
+        setup_git,
         "setup_repository",
         lambda data_dir, **_kwargs: data_dir,
     )
@@ -832,7 +833,7 @@ def test_reset_is_not_forceable(tmp_path: Path) -> None:
 def test_refused_clone_explains_private_repository_and_accounts(monkeypatch) -> None:
     import subprocess
 
-    from ai_config.commands import setup as setup_cli
+    from ai_config.commands import setup_git
 
     refused = subprocess.CompletedProcess(
         ["git"],
@@ -840,31 +841,31 @@ def test_refused_clone_explains_private_repository_and_accounts(monkeypatch) -> 
         stdout="",
         stderr="remote: Repository not found.\nfatal: repository 'x' not found\n",
     )
-    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(setup_git.shutil, "which", lambda name: "/usr/bin/gh")
     monkeypatch.setattr(
         "ai_config.ghauth._logged_in_accounts", lambda: ("first", ["first", "second"])
     )
-    message = setup_cli._explain_refused_clone(refused, "https://github.com/o/r.git")
+    message = setup_git._explain_refused_clone(refused, "https://github.com/o/r.git")
     assert "私有" in message and "--account" in message
     assert "first, second" in message
 
-    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: None)
-    message = setup_cli._explain_refused_clone(refused, "https://github.com/o/r.git")
+    monkeypatch.setattr(setup_git.shutil, "which", lambda name: None)
+    message = setup_git._explain_refused_clone(refused, "https://github.com/o/r.git")
     assert "winget install GitHub.cli" in message
 
     plain = subprocess.CompletedProcess(
         ["git"], 1, stdout="", stderr="fatal: Could not resolve host\n"
     )
-    assert "私有" not in setup_cli._explain_refused_clone(
+    assert "私有" not in setup_git._explain_refused_clone(
         plain, "https://github.com/o/r.git"
     )
 
 
 def test_clone_options_bind_the_account_from_the_first_fetch() -> None:
-    from ai_config.commands import setup as setup_cli
+    from ai_config.commands import setup_git
 
-    assert setup_cli._clone_options(None) == []
-    options = setup_cli._clone_options("CSL426")
+    assert setup_git._clone_options(None) == []
+    options = setup_git._clone_options("CSL426")
     # 先清掉全域 helper,再只加 acg 自己的
     assert options[:2] == ["-c", "credential.helper="]
     assert options[3].startswith("credential.helper=!") and options[3].endswith(
@@ -1142,7 +1143,7 @@ def test_setup_gives_a_machine_without_identity_one_for_the_data_repo(
     repo = tmp_path / "data"
     run_git(tmp_path, "init", "-q", str(repo))
 
-    setup_cli._ensure_commit_identity(repo, "someone")
+    setup_git._ensure_commit_identity(repo, "someone")
 
     assert run_git(repo, "config", "--local", "user.name").strip() == "someone"
     assert run_git(repo, "config", "--local", "user.email").strip() == (
@@ -1161,7 +1162,7 @@ def test_setup_leaves_an_existing_identity_alone(
     repo = tmp_path / "data"
     run_git(tmp_path, "init", "-q", str(repo))
 
-    setup_cli._ensure_commit_identity(repo, "someone")
+    setup_git._ensure_commit_identity(repo, "someone")
 
     local = subprocess.run(
         ["git", "-C", str(repo), "config", "--local", "--get", "user.name"],

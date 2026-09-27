@@ -35,7 +35,8 @@ secret 掃描、ff-only 保護全部保留。禁止退化成「上傳/下載 ZIP
 - `"git"`(預設,欄位缺省視同 git):現行行為,零改變。
 - `"gdrive"`:pull/push 的遠端傳輸改走 Drive;本機 repo 可以沒有 git remote。
 
-新模組 `ai_config/gdrive.py`(平鋪,不開子套件——與現有架構一致),
+新模組 `ai_config/gdrive.py`(平鋪,不開子套件——與現有架構一致;2026-09-27 起拆成
+`gdrive_auth.py`、`gdrive_client.py`、`gdrive_sync.py`),
 只依賴標準庫(`urllib.request`、`json`、`secrets`、`hashlib`、`http.server`),
 **不得引入 google-api-python-client 等重依賴**(PyInstaller 體積與供應鏈考量)。
 
