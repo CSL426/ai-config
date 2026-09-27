@@ -37,8 +37,8 @@
         <!-- 痛點用三張便條寫具體，呼應插圖裡散落的紙條；插圖本身維持可愛、不焦慮 -->
         <ul class="pain-notes" aria-label="常見的慘狀">
           <li><strong>新電腦上又忘了</strong>上週才教會 AI 的寫法，換台機器它一句都不記得。</li>
-          <li><strong>CI 紅了才發現</strong>那條規則只留在舊筆電裡，這台從來沒有。</li>
-          <li><strong>翻 stash、翻對話紀錄</strong>想找回最新的那一份，先花掉半小時。</li>
+          <li><strong>用到一半才發現少了</strong>那條規則只存在舊筆電裡，這台從來沒有。</li>
+          <li><strong>每台都翻過一遍</strong>想找回最新的那一份，先花掉半小時。</li>
         </ul>
       </div>
       <figure class="picture">
@@ -169,7 +169,7 @@
         <h2>開著的 AI，<br><span class="accent nowrap">可以互相傳話</span></h2>
         <p class="lede">像找同事一樣，叫名字就送得到。</p>
         <p><code>acg msg list</code>　看現在開著哪些會話、誰收得到<br><code>acg msg send &lt;名稱&gt; &lt;訊息&gt;</code>　直接送過去</p>
-        <p class="tiny-note">先跑一次 <code>acg msg setup</code>，之後照常開 <code>claude</code>、<code>codex</code> 就收得到（Claude 每次開啟確認一次）。Antigravity 開著的對話目前沒有接收外部訊息的管道，所以它只能主動傳話、收不到別人傳來的；這是 Antigravity 目前的限制，不影響其他功能。目前只支援 Linux / macOS。</p>
+        <p class="tiny-note">先跑一次 <code>acg msg setup</code>，之後照常開 <code>claude</code>、<code>codex</code> 就收得到（Claude 每次開啟確認一次）。Antigravity 目前只能送、收不到：它開著的對話還沒有收訊息的管道。目前只支援 Linux / macOS。</p>
       </div>
       <figure class="picture msg-map" aria-label="Claude 和 Codex 的會話可以互相傳話；Antigravity 只能送出訊息，因為它開著的對話目前沒有接收外部訊息的管道。">
         <div class="msg-cards" aria-hidden="true">
@@ -179,7 +179,7 @@
           <span class="msg-link one">↑<small>只能送出</small></span>
           <span class="msg-card agy"><b>○</b> Antigravity · 文件</span>
         </div>
-        <figcaption>● 收得到　○ 只能送出（目前沒有接收管道）</figcaption>
+        <figcaption>● 收得到　○ 只能送出</figcaption>
       </figure>
     </div>
   </section>
@@ -207,11 +207,6 @@
   </section>
 
   <section class="slide close-slide">
-    <!-- 吉祥物比比拉布出來送客：設定包收好了，接下來換你帶著走 -->
-    <figure class="mascot">
-      <img src="./img/bibilabu.png" width="512" height="512" alt="比比拉布：ai-config 的吉祥物，一隻穿著香蕉裝的小貓" decoding="async">
-      <figcaption class="mascot-say">設定包收好了，<br>接下來換你帶著它到處走。</figcaption>
-    </figure>
     <h2>從這裡<span class="accent">開始</span></h2>
     <p class="lede">裝好 acg，它會接著問你設定要放在哪裡。</p>
     <div class="install-lines">
@@ -219,6 +214,8 @@
       <p class="install-line"><strong>Windows（PowerShell）</strong><span class="install-cmd"><code>irm https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 | iex</code><button type="button" class="copy-button" aria-label="複製 Windows 安裝指令">複製</button></span></p>
     </div>
     <p class="tiny-note">指令列、Desktop，或直接請 AI：「幫我在這台裝好並設定 acg」（先把 <a href="https://github.com/CSL426/ai-config">github.com/CSL426/ai-config</a> 給它）。三條路都通。</p>
+    <!-- 整份的最後一句；等 PROMPTS.md 第四輪的揮手圖產好再放圖 -->
+    <p class="close-line"><span class="nowrap">設定包收好了，</span><span class="nowrap">接下來換你帶著它到處走。</span></p>
   </section>
 </main>
 
