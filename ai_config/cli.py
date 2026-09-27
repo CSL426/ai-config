@@ -19,8 +19,11 @@ def _claim_entrypoint_name() -> None:
 def console_main() -> int:
     _claim_entrypoint_name()
     from ai_config import __main__ as command
+    from ai_config import cli_dispatch
 
+    # 兩邊都在 import 時從 paths 取得名稱;paths 若比這裡早載入就會是預設值
     command.ENTRYPOINT = os.environ["AI_CONFIG_ENTRYPOINT"]
+    cli_dispatch.ENTRYPOINT = command.ENTRYPOINT
     try:
         return command.main()
     except KeyboardInterrupt:

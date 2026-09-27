@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import ai_config.__main__ as cli
-from ai_config import paths
+from ai_config import cli_dispatch, paths
 from ai_config.commands import skill
 from ai_config.gui_api import GuiApi
 
@@ -167,8 +167,8 @@ def test_add_uses_cli_install_and_refuses_duplicate(
     (source / ".ai-config-test").write_text("excluded", encoding="utf-8")
     monkeypatch.setattr(skill, "SCRIPT_DIR", paths.SCRIPT_DIR)
     monkeypatch.setattr(skill, "CLAUDE_HOME", home)
-    monkeypatch.setattr(cli, "SCRIPT_DIR", paths.SCRIPT_DIR)
-    monkeypatch.setattr(cli, "CONFIG_ERROR", None)
+    monkeypatch.setattr(cli_dispatch, "SCRIPT_DIR", paths.SCRIPT_DIR)
+    monkeypatch.setattr(cli_dispatch, "CONFIG_ERROR", None)
     result = api.add_skill(str(source))
     assert result["code"] == 0
     destinations = [paths.SCRIPT_DIR / "claude/skills/example",
