@@ -314,6 +314,24 @@ _REFRESH_MESSAGES = {
 }
 
 
+def _refresh_credential_binding() -> None:
+    """The data repository's credential helper names an executable too.
+
+    Bound from a versions/<version>/ path, it broke once that directory
+    was pruned, and push failed before anything repaired it.
+    """
+    from . import paths
+    from .console import log_info
+    from .ghauth_binding import refresh_binding
+
+    try:
+        changed = refresh_binding(paths.SCRIPT_DIR)
+    except Exception:  # noqa: BLE001 — 順手的修正不能讓 apply/update 失敗
+        return
+    if changed:
+        log_info("已把資料庫的 credential helper 改指向目前的執行檔")
+
+
 def refresh_all() -> None:
     """Best-effort repair after apply/update; a broken settings.json is reported elsewhere."""
     from . import handoff_reminder
@@ -325,6 +343,7 @@ def refresh_all() -> None:
     except Exception as exc:  # noqa: BLE001 — 順手的修正不能讓 apply/update 失敗
         log_warn(f"hook 路徑沒有更新:{exc}")
         return
+    _refresh_credential_binding()
     grouped: dict[frozenset, list[str]] = {}
     for name, parts in changed.items():
         grouped.setdefault(frozenset(parts), []).append(name)
