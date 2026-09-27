@@ -470,7 +470,7 @@ def main(argv: "list[str] | None" = None) -> int:
         log_error(f"Unexpected arguments: {' '.join(positional[1:])}")
         return 1
     if cmd == "push" and tool == "memory":
-        from .commands.push import MEMORY_SCOPE
+        from .push_preflight import MEMORY_SCOPE
 
         return do_push(MEMORY_SCOPE, allow_secrets=allow_secrets)
     tool = resolve_tool(tool)

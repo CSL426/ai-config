@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any, Self
 
 import pytest
+from push_helpers import patch_push
 
+from ai_config import push_preflight, push_publish
 from ai_config.commands.setup import SetupError, setup_gdrive_repository
 from ai_config.config import (
     ConfigError,
@@ -707,12 +709,11 @@ def test_gdrive_preflight_counts_commits_when_remote_is_empty(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import push as push_cmd
 
     repo_dir = tmp_path / "repo"
     init_git_repo(repo_dir)
     monkeypatch.setenv("AI_CONFIG_PROVIDER", "gdrive")
-    monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
+    patch_push(monkeypatch, "SCRIPT_DIR", repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
 
     class MockDriveClient(_MockDriveClient):
@@ -722,7 +723,7 @@ def test_gdrive_preflight_counts_commits_when_remote_is_empty(
 
     monkeypatch.setattr("ai_config.gdrive.GDriveClient", MockDriveClient)
 
-    preflight = push_cmd._push_preflight(["claude"])
+    preflight = push_preflight._push_preflight(["claude"])
     assert preflight is not None
     assert preflight.ahead == 1
     assert not preflight.has_changes
@@ -732,7 +733,6 @@ def test_working_paths_scans_unborn_repository(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import push as push_cmd
 
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
@@ -749,11 +749,11 @@ def test_working_paths_scans_unborn_repository(
         check=True,
         capture_output=True,
     )
-    monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
+    patch_push(monkeypatch, "SCRIPT_DIR", repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
 
     # unborn HEAD:索引中與未追蹤的檔案都要被列出,而不是 fatal: bad revision
-    assert push_cmd._working_paths() == [
+    assert push_preflight._working_paths() == [
         "claude/CLAUDE.md",
         "claude/settings.json",
     ]
@@ -763,7 +763,6 @@ def test_unstage_tools_works_on_unborn_repository(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import push as push_cmd
 
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
@@ -779,10 +778,10 @@ def test_unstage_tools_works_on_unborn_repository(
         check=True,
         capture_output=True,
     )
-    monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
+    patch_push(monkeypatch, "SCRIPT_DIR", repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
 
-    assert push_cmd._unstage_tools(["claude"]) is True
+    assert push_publish._unstage_tools(["claude"]) is True
     staged = subprocess.run(
         ["git", "-C", str(repo_dir), "diff", "--cached", "--name-only"],
         check=True,
@@ -796,7 +795,6 @@ def test_allow_secrets_flag_bypasses_credential_content_check(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import push as push_cmd
 
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
@@ -819,21 +817,20 @@ def test_allow_secrets_flag_bypasses_credential_content_check(
         check=True,
         capture_output=True,
     )
-    monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
+    patch_push(monkeypatch, "SCRIPT_DIR", repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
 
-    monkeypatch.setattr(push_cmd, "_ALLOW_SECRET_PATHS", False)
-    assert push_cmd._validate_staged_push(["claude"]) is False
+    patch_push(monkeypatch, "_ALLOW_SECRET_PATHS", False)
+    assert push_preflight._validate_staged_push(["claude"]) is False
 
-    monkeypatch.setattr(push_cmd, "_ALLOW_SECRET_PATHS", True)
-    assert push_cmd._validate_staged_push(["claude"]) is True
+    patch_push(monkeypatch, "_ALLOW_SECRET_PATHS", True)
+    assert push_preflight._validate_staged_push(["claude"]) is True
 
 
 def test_gdrive_can_create_first_commit_in_unborn_repository(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ai_config.commands import push as push_cmd
 
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
@@ -859,13 +856,13 @@ def test_gdrive_can_create_first_commit_in_unborn_repository(
         capture_output=True,
     )
     monkeypatch.setenv("AI_CONFIG_PROVIDER", "gdrive")
-    monkeypatch.setattr(push_cmd, "SCRIPT_DIR", repo_dir)
+    patch_push(monkeypatch, "SCRIPT_DIR", repo_dir)
     monkeypatch.setattr("ai_config.commands.sync.SCRIPT_DIR", repo_dir)
     monkeypatch.setattr("ai_config.gdrive.gdrive_push_upload", lambda path: 0)
-    reviewed_diff = push_cmd._staged_diff()
+    reviewed_diff = push_preflight._staged_diff()
     assert reviewed_diff is not None
 
-    assert push_cmd._commit_and_push("chore: initial config", ["claude"], reviewed_diff) == 0
+    assert push_publish._commit_and_push("chore: initial config", ["claude"], reviewed_diff) == 0
     assert subprocess.run(
         ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
         check=True,

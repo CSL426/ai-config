@@ -4,11 +4,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from push_helpers import patch_push
 from test_apply_projection import run_ai_config, write
 from test_commands import make_full_repo
 
-from ai_config import memory
-from ai_config.commands import push
+from ai_config import memory, push_preflight
 from ai_config.safety import is_reparse_point
 
 
@@ -110,25 +110,24 @@ def test_status_never_writes(tmp_path: Path) -> None:
 
 
 def test_push_scopes_treat_memory_as_its_own_range() -> None:
-    assert push._push_scopes("memory") == ["memory"]
-    assert push._push_scopes("claude") == ["claude"]
-    assert push._push_scopes("all")[-1] == "memory"
-    assert "memory" not in push._push_scopes("codex")
+    assert push_preflight._push_scopes("memory") == ["memory"]
+    assert push_preflight._push_scopes("claude") == ["claude"]
+    assert push_preflight._push_scopes("all")[-1] == "memory"
+    assert "memory" not in push_preflight._push_scopes("codex")
 
 
 def test_only_memory_changes_detection(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(push, "_working_paths", lambda: ["memory/MEMORY.md"])
-    assert push._only_memory_changes() is True
-    monkeypatch.setattr(
-        push, "_working_paths", lambda: ["memory/x.md", "claude/CLAUDE.md"]
+    patch_push(monkeypatch, "_working_paths", lambda: ["memory/MEMORY.md"])
+    assert push_preflight._only_memory_changes() is True
+    patch_push(monkeypatch, "_working_paths", lambda: ["memory/x.md", "claude/CLAUDE.md"]
     )
-    assert push._only_memory_changes() is False
-    monkeypatch.setattr(push, "_working_paths", list)
-    assert push._only_memory_changes() is False
+    assert push_preflight._only_memory_changes() is False
+    patch_push(monkeypatch, "_working_paths", list)
+    assert push_preflight._only_memory_changes() is False
 
 
 def test_pull_blocked_by_unsaved_memory_points_at_memory_push(tmp_path: Path) -> None:
-    from test_packaging_and_sync import (
+    from data_repo_helpers import (
         configure_git_identity,
         create_data_remote,
         run_data_cli,

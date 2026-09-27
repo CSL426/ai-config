@@ -4,8 +4,8 @@ import builtins
 
 import pytest
 
-from ai_config import console
-from ai_config.commands import maintenance, push, setup
+from ai_config import console, push_review
+from ai_config.commands import maintenance, setup
 
 
 def _interrupt_on_input(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -104,7 +104,7 @@ def test_push_confirmation_stops_after_double_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen = _interrupt_on_input(monkeypatch)
-    assert push._review_and_confirm_push("pending", "diff", "message") is False
+    assert push_review._review_and_confirm_push("pending", "diff", "message") is False
     assert len(seen) == 2
 
 

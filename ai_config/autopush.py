@@ -541,8 +541,9 @@ def opportunistic_push() -> None:
         decision = decide()
         if not decision.push:
             return
-        from .commands.push import MEMORY_SCOPE, do_push
+        from .commands.push import do_push
         from .console import set_force
+        from .push_preflight import MEMORY_SCOPE
 
         # 同上:只跳過確認,憑證檢查仍然會擋下不該外流的內容
         set_force(True)

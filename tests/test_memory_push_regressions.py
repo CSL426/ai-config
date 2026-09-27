@@ -4,7 +4,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from push_helpers import patch_push
 
+from ai_config import push_preflight, push_publish
 from ai_config.commands import push, sync
 
 
@@ -39,11 +41,11 @@ def data_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     git(repo, "commit", "-m", "Initial configuration")
     git(repo, "remote", "add", "origin", str(remote))
     git(repo, "push", "--set-upstream", "origin", "main")
-    monkeypatch.setattr(push, "SCRIPT_DIR", repo)
+    patch_push(monkeypatch, "SCRIPT_DIR", repo)
     monkeypatch.setattr(sync, "SCRIPT_DIR", repo)
-    monkeypatch.setattr(push, "configured_remote_provider", lambda: "git")
-    monkeypatch.setattr(push, "_remote_is_read_only", lambda: False)
-    monkeypatch.setattr(push, "_ALLOW_SECRET_PATHS", False)
+    patch_push(monkeypatch, "configured_remote_provider", lambda: "git")
+    patch_push(monkeypatch, "_remote_is_read_only", lambda: False)
+    patch_push(monkeypatch, "_ALLOW_SECRET_PATHS", False)
     return repo
 
 
@@ -68,7 +70,7 @@ def test_push_all_without_optional_directories_can_review_and_cancel(
         reviewed.append(git(data_repo, "diff", "--cached", "--name-only"))
         return False
 
-    monkeypatch.setattr(push, "confirm_prompt", decline)
+    patch_push(monkeypatch, "confirm_prompt", decline)
     # 沒拿到確認就沒推,離開碼要讓呼叫端分得出來
     assert push.do_push("all") == 1
     assert reviewed == ["claude/settings.json"]
@@ -84,7 +86,7 @@ def test_nothing_to_push_is_a_no_op_not_a_failure(
     settings = data_repo / "claude/settings.json"
     settings.write_text('{"theme": "dark"}\n', encoding="utf-8")
     # git status 看得到修改,但暫存差異是空的
-    monkeypatch.setattr(push, "_staged_diff", lambda: "")
+    patch_push(monkeypatch, "_staged_diff", lambda: "")
 
     assert push.do_push("claude") == 0
 
@@ -107,11 +109,11 @@ def test_memory_root_disappearing_after_preflight_refuses_staging(
     data_repo: Path,
 ) -> None:
     root = tracked_memory(data_repo)
-    assert push._push_preflight(["memory"]) is not None
+    assert push_preflight._push_preflight(["memory"]) is not None
     (root / "MEMORY.md").unlink()
     root.rmdir()
 
-    assert push._stage_push_changes(["memory"]) is None
+    assert push_publish._stage_push_changes(["memory"]) is None
     assert git(data_repo, "diff", "--cached", "--name-only") == ""
 
 
@@ -121,15 +123,15 @@ def test_individual_memory_deletion_allowed_while_root_exists(
     root = tracked_memory(data_repo)
     (root / "MEMORY.md").unlink()
 
-    reviewed = push._stage_push_changes(["memory"])
+    reviewed = push_publish._stage_push_changes(["memory"])
     assert reviewed is not None
     assert "deleted file" in reviewed
-    assert push._staged_push_matches(["memory"], reviewed)
+    assert push_publish._staged_push_matches(["memory"], reviewed)
 
     # An empty root can vanish without changing the Git diff after review.
     root.rmdir()
-    assert not push._staged_push_matches(["memory"], reviewed)
-    assert push._unstage_tools(push._push_scopes("all"))
+    assert not push_publish._staged_push_matches(["memory"], reviewed)
+    assert push_publish._unstage_tools(push_preflight._push_scopes("all"))
     assert git(data_repo, "diff", "--cached", "--name-only") == ""
 
 
@@ -152,7 +154,7 @@ def test_optional_scope_filter_keeps_staged_safety_checks(
     (root / "MEMORY.md").write_text("# Changed notes\n", encoding="utf-8")
     (data_repo / relative).write_text(content, encoding="utf-8")
 
-    assert push._stage_push_changes(push._push_scopes("all")) is None
+    assert push_publish._stage_push_changes(push_preflight._push_scopes("all")) is None
     assert message in capsys.readouterr().err
     assert git(data_repo, "diff", "--cached", "--name-only") == ""
 
@@ -205,7 +207,7 @@ def test_a_config_change_does_not_cancel_the_scheduled_memory_push(
         staged.append(git(data_repo, "diff", "--cached", "--name-only"))
         return True
 
-    monkeypatch.setattr(push, "confirm_prompt", accept)
+    patch_push(monkeypatch, "confirm_prompt", accept)
 
     assert push.do_push("memory") == 0
     # 只收記憶,設定的改動原封不動留在工作區

@@ -64,7 +64,8 @@ def _run_memory(args: list[str]) -> int:
         return _autopush(rest)
     if command == "push":
         from .. import autopush as auto
-        from .push import MEMORY_SCOPE, do_push
+        from ..push_preflight import MEMORY_SCOPE
+        from .push import do_push
 
         stale = None
         if len(rest) == 2 and rest[0] == "--if-stale":
