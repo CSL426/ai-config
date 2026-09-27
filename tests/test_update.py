@@ -14,12 +14,18 @@ from test_commands import make_full_repo
 
 
 
+# 下面的 fixture 會換掉更新後的修復;測它本身的測試從這裡拿真正的實作
+_ORIGINAL: dict = {}
+
+
 @pytest.fixture(autouse=True)
 def _no_plugin_update(monkeypatch: pytest.MonkeyPatch) -> None:
-    """These tests fake subprocess.run for the binary; the plugin step has its own file."""
+    """These tests fake subprocess.run for the binary; the later steps have their own tests."""
     from ai_config.commands import update
 
+    _ORIGINAL.setdefault("refresh", update._refresh_after_update)
     monkeypatch.setattr(update, "_update_plugin", lambda: None)
+    monkeypatch.setattr(update, "_refresh_after_update", lambda: None)
 
 
 def test_update_from_source_explains_and_fails(tmp_path: Path) -> None:
@@ -545,3 +551,63 @@ def test_the_update_lock_is_released_for_the_next_run(tmp_path, monkeypatch):
         pass
     with update.update_lock():
         pass
+
+
+
+def test_a_standalone_update_repairs_hooks_with_the_new_binary(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The running exe was just swapped out; importing from it now fails.
+
+    On Windows a onefile build reads its modules from its own path, which
+    now holds the new version: 1.0.93's in-process repair died with "Error
+    -3 while decompressing data". The new launcher does the repair instead.
+    """
+    import subprocess
+
+    from ai_config import hooks
+    from ai_config.commands import update
+
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "ℹ 已補回 hook 的參數:memory-entry\n", "")
+
+    def in_process() -> None:
+        raise AssertionError("the swapped-out process must not repair in place")
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(update, "scheduled_command", lambda: ["/bin/ai-config"])
+    monkeypatch.setattr(update.subprocess, "run", run)
+    monkeypatch.setattr(hooks, "refresh_all", in_process)
+
+    _ORIGINAL["refresh"]()
+
+    assert calls == [["/bin/ai-config", "__refresh-hooks"]]
+    # 新版印的訊息要轉給看著 update 的人
+    assert "已補回 hook 的參數" in capsys.readouterr().out
+
+
+def test_a_checkout_update_repairs_in_place(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config import hooks
+
+    seen = []
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(hooks, "refresh_all", lambda: seen.append(True))
+
+    _ORIGINAL["refresh"]()
+
+    assert seen == [True]
+
+
+def test_the_hidden_refresh_command_runs_the_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import cli_dispatch, hooks
+
+    seen = []
+    monkeypatch.setattr(hooks, "refresh_all", lambda: seen.append(True))
+
+    assert cli_dispatch.main(["__refresh-hooks"], lambda: None) == 0
+    assert seen == [True]
