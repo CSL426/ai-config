@@ -13,7 +13,16 @@ CLI、GUI、Windows 原生行為與安全邊界不變。每一階段都要先搬
 - Phase 1 GUI：已完成拆分與引用遷移；舊 `ai_config/commands/gui.py` 已刪除。
 - Phase 1 驗證：1141 tests 通過、12 個 skip；`ruff`、`bash -n install.sh`、
   `git diff --check` 通過。
-- Phase 2–5：尚未開始。
+- Phase 2 Push：已完成。`commands/push.py` 由 1252 行縮成 97 行的 `do_push()`；
+  檢查、審閱、發布分到 `push_preflight.py`、`push_review.py`、`push_publish.py`。
+  模組之間一律以 `模組.函式()` 互相呼叫，測試用 `tests/push_helpers.py` 的
+  `patch_push()` 一次替換所有模組上的同名綁定。push 測試由
+  `test_packaging_and_sync.py` 搬到 `test_push.py`，共用的臨時資料庫輔助函式
+  搬到 `tests/data_repo_helpers.py`。
+- Phase 2 驗證：1183 tests 通過、12 個 skip，與拆分前相同；`ruff`、
+  `bash -n install.sh`、`git diff --check` 通過；`rg` 確認沒有對
+  `commands.push` 私有函式的舊引用。
+- Phase 3–5：尚未開始。
 
 ## 不變的契約
 
