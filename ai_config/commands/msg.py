@@ -72,6 +72,9 @@ def _setup() -> int:
 
 def run_msg(args: list) -> int:
     action = args[0] if args else "list"
+    if action in {"--help", "-h"}:
+        log_info(_USAGE.format(entry=ENTRYPOINT))
+        return 0
     try:
         if action == "list" and len(args) <= 1:
             return _list()
