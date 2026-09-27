@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ai_config import keepalive
+from ai_config import keepalive_scheduler, keepalive_settings, keepalive_window
 from ai_config.gui_api import GuiApi
 from ai_config.gui_management import _keepalive_state
 
@@ -15,7 +15,7 @@ def core(monkeypatch):
     methods = {
         "enable": Mock(return_value=(0, ["enabled", "07:00"])),
         "disable": Mock(return_value=(0, ["disabled"])),
-        "load": Mock(return_value=keepalive.Settings(
+        "load": Mock(return_value=keepalive_settings.Settings(
             times=("07:00", "12:05"), model="test-model",
         )),
         "installed": Mock(return_value=True),
@@ -24,8 +24,10 @@ def core(monkeypatch):
         "last_by_account": Mock(return_value={}),
         "current_window": Mock(return_value=None),
     }
+    modules = (keepalive_settings, keepalive_scheduler, keepalive_window)
     for name, method in methods.items():
-        monkeypatch.setattr(keepalive, name, method)
+        owner = next(module for module in modules if hasattr(module, name))
+        monkeypatch.setattr(owner, name, method)
     return methods
 
 
@@ -174,10 +176,10 @@ def test_the_page_gets_the_window_and_each_account(core, monkeypatch):
 
     start = datetime(2026, 9, 23, 9, 50).astimezone()
     reset = datetime(2026, 9, 23, 14, 50).astimezone()
-    monkeypatch.setattr(keepalive, "current_window", lambda now=None: (start, reset))
-    monkeypatch.setattr(keepalive, "drift", lambda s, times, now: "07:00")
+    monkeypatch.setattr(keepalive_window, "current_window", lambda now=None: (start, reset))
+    monkeypatch.setattr(keepalive_window, "drift", lambda s, times, now: "07:00")
     monkeypatch.setattr(
-        keepalive, "last_by_account",
+        keepalive_window, "last_by_account",
         lambda tool="claude": {".codex-set": "exit 0: hi"} if tool == "codex" else {},
     )
 
@@ -188,7 +190,7 @@ def test_the_page_gets_the_window_and_each_account(core, monkeypatch):
 
 
 def test_no_recorded_window_is_none(core, monkeypatch):
-    monkeypatch.setattr(keepalive, "current_window", lambda now=None: None)
-    monkeypatch.setattr(keepalive, "last_by_account", lambda tool="claude": {})
+    monkeypatch.setattr(keepalive_window, "current_window", lambda now=None: None)
+    monkeypatch.setattr(keepalive_window, "last_by_account", lambda tool="claude": {})
 
     assert _keepalive_state()["window"] is None

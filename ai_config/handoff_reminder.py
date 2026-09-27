@@ -394,9 +394,9 @@ def run_statusline(args: list[str]) -> int:
             if isinstance(payload, dict):
                 used = record(payload, threshold)
                 # 真正的 reset 時間只出現在這裡;記下來 keepalive status 才能比對排程
-                from . import keepalive
+                from . import keepalive_window
 
-                keepalive.record_window(payload)
+                keepalive_window.record_window(payload)
     except (OSError, RuntimeError, ValueError, TypeError):
         pass
     should_remind = used is not None and used >= threshold

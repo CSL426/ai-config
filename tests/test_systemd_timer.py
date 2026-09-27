@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_config import autopush, keepalive, systemd_timer
+from ai_config import autopush, keepalive_scheduler, systemd_timer
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def systemctl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list:
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", run)
-    monkeypatch.setattr(keepalive, "_systemd_dir", lambda: tmp_path / "units")
+    monkeypatch.setattr(keepalive_scheduler, "_systemd_dir", lambda: tmp_path / "units")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(
         systemd_timer, "stamp_path", lambda timer: stamp if timer in WATCHED else
@@ -47,7 +47,7 @@ def _old_stamp(timer: str) -> Path:
 def test_keepalive_stops_and_restamps_before_reloading(systemctl: list) -> None:
     _old_stamp("acg-keepalive.timer")
 
-    keepalive._enable_systemd(["07:00", "12:00", "17:00", "22:00"], "claude")
+    keepalive_scheduler._enable_systemd(["07:00", "12:00", "17:00", "22:00"], "claude")
 
     actions = [action for action, _ in systemctl]
     assert actions[:3] == ["stop", "daemon-reload", "enable"]
