@@ -271,8 +271,8 @@
     if (!marker) return;
     const index = Number(marker.dataset.slide);
     let target = null;
-    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') target = index + 1;
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') target = index - 1;
+    if (['ArrowRight', 'ArrowDown', 'PageDown'].includes(event.key)) target = index + 1;
+    if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key)) target = index - 1;
     if (event.key === 'Home') target = 0;
     if (event.key === 'End') target = slides.length - 1;
     if (target === null) return;
@@ -283,9 +283,17 @@
   });
 
   document.addEventListener('keydown', event => {
-    if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest('button, a, input, select, textarea')) return;
-    if (['ArrowRight', 'ArrowDown', ' ', 'PageDown'].includes(event.key)) { go(current + 1); event.preventDefault(); }
-    if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key)) { go(current - 1); event.preventDefault(); }
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // 簡報遙控器送的就是 PageUp／PageDown；按鈕和連結用不到這兩個鍵，
+    // 所以點過頁碼或「複製」之後也要能翻頁，只有在輸入框裡打字時才讓開
+    if (['PageDown', 'PageUp'].includes(event.key) && !event.target.closest('input, select, textarea')) {
+      go(current + (event.key === 'PageDown' ? 1 : -1));
+      event.preventDefault();
+      return;
+    }
+    if (event.target.closest('button, a, input, select, textarea')) return;
+    if (['ArrowRight', 'ArrowDown', ' '].includes(event.key)) { go(current + 1); event.preventDefault(); }
+    if (['ArrowLeft', 'ArrowUp'].includes(event.key)) { go(current - 1); event.preventDefault(); }
     if (event.key === 'Home') { go(0); event.preventDefault(); }
     if (event.key === 'End') { go(slides.length - 1); event.preventDefault(); }
   });
