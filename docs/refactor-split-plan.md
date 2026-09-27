@@ -53,9 +53,18 @@ CLI、GUI、Windows 原生行為與安全邊界不變。每一階段都要先搬
     指向（3f66b37）。conftest 的整體防護也擴及資料庫的 `.git/config`。
 - Phase 5 驗證：1188 tests 通過、12 個 skip；真實的 `~/.claude/settings.json` 與
   資料庫 `.git/config` 在整套測試前後不變。
-- 測試拆分：`test_push.py` 已在 Phase 2 從 `test_packaging_and_sync.py` 分出；
-  其餘（`test_windows_sync.py`、`test_gdrive.py`、`test_ghauth.py`、
-  `test_packaging_and_sync.py` 剩下的部分）尚未拆。
+- 測試拆分：已完成，四個大檔都已刪除。
+  - `test_packaging_and_sync.py` → `test_push.py`（Phase 2）、`test_setup_pull.py`、
+    `test_release_contract.py`。
+  - `test_windows_sync.py` → `test_windows_cli.py`、`test_windows_apply_skills.py`、
+    `test_windows_reparse_backup.py`。
+  - `test_gdrive.py` → `test_gdrive_auth.py`、`test_gdrive_storage.py`、
+    `test_gdrive_sync.py`；autouse 的 `_isolated_config` 放在
+    `gdrive_test_helpers.py`，三個檔都 import。
+  - `test_ghauth.py` → `test_ghauth_access.py`、`test_ghauth_binding.py`、
+    `test_ghauth_helper.py`。
+  - 多檔共用的輔助函式放在 `*_test_helpers.py`；只有一個檔用到的就跟著那個檔。
+- 測試拆分驗證：1188 tests 通過、12 個 skip，與拆分前相同。
 
 ## 不變的契約
 
