@@ -2090,3 +2090,36 @@ def test_setup_leaves_an_existing_identity_alone(
         capture_output=True, text=True, check=False,
     )
     assert local.returncode == 1, "已有身分就不該在儲存庫裡蓋一層"
+
+
+@pytest.mark.parametrize(
+    ("command", "usage"),
+    [
+        (["memory", "--help"], "memory <status"),
+        (["memory", "handoff", "--help"], "memory handoff [list"),
+        (["memory", "handoff", "remind", "-h"], "memory handoff remind [status"),
+        (["memory", "autopush", "--help"], "memory autopush [status"),
+        (["msg", "--help"], "msg list | setup"),
+        (["update", "--help"], "update [version]"),
+    ],
+)
+def test_subcommand_help_prints_its_usage_and_succeeds(
+    tmp_path: Path, command: list[str], usage: str,
+) -> None:
+    # update --help 以前會被當成版本號,真的去下載一個叫 --help 的版本
+    env = os.environ.copy()
+    env["AI_CONFIG_REPO"] = str(tmp_path / "missing-data-repo")
+    env["AI_CONFIG_ENTRYPOINT"] = "acg"
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    env["PYTHONUTF8"] = "1"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ai_config", *command],
+        capture_output=True, text=True, encoding="utf-8", env=env, check=False,
+        timeout=60,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert f"Usage: acg {usage}" in output
+    assert "✗" not in output

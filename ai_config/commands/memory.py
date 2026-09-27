@@ -13,6 +13,8 @@ from ..console import log_error, log_header, log_info, log_success, log_warn
 from ..locking import apply_lock
 from ..paths import BACKUP_BASE, ENTRYPOINT, MEMORY_LINK, tilde
 
+_HELP = frozenset({"--help", "-h"})
+
 USAGE = (
     f"Usage: {ENTRYPOINT} memory "
     "<status|enable [codex|agy]|disable [codex|agy]|"
@@ -32,6 +34,9 @@ def run_memory(args: list[str]) -> int:
 def _run_memory(args: list[str]) -> int:
     command = args[0] if args else "status"
     rest = args[1:]
+    if command in _HELP:
+        log_info(USAGE)
+        return 0
     if command == "status" and not rest:
         return _status()
     if command in {"enable", "disable"} and rest in (["codex"], ["agy"]):
@@ -113,6 +118,9 @@ def _autopush(rest: list[str]) -> int:
 
     action = rest[0] if rest else "status"
     args = rest[1:]
+    if action in _HELP:
+        log_info(_AUTOPUSH_USAGE)
+        return 0
     try:
         if action == "status" and not args:
             state = auto.status()
@@ -148,6 +156,9 @@ _HANDOFF_USAGE = (
     "[list [專案路徑] | write <線> <內容> | claim [線] | done <線> | "
     "remind [status|enable [百分比]|disable]]"
 )
+_REMIND_USAGE = (
+    f"Usage: {ENTRYPOINT} memory handoff remind [status|enable [百分比]|disable]"
+)
 
 
 def _handoff(rest: list[str]) -> int:
@@ -155,6 +166,9 @@ def _handoff(rest: list[str]) -> int:
 
     action = rest[0] if rest else "list"
     args = rest[1:]
+    if action in _HELP:
+        log_info(_HANDOFF_USAGE)
+        return 0
     try:
         if action == "remind":
             return _handoff_remind(args)
@@ -196,6 +210,9 @@ def _handoff_remind(args: list[str]) -> int:
 
     action = args[0] if args else "status"
     rest = args[1:]
+    if action in _HELP:
+        log_info(_REMIND_USAGE)
+        return 0
     if action == "status" and not rest:
         state = remind.status()
     elif action == "enable" and len(rest) <= 1:
@@ -204,7 +221,7 @@ def _handoff_remind(args: list[str]) -> int:
     elif action == "disable" and not rest:
         state = remind.configure(False)
     else:
-        log_error(_HANDOFF_USAGE)
+        log_error(_REMIND_USAGE)
         return 1
     if state["installed"]:
         log_success(f"Claude 交接提醒已啟用，門檻 {state['threshold']}%")

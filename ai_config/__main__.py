@@ -209,6 +209,10 @@ def main(argv: "list[str] | None" = None) -> int:
 
         return run_setup(args[1:])
     if cmd == "update":
+        if args[1:] in (["--help"], ["-h"]):
+            # 不攔的話 --help 會被當成版本號,真的去下載一個叫 --help 的版本
+            log_info(f"Usage: {ENTRYPOINT} update [version]")
+            return 0
         if len(args) > 2:
             log_error(f"Usage: {ENTRYPOINT} update [version]")
             return 1
