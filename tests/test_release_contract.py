@@ -421,8 +421,9 @@ def test_powershell_scripts_windows_reads_are_ascii() -> None:
     """
     from ai_config.completion import powershell_completion
 
+    scripts = [REPO_ROOT / "install.ps1", *sorted((REPO_ROOT / "scripts").glob("*.ps1"))]
     for name, text in (
-        ("install.ps1", (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")),
+        *((path.name, path.read_text(encoding="utf-8")) for path in scripts),
         ("completion.ps1", powershell_completion()),
     ):
         offending = [
