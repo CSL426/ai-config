@@ -259,8 +259,13 @@ def test_powershell_installer_puts_the_launcher_on_path(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     share_dir = tmp_path / "share"
     env = os.environ.copy()
+    # 第一次從 zip 裝:正式下載走的就是這條
+    archive = shutil.make_archive(
+        str(tmp_path / "ai-config-windows-x86_64"), "zip",
+        root_dir=build(b"first").parent, base_dir="ai-config",
+    )
     env.update({
-        "AI_CONFIG_BINARY_PATH": str(build(b"first")),
+        "AI_CONFIG_BINARY_PATH": archive,
         "AI_CONFIG_LAUNCHER_PATH": str(launcher),
         "AI_CONFIG_BIN_DIR": str(bin_dir),
         "AI_CONFIG_SHARE_DIR": str(share_dir),

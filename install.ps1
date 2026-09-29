@@ -98,6 +98,19 @@ function Remove-ReplacedBinaries([string]$Destination) {
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
+function Get-Sha256([string]$Path) {
+    # .NET directly rather than Get-FileHash: Windows PowerShell started from
+    # PowerShell 7 inherits its PSModulePath and cannot load the cmdlet.
+    $Stream = [IO.File]::OpenRead($Path)
+    try {
+        $Hasher = [Security.Cryptography.SHA256]::Create()
+        try { $Bytes = $Hasher.ComputeHash($Stream) }
+        finally { $Hasher.Dispose() }
+    }
+    finally { $Stream.Dispose() }
+    return ([BitConverter]::ToString($Bytes) -replace '-', '').ToLowerInvariant()
+}
+
 function Test-Launcher([string]$Path) {
     # Install-Launcher records the hash of what it put on PATH; a copy of a
     # real build left there by an older layout will not match it.
@@ -105,7 +118,7 @@ function Test-Launcher([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
     if (-not (Test-Path -LiteralPath $LauncherMarker -PathType Leaf)) { return $false }
     $Recorded = (Get-Content -LiteralPath $LauncherMarker -Raw).Trim().ToLowerInvariant()
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Recorded
+    return (Get-Sha256 $Path) -eq $Recorded
 }
 
 function Set-ActiveVersion([string]$Resolved) {
@@ -180,9 +193,9 @@ function Install-Launcher([string]$Launcher, [string]$Destination) {
     # The launcher barely changes between releases; replace it only when it
     # did. The old file may be running (it may be the very acg that started
     # this update), and Replace-Binary moves a running file aside, never over.
-    $Wanted = (Get-FileHash -LiteralPath $Launcher -Algorithm SHA256).Hash.ToLowerInvariant()
+    $Wanted = (Get-Sha256 $Launcher)
     $Current = if (Test-Path -LiteralPath $Destination -PathType Leaf) {
-        (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant()
+        (Get-Sha256 $Destination)
     }
     if ($Current -ne $Wanted) { Replace-Binary $Launcher $Destination }
     New-Item -ItemType Directory -Force -Path $ShareDir | Out-Null
@@ -191,7 +204,10 @@ function Install-Launcher([string]$Launcher, [string]$Destination) {
 
 function Expand-Build([string]$Archive) {
     $Unpacked = Join-Path ([IO.Path]::GetTempPath()) ("ai-config-unpacked-" + [guid]::NewGuid().ToString('N'))
-    Expand-Archive -LiteralPath $Archive -DestinationPath $Unpacked -Force
+    # .NET directly for the same reason as Get-Sha256: Expand-Archive lives in
+    # a script module that PowerShell 7's PSModulePath hides from 5.1
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $Unpacked)
     $Root = Join-Path $Unpacked 'ai-config'
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) { Fail "Unexpected archive layout: $Archive" }
     return $Root
@@ -208,7 +224,7 @@ function Get-VerifiedDownload([string]$BaseUrl, [string]$Name, [string]$Director
     }
     Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/$Name.sha256" -OutFile "$Download.sha256"
     $Expected = ((Get-Content -LiteralPath "$Download.sha256" -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-    $Actual = (Get-FileHash -LiteralPath $Download -Algorithm SHA256).Hash.ToLowerInvariant()
+    $Actual = (Get-Sha256 $Download)
     if ($Actual -ne $Expected) { Fail "Downloaded $Name checksum mismatch" }
     return $Download
 }

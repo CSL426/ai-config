@@ -303,7 +303,10 @@ def _run_windows_update(tag: "str | None" = None, script_tag: str = "main") -> i
         "-Command",
         _windows_update_script(tag, interactive, script_tag),
     ]
-    kwargs: dict = {}
+    # PowerShell 7 會把自己的模組路徑放進 PSModulePath;5.1 繼承後載不到
+    # Get-FileHash、Expand-Archive 這些腳本模組裡的指令
+    environment = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
+    kwargs: dict = {"env": environment}
     if not interactive:
         kwargs.update(
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
