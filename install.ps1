@@ -326,6 +326,11 @@ if ($Operation -eq 'Installation' -and -not $env:AI_CONFIG_NO_SHORTCUT) {
     & $Destination gui --shortcut
     if ($LASTEXITCODE -ne 0) { Write-Warn "Desktop shortcut was not created; run: ai-config gui --shortcut" }
 }
+# 第一次裝就讓 Claude Code 有 /acg;更新時由 acg update 負責,不在這裡重做
+if ($Operation -eq 'Installation' -and -not $env:AI_CONFIG_NO_PLUGIN) {
+    & $Destination __claude-plugin
+    if ($LASTEXITCODE -ne 0) { Write-Warn "Claude Code /acg was not installed; run: ai-config update" }
+}
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not $SkipPathUpdate -and ($UserPath -split ';') -notcontains $BinDir) {
     $UpdatedPath = if ($UserPath) { "$UserPath;$BinDir" } else { $BinDir }

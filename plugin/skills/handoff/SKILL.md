@@ -1,3 +1,11 @@
+---
+name: handoff
+description: 把這條工作線的進度交接給下一個 session,或管理 context 提醒
+argument-hint: '[工作線名稱] [進度與下一步] | remind [status|enable [百分比]|disable]'
+disable-model-invocation: true
+allowed-tools: Bash(acg memory handoff:*), Bash(ai-config memory handoff:*)
+---
+
 # handoff:把這條工作線交接給下一個 session
 
 使用者的流程是:交接 → `/clear` → 接手,同一個 session 接續同一條線。交接取代壓縮:
@@ -54,3 +62,5 @@ acg memory handoff write "<名稱>" "<內容>"
 
 這行是格式示範,要換成你決定的名稱與內容。執行完把結果回報給使用者,告訴他可以 `/clear`,
 之後打 `/acg pickup` 或說「接著做」就能接回來。
+
+引數:`$ARGUMENTS`

@@ -22,7 +22,7 @@ test("斜線指令都列在說明裡", async ({ page }) => {
   const hint = page.locator(".settings-group", { has: page.locator("#plugin-install") })
     .locator(".package-hint");
   for (const name of ["status", "sync", "save", "share", "memory", "keepalive", "msg", "handoff", "handoffs", "pickup"]) {
-    await expect(hint).toContainText(`/acg ${name}`);
+    await expect(hint).toContainText(`/acg:${name}`);
   }
 });
 

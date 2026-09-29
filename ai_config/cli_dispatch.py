@@ -109,6 +109,13 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         from .commands.update import run_update
 
         return run_update(args[1] if len(args) == 2 else None)
+    if cmd == "__claude-plugin":
+        # 隱藏命令:安裝腳本第一次裝好後呼叫,讓 Claude Code 直接有 /acg
+        from .claude_plugin import ensure
+        from .commands.update import _repository
+
+        ensure(_repository())
+        return 0
     if cmd == "__refresh-hooks":
         # 隱藏命令:update 換完執行檔後,由新版來修 hook 與資料庫的綁定
         from .hooks import refresh_all

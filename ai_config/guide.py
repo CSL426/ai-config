@@ -223,12 +223,16 @@ confirmation but keep the credential check, so a secret still blocks the push.
 
 ## The /acg skill
 
-Installing this repository as a plugin (`claude plugin marketplace add
-CSL426/ai-config`, then `claude plugin install acg@acg`) adds one skill,
-used as `/acg <subcommand>`: `status`, `sync`, `save`, `share`, `memory`,
-`keepalive`, `msg`, `handoff`, `handoffs`, `pickup`. Each subcommand's steps
-live in their own reference file, read only when used. The skill also fires
-when someone says "交接" or "接著做" without typing it. It wraps the CLI below
+The first install and every `update` put this repository's plugin into
+Claude Code when `claude` is on the machine, so the skill arrives with the
+CLI; set `AI_CONFIG_NO_PLUGIN=1` to skip that, e.g. on a machine whose
+Claude Code belongs to someone else. By hand it is `claude plugin
+marketplace add CSL426/ai-config`, then `claude plugin install acg@acg`.
+Each subcommand is its own entry in the / menu, `/acg:status`, `/acg:sync`,
+`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:msg`,
+`/acg:handoff`, `/acg:handoffs`, `/acg:pickup`; those are user-only, so they
+cost no context until picked. The `acg` skill reads the same files: type
+`/acg <subcommand>`, or just say "交接" or "接著做" and it fires on its own. It wraps the CLI below
 and adds no behaviour of its own, so the guards described here apply to it
 unchanged. On Codex and Antigravity this guide arrives as the `acg` skill
 through `apply` instead; Claude gets the plugin's, so the two never share a
@@ -408,16 +412,18 @@ is preserved. Disable removes these hooks and keeps existing entries and data.
 ## Installing on a new machine
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | \\
+curl -fsSL https://github.com/CSL426/ai-config/releases/latest/download/install.sh | \\
   AI_CONFIG_REPO_URL=<git-url> AI_CONFIG_DATA_DIR=<path> bash
 hash -r
 {entrypoint} status
 {entrypoint} apply
 ```
 
-Windows uses `irm https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 | iex`.
+Windows uses `irm https://github.com/CSL426/ai-config/releases/latest/download/install.ps1 | iex`.
 Use an SSH URL; URLs with embedded HTTP credentials are rejected. Tracked skills
 arrive with `apply`; use `skill add <local-directory>` to introduce a new one.
+The installer also puts `/acg` into Claude Code unless `AI_CONFIG_NO_PLUGIN=1`
+is set.
 
 `AI_CONFIG_REPO` overrides the saved data repo path at runtime.
 """

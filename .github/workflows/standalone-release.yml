@@ -297,6 +297,15 @@ jobs:
             release-assets/ai-config-windows-x86_64.exe.sha256 \
             > release-assets/acg.exe.sha256
 
+      # 安裝腳本跟執行檔一起發,新機器與 acg update 才拿得到同一版的腳本
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          path: source
+
+      - name: Add the installers
+        run: cp source/install.sh source/install.ps1 release-assets/
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}

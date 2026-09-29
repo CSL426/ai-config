@@ -1,3 +1,10 @@
+---
+name: memory
+description: 看共用記憶的狀態、索引漂移與疑似憑證的筆記
+disable-model-invocation: true
+allowed-tools: Bash(acg memory status), Bash(ai-config memory status)
+---
+
 # memory:看共用記憶的狀態
 
 執行 `acg memory status`,把結果整理給使用者。重點看這幾件事:
@@ -15,3 +22,5 @@
   但不要代跑:那會搬動好幾個專案的檔案。
 
 若有未保存的記憶變更,提醒可以用 `acg memory push` 保存。
+
+引數:`$ARGUMENTS`

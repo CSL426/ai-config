@@ -45,8 +45,14 @@ def _repository() -> str:
     return os.environ.get("AI_CONFIG_TOOL_REPOSITORY", _DEFAULT_REPOSITORY)
 
 
-def _installer_url(script: str) -> str:
-    return f"https://raw.githubusercontent.com/{_repository()}/main/{script}"
+def _installer_url(script: str, tag: str) -> str:
+    """The installer as it was at the release being installed.
+
+    It used to come from main while the binary came from the release, so an
+    unreleased script change reached every install, and a downgrade ran
+    today's script against an old binary.
+    """
+    return f"https://raw.githubusercontent.com/{_repository()}/{tag}/{script}"
 
 
 def _latest_release_version() -> str:
@@ -227,9 +233,9 @@ def normalize_version(requested: str) -> "str | None":
 
 
 def _windows_update_script(
-    tag: "str | None" = None, interactive: bool = True,
+    tag: "str | None" = None, interactive: bool = True, script_tag: str = "main",
 ) -> str:
-    installer_url = _powershell_literal(_installer_url("install.ps1"))
+    installer_url = _powershell_literal(_installer_url("install.ps1", script_tag))
     pin = (
         f"$env:AI_CONFIG_VERSION = {_powershell_literal(tag)}"
         if tag
@@ -274,7 +280,7 @@ def _windows_update_script(
     )
 
 
-def _run_windows_update(tag: "str | None" = None) -> int:
+def _run_windows_update(tag: "str | None" = None, script_tag: str = "main") -> int:
     """Install in the foreground, in this console, and wait for it.
 
     Windows will not overwrite a running exe, which is why this used to
@@ -292,7 +298,7 @@ def _run_windows_update(tag: "str | None" = None) -> int:
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        _windows_update_script(tag, interactive),
+        _windows_update_script(tag, interactive, script_tag),
     ]
     kwargs: dict = {}
     if not interactive:
@@ -397,42 +403,21 @@ def _refresh_after_update() -> None:
         log_warn(f"hook 路徑沒有更新;執行 {ENTRYPOINT} apply 會再修一次")
 
 
-_PLUGIN = "acg@acg"
-
-
 def _claude_binary() -> "str | None":
-    found = shutil.which("claude")
-    if found:
-        return found
-    fallback = Path.home() / ".local" / "bin" / "claude"
-    return str(fallback) if fallback.is_file() else None
+    from ..claude_plugin import claude_binary
+
+    return claude_binary()
 
 
 def _update_plugin() -> None:
-    """Bring the Claude Code plugin along; the binary alone left it behind.
+    """Bring /acg along with the binary, installing it where it is missing.
 
     Three machines sat on plugin 1.0.63 while acg was at 1.0.79: nothing
-    but a person remembering ever ran `claude plugin update`. Best effort
-    -- a machine without Claude Code, or without the plugin, is not an
-    update failure.
+    but a person remembering ever ran `claude plugin update`.
     """
-    claude = _claude_binary()
-    if claude is None:
-        return
-    try:
-        done = subprocess.run(
-            [claude, "plugin", "update", _PLUGIN],
-            capture_output=True, text=True, **UTF8, timeout=120, check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        log_warn(f"plugin 沒有更新:{exc}")
-        return
-    output = (done.stdout or done.stderr or "").strip().splitlines()
-    last = output[-1] if output else ""
-    if done.returncode == 0:
-        log_info(f"plugin:{last}" if last else "plugin 已是最新")
-    else:
-        log_warn(f"plugin 沒有更新:{last or f'exit {done.returncode}'}")
+    from ..claude_plugin import ensure
+
+    ensure(_repository())
 
 
 def _run_update(requested_version: "str | None" = None) -> int:
@@ -497,12 +482,14 @@ def _run_update(requested_version: "str | None" = None) -> int:
                 log_info(f"已經在 {wanted}")
             return 0
 
+    # 腳本跟執行檔要出自同一個 release
+    target = tag or f"v{latest.lstrip('v')}"
     if uv_installation is not None:
-        return _update_uv(uv_installation, tag or f"v{latest}")
+        return _update_uv(uv_installation, target)
     if NATIVE_WINDOWS:
-        return _run_windows_update(tag)
+        return _run_windows_update(tag, target)
 
-    url = _installer_url("install.sh")
+    url = _installer_url("install.sh", target)
     log_info(f"Fetching installer from {url}")
     environment = os.environ.copy()
     if tag is not None:

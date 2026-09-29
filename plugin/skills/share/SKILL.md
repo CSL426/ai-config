@@ -1,3 +1,11 @@
+---
+name: share
+description: 把一個 Claude 技能分享給 Codex 與 Antigravity
+argument-hint: '<技能名稱> [--to both|codex|agy]'
+disable-model-invocation: true
+allowed-tools: Bash(acg share:*), Bash(ai-config share:*), Bash(acg unshare:*), Bash(ai-config unshare:*)
+---
+
 # share:把 Claude 技能分享給 Codex 與 Antigravity
 
 執行 `acg share <技能名稱> [--to both|codex|agy]`。
@@ -13,3 +21,5 @@ Antigravity,不需要分享。分享是給「只想給 Codex 或 Antigravity」�
 家目錄,先問過使用者。
 
 取消分享用 `acg unshare <名稱>`,它只移除共用副本,`~/.claude/skills/` 底下的原檔會留著。
+
+引數:`$ARGUMENTS`
