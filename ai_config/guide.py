@@ -117,7 +117,8 @@ sources remain, so a same-name standalone skill will still be projected.
 These commands do not commit or push; review the data repo changes separately.
 
 `apply` targets the user home directories. `deploy` installs into one
-project instead and writes nothing under home: use it on someone else's
+project instead and writes nothing under home except Claude's own plugin
+registry and cache when a plugin is picked: use it on someone else's
 machine, where the global config belongs to its owner. Each pick goes where
 its tools read it inside the project:
 
@@ -200,7 +201,6 @@ Pull still downloads the entire repository, including shared memory.
   changes are left unstaged, not lost.
 - **A `-` line means the file exists only live and `apply` would delete it.**
   Run `init` first if that content is worth keeping.
-- **Skill sync requires 1.0.13+.** Older binaries silently skip `skills/`.
 - **Credentials are never copied.** `.credentials.json`, `auth.json`,
   `oauth_creds.json`, `google_accounts.json`, and `trustedFolders.json` are
   always excluded.
@@ -224,12 +224,13 @@ confirmation but keep the credential check, so a secret still blocks the push.
 ## Slash commands
 
 Installing this repository as a plugin (`claude plugin marketplace add
-CSL426/ai-config`, then `claude plugin install acg@acg`) adds eight slash
+CSL426/ai-config`, then `claude plugin install acg@acg`) adds slash
 commands whose `acg:` prefix says where they came from: `/acg:status`,
 `/acg:sync`, `/acg:save`, `/acg:share`, `/acg:memory`, `/acg:handoff`,
-`/acg:handoffs`, `/acg:pickup`. They wrap the CLI below and add no behaviour
-of their own, so the guards described here apply to them unchanged. The
-plugin carries only commands; the `acg` skill arrives through `apply`.
+`/acg:handoffs`, `/acg:pickup`, `/acg:keepalive`, `/acg:msg`. They wrap the
+CLI below and add no behaviour of their own, so the guards described here
+apply to them unchanged. The plugin also carries the `thread-handoff` skill;
+the `acg` skill arrives through `apply`.
 
 ## Handing a thread to the next session
 
@@ -280,9 +281,8 @@ special; receiving does:
   and a message sent past it forks the conversation. It can still send.
 
 A message to Codex carries the exact reply command, with `--from` set to
-the recipient's name, when the sender can receive. A name matching more
-than one session is refused rather than guessed; use the id. A failed
-delivery or turn says why, e.g. the account's usage limit.
+the recipient's name, when the sender can receive. A failed delivery or
+turn says why, e.g. the account's usage limit.
 
 ### Anchoring the usage window
 
@@ -312,9 +312,9 @@ account's last result.
 Each tool is anchored separately, with its own times, schedule and log:
 three accounts, three windows, no reason for their boundaries to line up.
 Every call uses the weakest model and the least thinking that tool offers,
-because the call exists to have happened. The model is picked from the
-tool's own list, never named in the code: claude uses haiku, agy the
-oldest low flash from `agy models`, and each codex account the model its
+because the call exists to have happened. claude uses the Haiku model set in
+the code; agy and codex pick from the tool's own list: agy the oldest low
+flash from `agy models`, and each codex account the model its
 own `models_cache.json` promotes last, at low effort — the cache has no
 prices, so for codex that is a best guess. The log names the pick. Off unless a machine turns it
 on, and settings stay local — each machine keeps different hours, so

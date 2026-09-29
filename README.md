@@ -220,15 +220,17 @@ claude plugin marketplace add CSL426/ai-config
 claude plugin install acg@acg
 ```
 
-It adds eight slash commands wrapping `acg`: `/acg:status`, `/acg:sync`,
-`/acg:save`, `/acg:share`, `/acg:memory`, and three for session handoff
+It adds slash commands wrapping `acg`: `/acg:status`, `/acg:sync`,
+`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:msg`, and
+three for session handoff
 (`/acg:handoff` records where a work thread got to, `/acg:handoffs` lists
 waiting threads, and `/acg:pickup` claims one and reads its notes back).
 The journal answers what happened in a project; handoff answers where one thread
 got to, which matters when several sessions work on the same project at once.
 
-The plugin carries only commands. The `acg` skill itself arrives through
-`apply` like every other skill, so it is not bundled here twice.
+The plugin also carries the `thread-handoff` skill, which runs the same
+handoff steps when someone says "交接" or "接著做". The `acg` skill itself
+arrives through `apply` like every other skill, so it is not bundled here twice.
 
 ### Handoff reminders before context compaction
 
