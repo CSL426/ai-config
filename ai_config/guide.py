@@ -420,8 +420,18 @@ hash -r
 ```
 
 Windows uses `irm https://github.com/CSL426/ai-config/releases/latest/download/install.ps1 | iex`.
-Use an SSH URL; URLs with embedded HTTP credentials are rejected. Tracked skills
-arrive with `apply`; use `skill add <local-directory>` to introduce a new one.
+Use an SSH URL; URLs with embedded HTTP credentials are rejected. When the
+repository's account is not the machine's default SSH identity, add a host
+alias in `~/.ssh/config` and use `git@<alias>:<owner>/<repo>.git`. Tracked
+skills arrive with `apply`; use `skill add <local-directory>` to introduce a
+new one.
+
+A piped install has no terminal to ask in, so it skips first-run setup; run
+`{entrypoint} setup --data-dir <path> --repo-url <git-url>` yourself.
+`AI_CONFIG_VERSION` pins a release tag and `AI_CONFIG_BIN_DIR` moves the
+binary. A shell that was already open has not loaded tab completion: open a
+new one, or `hash -r && source
+~/.local/share/bash-completion/completions/ai-config.bash`.
 The installer also puts `/acg` into Claude Code unless `AI_CONFIG_NO_PLUGIN=1`
 is set.
 
