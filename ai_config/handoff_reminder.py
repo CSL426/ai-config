@@ -230,7 +230,10 @@ def _with_settings(document: dict, enabled: bool, threshold: int) -> dict:
         return result
     original = result.get("statusLine")
     _decode(_encode(original))
-    # 固定入口,不是 sys.executable:後者可能是會被清掉的版本目錄
+    from .hooks import HANDOFF_REMINDER, hook_entry
+
+    # 固定入口,不是 sys.executable:後者可能是會被清掉的版本目錄。
+    # statusLine 是交給 shell 的字串,Windows 路徑要換成正斜線
     argv = [str(part).replace("\\", "/") for part in scheduled_command()]
     result["statusLine"] = {
         **(original or {}), "type": "command",
@@ -241,15 +244,13 @@ def _with_settings(document: dict, enabled: bool, threshold: int) -> dict:
     events = result.setdefault("hooks", {})
     if not isinstance(events, dict):
         raise ValueError("Claude hooks 必須是物件")  # noqa: TRY004
+    # hook 列跟登記表寫得一字不差;兩邊寫法不同時 apply 每次都會互相改回去
+    row = hook_entry(HANDOFF_REMINDER)
     for event in EVENTS:
         rows = events.setdefault(event, [])
         if not isinstance(rows, list):
             raise ValueError(f"Claude {event} hooks 必須是陣列")  # noqa: TRY004
-        rows.append({"hooks": [{
-            "type": "command", "command": argv[0],
-            "args": argv[1:] + [HOOK_COMMAND],
-            "statusMessage": MARKER, "timeout": 5,
-        }]})
+        rows.append(copy.deepcopy(row))
     return result
 
 

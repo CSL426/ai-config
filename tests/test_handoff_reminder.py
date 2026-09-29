@@ -218,3 +218,25 @@ def test_standalone_hook_never_pauses(hidden, monkeypatch):
         raise AssertionError("must bypass interactive startup")
     monkeypatch.setattr(cli, "launched_by_double_click", fail)
     assert cli.standalone_main() == 0
+
+
+def test_a_windows_launcher_does_not_bounce_between_two_writers(settings, monkeypatch):
+    # 兩邊寫同一組 hook:一邊寫反斜線、一邊寫正斜線,每次 apply 都互相改回去
+    from ai_config import hooks
+
+    launcher = ["C:\\Users\\someone\\.local\\bin\\ai-config.exe"]
+    monkeypatch.setattr(hooks, "CLAUDE_HOME", settings.parent)
+    monkeypatch.setattr(hooks, "scheduled_command", lambda: list(launcher))
+    monkeypatch.setattr(remind, "scheduled_command", lambda: list(launcher))
+    remind.configure(True)
+
+    assert hooks.refresh_detail() == {}
+    remind.refresh()
+    settled = settings.read_bytes()
+    assert hooks.refresh_detail() == {}
+    remind.refresh()
+    assert settings.read_bytes() == settled
+    entry = json.loads(settled)["hooks"]["PostToolUse"][0]["hooks"][0]
+    assert entry == hooks.hook_entry(hooks.HANDOFF_REMINDER)["hooks"][0]
+    # statusLine 是交給 shell 的字串,那裡仍要正斜線
+    assert "C:/Users/someone" in json.loads(settled)["statusLine"]["command"]
