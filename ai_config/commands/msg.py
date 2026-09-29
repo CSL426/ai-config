@@ -5,7 +5,7 @@ from ..console import log_error, log_info, log_success
 from ..paths import ENTRYPOINT
 
 _USAGE = (
-    "Usage: {entry} msg list | setup | send <名稱或 id> <訊息> [--wait [秒]] [--from <我的名稱>]"
+    "Usage: {entry} msg list | setup | send <名稱、id 或 pid> <訊息> [--wait [秒]] [--from <我的名稱>]"
 )
 _DEFAULT_WAIT = 300.0
 
@@ -16,12 +16,15 @@ def _list() -> int:
         log_info("沒有找到在線上的 session")
         log_info("Codex 要用 codex --remote unix:// 開,才會掛上 daemon")
         return 0
+    shared = messaging.shared_ids(peers)
     for peer in peers:
         mark = "○" if peer.unreachable else "●"
         tool = f"{peer.tool} {peer.account}".strip()
         name = peer.name or "(未命名)"
         where = f"  {peer.cwd}" if peer.cwd else ""
-        print(f"  {mark} {tool:<10} {name}  [{peer.id[:13]}]  {peer.status}{where}")
+        # 平常 id 就夠辨識;撞 id 時才補 pid,免得兩行長得一模一樣
+        ident = f"{peer.id[:13]} pid {peer.pid}" if peer.id in shared and peer.pid else peer.id[:13]
+        print(f"  {mark} {tool:<10} {name}  [{ident}]  {peer.status}{where}")
     if any(peer.unreachable for peer in peers):
         log_info("● 收得到訊息;○ 目前收不到,送給它會說明原因")
     return 0

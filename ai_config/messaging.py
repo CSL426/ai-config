@@ -298,18 +298,34 @@ def list_peers() -> list:
     return [*claude_peers(), *codex_peers(), *agy_peers()]
 
 
+def shared_ids(peers: list) -> set:
+    """Ids held by more than one process, e.g. one Claude session resumed twice."""
+    seen: set = set()
+    shared: set = set()
+    for peer in peers:
+        (shared if peer.id in seen else seen).add(peer.id)
+    return shared
+
+
 def resolve(target: str, peers: "list | None" = None) -> Peer:
-    """A peer by exact name, full id, or an id prefix of eight or more."""
+    """A peer by exact name, full id, an id prefix of eight or more, or pid."""
     peers = list_peers() if peers is None else peers
     exact = [p for p in peers if target in (p.name, p.id)]
     if not exact and len(target) >= 8:
         exact = [p for p in peers if p.id.startswith(target)]
+    if not exact and target.isdigit():
+        exact = [p for p in peers if p.pid and str(p.pid) == target]
     if len(exact) == 1:
         return exact[0]
     if not exact:
         raise MessagingError(f"找不到在線上的「{target}」;用 acg msg list 看有誰")
-    names = "、".join(f"{p.label}({p.tool} {p.account})" for p in exact)
-    raise MessagingError(f"「{target}」對到不只一個:{names};改用 id")
+    names = "、".join(
+        f"{p.label}({p.tool} {p.account}".rstrip() + (f" pid {p.pid})" if p.pid else ")")
+        for p in exact
+    )
+    # 同一個 session 被兩個行程掛著時 id 也一樣,只剩 pid 分得開
+    hint = "改用 pid" if len({p.id for p in exact}) == 1 else "改用 id"
+    raise MessagingError(f"「{target}」對到不只一個:{names};{hint}")
 
 
 def sender_name() -> str:

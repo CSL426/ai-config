@@ -232,3 +232,24 @@ def test_the_command_lists_and_reports_errors(
     assert "沒有找到" in capsys.readouterr().out
     assert run_msg(["send", "不存在", "嗨"]) == 1
     assert run_msg(["bogus"]) == 1
+
+
+def test_one_session_held_by_two_processes_is_told_apart_by_pid(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands.msg import run_msg
+
+    peers = [
+        messaging.Peer("claude", "0631-aaaa-1111", "acg", "", "/w", "idle", pid=101),
+        messaging.Peer("claude", "0631-aaaa-1111", "acg", "", "/w", "busy", pid=202),
+        messaging.Peer("claude", "d4b4-bbbb-2222", "acg", "", "/w", "idle", pid=303),
+    ]
+    with pytest.raises(messaging.MessagingError, match="改用 pid"):
+        messaging.resolve("0631-aaaa-1111", peers)
+    assert messaging.resolve("202", peers).status == "busy"
+
+    monkeypatch.setattr(messaging, "list_peers", lambda: peers)
+    assert run_msg(["list"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert "pid 101" in lines[0] and "pid 202" in lines[1]
+    assert "pid" not in lines[2]  # 沒撞 id 的不多印
