@@ -71,10 +71,11 @@ class Channel:
         # 同一個 Claude 行程重啟 server 時,舊的 socket 檔還在
         path.unlink(missing_ok=True)
         server = socket.socket(socket.AF_UNIX)
+        # 先記下再 bind:bind 一建出檔案,之後任何一刻收到訊號,close 都得知道要刪它
+        self.path, self._server = path, server
         server.bind(str(path))
         os.chmod(path, 0o600)
         server.listen()
-        self.path, self._server = path, server
         threading.Thread(target=self._accept, daemon=True).start()
 
     def _accept(self) -> None:
@@ -144,12 +145,13 @@ def run() -> int:
     _exit_on_signal()
     pid = _claude_pid()
     channel = Channel()
-    if pid is not None:
-        try:
-            channel.listen(channel_socket(pid))
-        except OSError:
-            pass  # 收不到信,但別讓 Claude 啟動時看到一個壞掉的 server
+    # listen 也在 try 裡:socket 建好到進入 try 之間收到訊號,finally 就不會跑
     try:
+        if pid is not None:
+            try:
+                channel.listen(channel_socket(pid))
+            except OSError:
+                pass  # 收不到信,但別讓 Claude 啟動時看到一個壞掉的 server
         for line in sys.stdin:
             line = line.strip()
             if not line:
