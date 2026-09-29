@@ -144,6 +144,8 @@ function Install-Binary([string]$Source, [string]$Destination) {
     $Resolved = Resolve-InstalledVersion $Source
     $VersionRoot = Join-Path $VersionsDir $Resolved
     New-Item -ItemType Directory -Force -Path $VersionRoot | Out-Null
+    # The same version installed as onedir before would shadow this file
+    Remove-Item -LiteralPath (Join-Path $VersionRoot 'app') -Recurse -Force -ErrorAction SilentlyContinue
     Copy-WithRetry $Source (Join-Path $VersionRoot 'ai-config.exe')
     # With the launcher on PATH, recording the version is the whole switch
     if (-not (Test-Launcher $Destination)) {
@@ -154,8 +156,10 @@ function Install-Binary([string]$Source, [string]$Destination) {
 
 function Install-Directory([string]$Source, [string]$Destination, [string]$Launcher) {
     # A onedir build: the exe and its _internal directory move together into
-    # versions\<version>, staged beside it first so a failure never leaves half
-    # a version for the launcher to start.
+    # versions\<version>\app, staged beside it first so a failure never leaves
+    # half a version for the launcher to start. app\ is for releases before
+    # this one: switching versions they copy versions\<version>\ai-config.exe
+    # onto PATH, and finding nothing there they run the installer instead.
     $Executable = Join-Path $Source 'ai-config.exe'
     if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) { Fail "No ai-config.exe in $Source" }
     Adopt-ExistingBinary $Destination
@@ -163,8 +167,8 @@ function Install-Directory([string]$Source, [string]$Destination, [string]$Launc
     $Resolved = Resolve-InstalledVersion $Executable
     $VersionRoot = Join-Path $VersionsDir $Resolved
     $Staging = Join-Path $VersionsDir (".$Resolved.staging-" + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Force -Path $VersionsDir | Out-Null
-    Copy-Item -LiteralPath $Source -Destination $Staging -Recurse -Force
+    New-Item -ItemType Directory -Force -Path $Staging | Out-Null
+    Copy-Item -LiteralPath $Source -Destination (Join-Path $Staging 'app') -Recurse -Force
     if (Test-Path -LiteralPath $VersionRoot) {
         $Aside = Join-Path $VersionsDir (".$Resolved.old-" + [guid]::NewGuid().ToString('N'))
         try {

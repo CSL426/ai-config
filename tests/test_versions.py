@@ -234,3 +234,35 @@ def test_a_version_run_through_the_launcher_is_the_managed_copy(layout: Path) ->
 
     assert versions.is_managed(binary)
     assert not versions.is_managed(layout / "Desktop" / "acg.exe")
+
+
+def _onedir(layout: Path, version: str) -> Path:
+    app = versions.version_dir(version) / versions.APP_DIR
+    (app / "_internal").mkdir(parents=True)
+    binary = app / versions.executable_name()
+    binary.write_text(version, encoding="utf-8")
+    return binary
+
+
+def test_a_onedir_build_is_found_in_its_app_directory(layout: Path) -> None:
+    binary = _onedir(layout, "1.0.99")
+    versions.place("1.0.98", _release(layout, "ninetyeight"))
+
+    assert versions.version_binary("1.0.99") == binary
+    assert versions.installed_versions() == ["1.0.98", "1.0.99"]
+    versions.activate("1.0.99")
+    assert versions.active_version() == "1.0.99"
+    assert versions.stable_path().resolve() == binary.resolve()
+
+
+def test_a_onedir_exe_is_never_copied_away_from_its_runtime(
+    layout: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without the launcher on PATH, only the installer can switch to onedir."""
+    monkeypatch.setattr(versions, "NATIVE_WINDOWS", True)
+    _onedir(layout, "1.0.99")
+    versions.stable_path().write_bytes(b"old onefile copy")
+
+    with pytest.raises(versions.NeedsInstaller):
+        versions.activate("1.0.99")
+    assert versions.stable_path().read_bytes() == b"old onefile copy"

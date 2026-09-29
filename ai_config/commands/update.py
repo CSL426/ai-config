@@ -495,12 +495,17 @@ def _run_update(requested_version: "str | None" = None) -> int:
         wanted = tag.lstrip("v")
         if versions.version_binary(wanted).is_file():
             # 已經在磁碟上就只換連結:回滾不必再下載一次,也不碰網路
-            if versions.activate(wanted):
-                log_success(f"已切換到 {wanted}")
-                _finish_in_installed_version()
+            try:
+                switched = versions.activate(wanted)
+            except versions.NeedsInstaller as exc:
+                log_info(f"{exc};改為下載安裝")
             else:
-                log_info(f"已經在 {wanted}")
-            return 0
+                if switched:
+                    log_success(f"已切換到 {wanted}")
+                    _finish_in_installed_version()
+                else:
+                    log_info(f"已經在 {wanted}")
+                return 0
 
     # 腳本跟執行檔要出自同一個 release
     target = tag or f"v{latest.lstrip('v')}"

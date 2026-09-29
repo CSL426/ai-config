@@ -241,7 +241,7 @@ jobs:
           from pathlib import Path
 
           share = Path(tempfile.mkdtemp()) / "share"
-          version = share / "versions" / "0.0.0"
+          version = share / "versions" / "0.0.0" / "app"
           shutil.copytree("dist/ai-config", version)
           (share / "versions" / "active").write_text("0.0.0\n", encoding="utf-8")
           if os.name == "nt":
