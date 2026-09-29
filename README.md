@@ -12,9 +12,15 @@ inside the other.
 
 ### Standalone installer
 
-The released CLI is a single executable with its Python runtime bundled. The
-target machine only needs Git; it does not need Python, pip, pipx, or a tool
-repository checkout.
+The released CLI bundles its own Python runtime. The target machine only
+needs Git; it does not need Python, pip, pipx, or a tool repository checkout.
+
+Each release is unpacked into its own directory under
+`~/.local/share/ai-config/versions/`, and an update adds a directory rather
+than overwriting a running file. On Linux and macOS `~/.local/bin/ai-config`
+is a symlink to the active version; on Windows it is a small launcher that
+runs the version recorded in `versions/active`. `acg update <version>`
+switches back to a version still on disk without downloading it.
 
 Bash — Linux, macOS, Git Bash, MSYS2, or Cygwin:
 
