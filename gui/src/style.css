@@ -945,15 +945,41 @@ body {
 
 /* ── 輸出面板 ─────────────────────────── */
 
+/* 輸出從底部升起、蓋在原頁上:原頁與捲動位置都留著,內容少時面板也矮。
+ * 整頁替換時,按一顆小按鈕就換成大片空白的主控台,回來又捲回頂端 */
 .output {
+  position: fixed;
+  z-index: 11;
+  inset-inline: 0;
+  inset-block-end: 0;
   display: flex;
   flex-direction: column;
-  flex: 1 0 auto;
-  min-block-size: 18rem;
+  inline-size: min(64rem, 100%);
+  max-block-size: 85dvh;
+  margin-inline: auto;
   border: 1px solid var(--color-paper-3);
-  border-radius: var(--radius-md);
+  border-block-end: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: var(--color-console-bg);
+  box-shadow: 0 -0.5rem 2rem oklch(30% 0.011 95 / 0.18);
   overflow: hidden;
+}
+
+.output-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: oklch(30% 0.011 95 / 0.32);
+}
+
+.output-backdrop[hidden] {
+  display: none;
+}
+
+/* 頁首在遮罩之上:面板開著時仍可檢查更新、開設定 */
+.app-header {
+  position: relative;
+  z-index: 12;
 }
 
 .output[hidden] {
@@ -1010,8 +1036,8 @@ body {
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
-  flex: 1 1 0;
-  min-block-size: 5rem;
+  flex: 0 1 auto;
+  min-block-size: 6rem;
   margin: 0;
   padding: var(--space-md);
   overflow: auto;
@@ -1546,7 +1572,7 @@ summary:focus-visible,
 .memory-entry, .preview-change { padding-block: var(--space-sm); border-bottom: 1px solid var(--color-paper-3); }
 .memory-location { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
 .memory-location span { overflow-wrap: anywhere; flex: 1 1 60%; }
-.preview-changes { flex: 0 0 auto; overflow-wrap: anywhere; }
+.preview-changes { flex: 0 1 auto; min-block-size: 0; overflow-y: auto; padding-inline: var(--space-md); overflow-wrap: anywhere; }
 .confirm-text:focus-visible { outline: 0.125rem solid var(--color-focus); outline-offset: 0.125rem; }
 
 .management-panel[hidden], .preview-changes[hidden] { display: none; }
@@ -1569,7 +1595,8 @@ summary:focus-visible,
 
 .resource-nav {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  /* 四個入口排成 2×2;auto-fit 在常見寬度會排成 3+1,落單那個像附屬品 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-sm);
   margin-block-end: var(--space-sm);
 }
@@ -1596,9 +1623,9 @@ summary:focus-visible,
 .resource-entry:active:not(:disabled) { background: var(--color-paper-3); }
 .resource-entry:disabled { opacity: .5; cursor: not-allowed; }
 
-#memory-panel { gap: var(--space-md); }
-#memory-panel h2 { overflow-wrap: anywhere; }
-#memory-panel .memory-intro { color: var(--color-ink-soft); font-size: .875rem; }
+:is(#memory-panel, #project-panel, #automation-panel) { gap: var(--space-md); }
+:is(#memory-panel, #project-panel, #automation-panel) h2 { overflow-wrap: anywhere; }
+:is(#memory-panel, #project-panel, #automation-panel) .memory-intro { color: var(--color-ink-soft); font-size: .875rem; }
 .memory-overview {
   display: flex;
   flex-direction: column;
@@ -1611,15 +1638,15 @@ summary:focus-visible,
 }
 .memory-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
 .memory-section-head > div { flex: 1; }
-#memory-panel .memory-section-head p { margin-block-start: var(--space-xs); color: var(--color-ink-soft); font-size: .8125rem; }
-#memory-panel .memory-overview h3 { font-size: 1.125rem; }
+:is(#memory-panel, #project-panel, #automation-panel) .memory-section-head p { margin-block-start: var(--space-xs); color: var(--color-ink-soft); font-size: .8125rem; }
+:is(#memory-panel, #project-panel, #automation-panel) .memory-overview h3 { font-size: 1.125rem; }
 .memory-badge { padding: .25rem .625rem; border-radius: var(--radius-sm); background: var(--color-paper-2); font-size: .75rem; white-space: nowrap; }
 .memory-badge[data-state='success'] { background: var(--color-success-soft); color: var(--color-success); }
 .memory-badge[data-state='warning'] { background: var(--color-warn-soft); color: var(--color-warn); }
 .memory-badge[data-state='error'] { color: var(--color-danger); }
 .memory-badge[data-state='loading'] { color: var(--color-ink-soft); }
 #memory-summary { font-size: .875rem; }
-#memory-panel .memory-sync-note { color: var(--color-ink-soft); font-size: .8125rem; padding-block-start: var(--space-sm); border-top: 1px solid var(--color-paper-3); }
+:is(#memory-panel, #project-panel, #automation-panel) .memory-sync-note { color: var(--color-ink-soft); font-size: .8125rem; padding-block-start: var(--space-sm); border-top: 1px solid var(--color-paper-3); }
 .memory-details { font-size: .8125rem; color: var(--color-ink-soft); }
 .memory-details summary { cursor: pointer; width: fit-content; padding-block: var(--space-xs); }
 .memory-details summary:hover { color: var(--color-accent); }
@@ -1633,8 +1660,8 @@ summary:focus-visible,
 .memory-entry[data-state='blocked'] .memory-entry-state { color: var(--color-warn); }
 .memory-project-section { gap: var(--space-md); }
 #memory-project { font-size: .875rem; color: var(--color-ink-soft); }
-#memory-panel .package-buttons { flex-wrap: wrap; }
-#memory-panel .package-hint:empty { display: none; }
+:is(#memory-panel, #project-panel, #automation-panel) .package-buttons { flex-wrap: wrap; }
+:is(#memory-panel, #project-panel, #automation-panel) .package-hint:empty { display: none; }
 .memory-location { font-size: .8125rem; }
 .memory-location > span { color: var(--color-ink-soft); }
 
@@ -1677,11 +1704,12 @@ summary:focus-visible,
 .acg-select-value { overflow: hidden; text-overflow: ellipsis; }
 .acg-select-menu { box-sizing: border-box; }
 .acg-select-option[hidden], .acg-select select[hidden] { display: none; }
-#memory-panel .panel-head { padding-inline: 0; }
-#memory-refresh { margin-inline-start: auto; }
+:is(#memory-panel, #project-panel, #automation-panel) .panel-head { padding-inline: 0; }
+#memory-refresh, #automation-refresh { margin-inline-start: auto; }
 @media (max-width: 25rem) {
-  #memory-panel .panel-head { flex-wrap: wrap; }
-  #memory-panel .panel-head h2 { order: -1; flex-basis: 100%; }
+  .resource-nav { grid-template-columns: 1fr; }
+  :is(#memory-panel, #project-panel, #automation-panel) .panel-head { flex-wrap: wrap; }
+  :is(#memory-panel, #project-panel, #automation-panel) .panel-head h2 { order: -1; flex-basis: 100%; }
 }
 
 /* 外掛安裝:指令與 code 片段都可能比對話框窄邊還長,
@@ -1740,7 +1768,7 @@ summary:focus-visible,
 .keepalive-accounts { list-style: none; margin: 0; padding: 0; font-size: .8125rem; color: var(--color-ink-soft); }
 .keepalive-accounts:empty { display: none; }
 .keepalive-accounts code { color: var(--color-ink); }
-.handoff-threads { display: flex; flex-direction: column; gap: var(--space-xs); padding-block: var(--space-sm); }
+
 #handoff-threads { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-sm); }
 #handoff-threads:empty { display: none; }
 .handoff-thread { display: flex; flex-direction: column; gap: .125rem; font-size: .8125rem; }
@@ -1764,7 +1792,6 @@ summary:focus-visible,
 .tool-diff:focus-visible { outline: 0.125rem solid var(--color-focus); outline-offset: 0.125rem; border-radius: var(--radius-sm); }
 
 /* ── 專案部署 ─────────────────────── */
-#deploy-panel .memory-intro { color: var(--color-ink-soft); font-size: .875rem; }
 .deploy-root { color: var(--color-ink-soft); font-size: .875rem; overflow-wrap: anywhere; }
 .deploy-groups { display: flex; flex-direction: column; gap: var(--space-md); }
 .deploy-group { border: 1px solid var(--color-paper-3); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); margin: 0; min-inline-size: 0; }

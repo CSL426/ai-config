@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { boot, calls, queue } from "./mock-bridge";
 
 async function openMemory(page: Parameters<typeof boot>[0]) {
-  await page.locator("#memory-open").click();
+  await page.locator("#automation-open").click();
   await expect(page.locator("#handoff-reminder-toggle")).toBeEnabled();
 }
 
@@ -12,7 +12,7 @@ test("提醒預設停用，說明 Claude Code 範圍並可設定門檻後啟用"
   await expect(page.locator("#handoff-reminder-toggle")).not.toBeChecked();
   await expect(page.locator("#handoff-reminder-threshold")).toHaveValue("70");
   await expect(page.locator("#handoff-reminder-save")).toBeDisabled();
-  await expect(page.locator("#memory-panel")).toContainText("僅適用 Claude Code；只提醒，不會自動寫交接");
+  await expect(page.locator("#automation-panel")).toContainText("僅適用 Claude Code；只提醒，不會自動寫交接");
   await page.evaluate(() => {
     const api = window.pywebview!.api;
     const original = api.memory_info;
@@ -48,7 +48,7 @@ test("設定失敗或 bridge 中斷會還原開關並顯示錯誤", async ({ pag
     await queue(page, "set_handoff_reminder", reply);
     await page.locator("#handoff-reminder-toggle").click();
     await expect(page.locator("#handoff-reminder-toggle")).not.toBeChecked();
-    await expect(page.locator("#memory-feedback")).toContainText("output" in reply ? reply.output : reply.reject);
+    await expect(page.locator("#automation-feedback")).toContainText("output" in reply ? reply.output : reply.reject);
     await expect(page.locator("#handoff-reminder-toggle")).toBeEnabled();
   }
 });

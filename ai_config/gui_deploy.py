@@ -1,16 +1,15 @@
 """The desktop app's project deploy panel: pick a folder, preview, confirm.
 
-Same shape as the other management actions: choosing a folder hands back
-a token instead of trusting a path from the page, a preview hands back a
-token too, and confirming recomputes the preview first so nothing runs
-that the person did not see.
+Same shape as the other management actions: the folder chosen through
+select_project comes back as a token instead of a path the page could
+forge, a preview hands back a token too, and confirming recomputes the
+preview first so nothing runs that the person did not see.
 """
 
 import contextlib
 import io
 import re
 import secrets
-from pathlib import Path
 
 from . import paths
 from .applyplan import StalePreview
@@ -34,34 +33,6 @@ class DeployApi:
                 or str(paths.SCRIPT_DIR) != repository or not root.is_dir()):
             raise StalePreview("專案資料夾或資料庫已變動,請重新選擇")
         return root
-
-    def select_deploy_project(self):
-        result = {"cancelled": False, "project_token": None, "root": None}
-        if not self._lock.acquire(blocking=False):
-            return {**result, **outcome(1, "另一個動作正在執行", "BUSY")}
-        try:
-            import webview
-
-            self._ensure_configured()
-            if not webview.windows:
-                raise RuntimeError("沒有可用的原生視窗")
-            selected = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
-            if not selected:
-                return {**result, **outcome(), "cancelled": True}
-            return {**result, **self._choose_deploy_project(Path(selected[0]))}
-        except Exception as exc:  # noqa: BLE001 - native chooser errors vary by OS
-            return {**result, **failure(exc)}
-        finally:
-            self._lock.release()
-
-    def _choose_deploy_project(self, chosen: Path) -> dict:
-        root = chosen.resolve(strict=True)
-        if not root.is_dir():
-            raise ValueError("請選擇專案資料夾")
-        token = secrets.token_urlsafe(24)
-        self._discard_previews()
-        self._deploy_project = (token, root, str(paths.SCRIPT_DIR))
-        return {**outcome(), "project_token": token, "root": str(root)}
 
     def deploy_info(self, project_token=None):
         empty = {"items": [], "deployed": None, "root": None}

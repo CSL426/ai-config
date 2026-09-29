@@ -91,11 +91,11 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}, co
         },
         locations: [{ label: "全域記憶", path: "/tmp/data/memory", token: "location-global" }],
       },
-      select_memory_project: {
-        ...success, cancelled: true, project_token: null, root: null, key: null, stable: false,
+      select_project: {
+        ...success, cancelled: true, project_token: null, root: null, memory_root: null,
+        key: null, stable: false,
       },
       open_memory_location: success,
-      select_deploy_project: { ...success, cancelled: true, project_token: null, root: null },
       deploy_info: {
         ...success, root: null, deployed: null,
         items: [

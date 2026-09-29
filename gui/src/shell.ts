@@ -117,7 +117,8 @@ export function viewFocusTarget(view: MainView): HTMLElement {
   switch (view) {
     case "apply": return $("#apply-title");
     case "memory": return $("#memory-title");
-    case "deploy": return $("#deploy-title");
+    case "project": return $("#project-title");
+    case "automation": return $("#automation-title");
     case "output":
       return outputTitle;
     case "skills":
@@ -140,6 +141,12 @@ export function onLeave(view: MainView, handler: () => void): void {
   leaveHandlers.set(view, handler);
 }
 
+/** The page each view shows; the output sheet shows over the page it came from. */
+const PAGES: [MainView, string][] = [
+  ["skills", "#package"], ["export", "#package-result"], ["apply", "#apply-panel"],
+  ["memory", "#memory-panel"], ["project", "#project-panel"], ["automation", "#automation-panel"],
+];
+
 export function showView(view: MainView, focus = true): void {
   if (view !== "output" && state.pendingPreview) {
     void cancelPreview().then(cancelled => {
@@ -149,16 +156,23 @@ export function showView(view: MainView, focus = true): void {
   }
   if (state.currentView !== view && view !== "output") leaveHandlers.get(state.currentView)?.();
   closeActiveSelect();
+  const leaving = state.currentView;
   state.currentView = view;
-  $("#hero").hidden = view !== "status" || !state.configured;
-  setupBox.hidden = view !== "status" || state.configured;
-  $("#output").hidden = view !== "output";
-  $("#package").hidden = view !== "skills";
-  $("#package-result").hidden = view !== "export";
-  $("#apply-panel").hidden = view !== "apply";
-  $("#memory-panel").hidden = view !== "memory";
-  $("#deploy-panel").hidden = view !== "deploy";
-  $(".app").scrollTop = 0;
+  const page = view === "output" ? state.outputReturn : view;
+  const sheet = view === "output";
+  $("#hero").hidden = page !== "status" || !state.configured;
+  setupBox.hidden = page !== "status" || state.configured;
+  for (const [owner, selector] of PAGES) $(selector).hidden = page !== owner;
+  $("#output").hidden = !sheet;
+  $("#output-backdrop").hidden = !sheet;
+  // 面板開著時底下那頁看得到但不能操作,Tab 也不會跑進去;
+  // 頁首(檢查更新、設定)浮在遮罩上,照常可用
+  for (const element of $(".app").children) {
+    if (!["output", "copy-fallback", "settings"].includes(element.id)
+        && !element.classList.contains("app-header")) (element as HTMLElement).inert = sheet;
+  }
+  // 關掉面板回到原頁時保留捲動位置;換到別頁才回頂端
+  if (!sheet && leaving !== "output") $(".app").scrollTop = 0;
   if (focus) {
     const target = viewFocusTarget(view);
     target.tabIndex = -1;
@@ -175,21 +189,24 @@ export function goBack(): void {
   const previous = state.currentView;
   if (previous === "status") return;
 
-  let target: MainView = "status";
   if (previous === "output") {
-    target = state.outputReturn;
-  } else if (previous === "export") {
-    target = "skills";
+    // 面板只是蓋在原頁上,關掉就回到打開它的那顆按鈕
+    showView(state.outputReturn, !outputOpener?.isConnected);
+    if (outputOpener?.isConnected) outputOpener.focus({ preventScroll: true });
+    return;
   }
-  showView(target);
+  showView(previous === "export" ? "skills" : "status");
 
   let opener: HTMLElement | null = null;
   switch (previous) {
     case "memory":
       opener = $("#memory-open");
       break;
-    case "deploy":
-      opener = $("#deploy-open");
+    case "project":
+      opener = $("#project-open");
+      break;
+    case "automation":
+      opener = $("#automation-open");
       break;
     case "skills":
       opener = $("#package-open");
@@ -204,8 +221,13 @@ export function goBack(): void {
   opener?.focus({ preventScroll: true });
 }
 
+let outputOpener: HTMLElement | null = null;
+
 export function openOutput(): void {
-  if (state.currentView !== "output") state.outputReturn = state.currentView;
+  if (state.currentView !== "output") {
+    state.outputReturn = state.currentView;
+    outputOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
   showView("output");
 }
 
@@ -389,6 +411,8 @@ export function armPreview(pending: PendingPreview, note: string): void {
   syncControls();
   $("#confirm-text").focus();
 }
+
+$("#output-backdrop").addEventListener("click", goBack);
 
 export async function closePreview(): Promise<void> {
   if (await cancelPreview()) {

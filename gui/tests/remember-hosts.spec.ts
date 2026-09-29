@@ -3,7 +3,7 @@ import { boot, calls } from "./mock-bridge";
 
 test("兩個 host 預設未裝，勾選後呼叫 bridge 並顯示 Codex 的信任提示", async ({ page }) => {
   await boot(page);
-  await page.locator("#memory-open").click();
+  await page.locator("#automation-open").click();
   await expect(page.locator("#remember-codex-toggle")).toBeEnabled();
   await expect(page.locator("#remember-codex-toggle")).not.toBeChecked();
   await expect(page.locator("#remember-agy-toggle")).not.toBeChecked();
@@ -31,12 +31,12 @@ test("兩個 host 預設未裝，勾選後呼叫 bridge 並顯示 Codex 的信�
 
 test("bridge 失敗時勾選會還原", async ({ page }) => {
   await boot(page);
-  await page.locator("#memory-open").click();
+  await page.locator("#automation-open").click();
   await page.evaluate(() => {
     window.pywebview!.api.set_remember_host = async () => ({ code: 1, output: "找不到 codex", error_code: "FAILED" });
   });
   // 失敗會立刻還原,所以用 click 而不是 check(check 會堅持狀態必須改變)
   await page.locator("#remember-agy-toggle").click();
   await expect(page.locator("#remember-agy-toggle")).not.toBeChecked();
-  await expect(page.locator("#memory-feedback")).toContainText("找不到 codex");
+  await expect(page.locator("#automation-feedback")).toContainText("找不到 codex");
 });

@@ -74,7 +74,7 @@ for (const width of [320, 375, 414, 768, 880]) {
     await expect(page.locator("#memory-summary")).toContainText("已納入 Git");
     if (width === 880 || width === 320) await page.screenshot({ path: test.info().outputPath("memory.png") });
     expect(await page.locator("#memory-panel").evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-    await page.locator("#memory-select-project").scrollIntoViewIfNeeded();
-    await expect(page.locator("#memory-select-project")).toBeInViewport();
+    await page.locator("#memory-locations button").scrollIntoViewIfNeeded();
+    await expect(page.locator("#memory-locations button")).toBeInViewport();
   });
 }
