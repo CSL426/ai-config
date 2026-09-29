@@ -144,6 +144,10 @@ deleted (a file edited since is kept and listed), plugins and marketplaces
 are removed from the project scope, and the `AGENTS.md` block is cut out
 (the file too, if acg created it and nothing else is left).
 
+The desktop app's 專案部署 panel does the same through a folder picker and
+a preview; it reads and writes the same `.acg-deploy.json`, so a deploy made
+in one can be taken back in the other.
+
 A selection worth repeating can be saved with `--save-as <name>` and replayed
 later with `--profile <name>`, which skips both prompts. Profiles live in
 `deploy-profiles.toml` in the data repository, so they sync between machines.

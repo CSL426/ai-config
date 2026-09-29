@@ -8,6 +8,7 @@
 import "./style.css";
 import "./status";
 import "./memory";
+import "./deploy";
 import "./skills";
 import "./connection";
 

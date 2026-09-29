@@ -1569,7 +1569,7 @@ summary:focus-visible,
 
 .resource-nav {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
   gap: var(--space-sm);
   margin-block-end: var(--space-sm);
 }
@@ -1762,3 +1762,15 @@ summary:focus-visible,
 .tool-diff { padding: 0; border: 0; background: none; color: var(--color-warn); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 0.2em; }
 .tool-diff:hover { color: var(--color-accent); }
 .tool-diff:focus-visible { outline: 0.125rem solid var(--color-focus); outline-offset: 0.125rem; border-radius: var(--radius-sm); }
+
+/* ── 專案部署 ─────────────────────── */
+#deploy-panel .memory-intro { color: var(--color-ink-soft); font-size: .875rem; }
+.deploy-root { color: var(--color-ink-soft); font-size: .875rem; overflow-wrap: anywhere; }
+.deploy-groups { display: flex; flex-direction: column; gap: var(--space-md); }
+.deploy-group { border: 1px solid var(--color-paper-3); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); margin: 0; min-inline-size: 0; }
+.deploy-group legend { font-size: .875rem; font-weight: 700; padding-inline: var(--space-xs); }
+.deploy-group .package-list { min-block-size: 0; }
+/* 窄視窗時名稱優先,標籤換到下一行,不要把名稱擠成一字一行 */
+.deploy-group .skill-item { flex-wrap: wrap; row-gap: 0; }
+.deploy-group .skill-name { flex: 1 1 10rem; }
+.deploy-group .skill-tag { margin-inline-start: auto; color: var(--color-ink-soft); background: var(--color-paper-2); font-weight: 500; }

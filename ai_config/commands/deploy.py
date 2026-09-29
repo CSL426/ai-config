@@ -115,7 +115,7 @@ def _available_items(source: Path) -> list[Item]:
         note = "Claude plugin" + ("" if enabled else ",全域沒開")
         items.append(Item(f"plugins/{plugin}", note, plugin=plugin))
     if _memory_root(source).is_dir():
-        items.append(Item("memory", "Claude, Codex, agy 的記憶規則", memory=True))
+        items.append(Item("memory", "Claude, Codex, agy", memory=True))
     return items
 
 
@@ -458,7 +458,12 @@ def run_undeploy(target: "str | None") -> int:
     if not confirm_prompt("\n  Remove these? [y/N] "):
         log_info("Cancelled; nothing was removed")
         return 0
+    return remove(project, record)
 
+
+def remove(project: Path, record: deploy_record.Record) -> int:
+    """Take back what the record lists; the part both the CLI and the GUI run."""
+    removable, kept = _removal_plan(project, record)
     failed: list[str] = []
     remaining = deploy_record.Record()
     for path in removable:
@@ -505,3 +510,143 @@ def run_undeploy(target: "str | None") -> int:
         return 1
     log_success("已收回 deploy 放進這個專案的東西")
     return 0
+
+
+# ---- GUI 用:不問問題、不印選單的版本 --------------------------------------
+
+_READERS = {".claude": "Claude", ".agents": "Codex, agy", ".codex": "Codex", ".agent": "agy"}
+
+
+def source_dir() -> Path:
+    return SCRIPT_DIR / "claude"
+
+
+def items() -> list[Item]:
+    source = source_dir()
+    return _available_items(source) if source.is_dir() else []
+
+
+def kind(item: Item) -> str:
+    if item.plugin:
+        return "plugin"
+    if item.memory:
+        return "memory"
+    return "skill" if item.name.startswith("skills/") else "claude"
+
+
+def select(names: list[str]) -> tuple[list[Item], list[int]]:
+    available = items()
+    by_name = {item.name: index for index, item in enumerate(available)}
+    missing = [name for name in names if name not in by_name]
+    if missing:
+        raise ValueError(f"資料庫裡已經沒有:{', '.join(missing)}")
+    if not names:
+        raise ValueError("請至少選一項")
+    return available, sorted({by_name[name] for name in names})
+
+
+def _change(operation: str, tool: str, destination: Path, reason: str,
+            source: "Path | None" = None) -> dict:
+    return {
+        "category": "deploy", "tool": tool, "operation": operation,
+        "source": str(source) if source else None, "destination": str(destination),
+        "physical_target": None, "shared": False, "reason": reason,
+    }
+
+
+def _file_change(src: Path, dst: Path, tool: str) -> dict:
+    if not (dst.is_symlink() or dst.exists()):
+        return _change("create", tool, dst, "新增到專案", src)
+    same = dst.is_file() and not dst.is_symlink() and dst.read_bytes() == src.read_bytes()
+    return _change("skip", tool, dst, "已在專案裡,內容相同" if same
+                   else "專案裡已有不同內容,不覆蓋", src)
+
+
+def preview(project: Path, names: list[str]) -> list[dict]:
+    """What deploying `names` would do, without writing anything."""
+    source = source_dir()
+    available, selection = select(names)
+    changes: list[dict] = []
+    for index in selection:
+        item = available[index]
+        if item.plugin:
+            target = project / deploy_record.SETTINGS_FILE
+            if _project_plugins(project).get(item.plugin) is True:
+                changes.append(_change("skip", "Claude", target, f"{item.plugin} 已在這個專案啟用"))
+            else:
+                changes.append(_change("install", "Claude", target,
+                                       f"以專案範圍安裝 {item.plugin}"))
+            continue
+        if item.memory:
+            target = project / deploy_record.RULES_FILE
+            block = project_rules_block(_memory_root(source))
+            if not target.exists():
+                operation, reason = "create", "新建,只含 acg 記憶規則"
+            elif block.rstrip("\n") in target.read_text(encoding="utf-8"):
+                operation, reason = "skip", "記憶規則已在裡面"
+            else:
+                operation, reason = "modify", "在檔尾加一段 acg 記憶規則,原內容不動"
+            changes.append(_change(operation, "Claude, Codex, agy", target, reason))
+            continue
+        for src, relative in item.placements:
+            tool = _READERS.get(relative.split("/", 1)[0], "Claude")
+            dst = project / relative
+            if item.merge:
+                if dst.is_symlink() or (dst.exists() and not dst.is_dir()):
+                    changes.append(_change("skip", tool, dst, "專案裡已有同名的檔案,不覆蓋", src))
+                    continue
+                changes.extend(_file_change(src / rel, dst / rel, tool) for rel in _files(src))
+            elif src.is_dir():
+                status = _place_tree_status(src, dst)
+                reason = {"create": "新增到專案", "ready": "已在專案裡,內容相同",
+                          "conflict": "專案裡已有不同內容,不覆蓋"}[status]
+                changes.append(_change("create" if status == "create" else "skip",
+                                       tool, dst, reason, src))
+            else:
+                changes.append(_file_change(src, dst, tool))
+    return changes
+
+
+def _place_tree_status(src: Path, dst: Path) -> str:
+    assert_no_symlinks(src)
+    if not (dst.is_symlink() or dst.exists()):
+        return "create"
+    if dst.is_symlink() or not dst.is_dir():
+        return "conflict"
+    assert_no_symlinks(dst)
+    return "ready" if _files(dst) == _files(src) else "conflict"
+
+
+def execute(project: Path, names: list[str]) -> int:
+    available, selection = select(names)
+    return _report(_deploy(source_dir(), project, available, selection), project)
+
+
+def removal_preview(project: Path) -> list[dict]:
+    record = deploy_record.load(project)
+    if record.empty():
+        return []
+    removable, kept = _removal_plan(project, record)
+    changes = [_change("delete", "專案", path, "部署時放入,內容沒被改過") for path in removable]
+    changes += [_change("skip", "專案", project / label.split("(", 1)[0], "保留:" + label)
+                for label in kept]
+    target = project / deploy_record.SETTINGS_FILE
+    changes += [_change("uninstall", "Claude", target, f"移除專案範圍的 plugin {plugin}")
+                for plugin in record.plugins]
+    changes += [_change("uninstall", "Claude", target, f"移除專案裡的 marketplace 宣告 {name}")
+                for name in record.marketplaces]
+    if record.rules_created is not None:
+        changes.append(_change("modify", "Claude, Codex, agy", project / deploy_record.RULES_FILE,
+                               "拿掉 acg 記憶規則" + (",檔案是 acg 建的,沒其他內容就刪掉"
+                                                      if record.rules_created else "")))
+    return changes
+
+
+def summary(project: Path) -> dict:
+    """What deploy has already put into this project, for the GUI to show."""
+    record = deploy_record.load(project)
+    return {
+        "files": len(record.files), "plugins": sorted(record.plugins),
+        "memory": record.rules_created is not None,
+        "paths": sorted(record.files),
+    }

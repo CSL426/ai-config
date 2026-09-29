@@ -110,11 +110,26 @@ export interface PreviewChange {
   shared: boolean;
   reason: string;
 }
+export type DeployKind = "skill" | "claude" | "plugin" | "memory";
+export interface DeployItem { name: string; note: string; kind: DeployKind; }
+export interface DeployedSummary { files: number; plugins: string[]; memory: boolean; paths: string[]; }
+export interface DeployInfo extends RunResult {
+  error: ErrorCode | null;
+  items: DeployItem[];
+  root: string | null;
+  deployed: DeployedSummary | null;
+}
+export interface DeployProjectSelection extends RunResult {
+  error: ErrorCode | null;
+  cancelled: boolean;
+  project_token: string | null;
+  root: string | null;
+}
 export interface ChangePreview extends RunResult {
   error: ErrorCode | null;
   token: string;
   needs_confirmation: boolean;
-  scope: { tool?: ToolScope; category?: ApplyCategory; action?: MemoryAction; project_key?: string | null };
+  scope: { tool?: ToolScope; category?: ApplyCategory; action?: MemoryAction | "deploy" | "undeploy"; project_key?: string | null };
   changes: PreviewChange[];
   warnings: string[];
 }
@@ -215,6 +230,12 @@ interface AcgApi {
   preview_apply(tool: ToolScope, category: ApplyCategory): Promise<ChangePreview>;
   confirm_apply(token: string): Promise<OperationResult>;
   cancel_preview(token: string): Promise<OperationResult>;
+  select_deploy_project(): Promise<DeployProjectSelection>;
+  deploy_info(projectToken?: string): Promise<DeployInfo>;
+  preview_deploy(projectToken: string, names: string[]): Promise<ChangePreview>;
+  confirm_deploy(token: string): Promise<OperationResult>;
+  preview_undeploy(projectToken: string): Promise<ChangePreview>;
+  confirm_undeploy(token: string): Promise<OperationResult>;
   preview_push(scope?: PushScope): Promise<PushPreview>;
   confirm_push(scope: PushScope, token: string): Promise<OperationResult>;
   list_skills(): Promise<SkillList>;

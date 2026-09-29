@@ -6,12 +6,12 @@
  */
 
 import type {
-  MemoryInfo, PushScope, SettingsInfo, SkillEntry, ToolScope,
+  DeployInfo, MemoryInfo, PushScope, SettingsInfo, SkillEntry, ToolScope,
 } from "./bridge";
 
-export type MainView = "status" | "output" | "skills" | "export" | "apply" | "memory";
+export type MainView = "status" | "output" | "skills" | "export" | "apply" | "memory" | "deploy";
 export type PendingPreview = {
-  kind: "push" | "apply" | "memory";
+  kind: "push" | "apply" | "memory" | "deploy" | "undeploy";
   token: string;
   scope: PushScope;
   label: string;
@@ -39,4 +39,7 @@ export const state = {
   skills: [] as SkillEntry[],
   skillDirectory: null as string | null,
   selectedSkills: new Set<string>(),
+  deployToken: null as string | null,
+  deployInfo: null as DeployInfo | null,
+  deploySelected: new Set<string>(),
 };

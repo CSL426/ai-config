@@ -214,6 +214,10 @@ claude plugin install acg@acg</textarea>
             <span class="resource-name">技能管理 <span aria-hidden="true">›</span></span>
             <span class="resource-description">分享技能 · 匯出安裝</span>
           </button>
+          <button class="resource-entry" id="deploy-open" aria-label="專案部署">
+            <span class="resource-name">專案部署 <span aria-hidden="true">›</span></span>
+            <span class="resource-description">只裝進一個專案 · 可收回</span>
+          </button>
         </nav>
         <div class="status-head">
           <div class="hero-state" id="hero-state" role="status">
@@ -398,6 +402,45 @@ claude plugin install acg@acg</textarea>
         <section class="memory-section" aria-label="記憶資料夾">
           <h3>開啟記憶資料夾</h3>
           <div id="memory-locations"></div>
+        </section>
+      </section>
+
+      <section class="management-panel" id="deploy-panel" hidden aria-labelledby="deploy-title">
+        <div class="panel-head">
+          <button class="btn btn-ghost" id="deploy-back">‹ 返回</button>
+          <h2 id="deploy-title">專案部署</h2>
+        </div>
+        <p class="memory-intro">把技能、plugin 與記憶規則只裝進一個專案，不動這台電腦的全域設定。適合在別人的電腦上開發，離開時可以整批收回。</p>
+        <p class="feedback" id="deploy-feedback" role="status" hidden></p>
+        <section class="memory-section" aria-labelledby="deploy-project-title">
+          <div class="memory-section-head">
+            <div>
+              <h3 id="deploy-project-title">專案資料夾</h3>
+              <p class="deploy-root" id="deploy-root">尚未選擇專案。</p>
+            </div>
+            <button class="btn" id="deploy-select">選擇專案</button>
+          </div>
+        </section>
+        <section class="memory-section" aria-labelledby="deploy-items-title">
+          <div class="memory-section-head">
+            <h3 id="deploy-items-title">要放進專案的內容</h3>
+            <span class="package-hint" id="deploy-selection" role="status">已選 0 項</span>
+          </div>
+          <div class="deploy-groups" id="deploy-items"></div>
+          <p class="package-hint">專案裡已有、內容不同的檔案不會被覆蓋；預覽時會逐一標出。</p>
+          <div class="package-buttons">
+            <button class="btn btn-primary" id="deploy-preview" disabled>預覽部署</button>
+            <button class="btn btn-ghost" id="deploy-clear" disabled>清除選取</button>
+          </div>
+        </section>
+        <section class="memory-section" aria-labelledby="deploy-placed-title">
+          <div class="memory-section-head">
+            <div>
+              <h3 id="deploy-placed-title">已放進這個專案</h3>
+              <p id="deploy-placed">尚未選擇專案。</p>
+            </div>
+            <button class="btn btn-ghost" id="deploy-remove" disabled>預覽收回</button>
+          </div>
         </section>
       </section>
 

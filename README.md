@@ -305,7 +305,9 @@ git diff --check
 ### Desktop app (experimental)
 
 A desktop window for people who would rather not use the terminal,
-covering status/apply/pull/push.
+covering status/apply/pull/push, memory, skills, and project deploy
+(pick a project folder, choose skills, plugins and memory rules, preview,
+and take them back out later).
 
 On Windows the released executable already contains it: download
 `acg.exe` from the latest release and double-click it, or run `acg gui`.
