@@ -10,6 +10,7 @@ console, starts the target on it, stops listening itself, and sends the
 event to the whole console.
 
 Usage (Windows only): python ctrl-c-check.py <launcher exe> <program exe>
+Exit 0 passed, 1 failed, 2 could not tell (the control run never saw the event).
 The environment decides which install the launcher finds (AI_CONFIG_SHARE_DIR).
 """
 
@@ -63,7 +64,7 @@ def main() -> int:
     if control != 130:
         print(control_output)
         print("SKIP the event did not reach the program; this check proves nothing here")
-        return 0
+        return 2
 
     code, output, pid = cancel(launcher, kernel)
     orphans = children_of(pid)
