@@ -33,9 +33,10 @@ project, status, pull, push, and sync.
 | `pull [tool]` | fast-forward the data repo, then show status |
 | `sync [tool]` | alias for pull |
 | `push [tool]` | gather, review, commit, and push (see guards below); confirms first |
-| `deploy [dir]` | copy managed Claude config into a project's `.claude/` (interactive) |
+| `deploy [dir]` | install chosen skills, Claude plugins and rules into one project only (interactive) |
 | `deploy --profile <name>` | replay a saved selection without prompting |
 | `deploy --save-as <name>` | deploy interactively, then remember the selection |
+| `deploy --remove [dir]` | take back everything deploy put into that project |
 | `list` | managed tools, file counts, backup snapshot count |
 | `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send> [tool]` | anchor this machine's usage window for claude, codex or agy; off by default, settings stay local |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
@@ -115,14 +116,36 @@ For shared-only removal, keep using `unshare <name>` then `apply`; standalone
 sources remain, so a same-name standalone skill will still be projected.
 These commands do not commit or push; review the data repo changes separately.
 
-`apply` targets the user home directories. `deploy` targets one project's
-`.claude/` instead, for handing a project to someone else or pinning its setup
-for CI; project settings take precedence over the user-level ones.
+`apply` targets the user home directories. `deploy` installs into one
+project instead and writes nothing under home: use it on someone else's
+machine, where the global config belongs to its owner. Each pick goes where
+its tools read it inside the project:
 
-The `deploy` menu lists skills one per row (`skills/acg`), so a project can take
-only the skills it needs; the other managed directories stay whole. A selection
-worth repeating can be saved with `--save-as <name>` and replayed later with
-`--profile <name>`, which skips both prompts. Profiles live in
+- a Claude skill to `.claude/skills/`; a shared skill (`claude/shared/both`)
+  to `.agents/skills/`, which Codex and agy both read; Codex-only to
+  `.codex/skills/`, agy-only to `.agent/skills/`
+- `CLAUDE.md`, `rules`, `agents`, `commands` into `.claude/`, file by file
+- a Claude plugin (`plugins/<id>`) with `claude plugin install --scope
+  project`, declaring its marketplace in the project when the host lacks it.
+  Codex and agy have no project-scoped plugins.
+- `memory`: the shared-memory rules as a marked block in the project's
+  `AGENTS.md` (created if missing), which Claude, Codex and agy all read.
+  It points at this machine's notebook directly, so no global link, rule
+  or hook is installed.
+
+It never deletes or overwrites what the project already has: an existing
+path with different content is skipped and listed, and the exit code is 1.
+Delete the project's copy first to take the repository's version. The
+personal `settings.json` is not deployed.
+
+What was placed is recorded in `.acg-deploy.json` at the project root.
+`deploy --remove` takes it all back: files still exactly as placed are
+deleted (a file edited since is kept and listed), plugins and marketplaces
+are removed from the project scope, and the `AGENTS.md` block is cut out
+(the file too, if acg created it and nothing else is left).
+
+A selection worth repeating can be saved with `--save-as <name>` and replayed
+later with `--profile <name>`, which skips both prompts. Profiles live in
 `deploy-profiles.toml` in the data repository, so they sync between machines.
 
 ## Rules for an agent driving this CLI

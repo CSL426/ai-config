@@ -139,12 +139,15 @@ A command that stops because it never got its confirmation exits non-zero.
   manual upload to Claude Desktop (Settings > Customize > Skills). Claude
   Desktop has no writable local skills directory, so this is a one-way export,
   not a live sync.
-- `deploy [dir]` — Copy managed Claude configuration into a project's own
-  `.claude/` directory rather than the user home. Lists the available entries,
-  asks which to take (numbers, a range, or `a` for all), previews the
-  destinations, and names anything it would overwrite before writing. Project
-  settings take precedence over user-level configuration, so this pins a
-  project's setup for handoff or CI.
+- `deploy [dir]` — Install chosen skills, Claude plugins and rules into one
+  project instead of the user home, for working on a machine whose global
+  configuration belongs to someone else. Each skill goes where its tools read
+  it inside the project (`.claude/skills`, `.agents/skills` for Codex and
+  Antigravity); plugins use Claude's project scope. Nothing under home is
+  written, and nothing the project already has is deleted or overwritten.
+  Choosing `memory` adds the shared-memory rules to the project's
+  `AGENTS.md`, read by all three tools. `deploy --remove` takes everything
+  back out when you leave the machine. See `docs/project-deploy-spec.md`.
 - `reset` — Remove managed configuration files after confirmation.
 - `skill` — Print the built-in usage guide, written for an AI agent that finds
   this CLI on a machine and needs to know how to drive it: the command table,

@@ -40,7 +40,7 @@ TOOLS = (
 )
 TOOL_COMMANDS = ("init", "apply", "project", "status", "pull", "push", "sync")
 SETUP_OPTIONS = ("--data-dir", "--repo-url", "--remote-name", "--replace-remote")
-DEPLOY_OPTIONS = ("--profile", "--save-as")
+DEPLOY_OPTIONS = ("--profile", "--save-as", "--remove")
 MEMORY_COMMANDS = (
     "status", "enable", "disable", "adopt", "release", "path", "push",
     "handoff", "autopush",

@@ -280,13 +280,13 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         return run_unshare(name, target)
 
     if cmd == "deploy":
-        from .commands.deploy import run_deploy
+        from .commands.deploy import run_deploy, run_undeploy
 
         deploy_usage = (
             f"Usage: {ENTRYPOINT} deploy [project-dir] "
-            f"[--profile <name>] [--save-as <name>]"
+            f"[--profile <name>] [--save-as <name>] | --remove"
         )
-        rest, profile, save_as = args[1:], None, None
+        rest, profile, save_as, remove = args[1:], None, None, False
         positional: list[str] = []
         while rest:
             token = rest.pop(0)
@@ -298,6 +298,8 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
                     profile = rest.pop(0)
                 else:
                     save_as = rest.pop(0)
+            elif token == "--remove":
+                remove = True
             elif token.startswith("--"):
                 log_error(f"Unknown option: {token}\n{deploy_usage}")
                 return 1
@@ -309,6 +311,11 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         if profile is not None and save_as is not None:
             log_error("--profile and --save-as cannot be combined")
             return 1
+        if remove:
+            if profile is not None or save_as is not None:
+                log_error("--remove takes no --profile or --save-as")
+                return 1
+            return run_undeploy(positional[0] if positional else None)
 
         return run_deploy(
             positional[0] if positional else None,
