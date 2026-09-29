@@ -204,6 +204,14 @@ function Install-Launcher([string]$Launcher, [string]$Destination) {
     if ($Current -ne $Wanted) { Replace-Binary $Launcher $Destination }
     New-Item -ItemType Directory -Force -Path $ShareDir | Out-Null
     Write-Utf8NoBom $LauncherMarker $Wanted
+    # A onefile acg still running from the old path (the one that started this
+    # update, before 1.0.99) reads its modules back from that path, which now
+    # holds the launcher: it will print a decompression error as it exits.
+    $StillRunning = @(Get-ChildItem -Path "$Destination.old-*" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Length -ge 4MB })
+    if ($StillRunning.Count -gt 0) {
+        Write-Warn 'The acg that started this update may print "Error -3 while decompressing data" as it exits; the update itself is complete.'
+    }
 }
 
 function Expand-Build([string]$Archive) {
