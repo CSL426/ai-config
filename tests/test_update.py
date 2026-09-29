@@ -122,6 +122,20 @@ def _fake_windows_run(monkeypatch, returncode: int = 0) -> dict:
     return calls
 
 
+def test_windows_update_does_not_hand_powershell_7_module_paths_to_5_1(monkeypatch) -> None:
+    """Started from PowerShell 7, 5.1 inherited its PSModulePath and lost Get-FileHash."""
+    from ai_config.commands import update
+
+    calls = _fake_windows_run(monkeypatch)
+    monkeypatch.setenv("PSModulePath", r"C:\Program Files\PowerShell\7\Modules")
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
+
+    assert update.run_update() == 0
+    assert "PSModulePath" not in {key for key in calls["kwargs"]["env"]}
+    assert "PSMODULEPATH" not in {key.upper() for key in calls["kwargs"]["env"]}
+
+
 def test_windows_update_runs_in_the_foreground(monkeypatch, capsys) -> None:
     from ai_config.commands import update
 
