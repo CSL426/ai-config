@@ -25,9 +25,14 @@ case "$platform" in
         temporary_dir="$(mktemp -d)"
         trap 'rm -rf "$temporary_dir"' EXIT
         powershell_installer="$temporary_dir/install-ai-config.ps1"
+        # 跟要裝的執行檔出自同一個 release
+        if [[ "$VERSION" == "latest" ]]; then
+            powershell_url="https://github.com/$REPOSITORY/releases/latest/download/install.ps1"
+        else
+            powershell_url="https://raw.githubusercontent.com/$REPOSITORY/$VERSION/install.ps1"
+        fi
         curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/$REPOSITORY/main/install.ps1" \
-            --output "$powershell_installer"
+            "$powershell_url" --output "$powershell_installer"
         windows_installer="$(cygpath -w "$powershell_installer")"
         step "Windows POSIX shell detected; delegating to PowerShell installer"
         "$powershell_command" -NoProfile -ExecutionPolicy Bypass -File "$windows_installer"
@@ -180,6 +185,10 @@ fi
 step "$binary_verb: $destination"
 install_acg_alias
 install_bash_completion
+# 第一次裝就讓 Claude Code 有 /acg;更新時由 acg update 負責,不在這裡重做
+if [[ "$operation" == "Installation" && -z "${AI_CONFIG_NO_PLUGIN:-}" ]]; then
+    "$destination" __claude-plugin || warn "Claude Code /acg was not installed; run: ai-config update"
+fi
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *) warn "$BIN_DIR is not in PATH — add: export PATH=\"$BIN_DIR:\$PATH\"" ;;

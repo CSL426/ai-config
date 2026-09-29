@@ -1,3 +1,11 @@
+---
+name: pickup
+description: 接手一條交接出來的工作線,並讀取它的進度
+argument-hint: '[專案路徑] [工作線名稱]'
+disable-model-invocation: true
+allowed-tools: Bash(acg memory handoff:*), Bash(ai-config memory handoff:*)
+---
+
 # pickup:接手一條交接出來的工作線
 
 引數的第一個詞若是一個存在的目錄,就是要看那個專案的交接線,列表時把它傳給 `list`;
@@ -40,3 +48,5 @@ acg memory handoff claim "<工作線名稱>"
 確認理解的接手點,再開始工作。收工時若還沒做完,用 `/acg handoff` 寫一份新的交接。
 
 被拒絕表示這條線已經被別的 session 接走了。把是誰告訴使用者,不要自己重試。
+
+引數:`$ARGUMENTS`

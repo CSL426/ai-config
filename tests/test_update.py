@@ -611,3 +611,41 @@ def test_the_hidden_refresh_command_runs_the_repair(
 
     assert cli_dispatch.main(["__refresh-hooks"], lambda: None) == 0
     assert seen == [True]
+
+
+def test_the_installer_comes_from_the_release_being_installed(monkeypatch) -> None:
+    """The binary came from a release while the script came from main.
+
+    An unreleased script change reached every install that way, and a
+    downgrade ran today's script against an old binary.
+    """
+    from ai_config.commands import update
+
+    seen = []
+
+    class Completed:
+        returncode = 0
+
+    monkeypatch.setattr(update.subprocess, "run", lambda cmd, **k: seen.append(" ".join(cmd)) or Completed())
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
+    monkeypatch.setattr(update, "NATIVE_WINDOWS", False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    assert update.run_update() == 0
+    assert "CSL426/ai-config/v1.0.6/install.sh" in seen[0]
+    seen.clear()
+    assert update.run_update("1.0.3") == 0
+    assert "CSL426/ai-config/v1.0.3/install.sh" in seen[0]
+    assert all("/main/" not in call for call in seen)
+
+
+def test_the_windows_installer_comes_from_the_release_being_installed(monkeypatch) -> None:
+    from ai_config.commands import update
+
+    calls = _fake_windows_run(monkeypatch)
+    monkeypatch.setattr(update, "current_version", lambda: "1.0.5")
+    monkeypatch.setattr(update, "_latest_release_version", lambda: "1.0.6")
+
+    assert update.run_update() == 0
+    assert "CSL426/ai-config/v1.0.6/install.ps1" in calls["cmd"][5]

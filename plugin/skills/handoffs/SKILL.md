@@ -1,3 +1,10 @@
+---
+name: handoffs
+description: 列出這個專案還沒被接手的工作線
+disable-model-invocation: true
+allowed-tools: Bash(acg memory handoff list), Bash(ai-config memory handoff list)
+---
+
 # handoffs:列出還沒被接手的工作線
 
 執行 `acg memory handoff list`,把輸出整理給使用者看。`○` 表示還沒人接;被認領的線會
@@ -10,3 +17,5 @@
 接手前要先讀一遍內容、對照現況,不要照著它的待辦直接做。
 
 清單是空的就直接說這個專案沒有待接手的工作線,不要多加臆測。
+
+引數:`$ARGUMENTS`

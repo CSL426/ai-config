@@ -35,8 +35,8 @@ A feature is not done until every surface that exposes it is updated: the
 CLI itself, `--help` (`usage()` in `ai_config/__main__.py`), the agent guide
 (`ai_config/guide.py`), the desktop app (`gui/` plus its bridge in
 `ai_config/gui_api.py`, `ai_config/gui_management.py` and
-`ai_config/gui_deploy.py`), and the Claude Code plugin (`plugin/skills/acg/`, its
-`references/`, and the `plugin.json` version). Shipping the CLI alone and
+`ai_config/gui_deploy.py`), and the Claude Code plugin (the `acg` skill and one
+`plugin/skills/<subcommand>/` per subcommand, and the `plugin.json` version). Shipping the CLI alone and
 waiting to be asked about the rest is the failure this prevents.
 
 ## Verification

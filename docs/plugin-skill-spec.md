@@ -88,3 +88,16 @@ thread-handoff 技能。每個指令的說明在每次請求都會載入,而且�
 - 實機:用 `claude plugin install` 裝到這台(不是 `--plugin-dir`),開新 session
   逐一打 `/acg <子指令>`,並用一句「交接」確認模型會主動叫用。
 - 三台 update 後各跑一次 `/acg status`。
+
+## 修訂:選單項目與技能並用(2026-09-29)
+
+選單上只看得到 `acg:acg`,選了之後也不會列出子指令。官方文件確認一般技能沒有
+可點選的子指令清單,只有 `argument-hint` 這段灰字提示。
+
+依文件,`disable-model-invocation: true` 的項目「說明不進 context,使用者叫用時才載入」。
+所以改成:
+
+- 每個子指令一個 `plugin/skills/<子指令>/SKILL.md`,設為只給使用者叫用,選單上是
+  `/acg:<子指令>`,不佔 context。做法就寫在這份檔裡。
+- `acg` 技能保留,負責自然語言觸發與 `/acg <子指令>`,讀的就是上面那些檔,做法只有一份。
+- 舊的十個指令裡只有三個是只給使用者叫用,其他七個的說明原本都在 context 裡。

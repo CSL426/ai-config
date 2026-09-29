@@ -159,20 +159,26 @@ def test_plugin_commands_never_run_a_placeholder() -> None:
     assert offenders == []
 
 
-def test_every_acg_subcommand_has_its_reference_and_no_reference_is_orphaned() -> None:
-    """The skill reads a subcommand's steps from its reference file on demand.
+def test_every_acg_subcommand_is_a_menu_entry_that_costs_no_context() -> None:
+    """Each subcommand is its own `/acg:<name>` in the / menu, and `/acg <name>`
+    reads that same file, so the steps are written once.
 
-    A row pointing at a missing file leaves the model with nothing to follow;
-    a file no row points at is never read and quietly goes stale.
+    A menu entry Claude may invoke on its own puts its description into every
+    request; user-only entries cost nothing until picked, which is the whole
+    reason one entry per subcommand is affordable.
     """
     import re
 
-    skill = REPO_ROOT / "plugin/skills/acg"
-    listed = set(re.findall(r"`references/([a-z-]+\.md)`", (skill / "SKILL.md").read_text(encoding="utf-8")))
-    present = {path.name for path in (skill / "references").glob("*.md")}
+    skills = REPO_ROOT / "plugin/skills"
+    table = (skills / "acg/SKILL.md").read_text(encoding="utf-8")
+    listed = re.findall(r"`\.\./([a-z]+)/SKILL\.md`", table)
+    present = sorted(path.parent.name for path in skills.glob("*/SKILL.md") if path.parent.name != "acg")
 
-    assert listed, "子指令表沒有列出任何參考檔"
-    assert listed == present
+    assert listed, "子指令表沒有列出任何做法檔"
+    assert sorted(listed) == present
+    for name in present:
+        front = (skills / name / "SKILL.md").read_text(encoding="utf-8").split("---", 2)[1]
+        assert "disable-model-invocation: true" in front, name
 
 
 def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
@@ -181,7 +187,7 @@ def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
     surfaces = {
         "guide": render_guide(),
         "README": (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
-        "plugin": (REPO_ROOT / "plugin/skills/acg/references/handoff.md").read_text(
+        "plugin": (REPO_ROOT / "plugin/skills/handoff/SKILL.md").read_text(
             encoding="utf-8"
         ),
     }
@@ -190,8 +196,7 @@ def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
             assert f"memory handoff remind {action}" in content, (name, action)
         assert "PreCompact" in content, name
 
-    skill = (REPO_ROOT / "plugin/skills/acg/SKILL.md").read_text(encoding="utf-8")
-    frontmatter = skill.split("---", 2)[1]
+    frontmatter = surfaces["plugin"].split("---", 2)[1]
     assert "Bash(acg memory handoff:*)" in frontmatter
     assert "Bash(ai-config memory handoff:*)" in frontmatter
 
@@ -379,3 +384,29 @@ def test_subcommand_help_prints_its_usage_and_succeeds(
     assert result.returncode == 0, output
     assert f"Usage: acg {usage}" in output
     assert "✗" not in output
+
+
+def test_installers_ship_with_the_release_and_nothing_points_at_main() -> None:
+    """New machines and `acg update` must get the script from the release they install."""
+    workflow = (REPO_ROOT / ".github/workflows/standalone-release.yml").read_text(encoding="utf-8")
+    assert "cp source/install.sh source/install.ps1 release-assets/" in workflow
+
+    for name in ("README.md", "ai_config/guide.py", "install.sh", "install.ps1", "ai_config/commands/update.py"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        assert "/main/install" not in text, name
+
+
+def test_the_acg_hint_lists_exactly_the_subcommands_in_its_table() -> None:
+    """The hint is all the / menu shows after /acg; it cannot offer a choice list.
+
+    A subcommand missing from it is one nobody finds without reading the skill.
+    """
+    import re
+
+    text = (REPO_ROOT / "plugin/skills/acg/SKILL.md").read_text(encoding="utf-8")
+    front = text.split("---", 2)[1]
+    hint = re.search(r"argument-hint: '\[([a-z|]+)\]'", front)
+    table = re.findall(r"^\| `([a-z]+)` \| `\.\./", text, re.MULTILINE)
+
+    assert hint, "argument-hint 要是 [a|b|c] 格式"
+    assert hint.group(1).split("|") == table

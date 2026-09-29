@@ -1,3 +1,11 @@
+---
+name: save
+description: 把這台的設定收集起來,審閱後提交並上傳
+argument-hint: '[claude|codex|agy|all]'
+disable-model-invocation: true
+allowed-tools: Bash(acg status:*), Bash(ai-config status:*), Bash(acg push:*), Bash(ai-config push:*)
+---
+
 # save:收集這台的設定,審閱後提交並上傳
 
 這個動作會 commit 並 push,是對外的。先讓使用者看過要保存什麼,不要直接推。
@@ -10,3 +18,5 @@
 - 落後遠端時會被拒絕,要先 `/acg sync`。
 - 若它擋下憑證內容,不要用 `--allow-secrets` 繞過。把它抓到的檔案告訴使用者,讓他
   自己判斷。
+
+引數:`$ARGUMENTS`

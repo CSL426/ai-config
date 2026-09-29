@@ -1,3 +1,10 @@
+---
+name: keepalive
+description: 查詢這台機器的用量視窗錨定設定
+disable-model-invocation: true
+allowed-tools: Bash(acg keepalive status), Bash(ai-config keepalive status)
+---
+
 # keepalive:查用量視窗錨定設定
 
 執行 `acg keepalive status`,把輸出整理給使用者。三個工具(claude / codex / agy)各列一行。
@@ -33,3 +40,5 @@ claude,不指定時間就用預設的四個。不要替使用者決定時間,那
 
 如果輸出提到 claude-scheduler 的排程還在,告訴使用者兩個都開著會在同一時間各點一次火,
 要先移除舊的。
+
+引數:`$ARGUMENTS`

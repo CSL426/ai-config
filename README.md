@@ -19,7 +19,7 @@ repository checkout.
 Bash — Linux, macOS, Git Bash, MSYS2, or Cygwin:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | bash
+curl -fsSL https://github.com/CSL426/ai-config/releases/latest/download/install.sh | bash
 ```
 
 On Windows, the shell installer delegates to the native PowerShell installer
@@ -29,7 +29,7 @@ extensionless `ai-config`/`acg` launchers beside `ai-config.exe` for Git Bash.
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/CSL426/ai-config/main/install.ps1 | iex
+irm https://github.com/CSL426/ai-config/releases/latest/download/install.ps1 | iex
 ```
 
 Installers register tab completion for commands, tools, and setup options.
@@ -81,7 +81,7 @@ The installer can immediately run non-interactive setup after downloading the
 binary:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CSL426/ai-config/main/install.sh | \
+curl -fsSL https://github.com/CSL426/ai-config/releases/latest/download/install.sh | \
   AI_CONFIG_REPO_URL=<your-config-repo-url> \
   AI_CONFIG_DATA_DIR=<path-to-config-repo> bash
 ```
@@ -212,24 +212,28 @@ IDE extension. Antigravity global Skills are deployed to
 
 ## Claude Code plugin
 
-This repository is also a plugin marketplace, so commands can carry
-an `acg:` prefix that says where they came from:
+The installer puts acg's Claude Code plugin in on the first install, and
+`acg update` installs it where it is missing and updates it where it is
+present, so `/acg` arrives with the CLI. Set `AI_CONFIG_NO_PLUGIN=1` to skip
+that, for example on a machine whose Claude Code belongs to someone else.
+To install it by hand:
 
 ```bash
 claude plugin marketplace add CSL426/ai-config
 claude plugin install acg@acg
 ```
 
-It adds one skill wrapping `acg`, used as `/acg <subcommand>`: `status`,
-`sync`, `save`, `share`, `memory`, `keepalive`, `msg`, and three for session
-handoff (`handoff` records where a work thread got to, `handoffs` lists
-waiting threads, and `pickup` claims one and reads its notes back).
+Each subcommand is its own entry in the / menu: `/acg:status`, `/acg:sync`,
+`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:msg`, and
+three for session handoff (`/acg:handoff` records where a work thread got to,
+`/acg:handoffs` lists waiting threads, and `/acg:pickup` claims one and reads
+its notes back). Typing `/acg <subcommand>` does the same.
 The journal answers what happened in a project; handoff answers where one thread
 got to, which matters when several sessions work on the same project at once.
 
-The skill also fires when someone says "交接" or "接著做" without typing it.
-Each subcommand's steps live in their own reference file and load only when
-used, so installing the plugin adds one entry to the skill list, not ten.
+The menu entries are user-only, so their descriptions stay out of Claude's
+context until picked. A separate `acg` skill reads the same steps and fires
+when someone says "交接" or "接著做" without typing anything.
 
 ### Handoff reminders before context compaction
 
