@@ -132,9 +132,20 @@ pywebview 在 Linux 要用系統的 GTK/WebKit2GTK 或 Qt,都很難打包進獨�
   0.65 與 0.7 秒。假家目錄內:壓縮檔安裝、重裝同版、`acg versions`、
   新版切到磁碟上的版本不下載、退回 1.0.97 再由舊版切回來仍可用,全部通過。
 
+- arm-box(aarch64)用 CI 產物:同一組 12 項全過;`--version` 62 ms、statusline 48 ms。
+- macOS(CI runner,沒有實機):arm64 與 x86_64 各 12 項全過;`--version`
+  114 / 228 ms、statusline 82 / 214 ms。
+- Windows 實機(`debug acg`,假家目錄):從 zip 安裝 4 秒(同機 onefile 更新
+  67 秒到 4 分鐘);`--version` 371 ms(onefile 1092 ms);cmd 打 `acg` 與
+  `acg gui` 0.5 秒回到提示字元;雙擊開窗且啟動器主控台隱藏;舊版 GUI 執行中
+  換成啟動器,舊行程不受影響,舊版收進 `versions\1.0.97`;切換版本不下載;
+  `active` 寫成不存在的版號時印出警告並改用最新版。
+- 實測抓到的問題:install.ps1 的中文註解在 cp950 的 5.1 下吃掉下一行,整支
+  腳本解析失敗(CI 是英文語系所以沒抓到)。改成純 ASCII,並以合約測試守住。
+
 ## 未知
 
-- Windows 更新 4 分鐘的原因(onefile 解壓、Defender、下載速度都可能)。
-- onedir 解壓後的檔案數(數百個)在 Windows 上被 Defender 掃描的成本。
+- Windows 舊的更新為何要 4 分鐘仍未證實;onedir 從本機 zip 安裝只要 4 秒,
+  但正式更新還包含下載,要等發版後在那台實際量一次。
 - 啟動器多一層行程對 git credential helper、PowerShell 補全、工作排程器
   的影響,要在 Windows 實測。
