@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - "ai_config/**"
-      - "scripts/standalone_entry.py"
+      - "scripts/**"
       - "tests/**"
       - "pyproject.toml"
       - "install.sh"
@@ -266,6 +266,13 @@ jobs:
           print(result.stdout)
           print(result.stderr)
           raise SystemExit(result.returncode)
+
+      # 真的裝一次、跑、退回舊版再切回來;macOS 沒有實機,這是它唯一的實測
+      - name: End-to-end install
+        if: runner.os != 'Windows'
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: bash scripts/e2e-install.sh "release/$ASSET.tar.gz" install.sh
 
       # 用真的執行檔當 git 的 credential helper 跑一遍:python.exe 測不到
       # onefile 主控台判斷之類只有打包後才會發生的事
