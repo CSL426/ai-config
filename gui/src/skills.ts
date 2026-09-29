@@ -142,7 +142,7 @@ $("#skill-pick").addEventListener("click", async () => {
   const bridge = api();
   if (!bridge || state.running || state.pendingPreview || !state.configured || state.restartRequired) return;
   state.skillDirectory = null;
-  skillSource.textContent = "尚未選擇資料夾";
+  skillSource.textContent = "尚未選擇技能資料夾";
   feedback(skillResult, "");
   setBusy(true, "選擇技能資料夾");
   try {
@@ -154,7 +154,7 @@ $("#skill-pick").addEventListener("click", async () => {
       skillSource.textContent = selection.path;
     }
   } catch (error) {
-    feedback(skillResult, `無法選擇資料夾：${String(error)}`, true);
+    feedback(skillResult, `無法選擇技能資料夾：${String(error)}`, true);
   } finally {
     setBusy(false);
   }
@@ -169,7 +169,7 @@ $("#skill-add").addEventListener("click", async () => {
     const installed = await bridge.add_skill(source);
     if (installed.code === 0) {
       state.skillDirectory = null;
-      skillSource.textContent = "尚未選擇資料夾";
+      skillSource.textContent = "尚未選擇技能資料夾";
       requestStale("技能已變更");
       await loadSkills();
     }

@@ -9,7 +9,8 @@ import type {
   DeployInfo, MemoryInfo, PushScope, SettingsInfo, SkillEntry, ToolScope,
 } from "./bridge";
 
-export type MainView = "status" | "output" | "skills" | "export" | "apply" | "memory" | "deploy";
+export type MainView =
+  | "status" | "output" | "skills" | "export" | "apply" | "memory" | "project" | "automation";
 export type PendingPreview = {
   kind: "push" | "apply" | "memory" | "deploy" | "undeploy";
   token: string;
@@ -31,6 +32,7 @@ export const state = {
   previewOpener: null as HTMLElement | null,
   memoryInfo: null as MemoryInfo | null,
   memoryLoading: false,
+  /** 記憶與部署共用同一個專案選擇;後端發的 token 兩邊都認。 */
   projectToken: null as string | null,
   pendingUpdate: null as string | null,
   updateInstalled: false,
@@ -39,7 +41,6 @@ export const state = {
   skills: [] as SkillEntry[],
   skillDirectory: null as string | null,
   selectedSkills: new Set<string>(),
-  deployToken: null as string | null,
   deployInfo: null as DeployInfo | null,
   deploySelected: new Set<string>(),
 };

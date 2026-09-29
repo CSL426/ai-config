@@ -19,7 +19,7 @@ const base = {
 
 async function openMemory(page: Parameters<typeof boot>[0], info: object) {
   await queue(page, "memory_info", info);
-  await page.locator("#memory-open").click();
+  await page.locator("#automation-open").click();
 }
 
 test("沒排定時開關是關的", async ({ page }) => {
@@ -60,7 +60,7 @@ test("後端失敗時開關退回原狀", async ({ page }) => {
   await page.locator("#autopush-toggle").click();
 
   await expect(page.locator("#autopush-toggle")).not.toBeChecked();
-  await expect(page.locator("#memory-feedback")).toContainText("沒有 systemd");
+  await expect(page.locator("#automation-feedback")).toContainText("沒有 systemd");
 });
 
 test("舊版後端沒有這個欄位時不會壞掉", async ({ page }) => {

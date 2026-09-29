@@ -1,12 +1,11 @@
-/** The memory page: its own status, the apply panel, and the four
- * switches that live beside them (autopush, keepalive, handoff reminder,
- * remember hosts).
+/** The memory page, the project's memory section, and the apply panel.
  *
- * They share one feedback line and one refresh, which is why they are one
- * file rather than five: every switch ends by asking for the same reload.
+ * One backend call (memory_info) feeds the memory page, the project page
+ * and the automation page. This file owns that call; the other pages
+ * register a renderer with onMemoryInfo instead of importing it back.
  */
 
-import { $, REMEMBER_HOSTS, outputState } from "./dom";
+import { $, outputState } from "./dom";
 import { state } from "./state";
 import {
   api,
@@ -15,7 +14,6 @@ import {
   onSync,
   perform,
   presentResult,
-  setBusy,
   showView,
   onLeave,
   armPreview,
@@ -25,24 +23,24 @@ import {
 export let requestPush: (() => Promise<void>) | undefined;
 export function setRequestPush(fn: () => Promise<void>): void { requestPush = fn; }
 
-import type {
-  ApplyCategory, ChangePreview, MemoryAction, MemoryInfo,
-  RememberHost, RememberHostState,
-} from "./bridge";
+import type { ApplyCategory, ChangePreview, MemoryAction, MemoryInfo } from "./bridge";
+
+const infoRenderers: ((info: MemoryInfo) => void)[] = [];
+/** Render another page's part of memory_info whenever it is reloaded. */
+export function onMemoryInfo(render: (info: MemoryInfo) => void): void {
+  infoRenderers.push(render);
+}
+
+/** The feedback line of the page on screen; memory_info serves three pages. */
+export function pageFeedback(): HTMLElement {
+  const page = state.currentView === "output" ? state.outputReturn : state.currentView;
+  if (page === "project") return $("#project-feedback");
+  if (page === "automation") return $("#automation-feedback");
+  return $("#memory-feedback");
+}
 
 onSync(({ managementBlocked }) => {
-  for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
-    "#handoff-reminder-toggle, #handoff-reminder-threshold, #handoff-reminder-save",
-  )) {
-    control.disabled = managementBlocked || state.memoryLoading || !state.memoryInfo?.handoff_reminder
-      || Boolean(state.memoryInfo.handoff_reminder.reason);
-  }
-  $<HTMLButtonElement>("#handoff-reminder-save").disabled ||= !state.memoryInfo?.handoff_reminder?.enabled;
-  for (const host of REMEMBER_HOSTS) {
-    $<HTMLInputElement>(`#remember-${host}-toggle`).disabled =
-      managementBlocked || state.memoryLoading || !state.memoryInfo?.remember_hosts?.[host]?.available;
-  }
-  for (const selector of ["#memory-open", "#apply-preview", "#memory-select-project", "#memory-refresh", "#memory-push", "#pull-apply"]) {
+  for (const selector of ["#memory-open", "#apply-preview", "#memory-refresh", "#memory-push", "#pull-apply"]) {
     $<HTMLButtonElement>(selector).disabled = managementBlocked;
   }
   $<HTMLButtonElement>("#apply-preview").disabled = managementBlocked || !applyCategory();
@@ -54,7 +52,7 @@ onSync(({ managementBlocked }) => {
     button.title = permission?.reason ?? "請先讀取記憶狀態";
   }
   $<HTMLButtonElement>("#memory-push").disabled = managementBlocked || state.memoryLoading || !state.memoryInfo?.actions.push.allowed;
-  for (const button of document.querySelectorAll<HTMLButtonElement>("#memory-locations button, #memory-select-project, #memory-refresh")) {
+  for (const button of document.querySelectorAll<HTMLButtonElement>("#memory-locations button, #memory-refresh")) {
     button.disabled = managementBlocked || state.memoryLoading
       || (button.closest("#memory-locations") !== null && !state.memoryInfo);
   }
@@ -163,106 +161,6 @@ function memoryHealthGroup(
   return group;
 }
 
-function handoffReminderHint(state: MemoryInfo["handoff_reminder"]): string {
-  if (!state) {
-    return "目前後端尚未提供交接提醒設定，請更新並重開視窗。";
-  }
-  if (state.reason) {
-    return `無法讀取提醒設定：${state.reason}`;
-  }
-  if (state.enabled && !state.installed) {
-    return "提醒尚未完整安裝，請按更新門檻重新安裝。";
-  }
-  if (state.enabled) {
-    return `Context 用量達 ${state.threshold}% 時提醒交接。`;
-  }
-  return "目前未啟用。啟用共用記憶時會一併以 70% 開啟。";
-}
-
-function renderHandoffReminder(info: MemoryInfo): void {
-  const state = info.handoff_reminder;
-  $<HTMLInputElement>("#handoff-reminder-toggle").checked = state?.enabled ?? false;
-  $<HTMLInputElement>("#handoff-reminder-threshold").value = String(state?.threshold ?? 70);
-  $("#handoff-reminder-hint").textContent = handoffReminderHint(state);
-}
-
-function rememberHostHint(host: RememberHost, state: RememberHostState | undefined): string {
-  if (!state) return "";
-  if (!state.available) return host === "codex" ? "這台沒有安裝 Codex。" : "這台沒有安裝 Antigravity。";
-  if (state.detail) return state.detail;
-  if (!state.installed) {
-    return host === "codex"
-      ? "安裝 remember 到 Codex；裝完在 Codex 裡輸入 /hooks 看過一次就算信任。"
-      : "把 remember 的 hook 合併進 Antigravity 的共用 hooks.json。";
-  }
-  if (host === "codex" && state.trusted === false) {
-    return `已安裝 ${state.version}，但 hook 還沒信任：在 Codex 輸入 /hooks 看過一次。`;
-  }
-  return host === "codex"
-    ? `已安裝 ${state.version}，Codex 的工作會進專案日誌。`
-    : `已安裝（腳本 ${state.version}），Antigravity 的工作會進專案日誌。`;
-}
-
-function renderRememberHosts(info: MemoryInfo): void {
-  for (const host of REMEMBER_HOSTS) {
-    const state = info.remember_hosts?.[host];
-    $<HTMLInputElement>(`#remember-${host}-toggle`).checked = state?.installed ?? false;
-    $(`#remember-${host}-hint`).textContent = rememberHostHint(host, state);
-  }
-}
-
-function renderKeepalive(info: MemoryInfo): void {
-  const toggle = $<HTMLInputElement>("#keepalive-toggle");
-  const state = info.keepalive ?? {
-    installed: false, times: [], model: "", ccs: "", recent: [], tools: {},
-  };
-  toggle.checked = state.installed;
-  renderKeepaliveWindow(state);
-  const hint = state.ccs
-    ? `claude-scheduler 的排程還在（${state.ccs}），兩個都開會一天點兩次火。`
-    : "在選定的時間對 Claude、Codex、Antigravity 各送一句即丟的提示，讓五小時視窗的邊界避開工作時段。";
-  $("#keepalive-hint").textContent = hint;
-
-  const row = $("#keepalive-times-row");
-  row.hidden = !state.installed;
-  if (!state.installed) return;
-  $<HTMLInputElement>("#keepalive-times").value = (state.times ?? []).join(" ");
-  // 三個工具各有自己的視窗,狀態一起列出來,免得以為只有 Claude 有
-  const tools = state.tools ?? {};
-  const summary = Object.keys(tools).map((name) => {
-    const one = tools[name];
-    return one.installed ? `${name} ${one.times.join(" ")}` : `${name} 未啟用`;
-  });
-  const recent = state.recent ?? [];
-  $("#keepalive-recent").textContent = [
-    summary.length ? summary.join("；") : "",
-    recent.length ? `最近：${recent[recent.length - 1]}` : "還沒有執行紀錄。",
-  ].filter(Boolean).join(" · ");
-}
-
-function renderKeepaliveWindow(state: MemoryInfo["keepalive"]): void {
-  // Claude Code 回報的實際視窗;不是從排程時間開始,就是那次呼叫沒錨定到
-  const window = state.window ?? null;
-  $("#keepalive-window").textContent = window
-    ? `目前視窗 ${window.start}–${window.reset}`
-    : "";
-  $("#keepalive-drift").textContent = window?.drift
-    ? `視窗不是從排程的 ${window.drift} 開始：那次呼叫落在別人開的視窗裡，同帳號在更早的時間有其他用量。`
-    : "";
-  // 一個工具有好幾個帳號時(codex 的 ~/.codex-set、~/.codex-csl),各帳號結果分開列
-  const list = $("#keepalive-accounts");
-  list.replaceChildren();
-  for (const [tool, one] of Object.entries(state.tools ?? {})) {
-    for (const [home, line] of Object.entries(one.accounts ?? {})) {
-      const item = document.createElement("li");
-      const label = document.createElement("code");
-      label.textContent = `${tool} ${home}`;
-      item.append(label, `：${line}`);
-      list.append(item);
-    }
-  }
-}
-
 function renderHandoffs(info: MemoryInfo): void {
   const threads = info.handoffs ?? [];
   const list = $("#handoff-threads");
@@ -289,28 +187,6 @@ function renderHandoffs(info: MemoryInfo): void {
   $("#handoff-threads-empty").textContent = threads.length
     ? ""
     : "目前沒有待接手的工作線。";
-}
-
-function renderAutopush(info: MemoryInfo): void {
-  const toggle = $<HTMLInputElement>("#autopush-toggle");
-  const state = info.autopush ?? {
-    installed: false, last_push: "", reason: "", slot: "", host: "", others: [],
-  };
-  toggle.checked = state.installed;
-  const parts: string[] = ["沒有變更或十二小時內推過就跳過。"];
-  if (state.last_push) {
-    parts.push(`上次上傳：${state.last_push.slice(0, 16).replace("T", " ")}`);
-  }
-  $("#autopush-hint").textContent = parts.join(" ");
-
-  const row = $("#autopush-slot-row");
-  row.hidden = !state.installed;
-  if (!state.installed) return;
-  $<HTMLInputElement>("#autopush-slot").value = state.slot || "04:00";
-  const others = state.others ?? [];
-  $("#autopush-others").textContent = others.length
-    ? `其他機器：${others.map((o) => `${o.host} ${o.slot}`).join("、")}`
-    : "目前只有這台登記了時間。多台時會各自錯開，不必手動協調。";
 }
 
 function renderMemoryHealth(info: MemoryInfo): void {
@@ -350,19 +226,30 @@ export async function refreshMemory(): Promise<void> {
   if (!bridge || !state.configured || state.memoryLoading) return;
   state.memoryLoading = true;
   state.memoryInfo = null;
-  feedback($("#memory-feedback"), "讀取記憶狀態中…");
+  const notice = pageFeedback();
+  // 專案頁的訊息列也放部署的錯誤;讀取中與讀取成功不能把它蓋掉
+  const shared = notice.id === "project-feedback";
+  if (!shared) feedback(notice, "讀取記憶狀態中…");
   $("#memory-status").textContent = "讀取中…";
   $("#memory-status").dataset.state = "loading";
   $("#memory-summary").textContent = "正在確認共用位置與版本管理狀態…";
   syncControls();
   try {
-    const info = await bridge.memory_info(state.projectToken ?? undefined);
+    let info = await bridge.memory_info(state.projectToken ?? undefined);
+    const stale = info.code !== 0 && info.error === "STALE_PREVIEW" && state.projectToken !== null;
+    if (stale) {
+      // 選過的專案搬走了:專案頁要重選,但共用記憶與自動化不該跟著讀不到
+      state.projectToken = null;
+      $("#project-root").textContent = "尚未選擇專案。";
+      feedback($("#project-feedback"), info.output, true);
+      info = await bridge.memory_info();
+    }
     if (info.code !== 0) {
-      feedback($("#memory-feedback"), `${info.error ?? ""} ${info.output}`, true);
+      feedback(notice, `${info.error ?? ""} ${info.output}`, true);
       return;
     }
     state.memoryInfo = info;
-    feedback($("#memory-feedback"), "");
+    if (!shared) feedback(notice, "");
     const status = $("#memory-status");
     let statusText: string;
     if (info.shared_status === "ok") {
@@ -385,11 +272,8 @@ export async function refreshMemory(): Promise<void> {
     }
     $("#memory-summary").textContent = summaryText;
     renderMemoryHealth(info);
-    renderAutopush(info);
-    renderKeepalive(info);
-    renderHandoffReminder(info);
     renderHandoffs(info);
-  renderRememberHosts(info);
+    for (const render of infoRenderers) render(info);
     const data = $("#memory-data");
     data.replaceChildren();
     textRow(data, "資料根", info.data_root);
@@ -460,7 +344,7 @@ export async function refreshMemory(): Promise<void> {
       row.append(button, path);
       locations.append(row);
     }
-  } catch (error) { feedback($("#memory-feedback"), `無法讀取記憶狀態：${String(error)}`, true); }
+  } catch (error) { feedback(notice, `無法讀取記憶狀態：${String(error)}`, true); }
   finally {
     state.memoryLoading = false;
     if (!state.memoryInfo) {
@@ -485,146 +369,3 @@ $("#memory-push").addEventListener("click", () => { void void requestPush?.(); }
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-memory-action]")) {
   button.addEventListener("click", () => { void previewChange("memory", button.dataset.memoryAction as MemoryAction); });
 }
-$("#memory-select-project").addEventListener("click", async () => {
-  const bridge = api();
-  if (!bridge || state.running || state.pendingPreview) return;
-  setBusy(true, "選擇專案");
-  try {
-    const selection = await bridge.select_memory_project();
-    if (selection.code !== 0) feedback($("#memory-feedback"), selection.output, true);
-    else if (!selection.cancelled && selection.project_token) {
-      state.projectToken = selection.project_token;
-      await refreshMemory();
-    }
-  } catch (error) { feedback($("#memory-feedback"), String(error), true); }
-  finally { setBusy(false); }
-});
-
-async function configureHandoffReminder(enabled: boolean): Promise<void> {
-  const bridge = api();
-  const toggle = $<HTMLInputElement>("#handoff-reminder-toggle");
-  const input = $<HTMLInputElement>("#handoff-reminder-threshold");
-  const previous = state.memoryInfo?.handoff_reminder?.enabled ?? false;
-  const threshold = input.valueAsNumber;
-  if (!bridge || state.running || state.pendingPreview || !input.reportValidity()
-      || !Number.isInteger(threshold)) {
-    toggle.checked = previous;
-    return;
-  }
-  const result = await perform("設定交接提醒", async () => {
-    const response = await bridge.set_handoff_reminder(enabled, threshold);
-    if (response.code === 0) await refreshMemory();
-    return response;
-  }, false);
-  if (!result || result.code !== 0) toggle.checked = previous;
-  if (result) feedback($("#memory-feedback"), result.output, result.code !== 0);
-}
-
-$<HTMLInputElement>("#handoff-reminder-toggle").addEventListener("change", (event) => {
-  void configureHandoffReminder((event.currentTarget as HTMLInputElement).checked);
-});
-$("#handoff-reminder-save").addEventListener("click", () => {
-  void configureHandoffReminder(true);
-});
-
-async function configureRememberHost(host: RememberHost, enabled: boolean): Promise<void> {
-  const bridge = api();
-  const toggle = $<HTMLInputElement>(`#remember-${host}-toggle`);
-  const previous = state.memoryInfo?.remember_hosts?.[host]?.installed ?? false;
-  if (!bridge || state.running || state.pendingPreview) {
-    toggle.checked = previous;
-    return;
-  }
-  const result = await perform(enabled ? "安裝 remember" : "移除 remember", async () => {
-    const response = await bridge.set_remember_host(host, enabled);
-    if (response.code === 0) await refreshMemory();
-    return response;
-  }, false);
-  if (!result || result.code !== 0) toggle.checked = previous;
-  if (result) feedback($("#memory-feedback"), result.output, result.code !== 0);
-}
-
-for (const host of REMEMBER_HOSTS) {
-  $<HTMLInputElement>(`#remember-${host}-toggle`).addEventListener("change", (event) => {
-    void configureRememberHost(host, (event.currentTarget as HTMLInputElement).checked);
-  });
-}
-
-$<HTMLInputElement>("#keepalive-toggle").addEventListener("change", async (event) => {
-  const toggle = event.currentTarget as HTMLInputElement;
-  const bridge = api();
-  const wanted = toggle.checked;
-  if (!bridge) { toggle.checked = !wanted; return; }
-  toggle.disabled = true;
-  try {
-    const result = await bridge.set_keepalive(wanted);
-    if (result.code !== 0) {
-      toggle.checked = !wanted;
-      feedback($("#memory-feedback"), result.output, true);
-      return;
-    }
-    feedback($("#memory-feedback"), wanted ? "已排定錨定用量視窗" : "已取消錨定");
-    await refreshMemory();
-  } catch (error) {
-    toggle.checked = !wanted;
-    feedback($("#memory-feedback"), `無法更新排程：${String(error)}`, true);
-  } finally {
-    toggle.disabled = false;
-  }
-});
-
-$<HTMLButtonElement>("#keepalive-save").addEventListener("click", async () => {
-  const bridge = api();
-  const raw = $<HTMLInputElement>("#keepalive-times").value.trim();
-  if (!bridge) return;
-  const button = $<HTMLButtonElement>("#keepalive-save");
-  button.disabled = true;
-  try {
-    const result = await bridge.set_keepalive(true, raw.split(/[\s,]+/).filter(Boolean));
-    feedback($("#memory-feedback"), result.output, result.code !== 0);
-    if (result.code === 0) await refreshMemory();
-  } catch (error) {
-    feedback($("#memory-feedback"), `無法更新排程：${String(error)}`, true);
-  } finally {
-    button.disabled = false;
-  }
-});
-
-$<HTMLInputElement>("#autopush-toggle").addEventListener("change", async (event) => {
-  const toggle = event.currentTarget as HTMLInputElement;
-  const bridge = api();
-  const wanted = toggle.checked;
-  if (!bridge) { toggle.checked = !wanted; return; }
-  toggle.disabled = true;
-  try {
-    const result = await bridge.set_autopush(wanted);
-    if (result.code !== 0) {
-      toggle.checked = !wanted;
-      feedback($("#memory-feedback"), result.output, true);
-      return;
-    }
-    feedback($("#memory-feedback"), wanted ? "已排定每天自動上傳" : "已取消自動上傳");
-    await refreshMemory();
-  } finally {
-    toggle.disabled = false;
-  }
-});
-
-$<HTMLButtonElement>("#autopush-slot-save").addEventListener("click", async () => {
-  const bridge = api();
-  const clock = $<HTMLInputElement>("#autopush-slot").value;
-  if (!bridge || !clock) return;
-  const button = $<HTMLButtonElement>("#autopush-slot-save");
-  button.disabled = true;
-  try {
-    const result = await bridge.set_autopush_slot(clock);
-    if (result.code !== 0) {
-      feedback($("#memory-feedback"), result.output, true);
-      return;
-    }
-    feedback($("#memory-feedback"), `這台改到每天 ${clock}`);
-    await refreshMemory();
-  } finally {
-    button.disabled = false;
-  }
-});

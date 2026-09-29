@@ -19,7 +19,7 @@ async function openMemory(page: Page, state: object | null = null) {
       return info;
     };
   }, state);
-  await page.locator("#memory-open").click();
+  await page.locator("#automation-open").click();
 }
 
 test("舊版狀態仍能開啟記憶頁，未啟用時隱藏時間", async ({ page }) => {
@@ -38,7 +38,7 @@ test("呈現已啟用時間與最新紀錄", async ({ page }) => {
 
 test("啟用後重新讀取狀態", async ({ page }) => {
   await boot(page);
-  await page.locator("#memory-open").click();
+  await page.locator("#automation-open").click();
   const info = await page.evaluate(() => window.pywebview!.api.memory_info());
   await queue(page, "memory_info", { ...info, keepalive: active });
   await page.locator("#keepalive-toggle").check();
@@ -63,7 +63,7 @@ test("既有 ccs 排程會提示，拒絕啟用時恢復開關", async ({ page }
   await queue(page, "set_keepalive", { ...success, code: 1, output: "請先移除 ccs 排程" });
   await page.locator("#keepalive-toggle").click();
   await expect(page.locator("#keepalive-toggle")).not.toBeChecked();
-  await expect(page.locator("#memory-feedback")).toContainText("請先移除 ccs 排程");
+  await expect(page.locator("#automation-feedback")).toContainText("請先移除 ccs 排程");
 });
 
 test("時間被拒絕時保留輸入供修正", async ({ page }) => {
@@ -71,7 +71,7 @@ test("時間被拒絕時保留輸入供修正", async ({ page }) => {
   await queue(page, "set_keepalive", { ...success, code: 1, output: "格式是 HH:MM" });
   await page.locator("#keepalive-times").fill("25:00");
   await page.locator("#keepalive-save").click();
-  await expect(page.locator("#memory-feedback")).toContainText("格式是 HH:MM");
+  await expect(page.locator("#automation-feedback")).toContainText("格式是 HH:MM");
   await expect(page.locator("#keepalive-times")).toHaveValue("25:00");
   await expect(page.locator("#keepalive-save")).toBeEnabled();
 });
@@ -82,11 +82,11 @@ test("bridge 例外會顯示錯誤並恢復控制項", async ({ page }) => {
   await page.locator("#keepalive-toggle").click();
   await expect(page.locator("#keepalive-toggle")).toBeChecked();
   await expect(page.locator("#keepalive-toggle")).toBeEnabled();
-  await expect(page.locator("#memory-feedback")).toContainText("connection lost");
+  await expect(page.locator("#automation-feedback")).toContainText("connection lost");
   await page.locator("#keepalive-save").click();
   await expect.poll(async () => (await calls(page, "set_keepalive")).length).toBe(2);
   await expect(page.locator("#keepalive-save")).toBeEnabled();
-  await expect(page.locator("#memory-feedback")).toContainText("connection lost");
+  await expect(page.locator("#automation-feedback")).toContainText("connection lost");
 });
 
 test("顯示實際視窗、偏離排程的警告與各帳號結果", async ({ page }) => {

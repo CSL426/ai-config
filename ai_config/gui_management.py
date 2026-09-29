@@ -190,9 +190,13 @@ class ManagementApi:
         finally:
             self._lock.release()
 
-    def select_memory_project(self):
+    def select_project(self):
+        """One folder serves the project's memory and its deploy panel.
+
+        Choosing it twice, once per panel, let the two drift apart.
+        """
         result = {"cancelled": False, "project_token": None, "root": None,
-                  "key": None, "stable": False}
+                  "memory_root": None, "key": None, "stable": False}
         if not self._lock.acquire(blocking=False):
             return {**result, **outcome(1, "另一個動作正在執行", "BUSY")}
         try:
@@ -204,20 +208,26 @@ class ManagementApi:
             selected = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
             if not selected:
                 return {**result, **outcome(), "cancelled": True}
-            chosen = Path(selected[0]).resolve(strict=True)
-            if not chosen.is_dir():
-                raise ValueError("請選擇專案資料夾")
-            root = memory_paths.project_root(chosen)
-            key = memory_paths.project_key(root)
-            token = secrets.token_urlsafe(24)
-            self._discard_previews()
-            self._project = (token, root, key, str(paths.SCRIPT_DIR))
-            return {**result, **outcome(), "project_token": token,
-                    "root": str(root), "key": key.key, "stable": key.stable}
+            return {**result, **self._choose_project(Path(selected[0]))}
         except Exception as exc:  # noqa: BLE001 - native chooser errors vary by OS
             return {**result, **failure(exc)}
         finally:
             self._lock.release()
+
+    def _choose_project(self, chosen):
+        root = chosen.resolve(strict=True)
+        if not root.is_dir():
+            raise ValueError("請選擇專案資料夾")
+        # 記憶跟 Claude Code 的專案鍵值走(worktree 歸到主 checkout);
+        # 部署跟 CLI 的 acg deploy 一樣寫進選的資料夾本身
+        memory_root = memory_paths.project_root(root)
+        key = memory_paths.project_key(memory_root)
+        token = secrets.token_urlsafe(24)
+        self._discard_previews()
+        self._project = (token, memory_root, key, str(paths.SCRIPT_DIR))
+        self._deploy_project = (token, root, str(paths.SCRIPT_DIR))
+        return {**outcome(), "project_token": token, "root": str(root),
+                "memory_root": str(memory_root), "key": key.key, "stable": key.stable}
 
     def select_skill_directory(self):
         result = {"cancelled": False, "path": None}

@@ -40,7 +40,7 @@ def project(tmp_path: Path) -> Path:
 
 
 def _choose(api: GuiApi, project: Path) -> str:
-    return api._choose_deploy_project(project)["project_token"]
+    return api._choose_project(project)["project_token"]
 
 
 def test_info_lists_every_item_with_its_kind(api: GuiApi, project: Path) -> None:
@@ -123,3 +123,12 @@ def test_unknown_items_are_rejected(api: GuiApi, project: Path) -> None:
     assert api.preview_deploy(token, ["skills/gone"])["error"] == "INVALID_ARGUMENT"
     assert api.preview_deploy(token, [])["error"] == "INVALID_ARGUMENT"
     assert api.preview_deploy(token, "skills/acg")["error"] == "INVALID_ARGUMENT"
+
+
+def test_one_chosen_project_serves_memory_and_deploy(api: GuiApi, project: Path) -> None:
+    # 兩個面板各選一次專案時,兩邊指的可能不是同一個資料夾
+    chosen = api._choose_project(project)
+    token = chosen["project_token"]
+
+    assert api.deploy_info(token)["root"] == str(project.resolve())
+    assert api._project_path(token) == Path(chosen["memory_root"])

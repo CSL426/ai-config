@@ -14,17 +14,17 @@ const nothingPlaced = { files: 0, plugins: [], memory: false, paths: [] };
 
 async function openWithProject(page: Parameters<typeof boot>[0], deployed: object = nothingPlaced) {
   await boot(page);
-  await page.locator("#deploy-open").click();
-  await expect(page.locator("#deploy-title")).toBeFocused();
-  await queue(page, "select_deploy_project", chosen);
+  await page.locator("#project-open").click();
+  await expect(page.locator("#project-title")).toBeFocused();
+  await queue(page, "select_project", chosen);
   await queue(page, "deploy_info", info(deployed));
-  await page.locator("#deploy-select").click();
-  await expect(page.locator("#deploy-root")).toHaveText("/tmp/project");
+  await page.locator("#project-select").click();
+  await expect(page.locator("#project-root")).toHaveText("/tmp/project");
 }
 
 test("選專案前不能勾選或預覽,分組列出技能、plugin 與記憶規則", async ({ page }) => {
   await boot(page);
-  await page.locator("#deploy-open").click();
+  await page.locator("#project-open").click();
   await expect(page.locator("#deploy-preview")).toBeDisabled();
   await expect(page.locator("#deploy-remove")).toBeDisabled();
   await expect(page.locator("#deploy-items input").first()).toBeDisabled();
@@ -60,7 +60,7 @@ test("取消預覽不部署,回到面板", async ({ page }) => {
   await page.locator("#confirm-no").click();
   expect((await calls(page, "cancel_preview"))[0].args).toEqual(["deploy-first"]);
   expect(await calls(page, "confirm_deploy")).toHaveLength(0);
-  await expect(page.locator("#deploy-panel")).toBeVisible();
+  await expect(page.locator("#project-panel")).toBeVisible();
 });
 
 test("有部署紀錄才能收回,並列出已放入的內容", async ({ page }) => {
@@ -89,10 +89,10 @@ test("專案資料夾失效時清掉選擇並提示", async ({ page }) => {
   await openWithProject(page);
   await queue(page, "deploy_info", { ...success, code: 1, output: "專案資料夾或資料庫已變動,請重新選擇",
     error: "STALE_PREVIEW", items, root: null, deployed: null });
-  await page.locator("#deploy-back").click();
-  await page.locator("#deploy-open").click();
-  await expect(page.locator("#deploy-feedback")).toContainText("請重新選擇");
-  await expect(page.locator("#deploy-root")).toHaveText("尚未選擇專案。");
+  await page.locator("#project-back").click();
+  await page.locator("#project-open").click();
+  await expect(page.locator("#project-feedback")).toContainText("請重新選擇");
+  await expect(page.locator("#project-root")).toHaveText("尚未選擇專案。");
   await expect(page.locator("#deploy-preview")).toBeDisabled();
 });
 
@@ -100,14 +100,14 @@ for (const width of [320, 640]) {
   test(`長路徑與長名稱在 ${width} 寬度不溢出`, async ({ page }) => {
     await page.setViewportSize({ width, height: 700 });
     await boot(page);
-    await page.locator("#deploy-open").click();
+    await page.locator("#project-open").click();
     const long = "/tmp/" + "very-long-project-folder-name/".repeat(6) + "app";
-    await queue(page, "select_deploy_project", { ...chosen, root: long });
+    await queue(page, "select_project", { ...chosen, root: long });
     await queue(page, "deploy_info", { ...success, root: long, deployed: nothingPlaced, items: [
       ...items, { name: "skills/" + "long-skill-name-".repeat(6) + "end", note: "Claude, Codex, agy", kind: "skill" },
     ] });
-    await page.locator("#deploy-select").click();
-    await expect(page.locator("#deploy-root")).toHaveText(long);
+    await page.locator("#project-select").click();
+    await expect(page.locator("#project-root")).toHaveText(long);
     const overflow = await page.evaluate(() =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);

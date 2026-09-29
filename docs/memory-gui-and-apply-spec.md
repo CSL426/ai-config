@@ -25,10 +25,20 @@ AI 新會話驗收尚未執行，使用者確認前不改為 Done。
 
 ## 記憶入口與鍵盤操作
 
-首頁以獨立的「記憶管理」與「技能管理」入口呈現。記憶頁先顯示
-共用位置狀態、Git 變更摘要及啟用／上傳／停用操作，接著分列三個
-工具的讀取入口、專案記憶與日誌。完整路徑可展開檢視；規則已安裝
-只代表入口檔案存在，仍提示使用者在新會話驗證。
+首頁以「記憶管理」「專案」「技能管理」「自動化」四個入口呈現。記憶頁
+先顯示共用位置狀態、Git 變更摘要及啟用／上傳／停用操作，接著是待接手
+的工作線、三個工具的讀取入口與記憶資料夾。完整路徑可展開檢視；規則已
+安裝只代表入口檔案存在，仍提示使用者在新會話驗證。
+
+專案記憶與日誌放在「專案」頁，跟專案部署共用同一次專案選擇：後端的
+`select_project` 發一個 token，記憶與部署兩邊都認，不必各選一次。排程
+與提醒（每天自動上傳、錨定用量視窗、交接提醒、Codex／Antigravity 寫
+日誌）放在「自動化」頁；它們是這台電腦的背景行為，不是記憶內容。
+
+預覽、確認與執行結果以底部面板蓋在原頁上：原頁保留且捲動位置不變，
+面板高度隨內容，最高 85% 視窗高。面板開著時原頁不可操作，頁首仍可用；
+關閉後焦點回到開啟面板的按鈕。只改設定的開關不開面板，結果顯示在該頁
+的訊息列。
 
 Esc 與返回按鈕使用相同路徑。優先關閉展開的下拉選單，其次關閉
 設定對話框，再取消預覽或返回上一層。取消預覽須成功撤銷 backend
@@ -164,7 +174,7 @@ type PushScope = ToolScope | "memory";
 
 // 回傳結構見下方欄位定義。
 interface MemoryAndApplyApi {
-  select_memory_project(): Promise<ProjectSelection>;
+  select_project(): Promise<ProjectSelection>;
   memory_info(projectToken?: string): Promise<MemoryInfo>;
   open_memory_location(locationToken: string): Promise<OperationResult>;
   preview_memory(action: MemoryAction, projectToken?: string): Promise<ChangePreview>;
@@ -178,7 +188,9 @@ interface MemoryAndApplyApi {
 ```
 
 - `ProjectSelection`：`code`、`error`、`output`、`cancelled`、`project_token`、
-  `root`、`key`、`stable`。取消選擇器不改當前專案，也不執行操作。
+  `root`（選的資料夾，部署寫在這裡）、`memory_root`（專案記憶的根目錄，
+  worktree 指回主 checkout）、`key`、`stable`。取消選擇器不改當前專案，
+  也不執行操作。
 - `MemoryInfo`：`code`、`error`、`output`、資料根與連結狀態、各入口
   狀態／原因、Git changed paths、是否已納管、專案與日誌狀態、允許
   的動作與阻擋原因，以及可開啟位置的 token。無專案時相關欄位為 null。

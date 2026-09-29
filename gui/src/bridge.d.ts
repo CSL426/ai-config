@@ -39,7 +39,10 @@ export interface ProjectSelection extends RunResult {
   error: ErrorCode | null;
   cancelled: boolean;
   project_token: string | null;
+  /** 選的資料夾本身,部署寫在這裡。 */
   root: string | null;
+  /** 專案記憶所屬的根目錄;worktree 會指回主 checkout。 */
+  memory_root: string | null;
   key: string | null;
   stable: boolean;
 }
@@ -118,12 +121,6 @@ export interface DeployInfo extends RunResult {
   items: DeployItem[];
   root: string | null;
   deployed: DeployedSummary | null;
-}
-export interface DeployProjectSelection extends RunResult {
-  error: ErrorCode | null;
-  cancelled: boolean;
-  project_token: string | null;
-  root: string | null;
 }
 export interface ChangePreview extends RunResult {
   error: ErrorCode | null;
@@ -217,7 +214,7 @@ interface AcgApi {
   relogin_gdrive(): Promise<RunResult>;
   open_data_dir(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
-  select_memory_project(): Promise<ProjectSelection>;
+  select_project(): Promise<ProjectSelection>;
   memory_info(projectToken?: string): Promise<MemoryInfo>;
   set_autopush(wanted: boolean): Promise<OperationResult>;
   set_handoff_reminder(enabled: boolean, threshold: number): Promise<OperationResult>;
@@ -230,7 +227,6 @@ interface AcgApi {
   preview_apply(tool: ToolScope, category: ApplyCategory): Promise<ChangePreview>;
   confirm_apply(token: string): Promise<OperationResult>;
   cancel_preview(token: string): Promise<OperationResult>;
-  select_deploy_project(): Promise<DeployProjectSelection>;
   deploy_info(projectToken?: string): Promise<DeployInfo>;
   preview_deploy(projectToken: string, names: string[]): Promise<ChangePreview>;
   confirm_deploy(token: string): Promise<OperationResult>;

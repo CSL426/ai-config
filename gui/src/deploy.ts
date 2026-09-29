@@ -1,8 +1,8 @@
-/** The project deploy panel: install picks into one project, and take them back.
+/** The project page: choose a folder once, then see its memory and
+ * journal (rendered by memory.ts) and install picks into it or take them back.
  *
- * The page never names a path itself. Choosing a folder hands back a token
- * from the backend, and every preview and confirm goes through it, the
- * same way the memory page treats its project.
+ * The page never names a path itself. Choosing a folder hands back one
+ * token from the backend that both the memory and the deploy calls accept.
  */
 
 import { $, outputState } from "./dom";
@@ -10,7 +10,7 @@ import { state } from "./state";
 import {
   api, armPreview, feedback, goBack, onSync, perform, setBusy, showView, syncControls,
 } from "./shell";
-import { renderChanges } from "./memory";
+import { refreshMemory, renderChanges } from "./memory";
 import type { ChangePreview, DeployItem, DeployKind } from "./bridge";
 
 const GROUPS: { kind: DeployKind; title: string }[] = [
@@ -20,20 +20,20 @@ const GROUPS: { kind: DeployKind; title: string }[] = [
   { kind: "claude", title: "Claude 規則與指令" },
 ];
 
-const feedbackEl = $("#deploy-feedback");
+const feedbackEl = $("#project-feedback");
 
 onSync(({ managementBlocked }) => {
   const busy = managementBlocked;
-  $<HTMLButtonElement>("#deploy-open").disabled = busy;
-  $<HTMLButtonElement>("#deploy-select").disabled = busy;
+  $<HTMLButtonElement>("#project-open").disabled = busy;
+  $<HTMLButtonElement>("#project-select").disabled = busy;
   for (const box of document.querySelectorAll<HTMLInputElement>("#deploy-items input")) {
-    box.disabled = busy || !state.deployToken;
+    box.disabled = busy || !state.projectToken;
   }
   $<HTMLButtonElement>("#deploy-preview").disabled =
-    busy || !state.deployToken || state.deploySelected.size === 0;
+    busy || !state.projectToken || state.deploySelected.size === 0;
   $<HTMLButtonElement>("#deploy-clear").disabled = busy || state.deploySelected.size === 0;
   const placed = state.deployInfo?.deployed;
-  $<HTMLButtonElement>("#deploy-remove").disabled = busy || !state.deployToken
+  $<HTMLButtonElement>("#deploy-remove").disabled = busy || !state.projectToken
     || !placed || (placed.files === 0 && placed.plugins.length === 0 && !placed.memory);
   $("#deploy-selection").textContent = `已選 ${state.deploySelected.size} 項`;
 });
@@ -93,7 +93,7 @@ function renderItems(): void {
 function renderPlaced(): void {
   const placed = state.deployInfo?.deployed;
   const text = $("#deploy-placed");
-  if (!state.deployToken || !placed) { text.textContent = "尚未選擇專案。"; return; }
+  if (!state.projectToken || !placed) { text.textContent = "尚未選擇專案。"; return; }
   const parts: string[] = [];
   if (placed.files) parts.push(`${placed.files} 個檔案`);
   if (placed.plugins.length) parts.push(`plugin：${placed.plugins.join("、")}`);
@@ -105,18 +105,18 @@ export async function refreshDeploy(): Promise<void> {
   const bridge = api();
   if (!bridge) return;
   try {
-    const info = await bridge.deploy_info(state.deployToken ?? undefined);
+    const info = await bridge.deploy_info(state.projectToken ?? undefined);
     if (info.code !== 0) {
       if (info.error === "STALE_PREVIEW") {
-        state.deployToken = null;
-        $("#deploy-root").textContent = "尚未選擇專案。";
+        state.projectToken = null;
+        $("#project-root").textContent = "尚未選擇專案。";
       }
       feedback(feedbackEl, info.output, true);
     } else {
       feedbackEl.hidden = true;
     }
     state.deployInfo = info;
-    if (info.root) $("#deploy-root").textContent = info.root;
+    if (info.root) $("#project-root").textContent = info.root;
   } catch (error) {
     feedback(feedbackEl, String(error), true);
   }
@@ -127,7 +127,7 @@ export async function refreshDeploy(): Promise<void> {
 
 async function preview(kind: "deploy" | "undeploy"): Promise<void> {
   const bridge = api();
-  const token = state.deployToken;
+  const token = state.projectToken;
   if (!bridge || !token || state.running || state.pendingPreview) return;
   const names = [...state.deploySelected];
   if (kind === "deploy" && !names.length) return;
@@ -150,22 +150,32 @@ async function preview(kind: "deploy" | "undeploy"): Promise<void> {
       : "只刪除部署後沒被改過的檔案；改過的會保留並列出。");
 }
 
-$("#deploy-open").addEventListener("click", () => { showView("deploy"); void refreshDeploy(); });
-$("#deploy-back").addEventListener("click", goBack);
-$("#deploy-select").addEventListener("click", async () => {
+$("#project-open").addEventListener("click", async () => {
+  showView("project");
+  // 依序讀:部署先確認專案還在,失效時就不必再拿舊 token 讀記憶
+  await refreshDeploy();
+  if (state.projectToken) await refreshMemory();
+});
+$("#project-back").addEventListener("click", goBack);
+$("#project-select").addEventListener("click", async () => {
   const bridge = api();
   if (!bridge || state.running || state.pendingPreview) return;
   setBusy(true, "選擇專案");
+  let chosen = false;
   try {
-    const selection = await bridge.select_deploy_project();
+    const selection = await bridge.select_project();
     if (selection.code !== 0) feedback(feedbackEl, selection.output, true);
     else if (!selection.cancelled && selection.project_token) {
-      state.deployToken = selection.project_token;
-      $("#deploy-root").textContent = selection.root ?? "";
+      state.projectToken = selection.project_token;
+      $("#project-root").textContent = selection.root ?? "";
+      chosen = true;
     }
   } catch (error) { feedback(feedbackEl, String(error), true); }
   finally { setBusy(false); }
-  await refreshDeploy();
+  if (chosen) {
+    await refreshDeploy();
+    await refreshMemory();
+  }
 });
 $("#deploy-clear").addEventListener("click", () => {
   state.deploySelected.clear();

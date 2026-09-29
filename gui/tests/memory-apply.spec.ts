@@ -126,14 +126,17 @@ test("記憶入口區分安裝與 runtime、未選專案停用、開啟使用位
 
 test("原生選專案後取消保留專案，無 remember 仍可 release", async ({ page }) => {
   await boot(page);
-  await page.locator("#memory-open").click();
-  await queue(page, "select_memory_project", { ...success, cancelled: false,
-    project_token: "project-issued", root: "/tmp/project", key: "owner--project", stable: true });
+  await page.locator("#project-open").click();
+  await queue(page, "select_project", { ...success, cancelled: false,
+    project_token: "project-issued", root: "/tmp/project", memory_root: "/tmp/project",
+    key: "owner--project", stable: true });
   await queue(page, "memory_info", projectInfo);
-  await page.locator("#memory-select-project").click();
+  await page.locator("#project-select").click();
   await expect(page.locator("#memory-project")).toContainText("owner--project");
+  // 選一次專案,記憶與部署都拿同一個 token
   expect((await calls(page, "memory_info")).at(-1)?.args).toEqual(["project-issued"]);
-  await page.locator("#memory-select-project").click();
+  expect((await calls(page, "deploy_info")).at(-1)?.args).toEqual(["project-issued"]);
+  await page.locator("#project-select").click();
   await expect(page.locator("#memory-project")).toContainText("owner--project");
   await expect(page.locator("[data-memory-action=adopt]")).toBeDisabled();
   await expect(page.locator("[data-memory-action=release]")).toBeEnabled();
@@ -155,4 +158,26 @@ test("上傳記憶顯示完整 commit 範圍且 confirmation 綁 memory", async 
   await expect(page.locator("#confirm-text")).not.toContainText("已收集本機設定");
   await page.locator("#confirm-yes").click();
   expect((await calls(page, "confirm_push"))[0].args).toEqual(["memory", "memory-push"]);
+});
+
+test("上傳記憶的預覽蓋在記憶頁上，關掉後停在原位", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 480 });
+  await boot(page);
+  await page.locator("#memory-open").click();
+  await expect(page.locator("#memory-summary")).toContainText("已納入 Git");
+  await page.locator("#memory-push").scrollIntoViewIfNeeded();
+  const scrolled = await page.locator(".app").evaluate(el => el.scrollTop);
+  await page.locator("#memory-push").click();
+  await expect(page.locator("#confirm")).toBeVisible();
+  // 原頁不被換掉,只是不能操作
+  await expect(page.locator("#memory-panel")).toBeVisible();
+  expect(await page.locator("#memory-panel").evaluate(el => el.inert)).toBe(true);
+  // 兩行差異不該撐出整頁高的主控台
+  const sheet = await page.locator("#output").boundingBox();
+  expect(sheet!.height).toBeLessThan(480 * 0.85 + 1);
+  await page.locator("#confirm-no").click();
+  await expect(page.locator("#output")).toBeHidden();
+  await expect(page.locator("#memory-push")).toBeFocused();
+  expect(await page.locator(".app").evaluate(el => el.scrollTop)).toBe(scrolled);
+  expect(await page.locator("#memory-panel").evaluate(el => el.inert)).toBe(false);
 });

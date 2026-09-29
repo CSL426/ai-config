@@ -21,7 +21,7 @@ test("選擇資料夾後才可安裝，成功重新載入清單並清除來源",
   ]);
   expect(await calls(page, "list_skills")).toHaveLength(before + 1);
   await expect(page.locator("#skill-list").getByRole("checkbox", { name: "example", exact: true })).toBeVisible();
-  await expect(page.locator("#skill-source")).toHaveText("尚未選擇資料夾");
+  await expect(page.locator("#skill-source")).toHaveText("尚未選擇技能資料夾");
   await expect(page.locator("#skill-add")).toBeDisabled();
   await page.locator("#skill-output").click();
   await expect(page.locator("#output-body")).toContainText("Installed example");
@@ -37,7 +37,7 @@ test("取消重新選擇會清除舊來源，不會安裝", async ({ page }) => 
   });
   await page.locator("#skill-pick").click();
   await expect(page.locator("#skill-add")).toBeDisabled();
-  await expect(page.locator("#skill-source")).toHaveText("尚未選擇資料夾");
+  await expect(page.locator("#skill-source")).toHaveText("尚未選擇技能資料夾");
   expect(await calls(page, "add_skill")).toHaveLength(0);
 });
 

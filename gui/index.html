@@ -208,15 +208,19 @@ claude plugin install acg@acg</textarea>
         <nav class="resource-nav" aria-label="內容管理">
           <button class="resource-entry resource-memory" id="memory-open" aria-label="記憶管理">
             <span class="resource-name">記憶管理 <span aria-hidden="true">›</span></span>
-            <span class="resource-description">共用知識 · 專案日誌</span>
+            <span class="resource-description">共用知識 · 待接手的工作線</span>
+          </button>
+          <button class="resource-entry" id="project-open" aria-label="專案">
+            <span class="resource-name">專案 <span aria-hidden="true">›</span></span>
+            <span class="resource-description">專案記憶 · 只裝進一個專案</span>
           </button>
           <button class="resource-entry" id="package-open" aria-label="技能管理">
             <span class="resource-name">技能管理 <span aria-hidden="true">›</span></span>
             <span class="resource-description">分享技能 · 匯出安裝</span>
           </button>
-          <button class="resource-entry" id="deploy-open" aria-label="專案部署">
-            <span class="resource-name">專案部署 <span aria-hidden="true">›</span></span>
-            <span class="resource-description">只裝進一個專案 · 可收回</span>
+          <button class="resource-entry" id="automation-open" aria-label="自動化">
+            <span class="resource-name">自動化 <span aria-hidden="true">›</span></span>
+            <span class="resource-description">自動上傳 · 用量視窗 · 提醒</span>
           </button>
         </nav>
         <div class="status-head">
@@ -292,7 +296,7 @@ claude plugin install acg@acg</textarea>
           <h2 id="memory-title">記憶管理</h2>
           <button class="btn btn-ghost" id="memory-refresh">重新整理</button>
         </div>
-        <p class="memory-intro">設定、技能、記憶存放在同一份資料庫，分開管理。</p>
+        <p class="memory-intro">設定、技能、記憶存放在同一份資料庫，分開管理。專案專屬的記憶在「專案」頁，排程與提醒在「自動化」頁。</p>
         <p class="feedback" id="memory-feedback" role="status" hidden></p>
         <section class="memory-overview" aria-labelledby="memory-global-title">
           <div class="memory-section-head">
@@ -308,6 +312,41 @@ claude plugin install acg@acg</textarea>
             <button class="btn" id="memory-push">上傳記憶</button>
             <button class="btn btn-ghost" data-memory-action="disable">停用共用記憶</button>
           </div>
+          <p class="package-hint" id="memory-global-reasons"></p>
+          <p class="memory-sync-note">記憶下載後立即更新；設定與技能可另外選擇是否套用。</p>
+          <div class="memory-health" id="memory-health" hidden></div>
+          <details class="memory-details">
+            <summary>儲存位置與檔案變更</summary>
+            <div id="memory-data"></div>
+          </details>
+        </section>
+        <section class="memory-section" aria-labelledby="handoff-threads-title">
+          <h3 id="handoff-threads-title">待接手的工作線</h3>
+          <ul class="handoff-threads" id="handoff-threads"></ul>
+          <p class="package-hint" id="handoff-threads-empty"></p>
+        </section>
+        <section class="memory-section" aria-labelledby="memory-tools-title">
+          <div class="memory-section-head">
+            <h3 id="memory-tools-title">工具讀取入口</h3>
+            <span class="package-hint">安裝規則後，請開新會話驗證</span>
+          </div>
+          <div id="memory-entries"></div>
+        </section>
+        <section class="memory-section" aria-label="記憶資料夾">
+          <h3>開啟記憶資料夾</h3>
+          <div id="memory-locations"></div>
+        </section>
+      </section>
+
+      <section class="management-panel" id="automation-panel" hidden aria-labelledby="automation-title">
+        <div class="panel-head">
+          <button class="btn btn-ghost" id="automation-back">‹ 返回</button>
+          <h2 id="automation-title">自動化</h2>
+          <button class="btn btn-ghost" id="automation-refresh">重新整理</button>
+        </div>
+        <p class="memory-intro">這台電腦在背景替你做的事。每一項都只影響這台，開關立即生效。</p>
+        <p class="feedback" id="automation-feedback" role="status" hidden></p>
+        <section class="memory-section" aria-label="排程">
           <label class="autopush-row">
             <input type="checkbox" id="autopush-toggle" />
             <span class="autopush-text">
@@ -337,6 +376,8 @@ claude plugin install acg@acg</textarea>
             <p class="package-hint keepalive-drift" id="keepalive-drift" role="status"></p>
             <ul class="keepalive-accounts" id="keepalive-accounts"></ul>
           </div>
+        </section>
+        <section class="memory-section" aria-label="提醒與日誌">
           <label class="autopush-row">
             <input type="checkbox" id="handoff-reminder-toggle" />
             <span class="autopush-text">
@@ -349,11 +390,6 @@ claude plugin install acg@acg</textarea>
             <input type="number" id="handoff-reminder-threshold" min="1" max="99" step="1" value="70" />
             <button class="btn" id="handoff-reminder-save">更新門檻</button>
             <p class="package-hint" id="handoff-reminder-hint" role="status"></p>
-          </div>
-          <div class="handoff-threads">
-            <span class="autopush-title">待接手的工作線</span>
-            <ul id="handoff-threads"></ul>
-            <p class="package-hint" id="handoff-threads-empty"></p>
           </div>
           <label class="autopush-row">
             <input type="checkbox" id="remember-codex-toggle" />
@@ -369,57 +405,33 @@ claude plugin install acg@acg</textarea>
               <span class="autopush-hint" id="remember-agy-hint"></span>
             </span>
           </label>
-          <p class="package-hint" id="memory-global-reasons"></p>
-          <p class="memory-sync-note">記憶下載後立即更新；設定與技能可另外選擇是否套用。</p>
-          <div class="memory-health" id="memory-health" hidden></div>
-          <details class="memory-details">
-            <summary>儲存位置與檔案變更</summary>
-            <div id="memory-data"></div>
-          </details>
         </section>
-        <section class="memory-section" aria-labelledby="memory-tools-title">
-          <div class="memory-section-head">
-            <h3 id="memory-tools-title">工具讀取入口</h3>
-            <span class="package-hint">安裝規則後，請開新會話驗證</span>
-          </div>
-          <div id="memory-entries"></div>
-        </section>
-        <section class="memory-section memory-project-section" aria-labelledby="memory-project-title">
+      </section>
+
+      <section class="management-panel" id="project-panel" hidden aria-labelledby="project-title">
+        <div class="panel-head">
+          <button class="btn btn-ghost" id="project-back">‹ 返回</button>
+          <h2 id="project-title">專案</h2>
+        </div>
+        <p class="memory-intro">選一個專案資料夾：檢視它的專屬記憶與日誌，或把技能、plugin 與記憶規則只裝進這個專案，不動這台電腦的全域設定，離開時可以整批收回。</p>
+        <p class="feedback" id="project-feedback" role="status" hidden></p>
+        <section class="memory-section" aria-labelledby="project-root-title">
           <div class="memory-section-head">
             <div>
-              <h3 id="memory-project-title">專案記憶與日誌</h3>
-              <p>選擇專案，檢視專屬記憶，決定工作日誌是否跨機器同步。</p>
+              <h3 id="project-root-title">專案資料夾</h3>
+              <p class="deploy-root" id="project-root">尚未選擇專案。</p>
             </div>
-            <button class="btn" id="memory-select-project">選擇專案</button>
+            <button class="btn" id="project-select">選擇專案</button>
           </div>
+        </section>
+        <section class="memory-section memory-project-section" aria-labelledby="memory-project-title">
+          <h3 id="memory-project-title">專案記憶與日誌</h3>
           <div id="memory-project">尚未選擇專案。</div>
           <div class="package-buttons">
             <button class="btn" data-memory-action="adopt" disabled>同步此專案日誌</button>
             <button class="btn btn-ghost" data-memory-action="release" disabled>日誌改存本機</button>
           </div>
           <p class="package-hint" id="memory-project-reasons"></p>
-        </section>
-        <section class="memory-section" aria-label="記憶資料夾">
-          <h3>開啟記憶資料夾</h3>
-          <div id="memory-locations"></div>
-        </section>
-      </section>
-
-      <section class="management-panel" id="deploy-panel" hidden aria-labelledby="deploy-title">
-        <div class="panel-head">
-          <button class="btn btn-ghost" id="deploy-back">‹ 返回</button>
-          <h2 id="deploy-title">專案部署</h2>
-        </div>
-        <p class="memory-intro">把技能、plugin 與記憶規則只裝進一個專案，不動這台電腦的全域設定。適合在別人的電腦上開發，離開時可以整批收回。</p>
-        <p class="feedback" id="deploy-feedback" role="status" hidden></p>
-        <section class="memory-section" aria-labelledby="deploy-project-title">
-          <div class="memory-section-head">
-            <div>
-              <h3 id="deploy-project-title">專案資料夾</h3>
-              <p class="deploy-root" id="deploy-root">尚未選擇專案。</p>
-            </div>
-            <button class="btn" id="deploy-select">選擇專案</button>
-          </div>
         </section>
         <section class="memory-section" aria-labelledby="deploy-items-title">
           <div class="memory-section-head">
@@ -454,8 +466,8 @@ claude plugin install acg@acg</textarea>
             <h3 id="skill-install-title">安裝本機技能</h3>
             <p class="package-hint" id="skill-install-hint">選擇含 SKILL.md 的資料夾，依其中的名稱安裝至資料庫與 Claude Code；不覆寫既有技能。</p>
             <div class="skill-install-actions">
-              <button class="btn" id="skill-pick">選擇資料夾</button>
-              <span id="skill-source" aria-live="polite">尚未選擇資料夾</span>
+              <button class="btn" id="skill-pick">選擇技能資料夾</button>
+              <span id="skill-source" aria-live="polite">尚未選擇技能資料夾</span>
               <button class="btn btn-primary" id="skill-add" aria-describedby="skill-source skill-install-hint" disabled>安裝技能</button>
             </div>
           </section>
@@ -492,6 +504,7 @@ claude plugin install acg@acg</textarea>
         <button class="btn btn-primary" id="package-copy">複製說明</button>
       </section>
 
+      <div class="output-backdrop" id="output-backdrop" hidden></div>
       <section class="output" id="output" hidden aria-label="執行結果">
         <div class="output-head">
           <button class="btn btn-ghost view-back" id="output-back">‹ 返回</button>
