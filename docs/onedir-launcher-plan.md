@@ -140,6 +140,11 @@ pywebview 在 Linux 要用系統的 GTK/WebKit2GTK 或 Qt,都很難打包進獨�
   `acg gui` 0.5 秒回到提示字元;雙擊開窗且啟動器主控台隱藏;舊版 GUI 執行中
   換成啟動器,舊行程不受影響,舊版收進 `versions\1.0.97`;切換版本不下載;
   `active` 寫成不存在的版號時印出警告並改用最新版。
+- Ctrl+C:在可見的 cmd 視窗裡用 SendKeys 送真的按鍵(conhost 自己產生事件),
+  經由啟動器時主程式印出 `Cancelled.`,結束碼 130 原樣傳回,沒有孤兒行程。
+  `GenerateConsoleCtrlEvent` 在實機與 CI runner 上連不經啟動器的對照組都送
+  不到,所以 CI 不自動檢查這一項;要重驗就用按鍵的方式(Windows Terminal
+  託管的 cmd 要用視窗標題找焦點,PID 對不上)。
 - 實測抓到的問題:install.ps1 的中文註解在 cp950 的 5.1 下吃掉下一行,整支
   腳本解析失敗(CI 是英文語系所以沒抓到)。改成純 ASCII,並以合約測試守住。
 

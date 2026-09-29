@@ -146,16 +146,9 @@ Check 'launcher still on PATH after the switch' { (Get-Item $Entry).Length -lt 4
 & "$Versions\$Active\app\ai-config.exe" update $Active *> "$Root\switch-back.log"
 Check "switch back to $Active with the new code" { (Get-Content "$Versions\active" -Raw).Trim() -eq $Active -and (& $Entry --version) -like "*$Active*" -and (Get-Item $Entry).Length -lt 4MB }
 
-Write-Host '== Ctrl+C through the launcher'
-$Python = Get-Command python -ErrorAction SilentlyContinue
-if ($Python) {
-    & $Python.Source (Join-Path $PSScriptRoot 'ctrl-c-check.py') $Entry "$Versions\$Active\app\ai-config.exe" *> "$Root\ctrl-c.log"
-    $code = $LASTEXITCODE
-    Get-Content "$Root\ctrl-c.log" | ForEach-Object { Write-Host "    $_" }
-    if ($code -eq 2) { Write-Host 'SKIP Ctrl+C: the event does not reach programs here, even without the launcher' }
-    else { Check 'Ctrl+C is not swallowed by the launcher' { $code -eq 0 } }
-}
-else { Write-Host 'SKIP Ctrl+C check needs python' }
+# Ctrl+C is not checked here: GenerateConsoleCtrlEvent reached no program on
+# the runner or on a real machine, launcher or not. It was verified by a real
+# keypress instead (docs/onedir-launcher-plan.md).
 
 Write-Host "RESULT: $script:Fails failure(s); logs in $Root"
 Gui-Processes | Stop-Process -Force
