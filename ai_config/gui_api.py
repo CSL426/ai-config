@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .console import log_error
+from .gui_deploy import DeployApi
 from .gui_management import ManagementApi
 from .paths import ALL_TOOLS
 from .subproc import UTF8
@@ -45,13 +46,14 @@ class _PromptInput(io.TextIOBase):
         return response if size < 0 else response[:size]
 
 
-class GuiApi(ManagementApi):
+class GuiApi(ManagementApi, DeployApi):
     """Methods exposed to the frontend via pywebview's js_api."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._push_preview: tuple[str, str, str] | None = None
         self._init_management()
+        self._init_deploy()
 
     def get_info(self) -> dict:
         from .config import configured_remote_provider

@@ -117,6 +117,7 @@ export function viewFocusTarget(view: MainView): HTMLElement {
   switch (view) {
     case "apply": return $("#apply-title");
     case "memory": return $("#memory-title");
+    case "deploy": return $("#deploy-title");
     case "output":
       return outputTitle;
     case "skills":
@@ -156,6 +157,7 @@ export function showView(view: MainView, focus = true): void {
   $("#package-result").hidden = view !== "export";
   $("#apply-panel").hidden = view !== "apply";
   $("#memory-panel").hidden = view !== "memory";
+  $("#deploy-panel").hidden = view !== "deploy";
   $(".app").scrollTop = 0;
   if (focus) {
     const target = viewFocusTarget(view);
@@ -185,6 +187,9 @@ export function goBack(): void {
   switch (previous) {
     case "memory":
       opener = $("#memory-open");
+      break;
+    case "deploy":
+      opener = $("#deploy-open");
       break;
     case "skills":
       opener = $("#package-open");
