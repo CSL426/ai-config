@@ -355,7 +355,7 @@ def reminder(payload: dict) -> dict | None:
             "additionalContext": (
                 f"本 session 最近的 context 使用率為 {used:g}%，"
                 f"已達交接提醒門檻 {settings['threshold']}%。"
-                "建議提醒使用者準備 /acg:handoff，交接應包含已完成事項、"
+                "建議提醒使用者準備 /acg handoff，交接應包含已完成事項、"
                 "目前阻礙與下一步。這只是提醒，尚未建立或更新交接；"
                 "是否寫入由使用者決定。"
             ),
@@ -417,7 +417,7 @@ def run_statusline(args: list[str]) -> int:
         except (OSError, subprocess.TimeoutExpired):
             pass
     if should_remind:
-        print(f"Context {used:g}% · 建議準備 /acg:handoff")
+        print(f"Context {used:g}% · 建議準備 /acg handoff")
     return 0
 
 

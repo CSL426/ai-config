@@ -5,7 +5,7 @@
 ## 目的與範圍
 
 Claude Code context 接近滿載時，提醒目前 session 整理進度與下一步，方便後續接手。
-提醒只注入提示；實際儲存仍使用既有 `memory handoff write` 或 `/acg:handoff`。
+提醒只注入提示；實際儲存仍使用既有 `memory handoff write` 或 `/acg handoff`。
 不要求事先認領工作線，不推測目前應寫入哪一條工作線。
 
 `acg memory enable` 會一併以 70% 開啟提醒(已設定的門檻保留),`acg memory disable`
@@ -22,7 +22,7 @@ Claude Code context 接近滿載時，提醒目前 session 整理進度與下一
 | `acg memory handoff remind enable 80` | 啟用並設定門檻，接受 1 到 99 的整數 |
 | `acg memory handoff remind disable` | 停用並移除 acg 管理的提醒設定 |
 
-CLI、`--help`、agent guide、Desktop 記憶頁及 `/acg:handoff remind` 都提供相同語意。
+CLI、`--help`、agent guide、Desktop 記憶頁及 `/acg handoff remind` 都提供相同語意。
 CLI 與 plugin 版本保持一致。停用時保留使用者自訂 hooks 與 statusLine。
 
 ## 資料與觸發流程

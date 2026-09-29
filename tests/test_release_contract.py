@@ -151,7 +151,7 @@ def test_plugin_commands_never_run_a_placeholder() -> None:
     名字就叫「名稱」的交接。要嘛用 $ARGUMENTS,要嘛讓模型自己組指令。
     """
     offenders = []
-    for path in sorted((REPO_ROOT / "plugin/commands").glob("*.md")):
+    for path in sorted((REPO_ROOT / "plugin").rglob("*.md")):
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.startswith("!") and ("<" in line and ">" in line):
                 offenders.append(f"{path.name}:{number}")
@@ -159,16 +159,20 @@ def test_plugin_commands_never_run_a_placeholder() -> None:
     assert offenders == []
 
 
-def test_every_plugin_command_declares_what_it_is() -> None:
-    """沒有 description 的指令在選單裡只剩名字,使用者看不出它做什麼。"""
-    missing = [
-        path.name
-        for path in sorted((REPO_ROOT / "plugin/commands").glob("*.md"))
-        if not path.read_text(encoding="utf-8").startswith("---\n")
-        or "description:" not in path.read_text(encoding="utf-8").split("---")[1]
-    ]
+def test_every_acg_subcommand_has_its_reference_and_no_reference_is_orphaned() -> None:
+    """The skill reads a subcommand's steps from its reference file on demand.
 
-    assert missing == []
+    A row pointing at a missing file leaves the model with nothing to follow;
+    a file no row points at is never read and quietly goes stale.
+    """
+    import re
+
+    skill = REPO_ROOT / "plugin/skills/acg"
+    listed = set(re.findall(r"`references/([a-z-]+\.md)`", (skill / "SKILL.md").read_text(encoding="utf-8")))
+    present = {path.name for path in (skill / "references").glob("*.md")}
+
+    assert listed, "子指令表沒有列出任何參考檔"
+    assert listed == present
 
 
 def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
@@ -177,7 +181,7 @@ def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
     surfaces = {
         "guide": render_guide(),
         "README": (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
-        "plugin": (REPO_ROOT / "plugin/commands/handoff.md").read_text(
+        "plugin": (REPO_ROOT / "plugin/skills/acg/references/handoff.md").read_text(
             encoding="utf-8"
         ),
     }
@@ -186,8 +190,8 @@ def test_handoff_reminder_management_is_documented_on_agent_surfaces() -> None:
             assert f"memory handoff remind {action}" in content, (name, action)
         assert "PreCompact" in content, name
 
-    plugin = surfaces["plugin"]
-    frontmatter = plugin.split("---", 2)[1]
+    skill = (REPO_ROOT / "plugin/skills/acg/SKILL.md").read_text(encoding="utf-8")
+    frontmatter = skill.split("---", 2)[1]
     assert "Bash(acg memory handoff:*)" in frontmatter
     assert "Bash(ai-config memory handoff:*)" in frontmatter
 

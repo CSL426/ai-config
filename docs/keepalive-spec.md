@@ -46,7 +46,7 @@ Claude 的用量視窗長五小時，從那個帳號當天第一次呼叫起算�
 | `acg keepalive run` | 立即送一次，供驗證用 |
 
 預設停用，每台機器獨立選擇啟用。CLI、`--help`、agent guide、Desktop 與
-`/acg:keepalive` 提供相同語意，CLI 與 plugin 版本保持一致。
+`/acg keepalive` 提供相同語意，CLI 與 plugin 版本保持一致。
 
 ## 設定與狀態
 
