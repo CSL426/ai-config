@@ -19,16 +19,24 @@
 
 ## 版面
 
-    ~/.local/share/ai-config/versions/1.0.99/ai-config[.exe]   onedir 主程式
-                                            /_internal/          執行期與模組
-    ~/.local/share/ai-config/versions/active                     目前版本的記錄
+    ~/.local/share/ai-config/versions/1.0.99/app/ai-config[.exe]   onedir 主程式
+                                            /app/_internal/        執行期與模組
+    ~/.local/share/ai-config/versions/1.0.98/ai-config[.exe]       舊版單一執行檔
+    ~/.local/share/ai-config/versions/active                       目前版本的記錄
+    ~/.local/share/ai-config/launcher.sha256                       PATH 上啟動器的雜湊(Windows)
+
+onedir 多放一層 `app/`,是給 1.0.98 以前的版本看的。它們切換到磁碟上已有
+的版本時,Windows 會把 `versions/<版號>/ai-config.exe` 單獨複製到 PATH;
+onedir 的 exe 離開 `_internal` 就跑不起來。放在 `app/` 裡,舊版找不到,
+就會改用那一版自己的安裝腳本。
 
 - **Linux、macOS**:`~/.local/bin/ai-config` 照舊是指向
-  `versions/<版號>/ai-config` 的 symlink。onedir 經由 symlink 啟動時會
+  `versions/<版號>/app/ai-config` 的 symlink。onedir 經由 symlink 啟動時會
   找到真正的 `_internal`(A4000 實測)。
 - **Windows**:`~/.local/bin/ai-config.exe` 換成一支 Rust 寫的小啟動器。
   它讀 `versions/active`,以同樣的參數、主控台與標準輸入輸出啟動
-  `versions/<版號>/ai-config.exe`,等它結束並傳回結束碼。啟動器本身
+  `versions/<版號>/app/ai-config.exe`(舊版則是 `versions/<版號>/ai-config.exe`),
+  等它結束並傳回結束碼。啟動器本身
   幾乎不會變,更新只是新增版本目錄、改寫 `active`,沒有任何正在執行的
   檔案被覆寫。
 
@@ -55,9 +63,12 @@
 
 ## 安裝與更新
 
-安裝腳本下載壓縮檔、驗證雜湊、解到 `versions/<版號>.staging` 再改名,
+安裝腳本下載壓縮檔、驗證雜湊、解到 `versions/.<版號>.staging` 再改名,
 問解出來的主程式自己的版號,最後切換:Unix 換 symlink,Windows 寫
-`active`,並在啟動器內容不同時用「移到旁邊再放新的」換掉它。
+`active`,並在啟動器內容不同時用「移到旁邊再放新的」換掉它,記下它的
+雜湊。Python 與安裝腳本靠這個雜湊判斷 PATH 上是啟動器還是舊格局的複本。
+雜湊與解壓一律直接用 .NET:從 PowerShell 7 啟動的 5.1 會繼承 7 的
+PSModulePath,載不到 `Get-FileHash`、`Expand-Archive`(CI 實際踩到)。
 
 更新後要做的事(更新 Claude Code 的 /acg plugin、修 hook 路徑)改由
 **安裝腳本呼叫新版執行檔**完成。安裝腳本出自目標 release,所以不論是
@@ -71,6 +82,9 @@
   結果。
 - 第一次更新時,PATH 上那支 onefile 複本會被收進版本目錄(既有的
   adopt 流程),再由啟動器取代。
+- 1.0.98 以前的 `install.ps1` 把 `active` 寫在 `share/ai-config/active`,
+  Python 讀的是 `versions/active`,所以 Windows 上 `acg versions` 一直標不出
+  目前版本。新腳本統一寫 `versions/active`。
 
 ## 驗證
 
@@ -110,6 +124,13 @@ pywebview 在 Linux 要用系統的 GTK/WebKit2GTK 或 Qt,都很難打包進獨�
    帶 gi 的 typelib,跨發行版容易壞。
 
 建議 1。**待使用者決定**。
+
+## 實測紀錄
+
+- A4000(x86_64)以乾淨 venv 建的 onedir:解開 50MB、tar.gz 21MB。
+  `--version` 平均 0.20 秒、statusline 0.15 秒;同機 onefile 1.0.98 為
+  0.65 與 0.7 秒。假家目錄內:壓縮檔安裝、重裝同版、`acg versions`、
+  新版切到磁碟上的版本不下載、退回 1.0.97 再由舊版切回來仍可用,全部通過。
 
 ## 未知
 

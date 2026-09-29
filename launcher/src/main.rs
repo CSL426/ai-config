@@ -59,13 +59,21 @@ fn version_key(name: &str) -> Vec<(u8, u64, String)> {
         .collect()
 }
 
+/// A onedir build lives in `app/`; a release before it
+/// is a single file in the version directory itself. Mirrors
+/// `ai_config.versions.version_binary`.
+fn executable_of(version: &Path) -> Option<PathBuf> {
+    [version.join("app").join(EXECUTABLE), version.join(EXECUTABLE)]
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+}
+
 fn resolve(versions: &Path) -> Result<Resolved, String> {
     let recorded = fs::read_to_string(versions.join("active"))
         .map(|text| text.trim().to_string())
         .unwrap_or_default();
     if plain_name(&recorded) {
-        let executable = versions.join(&recorded).join(EXECUTABLE);
-        if executable.is_file() {
+        if let Some(executable) = executable_of(&versions.join(&recorded)) {
             return Ok(Resolved { executable, fallback_from: None });
         }
     }
@@ -74,12 +82,12 @@ fn resolve(versions: &Path) -> Result<Resolved, String> {
         .map_err(|error| format!("找不到已安裝的版本({}):{error}", versions.display()))?
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| plain_name(name) && versions.join(name).join(EXECUTABLE).is_file())
+        .filter(|name| plain_name(name) && executable_of(&versions.join(name)).is_some())
         .collect();
     found.sort_by_key(|name| version_key(name));
     match found.pop() {
         Some(newest) => Ok(Resolved {
-            executable: versions.join(newest).join(EXECUTABLE),
+            executable: executable_of(&versions.join(newest)).expect("checked above"),
             fallback_from: Some(if recorded.is_empty() { "(空白)".into() } else { recorded }),
         }),
         None => Err(format!("{} 裡沒有已安裝的版本", versions.display())),
@@ -228,6 +236,20 @@ mod tests {
         fs::create_dir_all(dir.path().join("1.1.0")).unwrap();
         let resolved = resolve(dir.path()).unwrap();
         assert_eq!(resolved.executable, dir.path().join("1.0.98").join(EXECUTABLE));
+    }
+
+    #[test]
+    fn a_onedir_build_runs_from_its_app_directory() {
+        let dir = layout(&["1.0.98"]);
+        let app = dir.path().join("1.0.99").join("app");
+        fs::create_dir_all(app.join("_internal")).unwrap();
+        fs::write(app.join(EXECUTABLE), b"exe").unwrap();
+        fs::write(dir.path().join("active"), "1.0.99").unwrap();
+        assert_eq!(resolve(dir.path()).unwrap().executable, app.join(EXECUTABLE));
+
+        // 記錄壞掉時,onedir 的版本一樣算得上「最新的一版」
+        fs::write(dir.path().join("active"), "").unwrap();
+        assert_eq!(resolve(dir.path()).unwrap().executable, app.join(EXECUTABLE));
     }
 
     #[test]

@@ -278,9 +278,11 @@ def test_powershell_installer_puts_the_launcher_on_path(tmp_path: Path) -> None:
     result = _run_installer(powershell, env)
 
     assert result.returncode == 0, result.stderr + result.stdout
-    version_root = share_dir / "versions" / "1.0.99"
+    version_root = share_dir / "versions" / "1.0.99" / "app"
     assert (version_root / "ai-config.exe").read_bytes() == b"first"
     assert (version_root / "_internal" / "python312.dll").is_file()
+    # 舊版切換版本時找這個位置;onedir 不能放在這裡讓它單獨被複製走
+    assert not (share_dir / "versions" / "1.0.99" / "ai-config.exe").exists()
     assert (bin_dir / "ai-config.exe").read_bytes() == b"launcher-binary"
     assert (share_dir / "versions" / "active").read_text(encoding="utf-8").strip() == "1.0.99"
     assert (share_dir / "launcher.sha256").is_file()

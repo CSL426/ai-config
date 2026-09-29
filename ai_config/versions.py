@@ -13,10 +13,10 @@ writing a new directory and moving the link. A running process keeps the
 path it started with, the swap is atomic, and the previous release is
 still on disk to go back to.
 
-    ~/.local/bin/ai-config          -> ../share/ai-config/versions/1.0.99/ai-config
-    ~/.local/share/ai-config/versions/1.0.99/ai-config
-                                            /_internal/      (onedir build)
-                                    /1.0.98/ai-config        (older onefile)
+    ~/.local/bin/ai-config          -> ../share/ai-config/versions/1.0.99/app/ai-config
+    ~/.local/share/ai-config/versions/1.0.99/app/ai-config
+                                                /_internal/   (onedir build)
+                                    /1.0.98/ai-config         (older onefile)
 
 On Windows, where a symlink needs a privilege an ordinary account may not
 hold, the stable path is a small launcher (launcher/ in this repository)
@@ -34,6 +34,7 @@ from pathlib import Path
 from .paths import HOME, NATIVE_WINDOWS
 
 VERSIONS_DIR_NAME = "versions"
+APP_DIR = "app"
 KEEP_VERSIONS = 5
 
 
@@ -57,6 +58,17 @@ def version_dir(version: str) -> Path:
 
 
 def version_binary(version: str) -> Path:
+    """The executable of a version: app/ for a onedir build, else the old single file.
+
+    A onedir build sits one level down on purpose. Releases before it
+    switch to a version already on disk by copying versions/<v>/ai-config.exe
+    onto PATH on Windows — which for a onedir exe, separated from its
+    _internal directory, is a program that cannot start. Finding nothing
+    there, they download the release's own installer instead.
+    """
+    onedir = version_dir(version) / APP_DIR / executable_name()
+    if onedir.is_file():
+        return onedir
     return version_dir(version) / executable_name()
 
 
@@ -92,7 +104,7 @@ def installed_versions() -> list[str]:
         return []
     found = [
         path.name for path in root.iterdir()
-        if path.is_dir() and (path / executable_name()).is_file()
+        if path.is_dir() and version_binary(path.name).is_file()
     ]
     return sorted(found, key=_sort_key)
 
@@ -139,6 +151,10 @@ def place(version: str, source: Path) -> Path:
     return binary
 
 
+class NeedsInstaller(RuntimeError):
+    """A switch that only the installer can make."""
+
+
 def activate(version: str) -> bool:
     """Point the stable path at this version. False when it already does."""
     binary = version_binary(version)
@@ -150,6 +166,9 @@ def activate(version: str) -> bool:
         return False
     if NATIVE_WINDOWS:
         if not is_launcher(path):
+            if binary.parent.name == APP_DIR:
+                # onedir 的 exe 離開 _internal 就跑不起來,只能交給安裝腳本
+                raise NeedsInstaller(f"{version} 需要啟動器,請重新執行安裝腳本")
             # 還沒換成啟動器的舊格局:照舊複製,檔案正在執行就換不掉
             staged = path.with_name(f".{path.name}.new")
             shutil.copy2(binary, staged)

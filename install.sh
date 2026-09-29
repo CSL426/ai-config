@@ -106,8 +106,9 @@ probe_version() {
 
 activate_version() {
     # 換連結是原子操作,而且舊版還留在自己的目錄裡,要退回去只是再換一次
-    local staged_link="$destination.new.$$"
-    ln -sfn "$VERSIONS_DIR/$1/ai-config" "$staged_link"
+    local staged_link="$destination.new.$$" target="$VERSIONS_DIR/$1/ai-config"
+    [[ -x "$VERSIONS_DIR/$1/app/ai-config" ]] && target="$VERSIONS_DIR/$1/app/ai-config"
+    ln -sfn "$target" "$staged_link"
     mv -f "$staged_link" "$destination"
     prune_versions
 }
@@ -119,6 +120,8 @@ install_binary() {
     resolved="$(probe_version "$1")"
     version_root="$VERSIONS_DIR/$resolved"
     mkdir -p "$version_root"
+    # 同一個版號先前是 onedir 的話,留著 app/ 會蓋過這次裝的檔案
+    rm -rf "$version_root/app"
     staged_binary="$version_root/.ai-config.new.$$"
     install -m 755 "$1" "$staged_binary"
     mv -f "$staged_binary" "$version_root/ai-config"
@@ -126,17 +129,18 @@ install_binary() {
 }
 
 install_directory() {
-    # onedir:主程式與 _internal 一起放進版本目錄。整個目錄先在旁邊備好再
-    # 改名,中途失敗不會留下半個版本讓啟動時才壞
+    # onedir:主程式與 _internal 一起放進版本目錄的 app/。整個目錄先在旁邊
+    # 備好再改名,中途失敗不會留下半個版本讓啟動時才壞。多一層 app/ 是給
+    # 舊版看的:它們切換版本時找 versions/<版號>/ai-config,找不到才會改用
+    # 那一版自己的安裝腳本(ai_config/versions.py 的 version_binary)
     local source_dir="$1" resolved version_root staging aside
     [[ -x "$source_dir/ai-config" ]] || fail "No ai-config executable in $source_dir"
     adopt_existing_binary
     resolved="$(probe_version "$source_dir/ai-config")"
     version_root="$VERSIONS_DIR/$resolved"
     staging="$VERSIONS_DIR/.$resolved.staging.$$"
-    mkdir -p "$VERSIONS_DIR"
-    rm -rf "$staging"
-    cp -R "$source_dir" "$staging"
+    mkdir -p "$staging"
+    cp -R "$source_dir" "$staging/app"
     if [[ -e "$version_root" ]]; then
         aside="$VERSIONS_DIR/.$resolved.old.$$"
         mv "$version_root" "$aside"
