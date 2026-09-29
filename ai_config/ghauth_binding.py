@@ -18,6 +18,7 @@ from pathlib import Path
 from . import ghauth_login
 from .paths import standalone_install_path
 from .safety import is_reparse_point
+from .versions import is_managed
 
 HELPER_MARKER = "__git-credential"
 
@@ -52,8 +53,10 @@ def helper_executable() -> "tuple[Path, Path | None]":
     try:
         if installed.is_file():
             # 同一個檔案時也要回傳固定入口:running 是解析過的
-            # versions/<版號>/ 路徑,那個目錄更新幾次後就被清掉
-            return installed, None if installed.samefile(running) else running
+            # versions/<版號>/ 路徑,那個目錄更新幾次後就被清掉。
+            # Windows 的固定入口是啟動器,跟它執行的版本不是同一個檔案
+            same = installed.samefile(running) or is_managed(running)
+            return installed, None if same else running
     except OSError:
         pass
     return running, None

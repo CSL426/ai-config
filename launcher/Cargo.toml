@@ -1,0 +1,21 @@
+[package]
+name = "ai-config-launcher"
+version = "1.0.0"
+edition = "2021"
+description = "Stable name on PATH that runs the installed ai-config version"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "ai-config"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[build-dependencies]
+embed-resource = "3.0.11"

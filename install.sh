@@ -92,27 +92,87 @@ prune_versions() {
     done < <(ls -d "$VERSIONS_DIR"/*/ 2>/dev/null | sort -rV)
 }
 
-install_binary() {
-    local resolved staged_binary version_root probe
-    adopt_existing_binary
+probe_version() {
     # 版號問下載回來的執行檔自己:VERSION 可能是 "latest",那時還不知道是哪一版
-    probe="$1"
-    chmod +x "$probe" 2>/dev/null || true
-    resolved="$("$probe" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+    local resolved
+    chmod +x "$1" 2>/dev/null || true
+    resolved="$("$1" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
     [[ -n "$resolved" ]] || resolved="$(printf '%s' "$VERSION" | sed 's/^v//')"
     # 問不出版號就用一個確定的名字,而不是讓整個安裝失敗。下一次裝得出版號的
     # 更新會把它換掉,而使用者手上至少有一個能跑的執行檔
     [[ -n "$resolved" && "$resolved" != "latest" ]] || resolved="unversioned"
+    printf '%s' "$resolved"
+}
+
+activate_version() {
+    # 換連結是原子操作,而且舊版還留在自己的目錄裡,要退回去只是再換一次
+    local staged_link="$destination.new.$$"
+    ln -sfn "$VERSIONS_DIR/$1/ai-config" "$staged_link"
+    mv -f "$staged_link" "$destination"
+    prune_versions
+}
+
+install_binary() {
+    # 舊式的單一執行檔(onefile):本機測試或指定了沒有壓縮檔的舊版時
+    local resolved version_root staged_binary
+    adopt_existing_binary
+    resolved="$(probe_version "$1")"
     version_root="$VERSIONS_DIR/$resolved"
     mkdir -p "$version_root"
     staged_binary="$version_root/.ai-config.new.$$"
     install -m 755 "$1" "$staged_binary"
     mv -f "$staged_binary" "$version_root/ai-config"
-    # 換連結是原子操作,而且舊版還留在自己的目錄裡,要退回去只是再換一次
-    local staged_link="$destination.new.$$"
-    ln -sfn "$version_root/ai-config" "$staged_link"
-    mv -f "$staged_link" "$destination"
-    prune_versions
+    activate_version "$resolved"
+}
+
+install_directory() {
+    # onedir:主程式與 _internal 一起放進版本目錄。整個目錄先在旁邊備好再
+    # 改名,中途失敗不會留下半個版本讓啟動時才壞
+    local source_dir="$1" resolved version_root staging aside
+    [[ -x "$source_dir/ai-config" ]] || fail "No ai-config executable in $source_dir"
+    adopt_existing_binary
+    resolved="$(probe_version "$source_dir/ai-config")"
+    version_root="$VERSIONS_DIR/$resolved"
+    staging="$VERSIONS_DIR/.$resolved.staging.$$"
+    mkdir -p "$VERSIONS_DIR"
+    rm -rf "$staging"
+    cp -R "$source_dir" "$staging"
+    if [[ -e "$version_root" ]]; then
+        aside="$VERSIONS_DIR/.$resolved.old.$$"
+        mv "$version_root" "$aside"
+        mv "$staging" "$version_root"
+        rm -rf "$aside"
+    else
+        mv "$staging" "$version_root"
+    fi
+    activate_version "$resolved"
+}
+
+install_archive() {
+    local unpacked="$temporary_dir/unpacked"
+    rm -rf "$unpacked"
+    mkdir -p "$unpacked"
+    tar -xzf "$1" -C "$unpacked" || fail "Could not unpack $1"
+    install_directory "$unpacked/ai-config"
+}
+
+download_verified() {
+    # 下載並比對 .sha256;下載不到回傳非零,由呼叫端決定要不要退回舊格式
+    local name="$1" expected actual
+    curl --fail --location --silent --show-error \
+        "$base_url/$name" --output "$temporary_dir/$name" 2>/dev/null || return 1
+    curl --fail --location --silent --show-error \
+        "$base_url/$name.sha256" --output "$temporary_dir/$name.sha256" \
+        || fail "Missing checksum for $name"
+    expected="$(awk '{print $1}' "$temporary_dir/$name.sha256")"
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$temporary_dir/$name" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$temporary_dir/$name" | awk '{print $1}')"
+    else
+        fail "sha256sum or shasum is required to verify the download"
+    fi
+    [[ "$actual" == "$expected" ]] || fail "Downloaded $name checksum mismatch"
 }
 
 install_acg_alias() {
@@ -153,9 +213,20 @@ has_existing_configuration() {
 }
 
 if [[ -n "$LOCAL_BINARY" ]]; then
-    [[ -f "$LOCAL_BINARY" ]] || fail "Local binary not found: $LOCAL_BINARY"
-    step "Installing local standalone binary"
-    install_binary "$LOCAL_BINARY"
+    if [[ -d "$LOCAL_BINARY" ]]; then
+        step "Installing local build directory"
+        install_directory "$LOCAL_BINARY"
+    elif [[ "$LOCAL_BINARY" == *.tar.gz ]]; then
+        [[ -f "$LOCAL_BINARY" ]] || fail "Local archive not found: $LOCAL_BINARY"
+        temporary_dir="$(mktemp -d)"
+        trap 'rm -rf "$temporary_dir"' EXIT
+        step "Installing local build archive"
+        install_archive "$LOCAL_BINARY"
+    else
+        [[ -f "$LOCAL_BINARY" ]] || fail "Local binary not found: $LOCAL_BINARY"
+        step "Installing local standalone binary"
+        install_binary "$LOCAL_BINARY"
+    fi
 else
     command -v curl >/dev/null 2>&1 || fail "curl is required to download ai-config"
     temporary_dir="$(mktemp -d)"
@@ -165,29 +236,27 @@ else
     else
         base_url="https://github.com/$REPOSITORY/releases/download/$VERSION"
     fi
-    step "Downloading $asset"
-    curl --fail --location --silent --show-error \
-        "$base_url/$asset" --output "$temporary_dir/$asset"
-    curl --fail --location --silent --show-error \
-        "$base_url/$asset.sha256" --output "$temporary_dir/$asset.sha256"
-    expected="$(awk '{print $1}' "$temporary_dir/$asset.sha256")"
-    if command -v sha256sum >/dev/null 2>&1; then
-        actual="$(sha256sum "$temporary_dir/$asset" | awk '{print $1}')"
-    elif command -v shasum >/dev/null 2>&1; then
-        actual="$(shasum -a 256 "$temporary_dir/$asset" | awk '{print $1}')"
+    step "Downloading $asset.tar.gz"
+    if download_verified "$asset.tar.gz"; then
+        install_archive "$temporary_dir/$asset.tar.gz"
     else
-        fail "sha256sum or shasum is required to verify the download"
+        # 1.0.99 以前的 release 只有單一執行檔
+        step "No archive in this release; downloading $asset"
+        download_verified "$asset" || fail "Could not download $asset"
+        install_binary "$temporary_dir/$asset"
     fi
-    [[ "$actual" == "$expected" ]] || fail "Downloaded binary checksum mismatch"
-    install_binary "$temporary_dir/$asset"
 fi
 
 step "$binary_verb: $destination"
 install_acg_alias
 install_bash_completion
-# 第一次裝就讓 Claude Code 有 /acg;更新時由 acg update 負責,不在這裡重做
-if [[ "$operation" == "Installation" && -z "${AI_CONFIG_NO_PLUGIN:-}" ]]; then
-    "$destination" __claude-plugin || warn "Claude Code /acg was not installed; run: ai-config update"
+# 讓 Claude Code 的 /acg 跟上這一版,更新時也修 hook 路徑。由剛裝好的新版
+# 來做:發起更新的舊版行程可能已經被換掉,不能再在裡面 import
+if [[ -z "${AI_CONFIG_NO_PLUGIN:-}" ]]; then
+    "$destination" __claude-plugin || warn "Claude Code /acg was not updated; run: ai-config update"
+fi
+if [[ "$operation" == "Update" ]]; then
+    "$destination" __refresh-hooks || warn "Hook paths were not refreshed; run: ai-config apply"
 fi
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;

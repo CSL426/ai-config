@@ -14,6 +14,7 @@ on:
       - "pyproject.toml"
       - "install.sh"
       - "install.ps1"
+      - "launcher/**"
       - ".github/workflows/standalone-release.yml"
   workflow_dispatch:
     inputs:
@@ -58,6 +59,9 @@ jobs:
         if: runner.os == 'Linux'
         run: bash -n install.sh
 
+      - name: Test the launcher
+        run: cargo test --manifest-path launcher/Cargo.toml
+
   build:
     name: ${{ matrix.asset }}
     needs: test
@@ -67,14 +71,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
-            source: dist/ai-config
             asset: ai-config-linux-x86_64
           - os: ubuntu-22.04-arm
-            source: dist/ai-config
             asset: ai-config-linux-aarch64
           - os: windows-latest
-            source: dist/ai-config.exe
-            asset: ai-config-windows-x86_64.exe
+            asset: ai-config-windows-x86_64
             # Windows 是唯一內建 GUI 的組建:pywebview 走系統的 WebView2,
             # 不必打包瀏覽器;Linux/macOS 需要額外的 GTK/Cocoa 執行期依賴。
             extra_args: >-
@@ -83,11 +84,9 @@ jobs:
               --hidden-import webview.platforms.winforms
             with_gui: "true"
           - os: macos-15-intel
-            source: dist/ai-config
             asset: ai-config-macos-x86_64
             extra_args: "--icon assets/icon.icns"
           - os: macos-14
-            source: dist/ai-config
             asset: ai-config-macos-arm64
             extra_args: "--icon assets/icon.icns"
 
@@ -172,56 +171,108 @@ jobs:
         if: matrix.with_gui == 'true'
         run: python -m pip install ".[gui]"
 
+      # onedir:onefile 每次啟動都把執行期解壓到暫存目錄,執行中又回頭從自己的
+      # 檔案讀模組,檔案一被換掉就壞(docs/onedir-launcher-plan.md)
       - name: Build standalone executable
         run: >-
-          python -m PyInstaller --clean --noconfirm --onefile
+          python -m PyInstaller --clean --noconfirm --onedir
           --name ai-config --hidden-import ai_config.__main__
           --copy-metadata ai-config
           ${{ matrix.extra_args }}
           scripts/standalone_entry.py
 
-      - name: Name asset and write checksum
+      # 給下載後直接雙擊的人:單一檔案、不必安裝。安裝腳本不用它
+      - name: Build the portable Windows executable
+        if: runner.os == 'Windows'
+        run: >-
+          python -m PyInstaller --noconfirm --onefile
+          --name acg --workpath build-portable --distpath dist-portable
+          --hidden-import ai_config.__main__
+          --copy-metadata ai-config
+          ${{ matrix.extra_args }}
+          scripts/standalone_entry.py
+
+      - name: Build the Windows launcher
+        if: runner.os == 'Windows'
+        run: cargo build --release --manifest-path launcher/Cargo.toml
+
+      - name: Package release assets
         env:
-          SOURCE: ${{ matrix.source }}
           ASSET: ${{ matrix.asset }}
         shell: python
         run: |
           import hashlib
           import os
+          import shutil
+          import tarfile
           from pathlib import Path
 
-          source = Path(os.environ["SOURCE"])
-          asset = source.with_name(os.environ["ASSET"])
-          source.replace(asset)
-          digest = hashlib.sha256(asset.read_bytes()).hexdigest()
-          asset.with_name(f"{asset.name}.sha256").write_text(
-              f"{digest}  {asset.name}\n",
-              encoding="utf-8",
-          )
+          asset = os.environ["ASSET"]
+          out = Path("release")
+          out.mkdir()
+          packaged = []
+          if os.name == "nt":
+              archive = shutil.make_archive(str(out / asset), "zip", root_dir="dist", base_dir="ai-config")
+              packaged.append(Path(archive))
+              launcher = out / "ai-config-launcher-windows-x86_64.exe"
+              shutil.copy2("launcher/target/release/ai-config.exe", launcher)
+              packaged.append(launcher)
+              portable = out / "acg.exe"
+              shutil.copy2("dist-portable/acg.exe", portable)
+              packaged.append(portable)
+          else:
+              archive = out / f"{asset}.tar.gz"
+              with tarfile.open(archive, "w:gz") as tar:
+                  tar.add("dist/ai-config", arcname="ai-config")
+              packaged.append(archive)
+          for path in packaged:
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              Path(f"{path}.sha256").write_text(f"{digest}  {path.name}\n", encoding="utf-8")
+              print(f"{path.name}  {path.stat().st_size // 1024} KiB")
+
+      # 經由真正裝好的樣子啟動:Windows 走 PATH 上的啟動器,其他平台走 symlink
+      - name: Install into a scratch layout
+        id: layout
+        shell: python
+        run: |
+          import os
+          import shutil
+          import tempfile
+          from pathlib import Path
+
+          share = Path(tempfile.mkdtemp()) / "share"
+          version = share / "versions" / "0.0.0"
+          shutil.copytree("dist/ai-config", version)
+          (share / "versions" / "active").write_text("0.0.0\n", encoding="utf-8")
+          if os.name == "nt":
+              entry = share.parent / "ai-config.exe"
+              shutil.copy2("release/ai-config-launcher-windows-x86_64.exe", entry)
+          else:
+              entry = share.parent / "ai-config"
+              entry.symlink_to(version / "ai-config")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"share={share}\nentry={entry}\n")
 
       - name: Verify standalone help
         env:
-          ASSET: ${{ matrix.asset }}
+          AI_CONFIG_SHARE_DIR: ${{ steps.layout.outputs.share }}
+          ENTRY: ${{ steps.layout.outputs.entry }}
         shell: python
         run: |
           import os
           import subprocess
-          from pathlib import Path
 
-          executable = Path("dist") / os.environ["ASSET"]
-          result = subprocess.run(
-              [str(executable.resolve()), "help"],
-              capture_output=True,
-              text=True,
-          )
+          result = subprocess.run([os.environ["ENTRY"], "help"], capture_output=True, text=True)
           print(result.stdout)
+          print(result.stderr)
           raise SystemExit(result.returncode)
 
       # 用真的執行檔當 git 的 credential helper 跑一遍:python.exe 測不到
       # onefile 主控台判斷之類只有打包後才會發生的事
       - name: Verify the executable as a git credential helper
         env:
-          ASSET: ${{ matrix.asset }}
+          AI_CONFIG_SHARE_DIR: ${{ steps.layout.outputs.share }}
+          ENTRY: ${{ steps.layout.outputs.entry }}
         shell: python
         run: |
           import os
@@ -231,7 +282,7 @@ jobs:
           import tempfile
           from pathlib import Path
 
-          executable = (Path("dist") / os.environ["ASSET"]).resolve()
+          executable = Path(os.environ["ENTRY"])
           work = Path(tempfile.mkdtemp())
           repo = work / "repo"
           repo.mkdir()
@@ -269,9 +320,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: |
-            dist/${{ matrix.asset }}
-            dist/${{ matrix.asset }}.sha256
+          path: release/*
           if-no-files-found: error
 
   release:
@@ -287,15 +336,6 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-
-      # 給人下載的好記名字。安裝腳本與 acg update 仍抓平台+架構的原名,
-      # 所以兩個名字都要上傳,內容是同一支執行檔。
-      - name: Add a friendly Windows filename
-        run: |
-          cp release-assets/ai-config-windows-x86_64.exe release-assets/acg.exe
-          sed 's/ai-config-windows-x86_64.exe/acg.exe/' \
-            release-assets/ai-config-windows-x86_64.exe.sha256 \
-            > release-assets/acg.exe.sha256
 
       # 安裝腳本跟執行檔一起發,新機器與 acg update 才拿得到同一版的腳本
       - name: Check out repository

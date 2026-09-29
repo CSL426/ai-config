@@ -62,17 +62,18 @@ def owns_console() -> bool:
         if attached == {os.getpid()}:
             return True
         # A shell also gives two processes. Verify both the parent PID and
-        # executable before treating it as PyInstaller's onefile bootloader.
+        # executable before treating it as ours: PyInstaller's onefile
+        # bootloader, or the Windows launcher on PATH.
         return (
             bool(getattr(sys, "frozen", False))
             and attached == {os.getpid(), os.getppid()}
-            and _parent_uses_same_executable()
+            and _parent_is_ours()
         )
     except (AttributeError, OSError, ValueError):
         return False
 
 
-def _parent_uses_same_executable() -> bool:
+def _parent_is_ours() -> bool:
     import ctypes
     from ctypes import wintypes
 
@@ -96,9 +97,20 @@ def _parent_uses_same_executable() -> bool:
         size = wintypes.DWORD(len(path))
         if not kernel.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(size)):
             return False
-        return os.path.samefile(path.value, sys.executable)
+        ours = [sys.executable]
+        launcher = os.environ.get("AI_CONFIG_LAUNCHER")
+        if launcher:
+            ours.append(launcher)
+        return any(_same_file(path.value, candidate) for candidate in ours)
     finally:
         kernel.CloseHandle(process)
+
+
+def _same_file(first: str, second: str) -> bool:
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
 
 
 def gui_assets_bundled() -> bool:

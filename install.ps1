@@ -8,6 +8,7 @@ $Version = if ($env:AI_CONFIG_VERSION) { $env:AI_CONFIG_VERSION } else { 'latest
 $UserHome = [Environment]::GetFolderPath('UserProfile')
 $BinDir = if ($env:AI_CONFIG_BIN_DIR) { $env:AI_CONFIG_BIN_DIR } else { Join-Path $UserHome '.local\bin' }
 $LocalBinary = if ($env:AI_CONFIG_BINARY_PATH) { $env:AI_CONFIG_BINARY_PATH } else { $null }
+$LocalLauncher = if ($env:AI_CONFIG_LAUNCHER_PATH) { $env:AI_CONFIG_LAUNCHER_PATH } else { $null }
 $DataRepoUrl = if ($env:AI_CONFIG_REPO_URL) { $env:AI_CONFIG_REPO_URL } else { $null }
 $DataDir = if ($env:AI_CONFIG_DATA_DIR) { $env:AI_CONFIG_DATA_DIR } elseif ($env:AI_CONFIG_HOME) { $env:AI_CONFIG_HOME } else { $null }
 $SkipPathUpdate = $env:AI_CONFIG_SKIP_PATH_UPDATE -eq '1'
@@ -19,7 +20,10 @@ $SkipCompletion = $env:AI_CONFIG_SKIP_COMPLETION -eq '1'
 # which version it came from -- the layout stays the same either way.
 $ShareDir = if ($env:AI_CONFIG_SHARE_DIR) { $env:AI_CONFIG_SHARE_DIR } else { Join-Path $UserHome '.local\share\ai-config' }
 $VersionsDir = Join-Path $ShareDir 'versions'
-$ActiveMarker = Join-Path $ShareDir 'active'
+# The same record ai_config.versions and the launcher read. Releases before
+# 1.0.99 wrote it one level up, where nothing read it back.
+$ActiveMarker = Join-Path $VersionsDir 'active'
+$LauncherMarker = Join-Path $ShareDir 'launcher.sha256'
 $KeepVersions = if ($env:AI_CONFIG_KEEP_VERSIONS) { [int]$env:AI_CONFIG_KEEP_VERSIONS } else { 5 }
 
 function Write-Step([string]$Message) { Write-Host "* $Message" -ForegroundColor Cyan }
@@ -94,22 +98,119 @@ function Remove-ReplacedBinaries([string]$Destination) {
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
-function Install-Binary([string]$Source, [string]$Destination) {
-    Adopt-ExistingBinary $Destination
-    $Resolved = Get-BinaryVersion $Source
+function Test-Launcher([string]$Path) {
+    # Install-Launcher records the hash of what it put on PATH; a copy of a
+    # real build left there by an older layout will not match it.
+    # Mirrors ai_config.versions.is_launcher.
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    if (-not (Test-Path -LiteralPath $LauncherMarker -PathType Leaf)) { return $false }
+    $Recorded = (Get-Content -LiteralPath $LauncherMarker -Raw).Trim().ToLowerInvariant()
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Recorded
+}
+
+function Set-ActiveVersion([string]$Resolved) {
+    New-Item -ItemType Directory -Force -Path $VersionsDir | Out-Null
+    Write-Utf8NoBom $ActiveMarker $Resolved
+    Remove-StaleVersions $Resolved
+}
+
+function Resolve-InstalledVersion([string]$Executable) {
+    $Resolved = Get-BinaryVersion $Executable
     if (-not $Resolved) { $Resolved = ($Version -replace '^v', '') }
     # An unreadable version must not fail the install: a name that is merely
     # definite still gives the user a working binary, and the next update
     # that can name itself replaces it
     if (-not $Resolved -or $Resolved -eq 'latest') { $Resolved = 'unversioned' }
+    return $Resolved
+}
 
+function Install-Binary([string]$Source, [string]$Destination) {
+    # A single onefile exe: a local test build, or a release from before the
+    # onedir archives.
+    Adopt-ExistingBinary $Destination
+    $Resolved = Resolve-InstalledVersion $Source
     $VersionRoot = Join-Path $VersionsDir $Resolved
     New-Item -ItemType Directory -Force -Path $VersionRoot | Out-Null
     Copy-WithRetry $Source (Join-Path $VersionRoot 'ai-config.exe')
-    Replace-Binary (Join-Path $VersionRoot 'ai-config.exe') $Destination
+    # With the launcher on PATH, recording the version is the whole switch
+    if (-not (Test-Launcher $Destination)) {
+        Replace-Binary (Join-Path $VersionRoot 'ai-config.exe') $Destination
+    }
+    Set-ActiveVersion $Resolved
+}
+
+function Install-Directory([string]$Source, [string]$Destination, [string]$Launcher) {
+    # A onedir build: the exe and its _internal directory move together into
+    # versions\<version>, staged beside it first so a failure never leaves half
+    # a version for the launcher to start.
+    $Executable = Join-Path $Source 'ai-config.exe'
+    if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) { Fail "No ai-config.exe in $Source" }
+    Adopt-ExistingBinary $Destination
+    [void](Wait-ExecutableReady $Executable)
+    $Resolved = Resolve-InstalledVersion $Executable
+    $VersionRoot = Join-Path $VersionsDir $Resolved
+    $Staging = Join-Path $VersionsDir (".$Resolved.staging-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $VersionsDir | Out-Null
+    Copy-Item -LiteralPath $Source -Destination $Staging -Recurse -Force
+    if (Test-Path -LiteralPath $VersionRoot) {
+        $Aside = Join-Path $VersionsDir (".$Resolved.old-" + [guid]::NewGuid().ToString('N'))
+        try {
+            Rename-Item -LiteralPath $VersionRoot -NewName (Split-Path -Leaf $Aside)
+        }
+        catch {
+            # Windows will not rename a directory whose exe is running: this
+            # version is already installed and in use, so keep that copy.
+            Write-Warn "$Resolved is already installed and running; keeping that copy"
+            Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
+            $Aside = $null
+        }
+        if ($Aside) {
+            Rename-Item -LiteralPath $Staging -NewName $Resolved
+            Remove-Item -LiteralPath $Aside -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    else {
+        Rename-Item -LiteralPath $Staging -NewName $Resolved
+    }
+    Install-Launcher $Launcher $Destination
+    Set-ActiveVersion $Resolved
+}
+
+function Install-Launcher([string]$Launcher, [string]$Destination) {
+    # The launcher barely changes between releases; replace it only when it
+    # did. The old file may be running (it may be the very acg that started
+    # this update), and Replace-Binary moves a running file aside, never over.
+    $Wanted = (Get-FileHash -LiteralPath $Launcher -Algorithm SHA256).Hash.ToLowerInvariant()
+    $Current = if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+        (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    if ($Current -ne $Wanted) { Replace-Binary $Launcher $Destination }
     New-Item -ItemType Directory -Force -Path $ShareDir | Out-Null
-    Write-Utf8NoBom $ActiveMarker $Resolved
-    Remove-StaleVersions $Resolved
+    Write-Utf8NoBom $LauncherMarker $Wanted
+}
+
+function Expand-Build([string]$Archive) {
+    $Unpacked = Join-Path ([IO.Path]::GetTempPath()) ("ai-config-unpacked-" + [guid]::NewGuid().ToString('N'))
+    Expand-Archive -LiteralPath $Archive -DestinationPath $Unpacked -Force
+    $Root = Join-Path $Unpacked 'ai-config'
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) { Fail "Unexpected archive layout: $Archive" }
+    return $Root
+}
+
+function Get-VerifiedDownload([string]$BaseUrl, [string]$Name, [string]$Directory) {
+    # $null when the release has no such asset, so the caller can fall back
+    $Download = Join-Path $Directory $Name
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/$Name" -OutFile $Download
+    }
+    catch {
+        return $null
+    }
+    Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/$Name.sha256" -OutFile "$Download.sha256"
+    $Expected = ((Get-Content -LiteralPath "$Download.sha256" -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+    $Actual = (Get-FileHash -LiteralPath $Download -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($Actual -ne $Expected) { Fail "Downloaded $Name checksum mismatch" }
+    return $Download
 }
 
 function Get-BinaryVersion([string]$Executable) {
@@ -133,6 +234,7 @@ function Adopt-ExistingBinary([string]$Destination) {
     # still overwrites a file that may be running.
     if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) { return }
     if (Test-Path -LiteralPath $ActiveMarker) { return }
+    if (Test-Launcher $Destination) { return }
     # A freshly unpacked onefile build can fail its first start for a moment;
     # the version it would have named is the one worth keeping, so wait for it.
     if (-not (Wait-ExecutableReady $Destination)) {
@@ -156,12 +258,18 @@ function Remove-StaleVersions([string]$Active) {
     $Kept = 0
     # Newest first, and never the one in use
     $Ordered = Get-ChildItem -LiteralPath $VersionsDir -Directory |
+        Where-Object { -not $_.Name.StartsWith('.') } |
         Sort-Object -Property @{ Expression = { try { [version]$_.Name } catch { [version]'0.0.0' } } } -Descending
     foreach ($Directory in $Ordered) {
         if ($Directory.Name -eq $Active) { continue }
         $Kept++
         if ($Kept -ge $KeepVersions) {
-            Remove-Item -LiteralPath $Directory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            # Rename first: a version still running cannot be renamed, and is
+            # left whole instead of half-deleted for a later rollback to find.
+            $Trash = ".trash-" + [guid]::NewGuid().ToString('N')
+            try { Rename-Item -LiteralPath $Directory.FullName -NewName $Trash }
+            catch { continue }
+            Remove-Item -LiteralPath (Join-Path $VersionsDir $Trash) -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }
@@ -171,7 +279,8 @@ function Wait-ExecutableReady([string]$Executable) {
     # first launch, and an antivirus scan or a lingering file lock can make that
     # fail for a moment. Retry until it runs, so the checks below don't misread a
     # transient DLL failure as a real answer.
-    for ($Attempt = 1; $Attempt -le 30; $Attempt++) {
+    $Attempts = if ($env:AI_CONFIG_READY_ATTEMPTS) { [int]$env:AI_CONFIG_READY_ATTEMPTS } else { 30 }
+    for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
         try {
             & $Executable version *> $null
             if ($LASTEXITCODE -eq 0) { return $true }
@@ -273,6 +382,8 @@ if (-not [Environment]::Is64BitOperatingSystem) {
     Fail 'Only 64-bit Windows is supported.'
 }
 $Asset = 'ai-config-windows-x86_64.exe'
+$Archive = 'ai-config-windows-x86_64.zip'
+$LauncherAsset = 'ai-config-launcher-windows-x86_64.exe'
 $Destination = Join-Path $BinDir 'ai-config.exe'
 $Operation = if (Test-Path -LiteralPath $Destination -PathType Leaf) { 'Update' } else { 'Installation' }
 $BinaryVerb = if ($Operation -eq 'Update') { 'Updated' } else { 'Installed' }
@@ -280,11 +391,25 @@ New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 Remove-ReplacedBinaries $Destination
 
 if ($LocalBinary) {
-    if (-not (Test-Path -LiteralPath $LocalBinary -PathType Leaf)) {
+    if (Test-Path -LiteralPath $LocalBinary -PathType Container) {
+        if (-not $LocalLauncher) { Fail 'AI_CONFIG_LAUNCHER_PATH is required with a local build directory' }
+        Write-Step 'Installing local build directory'
+        Install-Directory $LocalBinary $Destination $LocalLauncher
+    }
+    elseif (-not (Test-Path -LiteralPath $LocalBinary -PathType Leaf)) {
         Fail "Local binary not found: $LocalBinary"
     }
-    Write-Step 'Installing local standalone binary'
-    Install-Binary $LocalBinary $Destination
+    elseif ($LocalBinary.EndsWith('.zip')) {
+        if (-not $LocalLauncher) { Fail 'AI_CONFIG_LAUNCHER_PATH is required with a local build archive' }
+        Write-Step 'Installing local build archive'
+        $Root = Expand-Build $LocalBinary
+        try { Install-Directory $Root $Destination $LocalLauncher }
+        finally { Remove-Item -LiteralPath (Split-Path $Root) -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    else {
+        Write-Step 'Installing local standalone binary'
+        Install-Binary $LocalBinary $Destination
+    }
 }
 else {
     $BaseUrl = if ($Version -eq 'latest') {
@@ -296,15 +421,22 @@ else {
     $TemporaryDir = Join-Path ([IO.Path]::GetTempPath()) ("ai-config-" + [guid]::NewGuid())
     New-Item -ItemType Directory -Path $TemporaryDir | Out-Null
     try {
-        $Download = Join-Path $TemporaryDir $Asset
-        $Checksum = "$Download.sha256"
-        Write-Step "Downloading $Asset"
-        Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/$Asset" -OutFile $Download
-        Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/$Asset.sha256" -OutFile $Checksum
-        $Expected = ((Get-Content -LiteralPath $Checksum -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-        $Actual = (Get-FileHash -LiteralPath $Download -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($Actual -ne $Expected) { Fail 'Downloaded binary checksum mismatch' }
-        Install-Binary $Download $Destination
+        Write-Step "Downloading $Archive"
+        $Downloaded = Get-VerifiedDownload $BaseUrl $Archive $TemporaryDir
+        if ($Downloaded) {
+            $Launcher = Get-VerifiedDownload $BaseUrl $LauncherAsset $TemporaryDir
+            if (-not $Launcher) { Fail "The release has $Archive but no $LauncherAsset" }
+            $Root = Expand-Build $Downloaded
+            try { Install-Directory $Root $Destination $Launcher }
+            finally { Remove-Item -LiteralPath (Split-Path $Root) -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        else {
+            # Releases before 1.0.99 ship a single onefile exe
+            Write-Step "No archive in this release; downloading $Asset"
+            $Downloaded = Get-VerifiedDownload $BaseUrl $Asset $TemporaryDir
+            if (-not $Downloaded) { Fail "Could not download $Asset" }
+            Install-Binary $Downloaded $Destination
+        }
     }
     finally {
         Remove-Item -LiteralPath $TemporaryDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -326,10 +458,15 @@ if ($Operation -eq 'Installation' -and -not $env:AI_CONFIG_NO_SHORTCUT) {
     & $Destination gui --shortcut
     if ($LASTEXITCODE -ne 0) { Write-Warn "Desktop shortcut was not created; run: ai-config gui --shortcut" }
 }
-# 第一次裝就讓 Claude Code 有 /acg;更新時由 acg update 負責,不在這裡重做
-if ($Operation -eq 'Installation' -and -not $env:AI_CONFIG_NO_PLUGIN) {
+# 讓 Claude Code 的 /acg 跟上這一版,更新時也修 hook 路徑。由剛裝好的新版來做:
+# 發起更新的舊版行程可能正從被換掉的檔案讀模組,在裡面 import 會崩潰
+if (-not $env:AI_CONFIG_NO_PLUGIN) {
     & $Destination __claude-plugin
-    if ($LASTEXITCODE -ne 0) { Write-Warn "Claude Code /acg was not installed; run: ai-config update" }
+    if ($LASTEXITCODE -ne 0) { Write-Warn "Claude Code /acg was not updated; run: ai-config update" }
+}
+if ($Operation -eq 'Update') {
+    & $Destination __refresh-hooks
+    if ($LASTEXITCODE -ne 0) { Write-Warn "Hook paths were not refreshed; run: ai-config apply" }
 }
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not $SkipPathUpdate -and ($UserPath -split ';') -notcontains $BinDir) {
