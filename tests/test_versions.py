@@ -249,10 +249,34 @@ def test_a_onedir_build_is_found_in_its_app_directory(layout: Path) -> None:
     versions.place("1.0.98", _release(layout, "ninetyeight"))
 
     assert versions.version_binary("1.0.99") == binary
+    assert versions.version_binary("1.0.98") == versions.version_dir("1.0.98") / versions.executable_name()
     assert versions.installed_versions() == ["1.0.98", "1.0.99"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a symlink needs a privilege on Windows")
+def test_posix_links_the_stable_path_into_app(layout: Path) -> None:
+    binary = _onedir(layout, "1.0.99")
+
     versions.activate("1.0.99")
+
     assert versions.active_version() == "1.0.99"
     assert versions.stable_path().resolve() == binary.resolve()
+
+
+def test_windows_launcher_switches_to_a_onedir_build(
+    layout: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(versions, "NATIVE_WINDOWS", True)
+    _onedir(layout, "1.0.99")
+    versions.stable_path().write_bytes(b"launcher")
+    (layout / "share" / "launcher.sha256").write_text(
+        hashlib.sha256(b"launcher").hexdigest(), encoding="utf-8",
+    )
+
+    versions.activate("1.0.99")
+
+    assert versions.active_version() == "1.0.99"
+    assert versions.stable_path().read_bytes() == b"launcher"
 
 
 def test_a_onedir_exe_is_never_copied_away_from_its_runtime(
