@@ -1,7 +1,16 @@
-"""Deploy managed Claude configuration into a project's own .claude directory."""
+"""Install chosen skills, plugins and rules into one project instead of globally.
 
+On someone else's machine the global homes belong to its owner. `deploy`
+puts what you pick where each tool reads it inside the project, and only
+there. See docs/project-deploy-spec.md.
+"""
+
+import json
+import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import deploy_record
 from ..console import (
     BOLD,
     CYAN,
@@ -11,57 +20,284 @@ from ..console import (
     log_header,
     log_info,
     log_success,
+    log_warn,
 )
 from ..console import (
     confirm as confirm_prompt,
 )
-from ..fsops import mirror_dir, safe_cp
-from ..paths import CLAUDE_MANAGED_DIRS, CLAUDE_MANAGED_FILES, SCRIPT_DIR
+from ..fsops import is_excluded, safe_cp
+from ..memory_paths import project_rules_block
+from ..paths import MEMORY_DIR_NAME, SCRIPT_DIR
 from ..profiles import (
     PROFILES_NAME,
     load_profiles,
     save_profile,
     valid_profile_name,
 )
+from ..safety import assert_no_symlinks
+from ..subproc import UTF8
 
-# Directories deployed per child entry rather than whole, so a project can take
-# just the skills it needs. The name is the menu prefix: "skills/acg".
-EXPANDED_DIRS = ("skills",)
+# 資料庫來源 → 專案內的位置;每個位置是哪些工具會讀,是實測出來的
+SKILL_SOURCES = (
+    ("skills", ".claude/skills", "Claude"),
+    ("shared/both", ".agents/skills", "Codex, agy"),
+    ("shared/codex", ".codex/skills", "Codex"),
+    ("shared/agy", ".agent/skills", "agy"),
+)
+MERGED_DIRS = ("rules", "agents", "commands")
 
 
-def _skill_children(source: Path, name: str) -> list[str]:
-    directory = source / name
+@dataclass(frozen=True)
+class Item:
+    """One menu row; `name` is also what a profile stores."""
+
+    name: str
+    note: str
+    # (來源, 專案內相對路徑)
+    placements: tuple[tuple[Path, str], ...] = ()
+    plugin: str = ""
+    merge: bool = False
+    memory: bool = False
+
+
+@dataclass
+class Outcome:
+    placed: list[str] = field(default_factory=list)
+    ready: list[str] = field(default_factory=list)
+    conflicts: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+
+
+def _children(directory: Path) -> list[str]:
+    if not directory.is_dir():
+        return []
     return sorted(
-        child.name
-        for child in directory.iterdir()
+        child.name for child in directory.iterdir()
         if child.is_dir() and not child.name.startswith(".")
     )
 
 
-def _available_items(source: Path) -> list[tuple[str, bool]]:
-    """Managed entries that exist in the repo, as (name, is_dir) in menu order.
+def _plugins(source: Path) -> dict[str, bool]:
+    try:
+        settings = json.loads((source / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    plugins = settings.get("enabledPlugins") if isinstance(settings, dict) else None
+    if not isinstance(plugins, dict):
+        return {}
+    return {str(key): value is True for key, value in sorted(plugins.items())}
 
-    Entries in EXPANDED_DIRS contribute one row per child ("skills/acg")
-    instead of a single all-or-nothing row.
-    """
-    items = [(name, False) for name in CLAUDE_MANAGED_FILES if (source / name).is_file()]
-    for name in CLAUDE_MANAGED_DIRS:
-        if not (source / name).is_dir():
-            continue
-        if name in EXPANDED_DIRS:
-            items += [
-                (f"{name}/{child}", True) for child in _skill_children(source, name)
-            ]
-        else:
-            items.append((name, True))
+
+def _available_items(source: Path) -> list[Item]:
+    items: list[Item] = []
+    if (source / "CLAUDE.md").is_file():
+        items.append(Item("CLAUDE.md", "Claude",
+                          ((source / "CLAUDE.md", ".claude/CLAUDE.md"),)))
+    for name in MERGED_DIRS:
+        if (source / name).is_dir():
+            items.append(Item(name, "Claude",
+                              ((source / name, f".claude/{name}"),), merge=True))
+    skills: dict[str, list[tuple[Path, str, str]]] = {}
+    for relative, target, readers in SKILL_SOURCES:
+        for skill in _children(source / relative):
+            skills.setdefault(skill, []).append(
+                (source / relative / skill, f"{target}/{skill}", readers)
+            )
+    for skill, spots in sorted(skills.items()):
+        readers = ", ".join(dict.fromkeys(
+            reader for _, _, group in spots for reader in group.split(", ")
+        ))
+        items.append(Item(
+            f"skills/{skill}", readers,
+            tuple((src, dst) for src, dst, _ in spots),
+        ))
+    for plugin, enabled in _plugins(source).items():
+        note = "Claude plugin" + ("" if enabled else ",全域沒開")
+        items.append(Item(f"plugins/{plugin}", note, plugin=plugin))
+    if _memory_root(source).is_dir():
+        items.append(Item("memory", "Claude, Codex, agy 的記憶規則", memory=True))
     return items
 
 
-def _describe(source: Path, name: str, is_dir: bool) -> str:
-    if not is_dir:
-        return "file"
-    count = sum(1 for p in (source / name).rglob("*") if p.is_file())
-    return f"{count} file{'s' if count != 1 else ''}"
+def _memory_root(source: Path) -> Path:
+    return source.parent / MEMORY_DIR_NAME
+
+
+def _files(root: Path) -> dict[Path, bytes]:
+    return {
+        path.relative_to(root): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not is_excluded(path)
+    }
+
+
+def _place_file(src: Path, dst: Path) -> str:
+    if dst.is_symlink() or dst.exists():
+        same = dst.is_file() and not dst.is_symlink() and dst.read_bytes() == src.read_bytes()
+        return "ready" if same else "conflict"
+    safe_cp(src, dst)
+    return "placed"
+
+
+def _place_tree(src: Path, dst: Path) -> str:
+    """A skill travels whole: never half old and half new."""
+    assert_no_symlinks(src)
+    if dst.is_symlink() or dst.exists():
+        if dst.is_symlink() or not dst.is_dir():
+            return "conflict"
+        assert_no_symlinks(dst)
+        return "ready" if _files(dst) == _files(src) else "conflict"
+    for relative in _files(src):
+        safe_cp(src / relative, dst / relative)
+    return "placed"
+
+
+def _merge_tree(src: Path, dst: Path, outcome: Outcome, label: str) -> None:
+    """Rules, agents and commands join what the project already has, file by file."""
+    assert_no_symlinks(src)
+    if dst.is_symlink() or (dst.exists() and not dst.is_dir()):
+        outcome.conflicts.append(label)
+        return
+    assert_no_symlinks(dst)
+    for relative in _files(src):
+        result = _place_file(src / relative, dst / relative)
+        _record(outcome, result, f"{label}/{relative.as_posix()}")
+
+
+def _record(outcome: Outcome, result: str, label: str) -> None:
+    {"placed": outcome.placed, "ready": outcome.ready,
+     "conflict": outcome.conflicts}[result].append(label)
+
+
+def _claude_binary() -> "str | None":
+    from .update import _claude_binary as find
+
+    return find()
+
+
+def _run_claude(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
+    claude = _claude_binary()
+    if claude is None:
+        raise RuntimeError("找不到 claude 指令")
+    return subprocess.run(
+        [claude, "plugin", *args], cwd=cwd,
+        capture_output=True, text=True, **UTF8, timeout=300, check=False,
+    )
+
+
+def _marketplace_source(source: Path, marketplace: str) -> "str | None":
+    try:
+        settings = json.loads((source / "settings.json").read_text(encoding="utf-8"))
+        entry = settings["extraKnownMarketplaces"][marketplace]["source"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(entry, dict):
+        return None
+    kind = entry.get("source")
+    value = {"github": entry.get("repo"), "git": entry.get("url"),
+             "url": entry.get("url"), "directory": entry.get("path")}.get(kind)
+    return value if isinstance(value, str) and value else None
+
+
+def _project_plugins(project: Path) -> dict:
+    try:
+        settings = json.loads(
+            (project / ".claude" / "settings.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return {}
+    plugins = settings.get("enabledPlugins") if isinstance(settings, dict) else None
+    return plugins if isinstance(plugins, dict) else {}
+
+
+def _last_line(done: subprocess.CompletedProcess) -> str:
+    lines = (done.stderr or done.stdout or "").strip().splitlines()
+    return lines[-1] if lines else f"exit {done.returncode}"
+
+
+def _install_plugin(
+    source: Path, project: Path, plugin: str, record: deploy_record.Record,
+) -> str:
+    """Enable a plugin for this project only; the host's own settings stay put."""
+    if _project_plugins(project).get(plugin) is True:
+        return "ready"
+    deploy_record.remember_settings(project, record)
+    install = ["install", plugin, "--scope", "project"]
+    done = _run_claude(install, project)
+    if done.returncode != 0 and "@" in plugin:
+        # 主機不認得這個 marketplace;宣告在專案裡,不動主機的清單
+        marketplace = plugin.rsplit("@", 1)[1]
+        where = _marketplace_source(source, marketplace)
+        if where is not None:
+            added = _run_claude(["marketplace", "add", where, "--scope", "project"], project)
+            if added.returncode == 0:
+                record.marketplaces.append(marketplace)
+                done = _run_claude(install, project)
+    if done.returncode != 0:
+        raise RuntimeError(_last_line(done))
+    record.plugins.append(plugin)
+    return "placed"
+
+
+def _remember_files(project: Path, record: deploy_record.Record, placed: list[str]) -> None:
+    for relative in placed:
+        path = project / relative
+        targets = [path] if path.is_file() else sorted(p for p in path.rglob("*") if p.is_file())
+        for target in targets:
+            record.files[target.relative_to(project).as_posix()] = deploy_record.digest(target)
+
+
+def _deploy(source: Path, project: Path, items: list[Item], selection: list[int]) -> Outcome:
+    outcome = Outcome()
+    record = deploy_record.load(project)
+    try:
+        for index in selection:
+            item = items[index]
+            if item.plugin:
+                try:
+                    result = _install_plugin(source, project, item.plugin, record)
+                    _record(outcome, result, item.name)
+                except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                    outcome.failed.append(f"{item.name}:{exc}")
+                continue
+            if item.memory:
+                block = project_rules_block(_memory_root(source))
+                result, created = deploy_record.put_rules(project, block)
+                if record.rules_created is None:
+                    record.rules_created = created
+                _record(outcome, result, f"{deploy_record.RULES_FILE}(記憶規則)")
+                continue
+            before = len(outcome.placed)
+            for src, relative in item.placements:
+                if item.merge:
+                    _merge_tree(src, project / relative, outcome, relative)
+                elif src.is_dir():
+                    _record(outcome, _place_tree(src, project / relative), relative)
+                else:
+                    _record(outcome, _place_file(src, project / relative), relative)
+            _remember_files(project, record, outcome.placed[before:])
+    finally:
+        # 放到一半失敗也要記下已經放的,不然撤除時找不回來
+        deploy_record.save(project, record)
+    return outcome
+
+
+def _report(outcome: Outcome, project: Path) -> int:
+    for label in outcome.placed:
+        log_success(label)
+    if outcome.ready:
+        log_info(f"已經在專案裡、內容相同:{len(outcome.ready)} 項")
+    for label in outcome.conflicts:
+        log_warn(f"專案裡已有不同內容,沒有覆蓋:{label}")
+    for label in outcome.failed:
+        log_error(f"沒有裝上:{label}")
+    if outcome.conflicts:
+        log_info("要換成資料庫的版本,先刪掉專案裡那一份再跑一次")
+    if outcome.conflicts or outcome.failed:
+        return 1
+    log_success(f"已部署到 {project};只在這個目錄生效,家目錄沒有改動")
+    log_info(f"放了什麼記在 {deploy_record.RECORD_NAME};離開這台時用 deploy --remove 收回")
+    return 0
 
 
 def _parse_selection(raw: str, total: int) -> "list[int] | None":
@@ -93,11 +329,9 @@ def _parse_selection(raw: str, total: int) -> "list[int] | None":
     return sorted(chosen) or None
 
 
-def _resolve_profile(
-    items: list[tuple[str, bool]], wanted: list[str]
-) -> "list[int] | None":
+def _resolve_profile(items: list[Item], wanted: list[str]) -> "list[int] | None":
     """Map a profile's stored names onto current menu indices."""
-    by_name = {name: index for index, (name, _) in enumerate(items)}
+    by_name = {item.name: index for index, item in enumerate(items)}
     missing = [name for name in wanted if name not in by_name]
     if missing:
         log_error(f"Profile refers to items no longer in the repo: {', '.join(missing)}")
@@ -105,17 +339,12 @@ def _resolve_profile(
     return sorted(by_name[name] for name in wanted)
 
 
-def _write_items(
-    source: Path, destination: Path, items: list[tuple[str, bool]], selection: list[int]
-) -> None:
-    destination.mkdir(parents=True, exist_ok=True)
-    for index in selection:
-        name, is_dir = items[index]
-        if is_dir:
-            mirror_dir(source / name, destination / name)
-        else:
-            safe_cp(source / name, destination / name)
-        log_success(f"{name}{'/' if is_dir else ''}")
+def _destinations(item: Item) -> str:
+    if item.plugin:
+        return "claude plugin install --scope project"
+    if item.memory:
+        return f"{deploy_record.RULES_FILE} 裡加一段 acg 區塊"
+    return ", ".join(relative + ("/" if src.is_dir() else "") for src, relative in item.placements)
 
 
 def run_deploy(
@@ -127,23 +356,18 @@ def run_deploy(
     if not source.is_dir():
         log_error(f"No Claude configuration in the data repository: {source}")
         return 1
-
     project = Path(target).expanduser() if target else Path.cwd()
     if not project.is_dir():
         log_error(f"Target is not a directory: {project}")
         return 1
     project = project.resolve()
-
     items = _available_items(source)
     if not items:
-        log_error("The data repository has no managed Claude configuration to deploy")
+        log_error("The data repository has nothing to deploy")
         return 1
-
     if save_as is not None and not valid_profile_name(save_as):
         log_error(f"Invalid profile name: {save_as}")
         return 1
-
-    destination = project / ".claude"
 
     if profile is not None:
         profiles = load_profiles(source)
@@ -155,17 +379,12 @@ def run_deploy(
         selection = _resolve_profile(items, profiles[profile])
         if selection is None:
             return 1
-        log_header(f"Deploy profile '{profile}' to {destination}")
-        _write_items(source, destination, items, selection)
-        log_success(f"Deployed to {destination}")
-        log_info("Project settings take precedence over the user-level configuration")
-        return 0
+        log_header(f"Deploy profile '{profile}' to {project}")
+        return _report(_deploy(source, project, items, selection), project)
 
-    log_header(f"Deploy to {destination}")
-    for number, (name, is_dir) in enumerate(items, start=1):
-        suffix = "/" if is_dir else ""
-        detail = _describe(source, name, is_dir)
-        print(f"  {CYAN}{number:>2}{NC}  {name}{suffix}  ({detail})")
+    log_header(f"Deploy to {project}")
+    for number, item in enumerate(items, start=1):
+        print(f"  {CYAN}{number:>2}{NC}  {item.name}  ({item.note})")
     print()
     print(f"  Select items: numbers (1 3), a range (1-3), or {BOLD}a{NC} for all")
 
@@ -177,27 +396,112 @@ def run_deploy(
 
     print()
     for index in selection:
-        name, is_dir = items[index]
-        print(f"  {name}{'/' if is_dir else ''} → {destination / name}")
-    existing = [
-        items[index][0]
-        for index in selection
-        if (destination / items[index][0]).exists()
-    ]
-    if existing:
-        print()
-        log_info(f"Overwrites existing: {', '.join(existing)}")
+        print(f"  {items[index].name} → {_destinations(items[index])}")
+    print()
+    log_info("不刪也不覆蓋專案裡已有的檔案;內容不同的會略過並列出")
 
     if not confirm_prompt("\n  Deploy these items? [y/N] "):
         log_info("Cancelled; nothing was written")
         return 0
 
-    _write_items(source, destination, items, selection)
-
+    outcome = _deploy(source, project, items, selection)
     if save_as is not None:
-        save_profile(source, save_as, [items[index][0] for index in selection])
+        save_profile(source, save_as, [items[index].name for index in selection])
         log_success(f"Saved profile '{save_as}' to {PROFILES_NAME}")
+    return _report(outcome, project)
 
-    log_success(f"Deployed to {destination}")
-    log_info("Project settings take precedence over the user-level configuration")
+
+def _removal_plan(project: Path, record: deploy_record.Record) -> tuple[list[Path], list[str]]:
+    """Files still exactly as deploy left them, and what cannot be taken back safely."""
+    removable: list[Path] = []
+    kept: list[str] = []
+    for relative, expected in sorted(record.files.items()):
+        path = deploy_record.inside(project, relative)
+        if path is None:
+            kept.append(f"{relative}(不在專案裡,不處理)")
+        elif not path.exists():
+            continue
+        elif not path.is_file() or deploy_record.digest(path) != expected:
+            kept.append(f"{relative}(放進去之後被改過)")
+        else:
+            removable.append(path)
+    return removable, kept
+
+
+def run_undeploy(target: "str | None") -> int:
+    project = Path(target).expanduser() if target else Path.cwd()
+    if not project.is_dir():
+        log_error(f"Target is not a directory: {project}")
+        return 1
+    project = project.resolve()
+    try:
+        record = deploy_record.load(project)
+    except RuntimeError as exc:
+        log_error(str(exc))
+        return 1
+    if record.empty():
+        log_info(f"{project} 沒有 acg 部署紀錄,沒有東西要收回")
+        return 0
+
+    removable, kept = _removal_plan(project, record)
+    log_header(f"Remove what deploy put into {project}")
+    for path in removable:
+        print(f"  刪除 {path.relative_to(project).as_posix()}")
+    for plugin in record.plugins:
+        print(f"  移除 plugin {plugin}(專案範圍)")
+    for marketplace in record.marketplaces:
+        print(f"  移除 marketplace 宣告 {marketplace}(專案範圍)")
+    if record.rules_created is not None:
+        print(f"  拿掉 {deploy_record.RULES_FILE} 裡的 acg 記憶規則")
+    for label in kept:
+        log_warn(f"保留:{label}")
+    if not confirm_prompt("\n  Remove these? [y/N] "):
+        log_info("Cancelled; nothing was removed")
+        return 0
+
+    failed: list[str] = []
+    remaining = deploy_record.Record()
+    for path in removable:
+        path.unlink()
+        deploy_record.prune_empty_parents(project, path)
+    for relative in record.files:
+        path = deploy_record.inside(project, relative)
+        if path is not None and path.exists():
+            remaining.files[relative] = record.files[relative]
+    for plugin in record.plugins:
+        try:
+            done = _run_claude(["uninstall", plugin, "--scope", "project"], project)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            failed.append(f"plugin {plugin}:{exc}")
+            remaining.plugins.append(plugin)
+            continue
+        if done.returncode != 0:
+            failed.append(f"plugin {plugin}:{_last_line(done)}")
+            remaining.plugins.append(plugin)
+    for marketplace in record.marketplaces:
+        try:
+            done = _run_claude(["marketplace", "remove", marketplace, "--scope", "project"], project)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            failed.append(f"marketplace {marketplace}:{exc}")
+            remaining.marketplaces.append(marketplace)
+            continue
+        if done.returncode != 0:
+            failed.append(f"marketplace {marketplace}:{_last_line(done)}")
+            remaining.marketplaces.append(marketplace)
+    if record.rules_created is not None:
+        deploy_record.drop_rules(project, record.rules_created)
+    if not remaining.plugins and not remaining.marketplaces:
+        deploy_record.restore_settings(project, record)
+    else:
+        remaining.settings_before = record.settings_before
+        remaining.settings_saved = record.settings_saved
+    deploy_record.save(project, remaining)
+
+    for label in failed:
+        log_error(f"沒有收回:{label}")
+    if kept:
+        log_info(f"被改過的檔案留著沒刪,紀錄仍在 {deploy_record.RECORD_NAME}")
+    if failed or kept:
+        return 1
+    log_success("已收回 deploy 放進這個專案的東西")
     return 0

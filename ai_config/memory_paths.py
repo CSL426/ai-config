@@ -95,6 +95,24 @@ RULES_BLOCK = f"""{BLOCK_BEGIN}
   是兩回事,不要混用。
 {BLOCK_END}
 """
+# 專案層用另一組標記:全域區塊的保留/收集邏輯不能把它當成自己的
+PROJECT_BLOCK_BEGIN = "<!-- acg:project-memory:begin -->"
+PROJECT_BLOCK_END = "<!-- acg:project-memory:end -->"
+
+
+def project_rules_block(root: Path) -> str:
+    """The same rules, pointing at this machine's notebook instead of the global link.
+
+    On someone else's machine there is no ~/.claude/shared-memory and
+    there should not be; the block names the real directory instead.
+    """
+    return (
+        RULES_BLOCK.replace(BLOCK_BEGIN, PROJECT_BLOCK_BEGIN)
+        .replace(BLOCK_END, PROJECT_BLOCK_END)
+        .replace("~/.claude/shared-memory", root.as_posix())
+    )
+
+
 _BLOCK_RE = re.compile(
     re.escape(BLOCK_BEGIN) + r".*?" + re.escape(BLOCK_END) + r"\n?", re.DOTALL
 )
