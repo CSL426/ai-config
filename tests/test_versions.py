@@ -1,5 +1,6 @@
 """Updating swaps a link, so the file that is running is never replaced."""
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -130,24 +131,55 @@ def test_switching_to_a_version_already_on_disk_needs_no_download(
     monkeypatch.setattr(
         update, "_warn_if_updating_a_different_copy", lambda: None,
     )
+    finished = []
+    monkeypatch.setattr(update, "_finish_in_installed_version", lambda: finished.append(True))
 
     assert update.run_update("1.0.63") == 0
+    # 換了版本就要由那一版補 plugin 與 hook
+    assert finished == [True]
 
     assert versions.active_version() == "1.0.63"
     assert versions.stable_path().read_text() == "sixtythree"
     assert "1.0.63" in capsys.readouterr().out
 
 
-def test_windows_keeps_a_copy_and_still_knows_which_version_it_is(
+def test_windows_launcher_switches_by_the_record_alone(
     layout: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Windows may not be allowed a symlink; the copy must still be identifiable.
+    """The launcher on PATH is never rewritten; only versions/active changes.
+
+    The copy it replaced was rewritten on every switch, and a running
+    onefile build reading its modules from that path died mid-update.
+    """
+    monkeypatch.setattr(versions, "NATIVE_WINDOWS", True)
+    versions.place("1.0.63", _release(layout, "sixtythree"))
+    versions.place("1.0.64", _release(layout, "sixtyfour"))
+    versions.stable_path().write_bytes(b"launcher")
+    # install.ps1 記下它放上 PATH 的啟動器
+    (layout / "share" / "launcher.sha256").write_text(
+        hashlib.sha256(b"launcher").hexdigest() + "\n", encoding="utf-8",
+    )
+
+    versions.activate("1.0.64")
+    assert versions.active_version() == "1.0.64"
+    versions.activate("1.0.63")
+
+    assert versions.active_version() == "1.0.63"
+    assert versions.stable_path().read_bytes() == b"launcher"
+    assert versions.version_binary("1.0.64").read_text() == "sixtyfour"
+
+
+def test_windows_before_the_launcher_keeps_a_copy_and_knows_its_version(
+    layout: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A machine not yet given the launcher still has a copy on PATH.
 
     Every version assertion here failed on the Windows runners until
     activate recorded the name: a copied file resolves to itself and says
     nothing about where it came from.
     """
     monkeypatch.setattr(versions, "NATIVE_WINDOWS", True)
+    monkeypatch.setattr(versions, "is_launcher", lambda path: False)
     versions.place("1.0.63", _release(layout, "sixtythree"))
     versions.place("1.0.64", _release(layout, "sixtyfour"))
 
@@ -166,6 +198,23 @@ def test_windows_keeps_a_copy_and_still_knows_which_version_it_is(
     assert versions.version_binary("1.0.64").read_text() == "sixtyfour"
 
 
+def test_only_the_recorded_launcher_counts(layout: Path) -> None:
+    stable = versions.stable_path()
+    stable.write_bytes(b"launcher")
+    assert not versions.is_launcher(stable)
+
+    (layout / "share").mkdir(exist_ok=True)
+    (layout / "share" / "launcher.sha256").write_text(
+        hashlib.sha256(b"launcher").hexdigest(), encoding="utf-8",
+    )
+    assert versions.is_launcher(stable)
+
+    # 舊格局留在 PATH 上的複本對不上記錄
+    stable.write_bytes(b"a copy of a onefile build")
+    assert not versions.is_launcher(stable)
+    assert not versions.is_launcher(layout / "absent.exe")
+
+
 def test_a_record_pointing_at_a_deleted_version_is_ignored(
     layout: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -177,3 +226,11 @@ def test_a_record_pointing_at_a_deleted_version_is_ignored(
     shutil_mod.rmtree(versions.version_dir("1.0.64"))
 
     assert versions.active_version() is None
+
+
+def test_a_version_run_through_the_launcher_is_the_managed_copy(layout: Path) -> None:
+    """On Windows PATH holds the launcher; what runs is the version it picked."""
+    binary = versions.place("1.0.99", _release(layout, "ninetynine"))
+
+    assert versions.is_managed(binary)
+    assert not versions.is_managed(layout / "Desktop" / "acg.exe")

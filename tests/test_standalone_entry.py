@@ -408,6 +408,8 @@ def test_detach_hides_the_console_before_exiting(
         ([200, 100], True, "app", True),
         ([100, 200], False, "app", False),
         ([100, 200], True, "shell", False),
+        # 雙擊 Windows 的啟動器:主控台上是啟動器與主程式
+        ([100, 200], True, "launcher", True),
         ([100, 300], True, "app", False),
         ([100, 200, 300], True, "app", False),
         ([200], True, "app", False),
@@ -424,6 +426,10 @@ def test_console_ownership_preserves_shells(
     executable.touch()
     shell = tmp_path / "cmd.exe"
     shell.touch()
+    launcher = tmp_path / "bin" / "ai-config.exe"
+    launcher.parent.mkdir()
+    launcher.touch()
+    images = {"app": executable, "shell": shell, "launcher": launcher}
 
     def get_processes(buffer, capacity):
         if len(pids) <= capacity:
@@ -432,7 +438,7 @@ def test_console_ownership_preserves_shells(
         return len(pids)
 
     def query_image(handle, flags, buffer, size):
-        buffer.value = str(executable if parent_image == "app" else shell)
+        buffer.value = str(images[parent_image])
         return True
 
     kernel = SimpleNamespace(
@@ -452,6 +458,7 @@ def test_console_ownership_preserves_shells(
     monkeypatch.setattr(cli.os, "getpid", lambda: 100)
     monkeypatch.setattr(cli.os, "getppid", lambda: 200)
     monkeypatch.delenv("AI_CONFIG_FORCE_DOUBLE_CLICK", raising=False)
+    monkeypatch.setenv("AI_CONFIG_LAUNCHER", str(launcher))
 
     assert cli.launched_by_double_click() is expected
     assert gui_module.hide_console() is expected

@@ -13,17 +13,20 @@ writing a new directory and moving the link. A running process keeps the
 path it started with, the swap is atomic, and the previous release is
 still on disk to go back to.
 
-    ~/.local/bin/ai-config          -> ../share/ai-config/versions/1.0.64/ai-config
-    ~/.local/share/ai-config/versions/1.0.64/ai-config
-                                    /1.0.63/ai-config
+    ~/.local/bin/ai-config          -> ../share/ai-config/versions/1.0.99/ai-config
+    ~/.local/share/ai-config/versions/1.0.99/ai-config
+                                            /_internal/      (onedir build)
+                                    /1.0.98/ai-config        (older onefile)
 
 On Windows, where a symlink needs a privilege an ordinary account may not
-hold, the same layout is kept and the link degrades to a copy: the file at
-the stable path is replaced rather than relinked. That still cannot happen
-while the file runs, so Windows keeps the deferred path — but the version
-directory is written first, so what is deferred is only the final move.
+hold, the stable path is a small launcher (launcher/ in this repository)
+that runs the version named in versions/active. Switching is rewriting
+that one line; nothing running is overwritten. Before the launcher it was
+a copy of the real executable, replaced in place — a running onefile build
+reads its own modules from that path, and died reading the new file.
 """
 
+import hashlib
 import os
 import shutil
 from pathlib import Path
@@ -58,8 +61,21 @@ def version_binary(version: str) -> Path:
 
 
 def stable_path() -> Path:
-    """The name on PATH — a link on POSIX, the real file on Windows."""
+    """The name on PATH — a link on POSIX, the launcher on Windows."""
     return bin_dir() / executable_name()
+
+
+def is_managed(running: Path) -> bool:
+    """Whether a running executable is one of the installed versions.
+
+    On Windows the stable path is the launcher, a different file from the
+    version it runs, so comparing the two no longer says "installed copy".
+    """
+    try:
+        running.resolve().relative_to(store_dir().resolve())
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def _sort_key(name: str) -> tuple:
@@ -133,10 +149,11 @@ def activate(version: str) -> bool:
     if active_version() == version and not NATIVE_WINDOWS:
         return False
     if NATIVE_WINDOWS:
-        # 沒有 symlink 權限時退回複製;檔案正在執行就換不掉,由呼叫端延後處理
-        staged = path.with_name(f".{path.name}.new")
-        shutil.copy2(binary, staged)
-        os.replace(staged, path)
+        if not is_launcher(path):
+            # 還沒換成啟動器的舊格局:照舊複製,檔案正在執行就換不掉
+            staged = path.with_name(f".{path.name}.new")
+            shutil.copy2(binary, staged)
+            os.replace(staged, path)
         _record_active(version)
         return True
     staged = path.with_name(f".{path.name}.new")
@@ -151,6 +168,25 @@ def activate(version: str) -> bool:
     os.replace(staged, path)
     _record_active(version)
     return True
+
+
+def _launcher_marker() -> Path:
+    return store_dir().parent / "launcher.sha256"
+
+
+def is_launcher(path: Path) -> bool:
+    """Whether the Windows stable path is the launcher rather than a copy.
+
+    install.ps1 records the hash of the launcher it put on PATH; a copy of
+    a real build left there by the older layout does not match it.
+    """
+    try:
+        recorded = _launcher_marker().read_text(encoding="utf-8").strip().lower()
+        if not recorded or not path.is_file():
+            return False
+        return hashlib.sha256(path.read_bytes()).hexdigest() == recorded
+    except OSError:
+        return False
 
 
 def _record_active(version: str) -> None:

@@ -103,10 +103,13 @@ def _warn_if_updating_a_different_copy() -> None:
     """
     if not getattr(sys, "frozen", False):
         return
+    from ..versions import is_managed
+
     managed = _standalone_candidate()
     try:
         running = Path(sys.executable).resolve()
-        if running == managed.resolve():
+        # Windows 的固定入口是啟動器,它執行的是版本目錄裡的那一份
+        if running == managed.resolve() or is_managed(running):
             return
     except OSError:
         return
@@ -323,12 +326,13 @@ def remove_replaced_binaries() -> None:
     """Delete the exes an update moved aside; the running one refuses, which is fine."""
     if not (NATIVE_WINDOWS and getattr(sys, "frozen", False)):
         return
-    executable = Path(sys.executable)
-    for leftover in executable.parent.glob(f"{executable.name}.old-*"):
-        try:
-            leftover.unlink()
-        except OSError:
-            pass
+    # 換啟動器時舊的那支被移到 PATH 旁邊;onedir 的主程式則在版本目錄裡
+    for executable in {Path(sys.executable), standalone_install_path()}:
+        for leftover in executable.parent.glob(f"{executable.name}.old-*"):
+            try:
+                leftover.unlink()
+            except OSError:
+                pass
 
 
 def run_update_list() -> int:
@@ -364,43 +368,55 @@ def run_update(requested_version: "str | None" = None) -> int:
             log_info("等它結束後再試一次;同時更新會寫壞執行檔")
             return 1
         result = _run_update(requested_version)
-    if result == 0:
+    # 打包版的這兩步由安裝腳本叫新版執行檔做(見 _finish_in_installed_version)
+    if result == 0 and not getattr(sys, "frozen", False):
         _update_plugin()
         _refresh_after_update()
     return result
 
 
 def _refresh_after_update() -> None:
-    """Repair hooks and the credential binding with the version just installed.
+    """Repair hooks and the credential binding after a source or uv update."""
+    from ..hooks import refresh_all
 
-    On Windows the update puts the new exe where the running one was, and a
-    onefile build reads its own modules from that path: an import after the
-    swap read the new file at the old offsets and failed with "Error -3
-    while decompressing data". Where it survives, the running copy is still
-    the old code, which is how 1.0.92's update rewrote hooks by its own
-    stale rules. The new launcher does the repair; a checkout has nothing
-    swapped under it and repairs in place.
+    refresh_all()
+
+
+def _finish_in_installed_version() -> None:
+    """Update /acg and repair hooks with the version now installed, not this one.
+
+    A frozen build must not do this in its own process. On Windows the
+    update used to put the new exe where the running one was, and a onefile
+    build reads its own modules from that path: 1.0.93's hook repair and
+    1.0.98's plugin update both died importing after the swap with "Error
+    -3 while decompressing data" — the latter right after printing "Update
+    complete". Where it survives, the running copy is still the old code,
+    which is how 1.0.92 rewrote hooks by its own stale rules. So the
+    installer asks the new executable to do it, and a switch to a version
+    already on disk does the same through the stable path.
     """
-    if not getattr(sys, "frozen", False):
-        from ..hooks import refresh_all
+    _in_installed_version("__claude-plugin", "/acg 沒有更新",
+                          f"再執行一次 {ENTRYPOINT} update 會補上")
+    _in_installed_version("__refresh-hooks", "hook 路徑沒有更新",
+                          f"執行 {ENTRYPOINT} apply 會再修一次")
 
-        refresh_all()
-        return
+
+def _in_installed_version(command: str, failed: str, retry: str) -> None:
     try:
         done = subprocess.run(
-            [*scheduled_command(), "__refresh-hooks"],
-            capture_output=True, text=True, **UTF8, timeout=120, check=False,
+            [*scheduled_command(), command],
+            capture_output=True, text=True, **UTF8, timeout=300, check=False,
             stdin=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        log_warn(f"hook 路徑沒有更新:{exc}")
+        log_warn(f"{failed}:{exc};{retry}")
         return
     output = (done.stdout or "") + (done.stderr or "")
     if output.strip():
         print(output.rstrip())
     if done.returncode != 0:
-        log_warn(f"hook 路徑沒有更新;執行 {ENTRYPOINT} apply 會再修一次")
+        log_warn(f"{failed};{retry}")
 
 
 def _claude_binary() -> "str | None":
@@ -478,6 +494,7 @@ def _run_update(requested_version: "str | None" = None) -> int:
             # 已經在磁碟上就只換連結:回滾不必再下載一次,也不碰網路
             if versions.activate(wanted):
                 log_success(f"已切換到 {wanted}")
+                _finish_in_installed_version()
             else:
                 log_info(f"已經在 {wanted}")
             return 0

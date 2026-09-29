@@ -133,9 +133,15 @@ def test_a_failed_update_leaves_the_plugin_alone(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.parametrize("script", ["install.sh", "install.ps1"])
-def test_a_first_install_brings_the_plugin_and_can_be_told_not_to(script: str) -> None:
-    text = (REPO_ROOT / script).read_text(encoding="utf-8")
-    line = next(line for line in text.splitlines() if "Installation" in line and "NO_PLUGIN" in line)
+def test_the_installed_version_brings_the_plugin_and_can_be_told_not_to(script: str) -> None:
+    """Install and update both end with the new executable updating /acg.
 
-    assert "AI_CONFIG_NO_PLUGIN" in line
+    The installer comes from the release being installed, so the step runs
+    in the new version even when an older acg started the update.
+    """
+    text = (REPO_ROOT / script).read_text(encoding="utf-8")
+    line = next(line for line in text.splitlines() if "NO_PLUGIN" in line)
+
+    assert "Installation" not in line
     assert "__claude-plugin" in text
+    assert "__refresh-hooks" in text

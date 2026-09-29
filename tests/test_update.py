@@ -554,39 +554,55 @@ def test_the_update_lock_is_released_for_the_next_run(tmp_path, monkeypatch):
 
 
 
-def test_a_standalone_update_repairs_hooks_with_the_new_binary(
+def test_the_installed_version_updates_the_plugin_and_repairs_hooks(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The running exe was just swapped out; importing from it now fails.
+    """The running exe may be the old one; the installed one does the work.
 
-    On Windows a onefile build reads its modules from its own path, which
-    now holds the new version: 1.0.93's in-process repair died with "Error
-    -3 while decompressing data". The new launcher does the repair instead.
+    A onefile build reads its modules from its own path: 1.0.93's hook
+    repair and 1.0.98's plugin update died importing after the swap with
+    "Error -3 while decompressing data".
     """
     import subprocess
 
-    from ai_config import hooks
     from ai_config.commands import update
 
     calls = []
 
     def run(argv, **kwargs):
         calls.append(argv)
+        if argv[-1] == "__claude-plugin":
+            return subprocess.CompletedProcess(argv, 1, "", "✗ claude failed\n")
         return subprocess.CompletedProcess(argv, 0, "ℹ 已補回 hook 的參數:memory-entry\n", "")
 
-    def in_process() -> None:
-        raise AssertionError("the swapped-out process must not repair in place")
-
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(update, "scheduled_command", lambda: ["/bin/ai-config"])
     monkeypatch.setattr(update.subprocess, "run", run)
-    monkeypatch.setattr(hooks, "refresh_all", in_process)
 
-    _ORIGINAL["refresh"]()
+    update._finish_in_installed_version()
 
-    assert calls == [["/bin/ai-config", "__refresh-hooks"]]
-    # 新版印的訊息要轉給看著 update 的人
-    assert "已補回 hook 的參數" in capsys.readouterr().out
+    assert calls == [["/bin/ai-config", "__claude-plugin"], ["/bin/ai-config", "__refresh-hooks"]]
+    out = capsys.readouterr()
+    # 新版印的訊息要轉給看著 update 的人,失敗也要說出來
+    assert "已補回 hook 的參數" in out.out
+    assert "claude failed" in out.out
+    assert "/acg 沒有更新" in out.out + out.err
+
+
+def test_a_frozen_update_leaves_the_last_steps_to_the_installer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The installer script comes from the target release and runs them there."""
+    from ai_config.commands import update
+
+    def in_process() -> None:
+        raise AssertionError("a frozen update must not do this in its own process")
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(update, "_run_update", lambda version: 0)
+    monkeypatch.setattr(update, "_update_plugin", in_process)
+    monkeypatch.setattr(update, "_refresh_after_update", in_process)
+
+    assert update.run_update() == 0
 
 
 def test_a_checkout_update_repairs_in_place(monkeypatch: pytest.MonkeyPatch) -> None:
