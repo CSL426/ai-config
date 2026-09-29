@@ -105,6 +105,55 @@ def test_double_click_opens_gui_when_bundled(monkeypatch: pytest.MonkeyPatch) ->
     assert opened == [True]
 
 
+def test_bare_shell_launch_detaches_the_gui(monkeypatch: pytest.MonkeyPatch) -> None:
+    # cmd 打 acg 時 acg.cmd 會等 exe 結束;GUI 留在前景 cmd 就卡到視窗關閉
+    from ai_config import desktop as gui_module
+
+    detached = []
+    monkeypatch.setattr(cli, "launched_by_double_click", lambda: False)
+    monkeypatch.setattr(cli, "gui_assets_bundled", lambda: True)
+    monkeypatch.setattr(gui_module, "detach_and_run_gui", lambda: detached.append(True) or True)
+    monkeypatch.setattr(cli.sys, "argv", ["ai-config.exe"])
+
+    def unexpected() -> int:
+        raise AssertionError("a detached launch must not also run in the foreground")
+
+    monkeypatch.setattr(gui_module, "run_gui", unexpected)
+
+    assert cli.standalone_main() == 0
+    assert detached == [True]
+
+
+def test_bare_shell_launch_falls_back_to_foreground(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config import desktop as gui_module
+
+    opened = []
+    monkeypatch.setattr(cli, "launched_by_double_click", lambda: False)
+    monkeypatch.setattr(cli, "gui_assets_bundled", lambda: True)
+    monkeypatch.setattr(gui_module, "detach_and_run_gui", lambda: False)
+    monkeypatch.setattr(gui_module, "run_gui", lambda: opened.append(True) or 0)
+    monkeypatch.setattr(cli.sys, "argv", ["ai-config.exe"])
+
+    assert cli.standalone_main() == 0
+    assert opened == [True]
+
+
+def test_double_click_keeps_the_gui_in_the_foreground(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config import desktop as gui_module
+
+    monkeypatch.setattr(cli, "launched_by_double_click", lambda: True)
+    monkeypatch.setattr(cli, "gui_assets_bundled", lambda: True)
+    monkeypatch.setattr(gui_module, "run_gui", lambda: 0)
+    monkeypatch.setattr(cli.sys, "argv", ["ai-config.exe"])
+
+    def unexpected() -> bool:
+        raise AssertionError("a double-click must stay in the console it owns")
+
+    monkeypatch.setattr(gui_module, "detach_and_run_gui", unexpected)
+
+    assert cli.standalone_main() == 0
+
+
 def test_double_click_with_arguments_stays_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "launched_by_double_click", lambda: True)
     monkeypatch.setattr(cli, "gui_assets_bundled", lambda: True)
