@@ -220,17 +220,16 @@ claude plugin marketplace add CSL426/ai-config
 claude plugin install acg@acg
 ```
 
-It adds slash commands wrapping `acg`: `/acg:status`, `/acg:sync`,
-`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:msg`, and
-three for session handoff
-(`/acg:handoff` records where a work thread got to, `/acg:handoffs` lists
-waiting threads, and `/acg:pickup` claims one and reads its notes back).
+It adds one skill wrapping `acg`, used as `/acg <subcommand>`: `status`,
+`sync`, `save`, `share`, `memory`, `keepalive`, `msg`, and three for session
+handoff (`handoff` records where a work thread got to, `handoffs` lists
+waiting threads, and `pickup` claims one and reads its notes back).
 The journal answers what happened in a project; handoff answers where one thread
 got to, which matters when several sessions work on the same project at once.
 
-The plugin also carries the `thread-handoff` skill, which runs the same
-handoff steps when someone says "交接" or "接著做". The `acg` skill itself
-arrives through `apply` like every other skill, so it is not bundled here twice.
+The skill also fires when someone says "交接" or "接著做" without typing it.
+Each subcommand's steps live in their own reference file and load only when
+used, so installing the plugin adds one entry to the skill list, not ten.
 
 ### Handoff reminders before context compaction
 
@@ -245,7 +244,7 @@ acg memory handoff remind enable 80  # whole-number threshold: 1–99
 acg memory handoff remind disable
 ```
 
-The desktop memory page and `/acg:handoff remind status|enable [percentage]|disable`
+The desktop memory page and `/acg handoff remind status|enable [percentage]|disable`
 manage the same setting. `remind disable` turns it off while shared memory
 stays on. The feature is specific to Claude Code. It reads the official context percentage through a statusLine
 wrapper that preserves your existing status-line output. Settings and readings
@@ -255,7 +254,7 @@ At the threshold, the next prompt submission or completed tool call injects
 one reminder per session compaction cycle, even if no thread has been claimed.
 Missing, null, or stale readings are skipped. PreCompact only resets the
 reminder state; it neither requests a handoff nor blocks compaction. A reminder
-does not save notes automatically: use `/acg:handoff` or
+does not save notes automatically: use `/acg handoff` or
 `acg memory handoff write` to record progress. See the
 [handoff reminder specification](docs/handoff-reminder-spec.md).
 

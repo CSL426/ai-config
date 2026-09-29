@@ -42,7 +42,7 @@ project, status, pull, push, and sync.
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `gui [--shortcut]` | open the desktop app; `--shortcut` puts acg on the desktop and in the app menu (Windows, Linux; the Windows installer does it on first install) |
 | `setup` | configure the data repo remote and verify push access |
-| `update [version]` | install the latest release, or a pinned one (also downgrades); refuses to start while another update is running; also runs `claude plugin update acg@acg` so the slash commands keep up |
+| `update [version]` | install the latest release, or a pinned one (also downgrades); refuses to start while another update is running; also runs `claude plugin update acg@acg` so the `/acg` skill keeps up |
 | `skill` | print this guide |
 | `skill guide` | explicit alias for this guide; works before setup |
 | `skill add <local-directory>` | install into data repo and Claude home; refuses overwrite |
@@ -221,16 +221,18 @@ Machines with no schedule get the same thing opportunistically at the end of any
 acg command; set `AI_CONFIG_NO_AUTOPUSH=1` to suppress that. Both paths skip the
 confirmation but keep the credential check, so a secret still blocks the push.
 
-## Slash commands
+## The /acg skill
 
 Installing this repository as a plugin (`claude plugin marketplace add
-CSL426/ai-config`, then `claude plugin install acg@acg`) adds slash
-commands whose `acg:` prefix says where they came from: `/acg:status`,
-`/acg:sync`, `/acg:save`, `/acg:share`, `/acg:memory`, `/acg:handoff`,
-`/acg:handoffs`, `/acg:pickup`, `/acg:keepalive`, `/acg:msg`. They wrap the
-CLI below and add no behaviour of their own, so the guards described here
-apply to them unchanged. The plugin also carries the `thread-handoff` skill;
-the `acg` skill arrives through `apply`.
+CSL426/ai-config`, then `claude plugin install acg@acg`) adds one skill,
+used as `/acg <subcommand>`: `status`, `sync`, `save`, `share`, `memory`,
+`keepalive`, `msg`, `handoff`, `handoffs`, `pickup`. Each subcommand's steps
+live in their own reference file, read only when used. The skill also fires
+when someone says "交接" or "接著做" without typing it. It wraps the CLI below
+and adds no behaviour of its own, so the guards described here apply to it
+unchanged. On Codex and Antigravity this guide arrives as the `acg` skill
+through `apply` instead; Claude gets the plugin's, so the two never share a
+name there.
 
 ## Handing a thread to the next session
 
@@ -254,9 +256,9 @@ than taking it again. A thread nobody picks up for a day lists as
 `⚠ 可能已過期` — read it before working from it, because the work in it
 may have shipped elsewhere. Closed threads, and any thread untouched for
 a month, move to `handoff/archive/` the next time the list runs; the
-record is kept. The plugin's `thread-handoff` skill carries the same
-steps for when someone says "交接" or "接著做" instead of typing the
-command. Writing the same thread again opens it anew, keeping the date
+record is kept. The plugin's `/acg handoff` and `/acg pickup` carry the
+same steps, and fire when someone says "交接" or "接著做" instead of
+typing them. Writing the same thread again opens it anew, keeping the date
 it was first opened, which `list` shows as how long it has been waiting.
 
 ### Talking to another live session
@@ -358,7 +360,7 @@ configuration. `{entrypoint} memory handoff remind enable 80` chooses a
 whole-number threshold from 1 to 99, and
 `{entrypoint} memory handoff remind disable` turns it off while shared memory
 stays on. The desktop memory page and
-`/acg:handoff remind status|enable [percentage]|disable` manage the same
+`/acg handoff remind status|enable [percentage]|disable` manage the same
 local setting.
 
 The reminder reads Claude Code's official context percentage from its
@@ -367,7 +369,7 @@ reaches the threshold, UserPromptSubmit or PostToolUse adds one reminder per
 session compaction cycle. No claimed handoff is required. Missing, null, or
 stale readings are skipped. PreCompact only resets the reminder state; it
 does not ask the model to write or delay compaction. The reminder itself
-never writes a handoff: use `memory handoff write` or `/acg:handoff` to save
+never writes a handoff: use `memory handoff write` or `/acg handoff` to save
 the current work and next steps. Reminder settings and readings stay local.
 
 ## Shared memory

@@ -694,7 +694,7 @@ def test_the_hint_after_writing_points_at_pickup(
     """Sessions repeat this line to the user verbatim.
 
     It named only the raw claim command, so a session told the user to
-    type `acg memory handoff claim '...'` when /acg:pickup, or just saying
+    type `acg memory handoff claim '...'` when /acg pickup, or just saying
     "接著做", does the same thing.
     """
     from ai_config.commands import memory_handoff
@@ -702,5 +702,5 @@ def test_the_hint_after_writing_points_at_pickup(
     assert memory_handoff._handoff(["write", "排程", "內容"]) == 0
 
     out = capsys.readouterr().out
-    assert "/acg:pickup" in out
-    assert out.index("/acg:pickup") < out.index("memory handoff claim")
+    assert "/acg pickup" in out
+    assert out.index("/acg pickup") < out.index("memory handoff claim")
