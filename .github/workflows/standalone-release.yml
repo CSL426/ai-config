@@ -274,6 +274,16 @@ jobs:
           ASSET: ${{ matrix.asset }}
         run: bash scripts/e2e-install.sh "release/$ASSET.tar.gz" install.sh
 
+      # Windows PowerShell 5.1,跟使用者手上的一樣;runner 沒有人看視窗,略過 GUI
+      - name: End-to-end install (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\e2e-install.ps1
+          -Archive release\ai-config-windows-x86_64.zip
+          -Launcher release\ai-config-launcher-windows-x86_64.exe
+          -Portable release\acg.exe -Installer install.ps1 -NoGui
+
       # 用真的執行檔當 git 的 credential helper 跑一遍:python.exe 測不到
       # onefile 主控台判斷之類只有打包後才會發生的事
       - name: Verify the executable as a git credential helper
