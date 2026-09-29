@@ -130,7 +130,9 @@ Check 'launcher replaced the running copy' { (Get-Item $Entry).Length -lt 4MB }
 Check 'the running old process was not interrupted' { -not $running.HasExited }
 Check 'the old copy was adopted into versions\1.0.97' { Test-Path "$Versions\1.0.97\ai-config.exe" }
 Check 'installer warned about the one-time exit error' { Select-String -Path "$Root\migrate.log" -Pattern 'decompressing' -Quiet }
+# A onefile build runs as two processes, both on the old file; end every one of them
 $running | Stop-Process -Force -ErrorAction SilentlyContinue; Gui-Processes | Stop-Process -Force
+Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Bin\ai-config.exe.old-*" } | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 & $Entry version | Out-Null
 Check 'the moved-aside copy is cleaned on a later start' { @(Get-ChildItem "$Bin\ai-config.exe.old-*" -ErrorAction SilentlyContinue).Count -eq 0 }
@@ -150,7 +152,8 @@ if ($Python) {
     & $Python.Source (Join-Path $PSScriptRoot 'ctrl-c-check.py') $Entry "$Versions\$Active\app\ai-config.exe" *> "$Root\ctrl-c.log"
     $code = $LASTEXITCODE
     Get-Content "$Root\ctrl-c.log" | ForEach-Object { Write-Host "    $_" }
-    Check 'Ctrl+C is not swallowed by the launcher' { $code -eq 0 }
+    if ($code -eq 2) { Write-Host 'SKIP Ctrl+C: the event does not reach programs here, even without the launcher' }
+    else { Check 'Ctrl+C is not swallowed by the launcher' { $code -eq 0 } }
 }
 else { Write-Host 'SKIP Ctrl+C check needs python' }
 
