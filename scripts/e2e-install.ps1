@@ -130,12 +130,20 @@ Check 'launcher replaced the running copy' { (Get-Item $Entry).Length -lt 4MB }
 Check 'the running old process was not interrupted' { -not $running.HasExited }
 Check 'the old copy was adopted into versions\1.0.97' { Test-Path "$Versions\1.0.97\ai-config.exe" }
 Check 'installer warned about the one-time exit error' { Select-String -Path "$Root\migrate.log" -Pattern 'decompressing' -Quiet }
-# A onefile build runs as two processes, both on the old file; end every one of them
+# A onefile build runs as two processes and the child may still report the
+# original path, so end everything started from under the scratch root
 $running | Stop-Process -Force -ErrorAction SilentlyContinue; Gui-Processes | Stop-Process -Force
-Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Bin\ai-config.exe.old-*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-& $Entry version | Out-Null
-Check 'the moved-aside copy is cleaned on a later start' { @(Get-ChildItem "$Bin\ai-config.exe.old-*" -ErrorAction SilentlyContinue).Count -eq 0 }
+Get-CimInstance Win32_Process | Where-Object {
+    ("$($_.ExecutablePath)" -like "$Root*") -or ("$($_.CommandLine)" -like "*$Root*")
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+# A killed process releases its image a moment later; every start tries again
+$cleaned = $false
+for ($attempt = 0; $attempt -lt 10 -and -not $cleaned; $attempt++) {
+    Start-Sleep -Seconds 1
+    & $Entry version | Out-Null
+    $cleaned = @(Get-ChildItem "$Bin\ai-config.exe.old-*" -ErrorAction SilentlyContinue).Count -eq 0
+}
+Check 'the moved-aside copy is cleaned on a later start' { $cleaned }
 
 Write-Host '== switching versions'
 $adopted = '1.0.97'
