@@ -68,7 +68,7 @@ def usage() -> None:
     print("                  call a tool at chosen times so its five-hour usage")
     print("                  window starts where the day needs it; per machine,")
     print("                  and each tool keeps its own times (default: claude)")
-    print("  msg list | setup | send <名稱或 id> <訊息> [--wait [秒]] [--from <名稱>]")
+    print("  msg list | setup | send <名稱、id 或 pid> <訊息> [--wait [秒]] [--from <名稱>]")
     print("                  talk to another live Claude/Codex session by name;")
     print("                  setup writes the Claude channel config and prints the")
     print("                  shell function that lets plain `claude` receive")

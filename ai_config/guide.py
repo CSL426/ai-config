@@ -234,10 +234,13 @@ it was first opened, which `list` shows as how long it has been waiting.
 ### Talking to another live session
 
 `{entrypoint} msg list` shows every live Claude, Codex and Antigravity
-session, marked ● when it can receive and ○ when it cannot;
-`{entrypoint} msg send <name or id> "<text>" [--wait [seconds]] [--from
-<your name>]` delivers into one, tagged with who sent it. Sending needs
-nothing special; receiving does:
+session, marked ● when it can receive and ○ when it cannot; a session
+held by two processes (resumed twice) shows its pid on each line.
+`{entrypoint} msg send <name, id or pid> "<text>" [--wait [seconds]]
+[--from <your name>]` delivers into one, tagged with who sent it. A name
+or id matching several sessions is refused rather than guessed; use the
+id, or the pid when the id itself is shared. Sending needs nothing
+special; receiving does:
 
 - Claude receives when it was started with acg's channel (Claude Code
   channels, research preview): the message appears mid-conversation
