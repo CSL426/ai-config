@@ -1,4 +1,7 @@
 # Install the standalone ai-config release. Python is not required.
+# Keep this file ASCII: Windows PowerShell 5.1 reads a .ps1 without a BOM in the
+# system code page, and on a cp950 machine a Chinese comment swallowed the next
+# line and the whole script failed to parse (tests/test_release_contract.py).
 #Requires -Version 5.1
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -48,7 +51,7 @@ function Install-GitBashLauncher([string]$Name, [string]$Executable) {
 function Install-CommandAlias([string]$Name, [string]$Executable) {
     $AliasPath = Join-Path $BinDir "$Name.cmd"
     $ExecutableName = Split-Path -Leaf $Executable
-    # 不設這個,提示訊息會叫人打 ai-config,而使用者打的是 acg
+    # Without it the hints tell people to type ai-config, while they type acg
     $Content = '@echo off' + "`r`n" + 'setlocal' + "`r`n" + 'set "AI_CONFIG_ENTRYPOINT=' + $Name + '"' + "`r`n" + '"%~dp0' + $ExecutableName + '" %*' + "`r`n"
     Write-Utf8NoBom $AliasPath $Content
 }
@@ -89,7 +92,7 @@ function Replace-Binary([string]$Source, [string]$Destination) {
         Remove-Item -LiteralPath $Staged -Force -ErrorAction SilentlyContinue
         throw
     }
-    # 沒在執行的舊檔當場刪掉;還在執行的刪不掉,留給下次啟動清
+    # An old file not running is deleted now; a running one refuses and is left for the next start
     if ($Aside) { Remove-Item -LiteralPath $Aside -Force -ErrorAction SilentlyContinue }
 }
 
@@ -481,13 +484,15 @@ if (-not (Wait-ExecutableReady $Destination)) {
     exit 0
 }
 Install-Completions $Destination
-# 桌面 App 是給不打指令的人用的;只在第一次安裝建,更新不再建,刪掉的捷徑才不會一直跑回來
+# The desktop app is for people who do not type commands. Only a first install
+# creates the shortcut, so one the user deleted does not keep coming back.
 if ($Operation -eq 'Installation' -and -not $env:AI_CONFIG_NO_SHORTCUT) {
     & $Destination gui --shortcut
     if ($LASTEXITCODE -ne 0) { Write-Warn "Desktop shortcut was not created; run: ai-config gui --shortcut" }
 }
-# 讓 Claude Code 的 /acg 跟上這一版,更新時也修 hook 路徑。由剛裝好的新版來做:
-# 發起更新的舊版行程可能正從被換掉的檔案讀模組,在裡面 import 會崩潰
+# Bring Claude Code's /acg up to this version, and on update repair hook paths.
+# The version just installed does it: the older acg that started the update may
+# be reading its modules from a file that was just replaced, and dies importing.
 if (-not $env:AI_CONFIG_NO_PLUGIN) {
     & $Destination __claude-plugin
     if ($LASTEXITCODE -ne 0) { Write-Warn "Claude Code /acg was not updated; run: ai-config update" }

@@ -410,3 +410,23 @@ def test_the_acg_hint_lists_exactly_the_subcommands_in_its_table() -> None:
 
     assert hint, "argument-hint 要是 [a|b|c] 格式"
     assert hint.group(1).split("|") == table
+
+
+def test_powershell_scripts_windows_reads_are_ascii() -> None:
+    """Windows PowerShell 5.1 reads a .ps1 without a BOM in the system code page.
+
+    On a cp950 machine a Chinese comment in install.ps1 swallowed the line
+    after it, and the whole script failed to parse before running a line.
+    CI runs in English, where the same bytes happened to parse.
+    """
+    from ai_config.completion import powershell_completion
+
+    for name, text in (
+        ("install.ps1", (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")),
+        ("completion.ps1", powershell_completion()),
+    ):
+        offending = [
+            number for number, line in enumerate(text.splitlines(), 1)
+            if not line.isascii()
+        ]
+        assert not offending, f"{name} has non-ASCII lines: {offending}"
