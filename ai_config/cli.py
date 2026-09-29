@@ -138,6 +138,13 @@ def standalone_main() -> int:
     remove_replaced_binaries()
     no_arguments = len(sys.argv) <= 1
     if no_arguments and gui_assets_bundled():
+        # 從 cmd 打 acg 時 acg.cmd 會等 exe 結束,不放背景 cmd 就卡到視窗關閉。
+        # 雙擊則留在前景:開不起來時還能停住主控台讓人讀錯誤
+        if not launched_by_double_click():
+            from ai_config.desktop import detach_and_run_gui
+
+            if detach_and_run_gui():
+                return 0
         code = _run_gui_guarded()
         if code == 0:
             return code
