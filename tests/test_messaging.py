@@ -28,6 +28,7 @@ class FakeDaemon:
         self.threads = threads
         self.turns = turns or []
         self.calls: list = []
+        self.params: dict = {}
         path.parent.mkdir(parents=True, exist_ok=True)
         self._server = socket.socket(socket.AF_UNIX)
         self._server.bind(str(path))
@@ -65,6 +66,7 @@ class FakeDaemon:
                 if message is None:
                     return
                 self.calls.append(message.get("method"))
+                self.params[message.get("method")] = message.get("params")
                 if "id" in message:
                     self._send(conn, {"jsonrpc": "2.0", "id": message["id"],
                                       "result": self._answer(message)})
@@ -129,6 +131,8 @@ def test_lists_live_sessions_and_leaves_out_sub_agents(home: Path) -> None:
     daemon = FakeDaemon(messaging.socket_path(home / ".codex-set"), {
         "t-main": _thread("審查"),
         "t-sub": _thread("", {"subAgent": {"thread_spawn": {}}}),
+        # codex 替主對話產生標題時開的暫時 thread,Windows 實測時出現在列表裡
+        "t-title": {**_thread("", "vscode"), "ephemeral": True, "threadSource": "thread_title"},
     })
     try:
         peers = messaging.list_peers()
@@ -192,30 +196,20 @@ def test_send_queues_into_the_account_the_session_runs_under(
     home: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     daemon = FakeDaemon(messaging.socket_path(home / ".codex-csl"), {"t-9": _thread("修 bug")})
-    ran = {}
-
-    class Done:
-        returncode = 0
-        stdout = stderr = ""
-
-    def fake_run(cmd, **kwargs):
-        ran["cmd"], ran["env"] = cmd, kwargs["env"]
-        return Done()
-
-    monkeypatch.setattr(messaging.subprocess, "run", fake_run)
-    monkeypatch.setattr(messaging, "_codex_binary", lambda: "codex")
     monkeypatch.setenv("ACG_MSG_FROM", "acg-main")
     try:
-        peer, reply = messaging.send("修 bug", "幫我看一下")
+        peer, reply = messaging.send("修 bug", "幫我看一下\n第二行")
     finally:
         daemon.close()
 
     assert peer.id == "t-9" and reply == ""
-    assert ran["env"]["CODEX_HOME"] == str(home / ".codex-csl")
-    assert ran["cmd"][:2] == ["codex", "queue"]
-    assert "--thread" in ran["cmd"] and "t-9" in ran["cmd"]
-    body = ran["cmd"][ran["cmd"].index("--message") + 1]
-    assert "來自 acg-main" in body and "幫我看一下" in body
+    assert daemon.params["initialize"]["capabilities"] == {"experimentalApi": True}
+    queued = daemon.params["thread/queue/add"]
+    assert queued["threadId"] == "t-9" and queued["clientUserMessageId"]
+    [part] = queued["input"]
+    # 整段送進去,換行之後的內容也在(Windows 的 codex.cmd 曾經只收到第一行)
+    assert part["type"] == "text" and "來自 acg-main" in part["text"]
+    assert part["text"].endswith("幫我看一下\n第二行")
 
 
 def test_an_empty_message_is_refused() -> None:
