@@ -78,7 +78,7 @@ test("只開自動更新時,每晚排程的時間仍然可以改", async ({ page
   await openAutomation(page, {
     ...base,
     autopush: { installed: false, scheduled: true, last_push: "", reason: "",
-      slot: "04:20", host: "gpu-a4000", others: [] },
+      slot: "04:20", host: "workstation", others: [] },
     autoupdate: { ...ran, time: "04:20" },
   });
 

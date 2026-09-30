@@ -78,7 +78,7 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}, co
           agy: { available: true, installed: false, version: "", trusted: null, detail: "" },
         },
         autopush: { installed: false, last_push: "", reason: "",
-          slot: "", host: "gpu-a4000", others: [] },
+          slot: "", host: "workstation", others: [] },
         entries: [
           { tool: "claude", status: "installed", reason: "", path: "/tmp/CLAUDE.md", cli_installed: true },
           { tool: "codex", status: "blocked", reason: "override 遮蔽入口", path: "/tmp/AGENTS.md", cli_installed: false },

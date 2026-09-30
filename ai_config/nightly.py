@@ -2,7 +2,7 @@
 
 Updating and saving used to be two schedules. Bound together, the save
 runs with whatever acg the update just installed, so a fix released
-during the day takes effect that same night: gb10's journal sat blocked
+during the day takes effect that same night: one machine's journal sat blocked
 by a false credential match for a night after the fix was already out.
 
 Each half keeps its own switch. Saving memory and replacing executables

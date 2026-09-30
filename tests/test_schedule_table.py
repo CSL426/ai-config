@@ -56,9 +56,9 @@ def test_slots_wrap_inside_the_hour(notebook: Path) -> None:
 
 
 def test_a_recorded_slot_survives_a_round_trip(notebook: Path) -> None:
-    table.record("gpu-a4000", table.Slot(4, 20))
+    table.record("workstation", table.Slot(4, 20))
 
-    assert str(table.load().hosts["gpu-a4000"]) == "04:20"
+    assert str(table.load().hosts["workstation"]) == "04:20"
 
 
 def test_recording_the_same_slot_changes_nothing(notebook: Path) -> None:

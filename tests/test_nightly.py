@@ -93,7 +93,7 @@ def _record_night(monkeypatch: pytest.MonkeyPatch, update_code: int = 0) -> list
 def test_the_push_runs_after_the_update_with_the_installed_acg(
     machine: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """gb10 sat blocked a night after the fix was out; updating first fixes that."""
+    """A machine sat blocked a night after the fix was out; updating first fixes that."""
     autopush.enable(4)
     autoupdate.enable()
     order = _record_night(monkeypatch)
