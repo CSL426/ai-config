@@ -179,9 +179,12 @@ function renderAutopush(info: MemoryInfo): void {
 type AutoupdateStep = NonNullable<MemoryInfo["autoupdate"]>["steps"][number];
 
 function autoupdateLine(step: AutoupdateStep): string {
-  if (step.note) return step.note;
-  if (step.before && step.after && step.before !== step.after) return `${step.before} → ${step.after}`;
-  return `${step.after || step.before} 已是最新`;
+  const text = step.note
+    || (step.before && step.after && step.before !== step.after
+      ? `${step.before} → ${step.after}`
+      : `${step.after || step.before} 已是最新`);
+  const freed = Math.floor((step.freed ?? 0) / 2 ** 20);
+  return freed ? `${text}（清掉舊執行檔 ${freed} MB）` : text;
 }
 
 function renderAutoupdate(info: MemoryInfo): void {

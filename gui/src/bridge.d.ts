@@ -72,7 +72,7 @@ export interface MemoryInfo extends RunResult {
   /** 每天自動更新 acg 與各家 CLI;steps 是上次執行每個工具的結果。 */
   autoupdate?: {
     installed: boolean; time: string; last_run: string;
-    steps: { name: string; before: string; after: string; ok: boolean; note: string }[];
+    steps: { name: string; before: string; after: string; ok: boolean; note: string; freed?: number }[];
   };
   keepalive: {
     installed: boolean; times: string[]; model: string;

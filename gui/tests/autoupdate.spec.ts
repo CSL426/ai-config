@@ -22,7 +22,7 @@ const base = {
 const ran = {
   installed: true, time: "05:30", last_run: "2026-09-30T05:31:00+00:00",
   steps: [
-    { name: "claude", before: "2.1.285", after: "2.1.286", ok: true, note: "" },
+    { name: "claude", before: "2.1.285", after: "2.1.286", ok: true, note: "", freed: 209715200 },
     { name: "agy", before: "1.2.14", after: "1.2.14", ok: false, note: "Update failed: network" },
     { name: "acg", before: "1.0.101", after: "1.0.101", ok: true, note: "" },
   ],
@@ -50,7 +50,7 @@ test("已排定時顯示時間與每個工具上次的版本", async ({ page }) 
   await expect(page.locator("#autoupdate-time")).toHaveValue("05:30");
   const steps = page.locator("#autoupdate-steps");
   await expect(steps).toContainText("2026-09-30 05:31");
-  await expect(steps).toContainText("2.1.285 → 2.1.286");
+  await expect(steps).toContainText("2.1.285 → 2.1.286（清掉舊執行檔 200 MB）");
   await expect(steps).toContainText("1.0.101 已是最新");
 });
 

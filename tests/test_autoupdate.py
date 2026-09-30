@@ -125,6 +125,34 @@ def test_the_standalone_codex_is_not_mistaken_for_npm() -> None:
     assert not autoupdate._is_npm_install("/home/me/.codex/packages/standalone/releases/0.159.2/bin/codex")
 
 
+def test_executables_renamed_aside_are_removed(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    launcher = bin_dir / "agy.exe"
+    launcher.write_bytes(b"new")
+    (bin_dir / "agy.exe.1790655676061196200.old").write_bytes(b"x" * 2048)
+    (bin_dir / "agy.exe.old.1790655676").write_bytes(b"x" * 1024)
+    (bin_dir / "claude.exe.old.123").write_bytes(b"other tool")
+    (bin_dir / "agy.exe.settings").write_bytes(b"not a leftover")
+
+    assert autoupdate._remove_replaced(str(launcher)) == 3072
+
+    assert sorted(p.name for p in bin_dir.iterdir()) == [
+        "agy.exe", "agy.exe.settings", "claude.exe.old.123",
+    ]
+
+
+def test_the_space_freed_is_reported_and_remembered(tools, monkeypatch: pytest.MonkeyPatch) -> None:
+    tools({"agy": ["1.2.13", "1.2.14"], "acg": ["1.0.101"]})
+    monkeypatch.setattr(autoupdate, "_remove_replaced", lambda binary: 200 * 2**20)
+
+    autoupdate.run()
+
+    step = autoupdate.last_run()["steps"][0]
+    assert step.freed == 200 * 2**20
+    assert step.line() == "✓ agy:1.2.13 → 1.2.14(清掉舊執行檔 200 MB)"
+
+
 def test_a_tool_that_hangs_is_a_failure_not_a_stall(state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def hang(*args, **kwargs):
         raise autoupdate.subprocess.TimeoutExpired(args[0], 600)
