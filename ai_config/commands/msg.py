@@ -73,6 +73,10 @@ def _setup() -> int:
     log_info("別的 session 就能傳話進來。每次開 Claude 會多一個 development channel 警告,按 Enter 即可")
     log_info("(官方規定,關不掉)。自己已經有 codex 函式的(例如切換帳號),把 --remote 那段併進去,")
     log_info("不要兩個都留:後定義的會蓋掉先定義的")
+    if os.name == "nt":
+        # Windows 用戶端預設執行原則是 Restricted,$PROFILE 根本不會載入
+        log_info("開新的 PowerShell 後函式沒生效的話,執行原則要允許本機腳本:")
+        log_info("  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned")
     print()
     print(messaging.shell_functions())
     return 0
