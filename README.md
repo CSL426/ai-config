@@ -8,9 +8,16 @@ configuration lives in a separate Git repository at the location selected during
 setup. A source checkout is optional, and neither repository must be nested
 inside the other.
 
-The desktop app shows whether every tool matches the saved configuration, and
-what the machine does on its own each night: update the AI CLIs, then save the
-shared memory.
+From the terminal, `acg status` shows where each tool differs from the saved
+configuration and `apply` deploys it. Each night the machine updates the AI CLIs
+and then saves the shared memory by itself.
+
+<p>
+  <img src="docs/screenshots/cli-status.png" alt="acg status: each tool compared with the saved configuration" width="48%">
+  <img src="docs/screenshots/cli-nightly.png" alt="The nightly run: tools updated, then memory pushed" width="48%">
+</p>
+
+The desktop app does the same for people who would rather not use a terminal.
 
 <p>
   <img src="docs/screenshots/home.png" alt="Home: each tool compared with the saved configuration" width="48%">
