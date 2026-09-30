@@ -212,10 +212,27 @@ def _announce_failed_autopush(value: dict) -> None:
     )
 
 
+def _announce_failed_autoupdate(value: dict) -> None:
+    """Same for the daily update: a tool left behind is silent otherwise."""
+    if value.get("hook_event_name") != "SessionStart":
+        return
+    from .autoupdate import failures
+
+    when, failed = failures()
+    if not failed:
+        return
+    names = ";".join(f"{step.name}:{step.note}" for step in failed)
+    print(
+        f"acg:上次自動更新有工具失敗({when[:16].replace('T', ' ')} UTC):{names}。"
+        "請告訴使用者;處理後執行 acg autoupdate run,全部成功就會清掉這筆紀錄。"
+    )
+
+
 def run(args: list[str]) -> int:
     """Hook entry point: no transcript reads or provider updates.
 
-    It prints only to report a failed nightly memory push at session start.
+    It prints only to report a failed nightly memory push or tool update
+    at session start.
     """
     from .locking import apply_lock
 
@@ -229,6 +246,7 @@ def run(args: list[str]) -> int:
         if not isinstance(value, dict) or not isinstance(value.get("cwd"), str):
             return 0
         _announce_failed_autopush(value)
+        _announce_failed_autoupdate(value)
         root = Path(value["cwd"])
         if not root.is_absolute() or not root.is_dir():
             return 0

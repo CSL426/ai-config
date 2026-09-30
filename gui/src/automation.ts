@@ -1,6 +1,6 @@
 /** The automation page: what this machine does on its own — the daily
- * memory push, the usage-window keepalive, the handoff reminder, and
- * which tools write into the project journal.
+ * memory push, the daily tool update, the usage-window keepalive, the
+ * handoff reminder, and which tools write into the project journal.
  *
  * Its state comes with memory_info, so the page renders through
  * onMemoryInfo and every switch ends by asking memory.ts for a reload.
@@ -25,6 +25,11 @@ onSync(({ managementBlocked }) => {
   for (const host of REMEMBER_HOSTS) {
     $<HTMLInputElement>(`#remember-${host}-toggle`).disabled =
       managementBlocked || state.memoryLoading || !state.memoryInfo?.remember_hosts?.[host]?.available;
+  }
+  for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+    "#autoupdate-toggle, #autoupdate-time, #autoupdate-save",
+  )) {
+    control.disabled = managementBlocked || state.memoryLoading;
   }
   $<HTMLButtonElement>("#automation-open").disabled = managementBlocked;
   $<HTMLButtonElement>("#automation-refresh").disabled = managementBlocked || state.memoryLoading;
@@ -171,6 +176,76 @@ function renderAutopush(info: MemoryInfo): void {
 }
 
 
+type AutoupdateStep = NonNullable<MemoryInfo["autoupdate"]>["steps"][number];
+
+function autoupdateLine(step: AutoupdateStep): string {
+  if (step.note) return step.note;
+  if (step.before && step.after && step.before !== step.after) return `${step.before} → ${step.after}`;
+  return `${step.after || step.before} 已是最新`;
+}
+
+function renderAutoupdate(info: MemoryInfo): void {
+  const state = info.autoupdate ?? { installed: false, time: "", last_run: "", steps: [] };
+  $<HTMLInputElement>("#autoupdate-toggle").checked = state.installed;
+  // 沒更新成功的工具要看得到,不然一台落後好幾版也沒人發現
+  const failed = state.steps.filter((step) => !step.ok);
+  const warning = $("#autoupdate-failure");
+  warning.hidden = failed.length === 0;
+  warning.textContent = failed.length
+    ? `上次自動更新有工具失敗（${localTime(state.last_run)}）：`
+      + failed.map((step) => `${step.name} ${step.note}`).join("；")
+      + "。處理後在終端機執行 acg autoupdate run，全部成功就會清掉這則。"
+    : "";
+
+  const row = $("#autoupdate-time-row");
+  row.hidden = !state.installed;
+  if (!state.installed) return;
+  $<HTMLInputElement>("#autoupdate-time").value = state.time || "05:30";
+  const list = $("#autoupdate-steps");
+  list.replaceChildren();
+  for (const step of state.steps) {
+    const item = document.createElement("li");
+    const label = document.createElement("code");
+    label.textContent = step.name;
+    item.append(label, `${step.ok ? "" : " ✗"}：${autoupdateLine(step)}`);
+    list.append(item);
+  }
+  if (!state.steps.length) {
+    const item = document.createElement("li");
+    item.textContent = "還沒有執行紀錄。";
+    list.append(item);
+  } else {
+    const item = document.createElement("li");
+    item.textContent = `上次執行：${localTime(state.last_run)}`;
+    list.prepend(item);
+  }
+}
+
+async function configureAutoupdate(wanted: boolean, clock?: string): Promise<void> {
+  const bridge = api();
+  const toggle = $<HTMLInputElement>("#autoupdate-toggle");
+  const previous = state.memoryInfo?.autoupdate?.installed ?? false;
+  if (!bridge || state.running || state.pendingPreview) {
+    toggle.checked = previous;
+    return;
+  }
+  const result = await perform(wanted ? "排定自動更新" : "取消自動更新", async () => {
+    const response = await bridge.set_autoupdate(wanted, clock);
+    if (response.code === 0) await refreshMemory();
+    return response;
+  }, false);
+  if (!result || result.code !== 0) toggle.checked = previous;
+  if (result) feedback(notice, result.output, result.code !== 0);
+}
+
+$<HTMLInputElement>("#autoupdate-toggle").addEventListener("change", (event) => {
+  void configureAutoupdate((event.currentTarget as HTMLInputElement).checked);
+});
+$<HTMLButtonElement>("#autoupdate-save").addEventListener("click", () => {
+  const clock = $<HTMLInputElement>("#autoupdate-time").value;
+  if (clock) void configureAutoupdate(true, clock);
+});
+
 async function configureHandoffReminder(enabled: boolean): Promise<void> {
   const bridge = api();
   const toggle = $<HTMLInputElement>("#handoff-reminder-toggle");
@@ -302,6 +377,7 @@ $<HTMLButtonElement>("#autopush-slot-save").addEventListener("click", async () =
 
 onMemoryInfo((info) => {
   renderAutopush(info);
+  renderAutoupdate(info);
   renderKeepalive(info);
   renderHandoffReminder(info);
   renderRememberHosts(info);

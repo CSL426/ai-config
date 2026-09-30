@@ -251,6 +251,11 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
 
         return run_keepalive(args[1:])
 
+    if cmd == "autoupdate":
+        from .commands.autoupdate import run_autoupdate
+
+        return run_autoupdate(args[1:])
+
     if cmd == "ignore-skills":
         if len(args) > 2:
             log_error(f"Usage: {ENTRYPOINT} ignore-skills [tool]")
