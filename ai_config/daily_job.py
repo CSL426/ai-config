@@ -110,11 +110,14 @@ class DailyJob:
         (directory / f"{self.unit}.timer").write_text(timer, encoding="utf-8")
         lines = [f"寫入 {directory / (self.unit + '.timer')}"]
         forget_missed_runs(f"{self.unit}.timer")
-        if _systemctl("daemon-reload").returncode != 0:
-            lines.append("systemctl daemon-reload 失敗,請手動執行")
-            return lines
-        started = _systemctl("enable", "--now", f"{self.unit}.timer")
+        reloaded = _systemctl("daemon-reload")
+        started = reloaded if reloaded.returncode != 0 else _systemctl(
+            "enable", "--now", f"{self.unit}.timer"
+        )
         if started.returncode != 0:
+            # 留著檔案的話 installed() 會說已啟用,其實 systemd 根本沒載入
+            for suffix in (".timer", ".service"):
+                (directory / f"{self.unit}{suffix}").unlink(missing_ok=True)
             raise RuntimeError(f"啟用 timer 失敗:{(started.stderr or '').strip()}")
         lines.append(f"已排定每天 {hour:02d}:{minute:02d}")
         lines.append("關機錯過的排程會在開機後補跑")
@@ -172,7 +175,11 @@ class DailyJob:
     def disable(self) -> list:
         name = platform_name()
         if name == "linux":
-            _systemctl("disable", "--now", f"{self.unit}.timer")
+            timer = systemd_dir() / f"{self.unit}.timer"
+            stopped = _systemctl("disable", "--now", f"{self.unit}.timer")
+            if stopped.returncode != 0 and timer.exists():
+                # 檔案刪了但 timer 還在跑的話,status 會說已停用,排程卻照舊
+                raise RuntimeError(f"停用 timer 失敗:{(stopped.stderr or '').strip()}")
             removed = []
             for suffix in (".timer", ".service"):
                 path = systemd_dir() / f"{self.unit}{suffix}"

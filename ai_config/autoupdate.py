@@ -195,6 +195,17 @@ def run() -> int:
     acg goes last: its update also refreshes the /acg plugin through
     `claude`, which should already be the new one by then.
     """
+    from .locking import exclusive_lock
+
+    # 排程補跑與手動 run 撞在一起時,兩邊會同時替換同一支執行檔
+    with exclusive_lock(".acg-autoupdate.lock") as acquired:
+        if not acquired:
+            print("✗ 已經有一次自動更新正在進行,這次不做", flush=True)
+            return 1
+        return _run_all()
+
+
+def _run_all() -> int:
     steps = [step for step in (_update_tool(tool) for tool in TOOLS) if step]
     steps.append(_update_acg())
     for step in steps:

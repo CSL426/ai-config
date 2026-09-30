@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ai_config import autoupdate, daily_job, memory_hooks, paths
+from ai_config import autoupdate, daily_job, locking, memory_hooks, paths
 from ai_config.commands.autoupdate import run_autoupdate
 from ai_config.gui_api import GuiApi
 
@@ -16,6 +16,7 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(daily_job, "platform_name", lambda: "linux")
     monkeypatch.setattr(paths, "scheduled_command", lambda: ["acg"])
+    monkeypatch.setattr(locking, "BACKUP_BASE", tmp_path / "backup")
     return tmp_path
 
 
@@ -212,6 +213,50 @@ def test_enable_writes_the_timer_and_status_reads_the_time_back(
     autoupdate.disable()
 
     assert autoupdate.status()["installed"] is False
+
+
+def test_a_timer_systemd_did_not_load_is_not_reported_as_enabled(
+    state: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(daily_job, "_systemctl", Mock(return_value=Mock(returncode=1, stderr="no bus")))
+    monkeypatch.setattr(daily_job, "forget_missed_runs", lambda timer: None)
+
+    with pytest.raises(RuntimeError, match="no bus"):
+        autoupdate.enable()
+
+    assert autoupdate.status()["installed"] is False
+
+
+def test_a_timer_that_would_not_stop_keeps_its_files(
+    state: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    systemctl = Mock(return_value=Mock(returncode=0, stderr=""))
+    monkeypatch.setattr(daily_job, "_systemctl", systemctl)
+    monkeypatch.setattr(daily_job, "forget_missed_runs", lambda timer: None)
+    autoupdate.enable()
+    systemctl.return_value = Mock(returncode=1, stderr="Failed to connect to bus")
+
+    with pytest.raises(RuntimeError, match="bus"):
+        autoupdate.disable()
+
+    assert autoupdate.status()["installed"] is True
+
+
+def test_a_second_run_while_one_is_going_does_nothing(
+    tools, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    import contextlib
+
+    fake = tools({"claude": ["2.1.0"], "acg": ["1.0.101"]})
+    monkeypatch.setattr(
+        locking, "exclusive_lock", lambda name: contextlib.nullcontext(False),
+    )
+
+    assert autoupdate.run() == 1
+
+    assert fake.calls == []
+    assert autoupdate.last_run() is None
+    assert "正在進行" in capsys.readouterr().out
 
 
 def test_status_lists_the_last_run(tools, capsys: pytest.CaptureFixture) -> None:
