@@ -113,12 +113,12 @@ test("已排定時顯示這台的時間與其他機器", async ({ page }) => {
     autopush: {
       installed: true, last_push: "", reason: "",
       slot: "04:20", host: "workstation",
-      others: [{ host: "arm-box", slot: "04:00" }],
+      others: [{ host: "laptop", slot: "04:00" }],
     },
   });
 
   await expect(page.locator("#autopush-slot")).toHaveValue("04:20");
-  await expect(page.locator("#autopush-others")).toContainText("arm-box 04:00");
+  await expect(page.locator("#autopush-others")).toContainText("laptop 04:00");
 });
 
 test("只有一台時說明會自動錯開", async ({ page }) => {
