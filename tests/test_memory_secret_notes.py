@@ -63,6 +63,8 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     "export GITHUB_TOKEN=${TOKEN}",
     'password: "$DB_PASSWORD"',
     "api_key = $API_KEY",
+    "指令:`OPENAI_API_KEY=<金鑰> python3 probe.py`",
+    'token: "<your token here>"',
 ])
 def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     """A handoff quoting a command blocked a night's autopush on 2026-09-30."""
