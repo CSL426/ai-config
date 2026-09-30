@@ -211,6 +211,66 @@ def test_scan_finds_a_project_whose_journal_remember_already_linked(journal_proj
     assert journal_project in memory_index.unadopted_below(journal_project.parent)
 
 
+def _local_journal(project):
+    local = memory_journal.journal_link(project)
+    local.mkdir(parents=True)
+    (local / "recent.md").write_text("notes", encoding="utf-8")
+    symlink(project / ".remember", local, directory=True)
+
+
+def _memory_on(monkeypatch):
+    monkeypatch.setattr(memory_paths, "link_state", lambda: ("ok", ""))
+    monkeypatch.setattr(memory_journal, "journal_config_state", lambda: ("ours", ""))
+
+
+def test_projects_with_a_journal_are_adopted_before_the_nightly_push(journal_project, monkeypatch):
+    """Anywhere a session has worked is a project; nobody should have to scan for it."""
+    _local_journal(journal_project)
+    _memory_on(monkeypatch)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root: memory_paths.ProjectKey("owner--repo", True, str(root)),
+    )
+    adopted = []
+    monkeypatch.setattr(
+        memory_lifecycle, "execute",
+        lambda action, project: adopted.append((action, project)) or memory_lifecycle.MemoryExecutionResult(code=0),
+    )
+
+    lines = memory_lifecycle.adopt_touched(journal_project.parent)
+
+    assert adopted == [("adopt", journal_project)]
+    assert "已同步專案日誌" in lines[0]
+
+
+def test_a_project_without_a_remote_is_listed_not_adopted(journal_project, monkeypatch):
+    """Its key is the folder name; two machines' unrelated ~/test would merge."""
+    _local_journal(journal_project)
+    _memory_on(monkeypatch)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root: memory_paths.ProjectKey(root.name, False, str(root)),
+    )
+    monkeypatch.setattr(memory_lifecycle, "execute", lambda *a, **k: pytest.fail("不該自動同步"))
+
+    lines = memory_lifecycle.adopt_touched(journal_project.parent)
+
+    assert "沒有 git 遠端" in lines[0]
+
+
+def test_nothing_is_adopted_where_memory_is_off_or_opted_out(journal_project, monkeypatch):
+    _local_journal(journal_project)
+    monkeypatch.setattr(memory_lifecycle, "execute", lambda *a, **k: pytest.fail("不該動"))
+    monkeypatch.setattr(memory_paths, "link_state", lambda: ("missing", ""))
+
+    assert memory_lifecycle.adopt_touched(journal_project.parent) == []
+
+    _memory_on(monkeypatch)
+    monkeypatch.setenv("AI_CONFIG_NO_AUTO_ADOPT", "1")
+
+    assert memory_lifecycle.adopt_touched(journal_project.parent) == []
+
+
 def test_scan_skips_what_is_already_adopted(journal_project, monkeypatch):
     from ai_config import memory_index
 

@@ -525,6 +525,44 @@ def _release(project: Path | None = None) -> int:
     return 0
 
 
+def adopt_touched(root: "Path | None" = None) -> list:
+    """Adopt every project under home that already has a journal. Lines to log.
+
+    A journal only exists where a Claude, Codex or Antigravity session has
+    worked, so that is the line between a project and any directory. Five
+    such projects on one machine were found only by a manual scan, weeks
+    after their notes should have reached the other machines.
+
+    A project without a git remote is listed, not adopted: its key is the
+    directory name, and two machines' unrelated ~/test would share one.
+    """
+    import os
+
+    if os.environ.get("AI_CONFIG_NO_AUTO_ADOPT"):
+        return []
+    # 這台沒啟用共用記憶時什麼都不做,不然每晚每個專案各報一次錯
+    if (
+        memory_paths.link_state()[0] != "ok"
+        or memory_journal.journal_config_state()[0] != "ours"
+    ):
+        return []
+    lines = []
+    for project in memory_index.unadopted_below(root or memory_paths.HOME):
+        if not memory_paths.project_key(project).stable:
+            lines.append(f"沒有 git 遠端,不自動同步:{tilde(project)}(要同步請手動 adopt)")
+            continue
+        try:
+            result = execute("adopt", project)
+        except (OSError, RuntimeError, ValueError) as exc:
+            lines.append(f"同步失敗:{tilde(project)}:{exc}")
+            continue
+        lines.append(
+            f"已同步專案日誌:{tilde(project)}" if result.code == 0
+            else f"同步失敗:{tilde(project)}"
+        )
+    return lines
+
+
 def _adopt_scan(args: list) -> int:
     """Adopt every project under a root, so nobody visits them one at a time."""
     from ..console import confirm

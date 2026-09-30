@@ -437,7 +437,12 @@ journal is still local and adopts the lot on one confirmation, since
 visiting them one at a time is the reason most stay unsynced. The scan
 leaves the home directory and the data repository out: neither is a
 project, and adopting the repository would nest the notebook in its own
-journal. Local hooks restore the project's `.remember` entry after migration,
+journal. The nightly memory push (autopush) adopts these projects by itself
+before it pushes, so a project where any session has worked reaches the other
+machines without anyone scanning for it. A project without a git remote is
+listed in the run's log instead, because its key is only the directory name;
+adopt it by hand. `AI_CONFIG_NO_AUTO_ADOPT=1` turns this off.
+Local hooks restore the project's `.remember` entry after migration,
 so the journal remains visible inside the project without enabling Git sync.
 They only replace a missing entry or a verified migration notice; other content
 is preserved. Disable removes these hooks and keeps existing entries and data.

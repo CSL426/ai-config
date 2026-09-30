@@ -488,3 +488,22 @@ def test_an_unreadable_status_keeps_the_failure(
 
     assert decision.push is False
     assert autopush.last_failure() is not None
+
+
+def test_the_scheduled_push_adopts_touched_projects_first(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adopting first puts a newly found project's journal into the same push."""
+    from ai_config.commands import memory as command
+    from ai_config.commands import memory_lifecycle
+
+    order = []
+    monkeypatch.setattr(memory_lifecycle, "adopt_touched", lambda: order.append("adopt") or [])
+    monkeypatch.setattr(
+        autopush, "decide", lambda stale: order.append("decide") or autopush.Decision(False, "x"),
+    )
+    monkeypatch.setattr(autopush, "reconcile_slot", lambda: "")
+
+    assert command.run_memory(["push", "--if-stale", "12"]) == 0
+
+    assert order == ["adopt", "decide"]
