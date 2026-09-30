@@ -9,11 +9,17 @@ app-server daemon, which speaks JSON-RPC over a WebSocket on a unix
 socket. The daemon lists loaded threads and `codex queue` delivers into
 one. Everything here is Codex's own internal protocol, so failures are
 reported plainly rather than papered over.
+
+Windows: the daemon's socket is a real AF_UNIX socket there too, but
+CPython on Windows has no AF_UNIX, so acg talks through
+`codex app-server proxy`, which relays its stdin and stdout to the
+socket. acg's own Claude channel listens on a named pipe instead.
 """
 
 import base64
 import json
 import os
+import queue
 import re
 import secrets
 import shlex
@@ -21,12 +27,14 @@ import shutil
 import socket
 import struct
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
 from .paths import HOME
+from .processes import pid_alive
 from .subproc import UTF8
 
 SOCKET = Path("app-server-control") / "app-server-control.sock"
@@ -54,13 +62,95 @@ class Peer:
         return self.name or self.id
 
 
+class _ProxyStream:
+    """The daemon's socket through `codex app-server proxy`, for a Python without AF_UNIX."""
+
+    def __init__(self, path: Path, timeout: float) -> None:
+        self._timeout = timeout
+        self._proc = subprocess.Popen(
+            _proxy_argv(path), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self._chunks: queue.Queue = queue.Queue()
+        self._ended = False
+        # pipe 在 Windows 上不能 select;讀取交給一條執行緒,逾時才有辦法做
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def _pump(self) -> None:
+        assert self._proc.stdout is not None
+        while True:
+            try:
+                chunk = self._proc.stdout.read1(65536)
+            except (OSError, ValueError):
+                chunk = b""
+            self._chunks.put(chunk)
+            if not chunk:
+                return
+
+    def sendall(self, data: bytes) -> None:
+        assert self._proc.stdin is not None
+        self._proc.stdin.write(data)
+        self._proc.stdin.flush()
+
+    def recv(self, _size: int) -> bytes:
+        if self._ended:
+            return b""
+        try:
+            chunk = self._chunks.get(timeout=self._timeout)
+        except queue.Empty:
+            raise TimeoutError("codex app-server proxy 沒有回應") from None
+        self._ended = not chunk
+        return chunk
+
+    def close(self) -> None:
+        # 先關 pipe:proxy 讀到 EOF 就自己結束。npm 版是 cmd → node → codex.exe,
+        # kill 只殺得到最外層的 cmd,裡面兩層要靠 pipe 斷掉才會退
+        for stream in (self._proc.stdin, self._proc.stdout):
+            try:
+                if stream is not None:
+                    stream.close()
+            except OSError:
+                pass
+        try:
+            self._proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+            self._proc.wait()
+
+
+def _proxy_argv(path: Path) -> list:
+    return [_codex_binary(), "app-server", "proxy", "--sock", str(path)]
+
+
+_VIA_PROXY = not hasattr(socket, "AF_UNIX")
+
+
+def _connect(path: Path, timeout: float):
+    if _VIA_PROXY:
+        return _ProxyStream(path, timeout)
+    sock = socket.socket(socket.AF_UNIX)
+    try:
+        sock.settimeout(timeout)
+        sock.connect(str(path))
+    except OSError:
+        sock.close()
+        raise
+    return sock
+
+
 class _WebSocket:
-    """Just enough of RFC 6455 for one JSON-RPC client over a unix socket."""
+    """Just enough of RFC 6455 for one JSON-RPC client over the daemon's socket."""
 
     def __init__(self, path: Path, timeout: float = 10.0) -> None:
-        self._sock = socket.socket(socket.AF_UNIX)
-        self._sock.settimeout(timeout)
-        self._sock.connect(str(path))
+        self._sock = _connect(path, timeout)
+        try:
+            self._handshake()
+        except BaseException:
+            # proxy 是子行程,握手失敗不收掉就會留在背景
+            self._sock.close()
+            raise
+
+    def _handshake(self) -> None:
         key = base64.b64encode(os.urandom(16)).decode()
         self._sock.sendall((
             "GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n"
@@ -126,8 +216,12 @@ class CodexDaemon:
         self.home = home
         self._ws = _WebSocket(socket_path(home))
         self._next = 0
-        self.call("initialize", {"clientInfo": {"name": "acg", "version": "1"}})
-        self._ws.send({"jsonrpc": "2.0", "method": "initialized"})
+        try:
+            self.call("initialize", {"clientInfo": {"name": "acg", "version": "1"}})
+            self._ws.send({"jsonrpc": "2.0", "method": "initialized"})
+        except BaseException:
+            self._ws.close()
+            raise
 
     def __enter__(self) -> "Self":
         return self
@@ -161,7 +255,8 @@ def codex_homes_with_daemon() -> list:
     """
     homes = []
     for home in sorted(HOME.glob(".codex*")):
-        if home.is_dir() and socket_path(home).exists():
+        # Windows 的 AF_UNIX socket 是 reparse point;不跟著它走,只看它在不在
+        if home.is_dir() and os.path.lexists(socket_path(home)):
             homes.append(home)
     return homes
 
@@ -192,26 +287,19 @@ def codex_peers() -> list:
     return peers
 
 
-def _pid_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
-
-
 def channel_dir() -> Path:
     """Where acg's Claude channel servers leave their delivery sockets."""
     base = os.environ.get("XDG_STATE_HOME") or str(HOME / ".local" / "state")
     return Path(base) / "acg" / "msg" / "claude"
 
 
+# Windows 上 channel 聽的是 named pipe;這個檔只記 pipe 名稱,有它才算收得到
+_CHANNEL_SUFFIX = ".pipe" if os.name == "nt" else ".sock"
+
+
 def channel_socket(claude_pid: int) -> Path:
-    return channel_dir() / f"{claude_pid}.sock"
+    """Where a Claude session's channel can be reached: the socket, or on Windows the pipe's name."""
+    return channel_dir() / f"{claude_pid}{_CHANNEL_SUFFIX}"
 
 
 def claude_peers() -> list:
@@ -223,9 +311,9 @@ def claude_peers() -> list:
     from .paths import CLAUDE_HOME
 
     # 被 signal 直接殺掉的 channel 來不及收尾;行程已經不在的 socket 順手清掉
-    for stale in channel_dir().glob("*.sock") if channel_dir().is_dir() else ():
+    for stale in channel_dir().glob(f"*{_CHANNEL_SUFFIX}") if channel_dir().is_dir() else ():
         try:
-            if not _pid_alive(int(stale.stem)):
+            if not pid_alive(int(stale.stem)):
                 stale.unlink()
         except (ValueError, OSError):
             continue
@@ -236,7 +324,7 @@ def claude_peers() -> list:
             pid = int(record["pid"])
         except (OSError, ValueError, KeyError, TypeError):
             continue
-        if record.get("kind") not in (None, "interactive") or not _pid_alive(pid):
+        if record.get("kind") not in (None, "interactive") or not pid_alive(pid):
             continue
         reachable = channel_socket(pid).exists()
         peers.append(Peer(
@@ -260,25 +348,10 @@ def agy_peers() -> list:
     Nothing can be delivered into an open TUI: it keeps its own state and
     a message sent past it forks the conversation.
     """
-    try:
-        import fcntl
-    except ImportError:
-        return []  # Windows 上沒有 flock;先不列
     root = HOME / ".gemini" / "antigravity-cli"
     peers = []
     for lock in sorted((root / "presence").glob("*.lock")):
-        try:
-            with open(lock, "rb") as handle:
-                try:
-                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except OSError:
-                    held = True
-                else:
-                    held = False
-                    fcntl.flock(handle, fcntl.LOCK_UN)
-        except OSError:
-            continue
-        if not held:
+        if not _lock_held(lock):
             continue
         conversation = lock.stem
         title = ""
@@ -292,6 +365,31 @@ def agy_peers() -> list:
             unreachable="Antigravity 開著的對話收不到外部訊息;它能用 acg msg send 主動傳話",
         ))
     return peers
+
+
+def _lock_held(path: Path) -> "bool | None":
+    """Whether another process holds the lock on this file; None when it cannot be opened."""
+    try:
+        with open(path, "rb") as handle:
+            if os.name == "nt":
+                import msvcrt
+
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                except OSError:
+                    return True
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                return False
+            import fcntl
+
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return True
+            fcntl.flock(handle, fcntl.LOCK_UN)
+            return False
+    except OSError:
+        return None
 
 
 def list_peers() -> list:
@@ -364,16 +462,32 @@ def _can_receive(name: str) -> bool:
 
 def send_claude(peer: Peer, sender: str, text: str) -> None:
     path = channel_socket(peer.pid)
+    data = json.dumps({"from": sender, "text": text}, ensure_ascii=False).encode()
     try:
-        with socket.socket(socket.AF_UNIX) as conn:
-            conn.settimeout(10)
-            conn.connect(str(path))
-            conn.sendall(json.dumps({"from": sender, "text": text}, ensure_ascii=False).encode() + b"\n")
-            answer = conn.recv(64).strip()
-    except OSError as exc:
+        if os.name == "nt":
+            answer = _send_pipe(path.read_text(encoding="utf-8").strip(), data)
+        else:
+            with socket.socket(socket.AF_UNIX) as conn:
+                conn.settimeout(10)
+                conn.connect(str(path))
+                conn.sendall(data + b"\n")
+                answer = conn.recv(64).strip()
+    except (OSError, EOFError) as exc:
         raise MessagingError(f"送不進 {peer.label} 的 channel:{exc}") from exc
     if answer != b"ok":
         raise MessagingError(f"{peer.label} 的 channel 拒收了這則訊息")
+
+
+def _send_pipe(address: str, data: bytes) -> bytes:
+    from multiprocessing.connection import Client
+
+    if not address.startswith("\\\\.\\pipe\\"):
+        raise OSError(f"不是 named pipe:{address}")
+    with Client(address, family="AF_PIPE") as conn:
+        conn.send_bytes(data)
+        if not conn.poll(10):
+            raise TimeoutError("channel 沒有回應")
+        return conn.recv_bytes(64).strip()
 
 
 def _codex_binary() -> str:
@@ -486,9 +600,14 @@ def write_channel_config(command: "list | None" = None) -> Path:
 
 
 # 只有互動式開 Claude 才帶 channel:-p 沒人能按掉每次都會跳的警告,子指令也用不到
+CLAUDE_PLAIN = (
+    "agents", "attach", "auth", "auto-mode", "doctor", "gateway", "import", "install", "logs",
+    "mcp", "plugin", "plugins", "project", "respawn", "rm", "setup-token", "stop", "kill",
+    "ultrareview", "update", "-p", "--print", "-v", "--version", "-h", "--help",
+)
 SHELL_FUNCTION = """claude() {{
   case "${{1:-}}" in
-    agents|attach|auth|auto-mode|doctor|gateway|import|install|logs|mcp|plugin|plugins|project|respawn|rm|setup-token|stop|kill|ultrareview|update|-p|--print|-v|--version|-h|--help)
+    {plain})
       command claude "$@"; return ;;
   esac
   case " $* " in *" -p "*|*" --print "*) command claude "$@"; return ;; esac
@@ -535,16 +654,70 @@ CODEX_SUBCOMMANDS = (
 )
 
 
+# PowerShell 版:同樣的判斷。比對一律分大小寫,codex 的 -c 是設定、-C 才是目錄
+POWERSHELL_FUNCTIONS = """# >>> acg msg >>>
+# 照常打 claude、codex,別的 session 就能用 acg msg 傳話進來(acg msg setup 產生)
+function claude {{
+  $exe = (Get-Command claude -CommandType Application -ErrorAction Stop)[0].Source
+  $first = if ($args.Count) {{ [string]$args[0] }} else {{ '' }}
+  if ($first -cin @({claude_plain}) -or $args -ccontains '-p' -or $args -ccontains '--print') {{
+    & $exe @args; return
+  }}
+  & $exe --mcp-config {config} --dangerously-load-development-channels server:acg @args
+}}
+function codex {{
+  $exe = (Get-Command codex -CommandType Application -ErrorAction Stop)[0].Source
+  $first = if ($args.Count) {{ [string]$args[0] }} else {{ '' }}
+  $attach = -not ($first -cin @('-h', '--help', '-V', '--version', {codex_plain}))
+  if ($args -ccontains '--remote' -or @($args | Where-Object {{ "$_" -clike '--remote=*' }}).Count) {{
+    $attach = $false
+  }}
+  if (-not $attach) {{ & $exe @args; return }}
+  $codexHome = if ($env:CODEX_HOME) {{ $env:CODEX_HOME }} else {{ Join-Path $HOME '.codex' }}
+  if (-not (Test-Path -LiteralPath (Join-Path $codexHome '{socket}'))) {{
+    $saved = $env:CODEX_HOME
+    $env:CODEX_HOME = $codexHome
+    & $exe app-server daemon start *> $null
+    $env:CODEX_HOME = $saved
+  }}
+  if ($first -cin @('resume', 'fork')) {{
+    $rest = @($args | Select-Object -Skip 1)
+    & $exe $first --remote unix:// @rest; return
+  }}
+  if ($args -ccontains '-C' -or $args -ccontains '--cd' -or @($args | Where-Object {{ "$_" -clike '--cd=*' }}).Count) {{
+    & $exe --remote unix:// @args; return
+  }}
+  & $exe --remote unix:// --cd $PWD.ProviderPath @args
+}}
+# <<< acg msg <<<"""
+
+
+def _ps_list(words) -> str:
+    return ", ".join(f"'{word}'" for word in words)
+
+
 def claude_function() -> str:
-    return SHELL_FUNCTION.format(config=shlex.quote(str(channel_config_path())))
+    return SHELL_FUNCTION.format(
+        plain="|".join(CLAUDE_PLAIN), config=shlex.quote(str(channel_config_path())),
+    )
 
 
 def codex_function() -> str:
     return CODEX_FUNCTION.format(subcommands="|".join(CODEX_SUBCOMMANDS), socket=SOCKET.as_posix())
 
 
+def powershell_functions() -> str:
+    config = str(channel_config_path()).replace("'", "''")
+    return POWERSHELL_FUNCTIONS.format(
+        claude_plain=_ps_list(CLAUDE_PLAIN), codex_plain=_ps_list(CODEX_SUBCOMMANDS),
+        config=f"'{config}'", socket=str(SOCKET).replace("/", "\\"),
+    )
+
+
 def shell_functions() -> str:
-    """The block `acg msg setup` asks the user to put in ~/.bashrc."""
+    """The block `acg msg setup` asks the user to put in ~/.bashrc, or on Windows in $PROFILE."""
+    if os.name == "nt":
+        return powershell_functions()
     return (
         "# >>> acg msg >>>\n"
         "# 照常打 claude、codex,別的 session 就能用 acg msg 傳話進來(acg msg setup 產生)\n"

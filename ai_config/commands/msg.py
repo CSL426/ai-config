@@ -1,5 +1,7 @@
 """`acg msg`: talk to other live agent sessions by name."""
 
+import os
+
 from .. import messaging
 from ..console import log_error, log_info, log_success
 from ..paths import ENTRYPOINT
@@ -66,7 +68,8 @@ def _send(args: list) -> int:
 def _setup() -> int:
     path = messaging.write_channel_config()
     log_success(f"已寫入 Claude channel 設定:{path}")
-    log_info("把下面這段加進 ~/.bashrc(已經有舊的 acg msg 區塊就整段換掉),之後照常打 claude、codex,")
+    profile = "PowerShell 的 $PROFILE" if os.name == "nt" else "~/.bashrc"
+    log_info(f"把下面這段加進 {profile}(已經有舊的 acg msg 區塊就整段換掉),之後照常打 claude、codex,")
     log_info("別的 session 就能傳話進來。每次開 Claude 會多一個 development channel 警告,按 Enter 即可")
     log_info("(官方規定,關不掉)。自己已經有 codex 函式的(例如切換帳號),把 --remote 那段併進去,")
     log_info("不要兩個都留:後定義的會蓋掉先定義的")

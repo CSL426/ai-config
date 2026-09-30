@@ -321,7 +321,8 @@ special; receiving does:
   `--wait` prints its answer once that turn ends (default five minutes).
 
 `{entrypoint} msg setup` writes the Claude channel config and prints one
-`~/.bashrc` block with a `claude` and a `codex` function, so plain
+`~/.bashrc` block (on Windows a PowerShell block for `$PROFILE`) with a
+`claude` and a `codex` function, so plain
 `claude` and `codex` start sessions that can receive. The `codex`
 function starts the account's daemon when needed and opens a new
 conversation in the current directory (`--cd "$PWD"`), because the
@@ -330,6 +331,10 @@ daemon otherwise opens it wherever the daemon itself was started;
 older acg msg block as a whole. Someone who already has their own
 `codex` function, e.g. to switch accounts, merges the `--remote` part
 into it rather than keeping both.
+
+On Windows acg reaches the Codex daemon through `codex app-server proxy`,
+since Windows Python has no unix sockets, and a Claude session's channel
+listens on a named pipe; listing and sending work the same way.
 - Antigravity cannot receive: an open conversation keeps its own state,
   and a message sent past it forks the conversation. It can still send.
 

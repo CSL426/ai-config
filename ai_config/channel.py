@@ -2,19 +2,22 @@
 
 Claude Code starts this as a stdio MCP server when it is launched with
 `--channels`. It declares the `claude/channel` capability, opens a unix
-socket named after the Claude process it belongs to, and turns every
+socket named after the Claude process it belongs to (on Windows a named
+pipe, whose name it leaves in that file's place), and turns every
 message delivered there into a `notifications/claude/channel` event, so
 the session sees it mid-conversation. `acg msg send` is the only writer.
 """
 
 import json
 import os
+import secrets
 import socket
 import sys
 import threading
 from pathlib import Path
 
 from .messaging import channel_socket
+from .processes import parent_pid
 
 _INSTRUCTIONS = (
     "Messages from other live agent sessions (Claude, Codex, Antigravity) "
@@ -38,13 +41,10 @@ def _claude_pid() -> "int | None":
     for _ in range(6):
         if (CLAUDE_HOME / "sessions" / f"{pid}.json").is_file():
             return pid
-        try:
-            stat = Path(f"/proc/{pid}/stat").read_text()
-            pid = int(stat.rsplit(")", 1)[1].split()[1])
-        except (OSError, ValueError, IndexError):
+        parent = parent_pid(pid)
+        if parent is None or parent <= 1:
             return None
-        if pid <= 1:
-            return None
+        pid = parent
     return None
 
 
@@ -53,7 +53,7 @@ class Channel:
         self._out = out or sys.stdout
         self._lock = threading.Lock()
         self.path: Path | None = None
-        self._server: socket.socket | None = None
+        self._server = None
 
     def write(self, message: dict) -> None:
         with self._lock:
@@ -70,6 +70,9 @@ class Channel:
         path.parent.mkdir(parents=True, exist_ok=True)
         # 同一個 Claude 行程重啟 server 時,舊的 socket 檔還在
         path.unlink(missing_ok=True)
+        if os.name == "nt":
+            self._listen_pipe(path)
+            return
         server = socket.socket(socket.AF_UNIX)
         # 先記下再 bind:bind 一建出檔案,之後任何一刻收到訊號,close 都得知道要刪它
         self.path, self._server = path, server
@@ -77,6 +80,38 @@ class Channel:
         os.chmod(path, 0o600)
         server.listen()
         threading.Thread(target=self._accept, daemon=True).start()
+
+    def _listen_pipe(self, path: Path) -> None:
+        from multiprocessing.connection import Listener
+
+        # 名稱帶亂數:別人猜不到就搶不先建;名稱只寫在自己家目錄的檔案裡
+        address = rf"\\.\pipe\acg-msg-{path.stem}-{secrets.token_hex(8)}"
+        self._server = Listener(address, family="AF_PIPE")
+        self.path = path
+        path.write_text(address, encoding="utf-8")
+        threading.Thread(target=self._accept_pipe, daemon=True).start()
+
+    def _deliver(self, data: bytes) -> bytes:
+        try:
+            message = json.loads(data)
+            self.push(str(message["from"]), str(message["text"]))
+        except (ValueError, KeyError, TypeError):
+            return b"error"
+        return b"ok"
+
+    def _accept_pipe(self) -> None:
+        assert self._server is not None
+        while True:
+            try:
+                conn = self._server.accept()
+            except (OSError, EOFError):
+                return
+            with conn:
+                try:
+                    if conn.poll(5):
+                        conn.send_bytes(self._deliver(conn.recv_bytes(_MAX_MESSAGE)))
+                except (OSError, EOFError):
+                    continue
 
     def _accept(self) -> None:
         assert self._server is not None
@@ -94,14 +129,9 @@ class Channel:
                         if not chunk:
                             break
                         data += chunk
-                    message = json.loads(data.split(b"\n", 1)[0])
-                    self.push(str(message["from"]), str(message["text"]))
-                    conn.sendall(b"ok\n")
-                except (OSError, ValueError, KeyError, TypeError):
-                    try:
-                        conn.sendall(b"error\n")
-                    except OSError:
-                        pass
+                    conn.sendall(self._deliver(data.split(b"\n", 1)[0]) + b"\n")
+                except OSError:
+                    continue
 
     def close(self) -> None:
         if self._server is not None:
