@@ -124,6 +124,13 @@ p code, li code, small code { white-space: nowrap; }
 
 .gui-layout { grid-template-columns: minmax(17rem, 0.65fr) minmax(27rem, 1.35fr); }
 .gui-shot { display: block; width: 100%; height: auto; border-radius: var(--radius-md); }
+/* 實拍截圖又寬又扁,擠在半邊字會小到讀不出來:單欄版面,或在雙欄下面橫跨整列 */
+.story-grid.stack { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
+.story-grid.stack .story-copy { max-width: 48rem; }
+.story-grid.stack .lede { max-width: none; }
+.story-grid > .shot-row { grid-column: 1 / -1; }
+/* 手機上截圖只剩兩成大小,點開看原圖再自己放大 */
+.shot-link { display: block; cursor: zoom-in; }
 .tool-logos { list-style: none; margin: var(--space-md) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); }
 .tool-logos li { display: inline-flex; align-items: center; gap: var(--space-2xs); color: var(--color-ink-soft); font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 500; }
 .tool-logos svg { width: 1.25rem; height: 1.25rem; flex: none; fill: currentColor; }

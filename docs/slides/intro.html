@@ -129,7 +129,8 @@
         <p class="tiny-note">Claude 桌面版的 Chat 不讀本機技能：用 <code>acg package &lt;技能&gt;</code> 打成 ZIP，到 Settings → Customize → Skills 手動上傳。</p>
       </div>
       <figure class="picture">
-        <div class="art" style="--ratio: 1200 / 702"><img src="./img/08-skills.webp" width="1200" height="702" alt="一本打開的技能書飛出卡片，比比拉布、八嘎柴柴、我的刀盾與巴巴博一開心接住" decoding="async"></div>
+        <a class="shot-link" href="./img/shot-share.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-share.webp" width="808" height="471" alt="終端機實拍：acg skill add 裝好 propeller 技能，acg share 分享出去，acg apply 套用到 Codex；接著問 Codex 有沒有 propeller，它答得出這是提到螺旋槳時回一句冷知識的測試技能" decoding="async"></a>
+        <figcaption>實拍：Claude 的技能分享出去，Codex 馬上認得</figcaption>
       </figure>
     </div>
   </section>
@@ -141,8 +142,6 @@
         <p class="lede">三個工具讀同一本：全域一層，每個專案各一層。你說「記住」才寫進去。</p>
         <p><code>acg memory enable</code>　啟用後開新會話才讀得到。</p>
         <p class="tiny-note">選用：<code>acg memory autopush enable 4</code> 每天 4 點自動上傳，不逐次確認，仍會檢查有沒有夾帶登入資訊。</p>
-        <!-- 09-notebook：表格負責講清楚，這張圖負責講「一起讀」的感覺 -->
-        <img class="aside-art" src="./img/09-notebook.webp" width="1141" height="806" alt="比比拉布、八嘎柴柴、我的刀盾與巴巴博一圍著圓桌，一起看桌上同一本黃色筆記本" decoding="async">
       </div>
       <figure class="picture mem-map" aria-label="三台電腦上的三個工具共讀同一本筆記。全域層三台都有；kobe 專案在桌機和筆電放在不同資料夾，但 Git 遠端相同，所以讀同一份；jordan 專案只在伺服器上。筆記透過你的置物櫃在電腦之間上傳、下載。">
         <div class="mem-grid" aria-hidden="true">
@@ -158,41 +157,40 @@
           <span class="mem-locker">↑↓ 你的置物櫃：Google Drive 或私人 Git</span>
         </div>
       </figure>
+      <!-- 表格講概念，實拍證明真的讀得到 -->
+      <figure class="picture shot-row">
+        <a class="shot-link" href="./img/shot-memory.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-memory.webp" width="1359" height="312" alt="實拍：左邊 Claude Code 收到「記住：kobe 專案的函式一律用英文命名」並寫進共用記憶；右邊 Codex 被問到這個專案的命名規則，答出一律用英文命名，依據是共用記憶裡的 naming.md" decoding="async"></a>
+        <figcaption>實拍：在 Claude Code 說「記住」，換到 Codex 問，讀到的是同一條</figcaption>
+      </figure>
     </div>
   </section>
 
   <section class="slide">
-    <div class="story-grid">
+    <div class="story-grid stack">
       <div class="story-copy">
-        <h2>換個會話，<br><span class="highlight">接上同一條線</span></h2>
-        <p class="lede">只有兩個動作：收工時交接，下一個會話接手。</p>
+        <h2>換個會話，<span class="highlight">接上同一條線</span></h2>
+        <p class="lede">收工時說「交接」（<code>/acg handoff</code>），寫下做到哪、下一步是什麼；下一個會話說「接著做」（<code>/acg pickup</code>），讀回進度就接上。</p>
         <p class="tiny-note">交接跟著筆記同步：在桌機交接，到筆電也接得上。<code>/acg</code> 需先裝 Claude Code 的 acg plugin。</p>
       </div>
-      <div class="picture callouts" aria-label="交接與接手">
-        <div class="callout"><strong>交接</strong><p><code>/acg handoff</code>　或直接說「交接」<br>寫下做到哪、下一步是什麼。</p></div>
-        <div class="callout"><strong>接手</strong><p><code>/acg pickup</code>　或直接說「接著做」<br>讀回進度，這則交接就結案。</p></div>
+      <figure class="picture">
+        <a class="shot-link" href="./img/shot-handoff.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-handoff.webp" width="1350" height="462" alt="實拍：左邊原本的 Claude Code 會話寫下交接，記了目前進度、注意事項、還沒決定的事與下一步；右邊 /clear 之後的新會話用 /acg:pickup 接手，讀回進度、確認工作區狀態一致，並問下一步要用哪種測試框架" decoding="async"></a>
+        <figcaption>實拍：左邊交接，右邊 /clear 之後接手</figcaption>
         <div class="meme-sticker at-br" style="--rot: 4deg" title="我的刀盾：手持刀盾守護交接"><img src="./img/meme-sword-dog.webp" width="512" height="512" alt="我的刀盾柴犬" decoding="async"></div>
-      </div>
+      </figure>
     </div>
   </section>
 
   <section class="slide">
-    <div class="story-grid">
+    <div class="story-grid stack">
       <div class="story-copy">
-        <h2>開著的 AI，<br><span class="accent nowrap">可以互相傳話</span></h2>
+        <h2>開著的 AI，<span class="accent nowrap">可以互相傳話</span></h2>
         <p class="lede">像找同事一樣，叫名字就送得到。</p>
         <p><code>acg msg list</code>　看現在開著哪些會話、誰收得到<br><code>acg msg send &lt;名稱&gt; &lt;訊息&gt;</code>　直接送過去</p>
         <p class="tiny-note">先跑一次 <code>acg msg setup</code>，之後照常開 <code>claude</code>、<code>codex</code> 就收得到（Claude 每次開啟確認一次）。Antigravity 目前只能送、收不到：它開著的對話還沒有收訊息的管道。目前只支援 Linux / macOS。</p>
       </div>
-      <figure class="picture msg-map" aria-label="Claude 和 Codex 的會話可以互相傳話；Antigravity 只能送出訊息，因為它開著的對話目前沒有接收外部訊息的管道。">
-        <div class="msg-cards" aria-hidden="true">
-          <span class="msg-card claude"><b>●</b> Claude · 前端</span>
-          <span class="msg-link both">⇄<small>「API 改好了嗎？」</small></span>
-          <span class="msg-card codex"><b>●</b> Codex · 後端</span>
-          <span class="msg-link one">↑<small>只能送出</small></span>
-          <span class="msg-card agy"><b>○</b> Antigravity · 文件</span>
-        </div>
-        <figcaption>● 收得到　○ 只能送出</figcaption>
+      <figure class="picture">
+        <a class="shot-link" href="./img/shot-msg.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-msg.webp" width="1365" height="356" alt="實拍：右邊 jordan 會話收到 kobe 傳來的問題，讀了 src/index.js 後回覆 hello() 回傳 hello from jordan；左邊 kobe 會話收到這個回覆" decoding="async"></a>
+        <figcaption>實拍：kobe 問、jordan 讀檔後回答，全程沒有人在中間複製貼上</figcaption>
         <div class="meme-sticker at-br" style="--rot: -6deg" title="巴巴博一：歪頭吐舌魔性發音"><img src="./img/meme-baba-booey.webp" width="512" height="512" alt="巴巴博一搞笑貓" decoding="async"></div>
       </figure>
     </div>
