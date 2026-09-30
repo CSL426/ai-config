@@ -319,6 +319,7 @@ def test_a_chosen_port_serves_in_the_foreground_for_ssh(monkeypatch) -> None:
 
     assert main_module.main(["desktop", "--port", "8765"]) == 0
     assert main_module.main(["desktop", "--port", "99999"]) == 1
+    assert main_module.main(["desktop", "--port", "0"]) == 1
     assert main_module.main(["desktop", "--port"]) == 1
 
     assert calls == [{"browser": True, "port": 8765}]

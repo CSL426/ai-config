@@ -181,7 +181,8 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
                 wait = True
             elif flag == "--browser":
                 browser = True
-            elif flag == "--port" and rest and rest[0].isdigit() and int(rest[0]) < 65536:
+            # 0 會被當成「沒指定」,放到背景就看不到網址;要隨機埠就別給 --port
+            elif flag == "--port" and rest and rest[0].isdigit() and 0 < int(rest[0]) < 65536:
                 port = int(rest.pop(0))
             else:
                 log_error(
