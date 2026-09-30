@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from .. import memory_index, memory_paths
-from ..console import HELP_FLAGS, log_error, log_info, log_success
+from ..console import HELP_FLAGS, log_error, log_info, log_success, log_warn
 from ..paths import ENTRYPOINT
 from . import memory_handoff, memory_lifecycle
 
@@ -127,7 +127,8 @@ def _autopush(rest: list[str]) -> int:
             failure = state["last_failure"]
             if failure:
                 # 只記成功時間的話,被擋下的那一晚在這裡看起來一切正常
-                log_error(
+                # 走 stdout:stderr 不緩衝,被導向時這行會跑到整段輸出的最前面
+                log_warn(
                     f"上次自動推送失敗({_local_time(failure['when'])}):{failure['reason']}"
                 )
                 for path in failure["paths"]:
