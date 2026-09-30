@@ -59,14 +59,19 @@ class Step:
     after: str = ""
     ok: bool = True
     note: str = ""
+    freed: int = 0
 
     def line(self) -> str:
         mark = "✓" if self.ok else "✗"
         if self.note:
-            return f"{mark} {self.name}:{self.note}"
-        if self.before and self.after and self.before != self.after:
-            return f"{mark} {self.name}:{self.before} → {self.after}"
-        return f"{mark} {self.name}:{self.after or self.before} 已是最新"
+            text = self.note
+        elif self.before and self.after and self.before != self.after:
+            text = f"{self.before} → {self.after}"
+        else:
+            text = f"{self.after or self.before} 已是最新"
+        if self.freed:
+            text += f"(清掉舊執行檔 {self.freed // 2**20} MB)"
+        return f"{mark} {self.name}:{text}"
 
 
 # ─── finding and asking each tool ─────────────────────────────
@@ -139,6 +144,30 @@ def _update(name: str, argv: list, command: list) -> Step:
     return step
 
 
+def _remove_replaced(binary: str) -> int:
+    """Delete the executables a self-update renamed aside; bytes freed.
+
+    agy leaves agy.<n>.old and claude on Windows claude.exe.old.<n> beside
+    the launcher, 200 MB each, and never removes them: one Windows machine
+    carried 700 MB of them. A daily update would add one a day. A copy a
+    running session still holds cannot be deleted on Windows; it stays for
+    the next run.
+    """
+    launcher = Path(binary)
+    freed = 0
+    for pattern in (f"{launcher.name}.*.old", f"{launcher.name}.old.*"):
+        for leftover in launcher.parent.glob(pattern):
+            try:
+                if leftover.is_symlink() or not leftover.is_file():
+                    continue
+                size = leftover.stat().st_size
+                leftover.unlink()
+            except OSError:
+                continue
+            freed += size
+    return freed
+
+
 def _update_tool(tool: str) -> "Step | None":
     binary = _binary(tool)
     if binary is None:
@@ -149,7 +178,9 @@ def _update_tool(tool: str) -> "Step | None":
             f"npm 全域安裝({binary}),不自動更新;"
             "建議改用官方獨立安裝版"
         ))
-    return _update(tool, [binary], ["update"])
+    step = _update(tool, [binary], ["update"])
+    step.freed = _remove_replaced(binary)
+    return step
 
 
 def _update_acg() -> Step:
@@ -190,6 +221,7 @@ def last_run() -> "dict | None":
             name=raw["name"], before=str(raw.get("before", "")),
             after=str(raw.get("after", "")), ok=raw.get("ok") is not False,
             note=str(raw.get("note", "")),
+            freed=raw["freed"] if isinstance(raw.get("freed"), int) else 0,
         ))
     return {"when": str(record.get("when", "")), "steps": steps}
 
