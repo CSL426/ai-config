@@ -44,6 +44,9 @@ if curl -fsIL "https://github.com/CSL426/ai-config/releases/download/v$installed
     check "old code switching forward leaves a working acg" '"$bin/acg" --version | grep -q "$installed"'
 else
     echo "SKIP old code switching forward: v$installed is not released yet"
+    # 下一步要從這個組建切到 1.0.97,所以先用新版程式切回來
+    "$versions/$installed/app/ai-config" update "$installed" >"$root/back.log" 2>&1
+    check "new code switches back to the build" '"$bin/acg" --version | grep -q "$installed"'
 fi
 # 新版切到磁碟上已有的版本:只換連結,不下載
 "$versions/$installed/app/ai-config" update 1.0.97 >"$root/switch.log" 2>&1
