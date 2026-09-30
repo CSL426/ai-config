@@ -1,6 +1,6 @@
 # 每天自動更新 acg 與各家 AI CLI
 
-狀態:**Draft**。使用者確認前不改為 Done。
+狀態:**Done**(2026-09-30 使用者確認)。
 
 ## 目的
 
@@ -68,5 +68,8 @@ CLI、`--help`、`ai_config/guide.py`、GUI 自動化頁面(開關與時間,與
 ## 未知
 
 - Antigravity 內建更新器 12:00 那次為何沒升級(當時新版是否已發布)。
-- Windows 上 `agy update` 替換執行中 exe 的行為。
-- Windows 上 `claude update` 在排程(無主控台)下的行為。
+- Windows 上 `claude update` 在排程(無主控台)下**有新版要裝**時的行為;
+  已是最新時確認不會卡住。等 claude 真的出新版再驗。
+
+(已驗證:Windows 上 `agy update` 1.2.13→1.2.14 成功,執行中的舊 exe 被改名為
+`agy.exe.<n>.old`,刪不掉的會在狀態裡標「使用中,下次再清」。)
