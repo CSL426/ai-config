@@ -238,16 +238,18 @@ def journals_below(root: Path, depth: int = 4) -> list:
         except OSError:
             continue
         for entry in entries:
-            if not entry.is_dir() or entry.is_symlink():
-                continue
             if entry.name == ".remember":
+                # remember 自己會把 .remember 做成指向 memory/journal/<slug> 的連結,
+                # 所以名字要在略過連結之前判斷,不然這類專案永遠掃不到
+                if not (entry.is_dir() or entry.is_symlink()):
+                    continue
                 # 家目錄不是專案,它是專案住的地方;資料庫更不是,
                 # 認領它等於把筆記本收進自己的日誌裡
-                if memory_journal.journal_link(directory) is None:
-                    continue
                 if _path_identity(directory, memory_paths.HOME) or _path_identity(directory, memory_paths.SCRIPT_DIR):
                     continue
                 found.append(directory)
+                continue
+            if not entry.is_dir() or entry.is_symlink():
                 continue
             if entry.name in _SCAN_SKIP or level >= depth:
                 continue
