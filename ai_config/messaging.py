@@ -274,8 +274,9 @@ def codex_peers() -> list:
                 ids = daemon.call("thread/loaded/list", {}).get("data", [])
                 for thread_id in ids:
                     thread = daemon.call("thread/read", {"threadId": thread_id}).get("thread", {})
-                    # 子 agent 的 source 是物件;它們是對話裡的工具,不是能講話的對象
-                    if isinstance(thread.get("source"), dict):
+                    # 子 agent 的 source 是物件;ephemeral 是 codex 產生標題這類一次性的 thread。
+                    # 兩種都是工具,不是能講話的對象
+                    if isinstance(thread.get("source"), dict) or thread.get("ephemeral"):
                         continue
                     peers.append(Peer(
                         tool="codex", id=thread_id, name=thread.get("name") or "",

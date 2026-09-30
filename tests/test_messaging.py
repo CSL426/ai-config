@@ -129,6 +129,8 @@ def test_lists_live_sessions_and_leaves_out_sub_agents(home: Path) -> None:
     daemon = FakeDaemon(messaging.socket_path(home / ".codex-set"), {
         "t-main": _thread("審查"),
         "t-sub": _thread("", {"subAgent": {"thread_spawn": {}}}),
+        # codex 替主對話產生標題時開的暫時 thread,Windows 實測時出現在列表裡
+        "t-title": {**_thread("", "vscode"), "ephemeral": True, "threadSource": "thread_title"},
     })
     try:
         peers = messaging.list_peers()
