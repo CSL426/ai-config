@@ -230,7 +230,10 @@ SECRET_PATTERN = re.compile(
     rb"(?:[\"']?(?:password|secret|token|api[_-]?key|api[_-]?secret|"
     rb"auth[_-]?token|access[_-]?token|private[_-]?key|database_url|"
     rb"github_token|aws_(?:access_key_id|secret_access_key|session_token)|"
-    rb"stripe_(?:secret_key|api_key))[\"']?\s*[:=])|"
+    rb"stripe_(?:secret_key|api_key))[\"']?\s*[:=]"
+    # 值是 shell 的變數或指令替換($(...)、${...}、$NAME)時不是寫死的憑證:
+    # 交接裡的 GH_TOKEN=$(gh auth token --user X) 曾擋下一整晚的自動上傳
+    rb"(?!\s*[\"']?\$[({A-Za-z_]))|"
     rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
     rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
     rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"

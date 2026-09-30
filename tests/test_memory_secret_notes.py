@@ -56,3 +56,30 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     assert memory_index.secret_notes() == [
         f"{memory_paths.PROJECTS_NAME}/o--r/{memory_paths.INDEX_NAME}"
     ]
+
+
+@pytest.mark.parametrize("line", [
+    "GH_TOKEN=$(gh auth token --user CSL426) gh pr create",
+    "export GITHUB_TOKEN=${TOKEN}",
+    'password: "$DB_PASSWORD"',
+    "api_key = $API_KEY",
+])
+def test_a_shell_reference_is_not_a_credential(line: str) -> None:
+    """A handoff quoting a command blocked a night's autopush on 2026-09-30."""
+    from ai_config.safety import looks_like_secret
+
+    assert not looks_like_secret(line)
+
+
+@pytest.mark.parametrize("line", [
+    # 在執行時才組出來:原始碼裡的假憑證字面值會被 gitleaks 擋下
+    "GH_TOKEN=" + "abc123def456",
+    "password: " + "hunter2",
+    "api_key = " + '"' + "sk-live-abc" + '"',
+    "token=" + "$",  # 字面上的 $ 結尾不是變數
+    "GH_TOKEN=$(gh auth token) ghp_" + "a" * 30,
+])
+def test_a_literal_value_is_still_a_credential(line: str) -> None:
+    from ai_config.safety import looks_like_secret
+
+    assert looks_like_secret(line)
