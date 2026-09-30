@@ -118,7 +118,7 @@ def usage() -> None:
     print("  The first install and every update put the /acg skill into Claude")
     print("  Code (AI_CONFIG_NO_PLUGIN=1 skips it). Pick /acg:<subcommand> from")
     print("  the / menu, or type /acg <subcommand>.")
-    print("  By hand: claude plugin marketplace add CSL426/ai-config")
+    print("  By hand: claude plugin marketplace add CSL426/ai-config#v<acg version>")
     print("           claude plugin install acg@acg")
     print("  status sync save share memory keepalive autoupdate msg handoff handoffs pickup")
     print()

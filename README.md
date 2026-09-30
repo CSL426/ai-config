@@ -256,15 +256,16 @@ The installer puts acg's Claude Code plugin in on the first install, and
 `acg update` installs it where it is missing and updates it where it is
 present, so `/acg` arrives with the CLI. Set `AI_CONFIG_NO_PLUGIN=1` to skip
 that, for example on a machine whose Claude Code belongs to someone else.
-To install it by hand:
+To install it by hand, pin the marketplace to the version `acg --version` prints:
 
 ```bash
-claude plugin marketplace add CSL426/ai-config
+claude plugin marketplace add CSL426/ai-config#v1.0.106   # your acg version
 claude plugin install acg@acg
 ```
 
-acg pins that marketplace to the release it came from (`CSL426/ai-config#v<version>`),
-so the plugin and the CLI always move together.
+acg pins it the same way (`CSL426/ai-config#v<version>`) and moves the pin on every
+update, so the plugin and the CLI always move together. Without a pin the
+marketplace follows `main`, and Claude Code can refresh `/acg` ahead of the CLI.
 
 Each subcommand is its own entry in the / menu: `/acg:status`, `/acg:sync`,
 `/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:autoupdate`,
