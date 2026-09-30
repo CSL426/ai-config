@@ -33,12 +33,12 @@ async function openAutomation(page: Parameters<typeof boot>[0], info: object) {
   await page.locator("#automation-open").click();
 }
 
-test("沒排定時開關是關的,也不顯示時間", async ({ page }) => {
+test("沒排定時開關是關的,也不顯示結果", async ({ page }) => {
   await boot(page);
   await openAutomation(page, base);
 
   await expect(page.locator("#autoupdate-toggle")).not.toBeChecked();
-  await expect(page.locator("#autoupdate-time-row")).toBeHidden();
+  await expect(page.locator("#autoupdate-steps-row")).toBeHidden();
   await expect(page.locator("#autoupdate-failure")).toBeHidden();
 });
 
@@ -47,7 +47,7 @@ test("已排定時顯示時間與每個工具上次的版本", async ({ page }) 
   await openAutomation(page, { ...base, autoupdate: ran });
 
   await expect(page.locator("#autoupdate-toggle")).toBeChecked();
-  await expect(page.locator("#autoupdate-time")).toHaveValue("05:30");
+  await expect(page.locator("#autoupdate-hint")).toContainText("每晚 05:30 先更新");
   const steps = page.locator("#autoupdate-steps");
   await expect(steps).toContainText("2026-09-30 05:31");
   await expect(steps).toContainText("2.1.285 → 2.1.286（清掉舊執行檔 200 MB）（2 個舊執行檔使用中，下次再清）");
@@ -64,18 +64,27 @@ test("有工具沒更新成功時說出是哪個與原因", async ({ page }) => 
   await expect(failure).not.toContainText("claude");
 });
 
-test("打開開關會請後端排定,改時間會帶上時間", async ({ page }) => {
+test("打開開關會請後端排定", async ({ page }) => {
   await boot(page);
   await openAutomation(page, base);
   await queue(page, "memory_info", { ...base, autoupdate: { ...ran, steps: [] } });
 
   await page.locator("#autoupdate-toggle").click();
-  expect((await calls(page, "set_autoupdate")).at(-1)?.args).toEqual([true, undefined]);
+  await expect.poll(async () => (await calls(page, "set_autoupdate")).at(-1)?.args).toEqual([true]);
+});
 
-  await page.locator("#autoupdate-time").fill("06:40");
-  await page.locator("#autoupdate-save").click();
-  await expect.poll(async () => (await calls(page, "set_autoupdate")).at(-1)?.args)
-    .toEqual([true, "06:40"]);
+test("只開自動更新時,每晚排程的時間仍然可以改", async ({ page }) => {
+  await boot(page);
+  await openAutomation(page, {
+    ...base,
+    autopush: { installed: false, scheduled: true, last_push: "", reason: "",
+      slot: "04:20", host: "workstation", others: [] },
+    autoupdate: { ...ran, time: "04:20" },
+  });
+
+  await expect(page.locator("#autopush-toggle")).not.toBeChecked();
+  await expect(page.locator("#autopush-slot-row")).toBeVisible();
+  await expect(page.locator("#autopush-slot")).toHaveValue("04:20");
 });
 
 test("後端失敗時開關退回原狀", async ({ page }) => {

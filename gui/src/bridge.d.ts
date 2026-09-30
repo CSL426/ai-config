@@ -65,6 +65,8 @@ export interface MemoryInfo extends RunResult {
   secret_notes: string[];
   autopush: {
     installed: boolean; last_push: string; reason: string;
+    /** 每晚排程在不在;自動上傳關了、只開自動更新時也是 true。 */
+    scheduled?: boolean;
     /** 排程上次沒推成的時間與原因;成功推一次就清掉。 */
     last_failure?: { when: string; reason: string; paths: string[] } | null;
     slot: string; host: string; others: { host: string; slot: string }[];
@@ -227,7 +229,7 @@ interface AcgApi {
   set_handoff_reminder(enabled: boolean, threshold: number): Promise<OperationResult>;
   set_remember_host(host: RememberHost, enabled: boolean): Promise<OperationResult>;
   set_autopush_slot(clock: string): Promise<OperationResult>;
-  set_autoupdate(wanted: boolean, clock?: string): Promise<OperationResult>;
+  set_autoupdate(wanted: boolean): Promise<OperationResult>;
   set_keepalive(wanted: boolean, times?: string[], tool?: string): Promise<OperationResult>;
   open_memory_location(locationToken: string): Promise<OperationResult>;
   preview_memory(action: MemoryAction, projectToken?: string): Promise<ChangePreview>;

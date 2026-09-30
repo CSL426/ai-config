@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ai_config import autoupdate, daily_job, locking, memory_hooks, paths
+from ai_config import autoupdate, locking, memory_hooks, paths
 from ai_config.commands.autoupdate import run_autoupdate
 from ai_config.gui_api import GuiApi
 
@@ -14,7 +14,6 @@ from ai_config.gui_api import GuiApi
 def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    monkeypatch.setattr(daily_job, "platform_name", lambda: "linux")
     monkeypatch.setattr(paths, "scheduled_command", lambda: ["acg"])
     monkeypatch.setattr(locking, "BACKUP_BASE", tmp_path / "backup")
     return tmp_path
@@ -188,83 +187,6 @@ def test_a_tool_that_hangs_is_a_failure_not_a_stall(state: Path, monkeypatch: py
     assert code != 0 and "600" in output
 
 
-def test_the_timer_runs_autoupdate_daily_and_catches_up(state: Path) -> None:
-    service, timer = autoupdate.job().systemd_units(5, 30)
-
-    assert "OnCalendar=*-*-* 05:30:00" in timer
-    assert "Persistent=true" in timer
-    assert "ExecStart=acg autoupdate run" in service
-    # 四個工具各自下載,十五分鐘不夠
-    assert "RuntimeMaxSec=3600" in service
-
-
-def test_windows_runs_through_cmd_at_the_chosen_time(state: Path) -> None:
-    argv = autoupdate.job().schtasks_argv(5, 30)
-
-    assert argv[argv.index("/ST") + 1] == "05:30"
-    assert argv[argv.index("/TR") + 1] == "cmd /c acg autoupdate run"
-
-
-def test_launchd_runs_the_same_command(state: Path) -> None:
-    import plistlib
-
-    parsed = plistlib.loads(autoupdate.job().launchd_plist(5, 30))
-
-    assert parsed["ProgramArguments"] == ["acg", "autoupdate", "run"]
-    assert parsed["StartCalendarInterval"] == {"Hour": 5, "Minute": 30}
-
-
-@pytest.mark.parametrize("clock", ["25:00", "noon", "07:61"])
-def test_an_unreadable_time_is_refused(state: Path, clock: str) -> None:
-    with pytest.raises(ValueError):
-        autoupdate.parse_clock(clock)
-
-
-def test_enable_writes_the_timer_and_status_reads_the_time_back(
-    state: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    systemctl = Mock(return_value=Mock(returncode=0, stderr=""))
-    monkeypatch.setattr(daily_job, "_systemctl", systemctl)
-    monkeypatch.setattr(daily_job, "forget_missed_runs", lambda timer: None)
-
-    autoupdate.enable("06:40")
-
-    assert autoupdate.status()["installed"] is True
-    assert autoupdate.status()["time"] == "06:40"
-    systemctl.assert_any_call("enable", "--now", "acg-autoupdate.timer")
-
-    autoupdate.disable()
-
-    assert autoupdate.status()["installed"] is False
-
-
-def test_a_timer_systemd_did_not_load_is_not_reported_as_enabled(
-    state: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(daily_job, "_systemctl", Mock(return_value=Mock(returncode=1, stderr="no bus")))
-    monkeypatch.setattr(daily_job, "forget_missed_runs", lambda timer: None)
-
-    with pytest.raises(RuntimeError, match="no bus"):
-        autoupdate.enable()
-
-    assert autoupdate.status()["installed"] is False
-
-
-def test_a_timer_that_would_not_stop_keeps_its_files(
-    state: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    systemctl = Mock(return_value=Mock(returncode=0, stderr=""))
-    monkeypatch.setattr(daily_job, "_systemctl", systemctl)
-    monkeypatch.setattr(daily_job, "forget_missed_runs", lambda timer: None)
-    autoupdate.enable()
-    systemctl.return_value = Mock(returncode=1, stderr="Failed to connect to bus")
-
-    with pytest.raises(RuntimeError, match="bus"):
-        autoupdate.disable()
-
-    assert autoupdate.status()["installed"] is True
-
-
 def test_a_second_run_while_one_is_going_does_nothing(
     tools, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:
@@ -296,7 +218,8 @@ def test_status_lists_the_last_run(tools, capsys: pytest.CaptureFixture) -> None
 
 
 def test_an_unknown_action_is_refused(state: Path) -> None:
-    assert run_autoupdate(["enable", "05:30", "extra"]) == 1
+    assert run_autoupdate(["enable", "5", "extra"]) == 1
+    assert run_autoupdate(["enable", "05:30"]) == 1
     assert run_autoupdate(["now"]) == 1
 
 
@@ -315,17 +238,17 @@ def test_a_new_session_hears_about_a_failed_update(
     assert "agy:Update failed: network" in output
 
 
-def test_the_desktop_app_toggles_and_moves_the_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_desktop_app_toggles_it(monkeypatch: pytest.MonkeyPatch) -> None:
     enable = Mock(return_value=["已排定每天 06:00"])
     disable = Mock(return_value=["移除"])
     monkeypatch.setattr(autoupdate, "enable", enable)
     monkeypatch.setattr(autoupdate, "disable", disable)
     api = GuiApi()
 
-    assert api.set_autoupdate(True, "06:00")["output"] == "已排定每天 06:00"
+    assert api.set_autoupdate(True)["output"] == "已排定每天 06:00"
     assert api.set_autoupdate(False)["code"] == 0
     assert api.set_autoupdate("yes")["error"] == "INVALID_ARGUMENT"
 
-    enable.assert_called_once_with("06:00")
+    enable.assert_called_once_with()
     disable.assert_called_once_with()
     assert not api._lock.locked()

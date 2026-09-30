@@ -27,7 +27,7 @@ onSync(({ managementBlocked }) => {
       managementBlocked || state.memoryLoading || !state.memoryInfo?.remember_hosts?.[host]?.available;
   }
   for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
-    "#autoupdate-toggle, #autoupdate-time, #autoupdate-save",
+    "#autoupdate-toggle",
   )) {
     control.disabled = managementBlocked || state.memoryLoading;
   }
@@ -165,9 +165,11 @@ function renderAutopush(info: MemoryInfo): void {
       + "。處理後按記憶頁的「上傳記憶」，成功就會清掉這則。"
     : "";
 
+  // 時段屬於每晚排程,只開自動更新時也要能改
+  const scheduled = state.scheduled ?? state.installed;
   const row = $("#autopush-slot-row");
-  row.hidden = !state.installed;
-  if (!state.installed) return;
+  row.hidden = !scheduled;
+  if (!scheduled) return;
   $<HTMLInputElement>("#autopush-slot").value = state.slot || "04:00";
   const others = state.others ?? [];
   $("#autopush-others").textContent = others.length
@@ -203,10 +205,12 @@ function renderAutoupdate(info: MemoryInfo): void {
       + "。處理後在終端機執行 acg autoupdate run，全部成功就會清掉這則。"
     : "";
 
-  const row = $("#autoupdate-time-row");
+  $("#autoupdate-hint").textContent = state.installed && state.time
+    ? `每晚 ${state.time} 先更新 Claude Code、Codex、Antigravity 和 acg，再用新版上傳記憶；時間在上方「每晚排程的時間」改。`
+    : "每晚先更新 Claude Code、Codex、Antigravity 和 acg，再用新版上傳記憶；沒裝的略過，一個失敗不影響其他。";
+  const row = $("#autoupdate-steps-row");
   row.hidden = !state.installed;
   if (!state.installed) return;
-  $<HTMLInputElement>("#autoupdate-time").value = state.time || "05:30";
   const list = $("#autoupdate-steps");
   list.replaceChildren();
   for (const step of state.steps) {
@@ -227,7 +231,7 @@ function renderAutoupdate(info: MemoryInfo): void {
   }
 }
 
-async function configureAutoupdate(wanted: boolean, clock?: string): Promise<void> {
+async function configureAutoupdate(wanted: boolean): Promise<void> {
   const bridge = api();
   const toggle = $<HTMLInputElement>("#autoupdate-toggle");
   const previous = state.memoryInfo?.autoupdate?.installed ?? false;
@@ -236,7 +240,7 @@ async function configureAutoupdate(wanted: boolean, clock?: string): Promise<voi
     return;
   }
   const result = await perform(wanted ? "排定自動更新" : "取消自動更新", async () => {
-    const response = await bridge.set_autoupdate(wanted, clock);
+    const response = await bridge.set_autoupdate(wanted);
     if (response.code === 0) await refreshMemory();
     return response;
   }, false);
@@ -246,10 +250,6 @@ async function configureAutoupdate(wanted: boolean, clock?: string): Promise<voi
 
 $<HTMLInputElement>("#autoupdate-toggle").addEventListener("change", (event) => {
   void configureAutoupdate((event.currentTarget as HTMLInputElement).checked);
-});
-$<HTMLButtonElement>("#autoupdate-save").addEventListener("click", () => {
-  const clock = $<HTMLInputElement>("#autoupdate-time").value;
-  if (clock) void configureAutoupdate(true, clock);
 });
 
 async function configureHandoffReminder(enabled: boolean): Promise<void> {

@@ -39,7 +39,7 @@ project, status, pull, push, and sync.
 | `deploy --remove [dir]` | take back everything deploy put into that project |
 | `list` | managed tools, file counts, backup snapshot count |
 | `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send> [tool]` | anchor this machine's usage window for claude, codex or agy; off by default, settings stay local |
-| `autoupdate <status\\|enable [HH:MM]\\|disable\\|run>` | update acg, Claude Code, Codex and Antigravity once a day on this machine; off by default |
+| `autoupdate <status\\|enable [hour]\\|disable\\|run>` | update acg, Claude Code, Codex and Antigravity nightly, before the memory push; off by default |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `gui [--shortcut]` | open the desktop app; `--shortcut` puts acg on the desktop and in the app menu (Windows, Linux; the Windows installer does it on first install) |
 | `setup` | configure the data repo remote and verify push access |
@@ -216,7 +216,10 @@ so a machine that was off catches up; changing the time does not count as a
 missed run), a LaunchAgent on macOS, a scheduled task on Windows. Default hour is 04:00. Everything it writes lives under the user's
 home and `autopush disable` removes it.
 
-The run calls `memory push --if-stale 12`, which stops before touching git when
+The schedule runs `__nightly --if-stale 12`: it updates the tools first when
+`autoupdate` is on (see below), then runs `memory push --if-stale 12` through
+the installed launcher, so the push uses whatever acg the update just put
+there. The push stops before touching git when
 the notebook has not changed or when a push happened within the last 12 hours.
 Machines with no schedule get the same thing opportunistically at the end of any
 acg command; set `AI_CONFIG_NO_AUTOPUSH=1` to suppress that. Both paths skip the
@@ -230,8 +233,11 @@ user rather than retrying with `--allow-secrets`.
 
 ## Keeping the tools current
 
-`{entrypoint} autoupdate enable [HH:MM]` registers a daily run (default 05:30)
-with the same platform scheduler as autopush. Each run asks every CLI on the
+`{entrypoint} autoupdate enable [hour]` turns on the update half of the nightly
+schedule autopush uses; there is no second schedule. The two switches are
+independent: turning on updates never turns on the memory push, the schedule
+stays while either is on, and its time is the autopush slot (change it with
+`memory autopush enable <hour>` or the desktop app). Each run asks every CLI on the
 machine to update itself — `claude update`, `codex update`, `agy update` — and
 then `acg update`, which also refreshes the /acg plugin. A tool that is not
 installed is skipped; a Codex installed through npm is reported, not updated,

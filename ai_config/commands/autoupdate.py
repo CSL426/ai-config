@@ -4,7 +4,7 @@ from .. import autoupdate
 from ..console import log_error, log_header, log_info, log_success, log_warn
 from ..paths import ENTRYPOINT
 
-USAGE = "Usage: {entry} autoupdate [status|enable [HH:MM]|disable|run]"
+USAGE = "Usage: {entry} autoupdate [status|enable [時]|disable|run]"
 
 
 def _local(stamp: str) -> str:
@@ -20,10 +20,16 @@ def _status() -> int:
     log_header("Auto-update")
     state = autoupdate.status()
     if state["installed"]:
-        log_success(f"已啟用,每天 {state['time'] or '?'} 更新 acg、Claude Code、Codex、Antigravity")
+        log_success(
+            f"已啟用,每晚 {state['time'] or '?'} 先更新 acg、Claude Code、Codex、"
+            "Antigravity,再上傳記憶(若自動上傳也開著)"
+        )
     else:
         log_info("未啟用")
-        log_info(f"啟用:{ENTRYPOINT} autoupdate enable [HH:MM](預設 05:30)")
+        log_info(
+            f"啟用:{ENTRYPOINT} autoupdate enable [時];"
+            "跟每天自動上傳記憶共用同一個每晚排程與時段"
+        )
     last = autoupdate.last_run()
     if last is None:
         log_info("還沒有執行紀錄")
@@ -45,7 +51,8 @@ def run_autoupdate(args: list) -> int:
         if action == "status" and len(args) <= 1:
             return _status()
         if action == "enable" and len(args) <= 2:
-            for line in autoupdate.enable(args[1] if len(args) == 2 else None):
+            hour = int(args[1]) if len(args) == 2 else None
+            for line in autoupdate.enable(hour):
                 log_info(line)
             return 0
         if action == "disable" and len(args) == 1:
