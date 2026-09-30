@@ -164,6 +164,25 @@ def test_a_leftover_still_in_use_is_counted_not_hidden(
     assert held.exists()
 
 
+def test_a_leftover_that_cannot_be_read_is_not_called_in_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = tmp_path / "agy"
+    launcher.write_bytes(b"new")
+    odd = tmp_path / "agy.1.old"
+    odd.write_bytes(b"x")
+    real_stat = Path.stat
+
+    def stat(self, *args, **kwargs):
+        if self == odd and not kwargs and not args:
+            raise PermissionError("no access")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+
+    assert autoupdate._remove_replaced(str(launcher)) == (0, 0)
+
+
 def test_the_space_freed_is_reported_and_remembered(tools, monkeypatch: pytest.MonkeyPatch) -> None:
     tools({"agy": ["1.2.13", "1.2.14"], "acg": ["1.0.101"]})
     monkeypatch.setattr(autoupdate, "_remove_replaced", lambda binary: (200 * 2**20, 1))
