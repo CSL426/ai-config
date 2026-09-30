@@ -65,6 +65,8 @@ export interface MemoryInfo extends RunResult {
   secret_notes: string[];
   autopush: {
     installed: boolean; last_push: string; reason: string;
+    /** 排程上次沒推成的時間與原因;成功推一次就清掉。 */
+    last_failure?: { when: string; reason: string; paths: string[] } | null;
     slot: string; host: string; others: { host: string; slot: string }[];
   };
   keepalive: {

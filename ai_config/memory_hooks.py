@@ -191,8 +191,32 @@ def _metadata(path: Path) -> dict[str, bytes]:
     return result
 
 
+def _announce_failed_autopush(value: dict) -> None:
+    """Tell a new Claude session that last night's memory push did not happen.
+
+    SessionStart output becomes the session's context; UserPromptSubmit
+    output would repeat on every prompt, so only the start says it.
+    """
+    if value.get("hook_event_name") != "SessionStart":
+        return
+    from .autopush import last_failure
+
+    failure = last_failure()
+    if not failure:
+        return
+    paths = "、".join(failure["paths"][:3])
+    print(
+        f"acg:共用記憶上次自動上傳失敗({failure['when'][:16].replace('T', ' ')} UTC):"
+        f"{failure['reason']}{'(' + paths + ')' if paths else ''}。"
+        "請告訴使用者;處理後執行 acg memory push,成功就會清掉這筆紀錄。"
+    )
+
+
 def run(args: list[str]) -> int:
-    """Hook entry point: no transcript reads, no stdout or provider updates."""
+    """Hook entry point: no transcript reads or provider updates.
+
+    It prints only to report a failed nightly memory push at session start.
+    """
     from .locking import apply_lock
 
     try:
@@ -204,6 +228,7 @@ def run(args: list[str]) -> int:
         value = json.loads(payload)
         if not isinstance(value, dict) or not isinstance(value.get("cwd"), str):
             return 0
+        _announce_failed_autopush(value)
         root = Path(value["cwd"])
         if not root.is_absolute() or not root.is_dir():
             return 0

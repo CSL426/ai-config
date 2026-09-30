@@ -71,7 +71,7 @@ def _handoff_threads() -> list:
 
 def _autopush_state() -> dict:
     """Never let a scheduler hiccup take down the whole memory page."""
-    blank = {"installed": False, "last_push": "", "reason": "",
+    blank = {"installed": False, "last_push": "", "last_failure": None, "reason": "",
              "slot": "", "host": "", "others": []}
     try:
         from . import autopush, schedule_table
@@ -86,6 +86,7 @@ def _autopush_state() -> dict:
             if name != host
         ]
         return {"installed": state["installed"], "last_push": state["last_push"],
+                "last_failure": state["last_failure"],
                 "reason": state["reason"], "host": host,
                 "slot": str(mine) if mine else "", "others": others}
     except (ImportError, OSError, RuntimeError, ValueError):

@@ -221,6 +221,12 @@ Machines with no schedule get the same thing opportunistically at the end of any
 acg command; set `AI_CONFIG_NO_AUTOPUSH=1` to suppress that. Both paths skip the
 confirmation but keep the credential check, so a secret still blocks the push.
 
+An unattended push that fails is remembered with its reason and the files
+involved, until a later push succeeds or nothing is left to push. `memory
+autopush status` prints it, a new Claude session is told at start (the
+memory-entry hook), and the desktop app's automation page shows it. Tell the
+user rather than retrying with `--allow-secrets`.
+
 ## The /acg skill
 
 The first install and every `update` put this repository's plugin into

@@ -420,3 +420,54 @@ def test_the_installed_schedule_keeps_its_names() -> None:
     assert "OnCalendar=*-*-* 04:10:00" in timer
     assert "Persistent=true" in timer
     assert "memory push" in service
+
+
+def test_a_blocked_push_leaves_a_reason_until_one_succeeds(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """2026-09-30: blocked at 04:18, and status kept showing the last success."""
+    import sys
+
+    # 被擋下的內容還在,等著下一次推
+    _changes(monkeypatch, True)
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: False)
+
+    def blocked() -> int:
+        print("\033[0;31m✗\033[0m Potential credential content would be committed; push cancelled:",
+              file=sys.stderr)
+        print("  memory/handoff/acg 排程.md")
+        print("  memory/topics/deploy.md")
+        print("ℹ False positive (docs/examples)? Re-run with ...")
+        return 1
+
+    assert autopush.push_and_record(blocked) == 1
+
+    failure = autopush.last_failure()
+    assert failure["reason"] == "Potential credential content would be committed; push cancelled:"
+    assert failure["paths"] == ["memory/handoff/acg 排程.md", "memory/topics/deploy.md"]
+    # 輸出照樣進 journal,不能被側錄吃掉
+    assert "Potential credential" in capsys.readouterr().err
+    assert autopush.status()["last_failure"] == failure
+
+    assert autopush.push_and_record(lambda: 0) == 0
+    assert autopush.last_failure() is None
+
+
+def test_a_failure_without_an_error_line_still_says_something(notebook: Path) -> None:
+    assert autopush.push_and_record(lambda: 3) == 3
+    assert autopush.last_failure()["reason"] == "結束碼 3"
+
+
+def test_nothing_left_to_push_clears_an_old_failure(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fixed by a manual push or by removing the note: nothing pending, nothing to report."""
+    assert autopush.push_and_record(lambda: 1) == 1
+    _changes(monkeypatch, True)
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: False)
+    autopush.decide()
+    assert autopush.last_failure() is not None
+
+    _changes(monkeypatch, False)
+    autopush.decide()
+    assert autopush.last_failure() is None

@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { boot, calls, queue } from "./mock-bridge";
 
+// 畫面用本機時間;固定時區,測試才不會隨執行的機器改變
+test.use({ timezoneId: "UTC" });
+
 const success = { code: 0, output: "完成", error: null, backup_path: null, recovery_required: false };
 
 const base = {
@@ -39,6 +42,29 @@ test("已排定時開關是開的,並顯示上次上傳時間", async ({ page })
 
   await expect(page.locator("#autopush-toggle")).toBeChecked();
   await expect(page.locator("#autopush-hint")).toContainText("2026-09-14 04:00");
+});
+
+test("上次排程沒推成時說出原因與檔案,成功後消失", async ({ page }) => {
+  await boot(page);
+  await openMemory(page, {
+    ...base,
+    autopush: { installed: true, last_push: "2026-09-29T04:11:00+00:00", reason: "",
+      last_failure: { when: "2026-09-30T04:18:00+00:00",
+        reason: "Potential credential content would be committed; push cancelled:",
+        paths: ["memory/handoff/acg 排程.md"] },
+      slot: "04:18", host: "gpu-a4000", others: [] },
+  });
+
+  const failure = page.locator("#autopush-failure");
+  await expect(failure).toBeVisible();
+  await expect(failure).toContainText("2026-09-30 04:18");
+  await expect(failure).toContainText("memory/handoff/acg 排程.md");
+
+  await queue(page, "memory_info", { ...base, autopush: { installed: true,
+    last_push: "2026-09-30T09:54:00+00:00", reason: "", last_failure: null,
+    slot: "04:18", host: "gpu-a4000", others: [] } });
+  await page.locator("#automation-refresh").click();
+  await expect(failure).toBeHidden();
 });
 
 test("打開開關會請後端排定", async ({ page }) => {

@@ -131,6 +131,14 @@ function renderKeepaliveWindow(state: MemoryInfo["keepalive"]): void {
 }
 
 
+function localTime(stamp: string): string {
+  const parsed = new Date(stamp);
+  if (Number.isNaN(parsed.getTime())) return stamp;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} `
+    + `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
 function renderAutopush(info: MemoryInfo): void {
   const toggle = $<HTMLInputElement>("#autopush-toggle");
   const state = info.autopush ?? {
@@ -139,9 +147,18 @@ function renderAutopush(info: MemoryInfo): void {
   toggle.checked = state.installed;
   const parts: string[] = ["沒有變更或十二小時內推過就跳過。"];
   if (state.last_push) {
-    parts.push(`上次上傳：${state.last_push.slice(0, 16).replace("T", " ")}`);
+    parts.push(`上次上傳：${localTime(state.last_push)}`);
   }
   $("#autopush-hint").textContent = parts.join(" ");
+  // 只顯示成功時間的話,被擋下的那一晚看起來一切正常
+  const failure = state.last_failure ?? null;
+  const failed = $("#autopush-failure");
+  failed.hidden = !failure;
+  failed.textContent = failure
+    ? `上次自動上傳失敗（${localTime(failure.when)}）：${failure.reason}`
+      + (failure.paths.length ? ` ${failure.paths.join("、")}` : "")
+      + "。處理後按記憶頁的「上傳記憶」，成功就會清掉這則。"
+    : "";
 
   const row = $("#autopush-slot-row");
   row.hidden = !state.installed;

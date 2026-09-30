@@ -90,10 +90,9 @@ def _run_memory(args: list[str]) -> int:
             from ..console import set_force
 
             set_force(True)
-            code = do_push(MEMORY_SCOPE, allow_secrets=False, scheduled=True)
-            if code == 0:
-                auto.record_push()
-            return code
+            return auto.push_and_record(
+                lambda: do_push(MEMORY_SCOPE, allow_secrets=False, scheduled=True),
+            )
         return do_push(MEMORY_SCOPE, allow_secrets=allow_secrets)
     if command == "handoff":
         return memory_handoff._handoff(rest)
@@ -124,7 +123,16 @@ def _autopush(rest: list[str]) -> int:
                 log_info(
                     f"尚未排定;沒有排程時,{ENTRYPOINT} 每次執行也會順手檢查"
                 )
-            log_info(f"上次推送:{state['last_push'] or '沒有紀錄'}")
+            log_info(f"上次推送:{_local_time(state['last_push']) or '沒有紀錄'}")
+            failure = state["last_failure"]
+            if failure:
+                # 只記成功時間的話,被擋下的那一晚在這裡看起來一切正常
+                log_error(
+                    f"上次自動推送失敗({_local_time(failure['when'])}):{failure['reason']}"
+                )
+                for path in failure["paths"]:
+                    print(f"  {path}")
+                log_info(f"處理後執行 {ENTRYPOINT} memory push;成功就會清掉這筆紀錄")
             log_info(f"現在執行的話:{state['reason']}")
             return 0
         if action == "enable" and len(args) <= 1:
@@ -142,6 +150,16 @@ def _autopush(rest: list[str]) -> int:
         return 1
     log_error(_AUTOPUSH_USAGE)
     return 1
+
+
+def _local_time(stamp: str) -> str:
+    """An ISO timestamp as this machine's wall clock, to the minute."""
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(stamp).astimezone().strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return stamp
 
 
 def _path(flags: list[str]) -> int:

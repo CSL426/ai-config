@@ -316,3 +316,22 @@ def test_registered_exec_hook_runs_without_shell(migrated):
     assert result.stdout == ""
     assert safety.is_reparse_point(entry)
     assert (entry / "recent.md").read_text() == "original history\n"
+
+
+def test_a_new_session_hears_about_a_failed_autopush(migrated, monkeypatch, capsys, tmp_path):
+    from ai_config import autopush
+
+    root, _entry, _target = migrated
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    assert autopush.push_and_record(lambda: print("✗ push cancelled") or 1) == 1
+    capsys.readouterr()
+
+    for event, expected in (("UserPromptSubmit", False), ("SessionStart", True)):
+        payload = {"cwd": str(root), "hook_event_name": event}
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+        memory_hooks.run([str(memory_paths.SCRIPT_DIR)])
+        out = capsys.readouterr().out
+        # 每次送出提示都重複會變成噪音,只在開會話時說一次
+        assert ("自動上傳失敗" in out) is expected
+        if expected:
+            assert "push cancelled" in out
