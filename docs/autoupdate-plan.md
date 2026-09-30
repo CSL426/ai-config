@@ -16,7 +16,7 @@
 - 只有一個每晚排程,就是 autopush 原本那一個(unit `acg-autopush`、工作
   「acg memory autopush」),指令改成 `acg __nightly --if-stale 12`。
 - 開了自動更新就先更新,再用安裝位置的啟動器(也就是剛裝好的新版)跑
-  `memory push --if-stale`。理由:gb10 的日誌被佔位符誤判擋了一晚,修正白天
+  `memory push --if-stale`。理由:一台機器的日誌被佔位符誤判擋了一晚,修正白天
   就發布了,只是還沒裝;綁在一起的話當晚就生效。
 - 兩個開關各自獨立(`~/.local/state/acg/nightly.json`):上傳記憶和替換
   執行檔是兩種不同的同意,開一個不會順便開另一個;有一個開著排程就在。
@@ -44,7 +44,7 @@ session 開頭提示一次、GUI 自動化頁面顯示。
 - 更新進行中可能有 session 正在用舊版。acg 已是 onedir 版本目錄,
   Claude Code 與 Codex 的官方安裝也都是版本目錄加連結,不會覆寫執行中的
   檔案。Antigravity 是單一執行檔,`agy update` 先把舊檔改名為
-  `agy.<數字>.old` 再把新檔改名就位(2026-09-30 在 A4000 以 strace
+  `agy.<數字>.old` 再把新檔改名就位(2026-09-30 在 x86_64 工作站 以 strace
   實測,1.2.13→1.2.14,當時另有一個 agy 在執行,沒受影響)。
 - Antigravity 自己也有更新器:每次啟動在背景檢查(15 分鐘內不重查),
   keepalive 一天四次啟動它就會觸發。但 2026-09-30 12:00 那次沒有升上
@@ -61,7 +61,7 @@ CLI、`--help`、`ai_config/guide.py`、GUI 自動化頁面(開關與時間,與
 
 ## 驗證
 
-- 2026-09-30 A4000 從原始碼實跑 `autoupdate run`:claude 2.1.285、codex
+- 2026-09-30 x86_64 工作站 從原始碼實跑 `autoupdate run`:claude 2.1.285、codex
   0.159.2、agy 1.2.14 皆已是最新,acg 1.0.100 → 1.0.101,共 28 秒,
   `status` 正確列出各工具結果。
 

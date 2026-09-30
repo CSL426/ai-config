@@ -12,7 +12,7 @@
   再 import 就讀到新檔案,`Error -3 while decompressing data`。1.0.93
   的 hook 修復、1.0.98 的 plugin 更新都死在這裡,後者還先印了
   「Update complete」。
-- **每次啟動都慢**。A4000 實測 `--version` onefile 0.65 秒,同一份程式
+- **每次啟動都慢**。x86_64 工作站 實測 `--version` onefile 0.65 秒,同一份程式
   onedir 0.35 秒;statusline hook 0.7 秒對 0.3~0.5 秒。hook 在每次送出
   提示、每次工具呼叫都跑。Windows 另有 Defender 掃描解壓出的檔案,
   更新時間從 20 秒漲到 4 分鐘,是否與此有關尚未量測。
@@ -32,7 +32,7 @@ onedir 的 exe 離開 `_internal` 就跑不起來。放在 `app/` 裡,舊版找�
 
 - **Linux、macOS**:`~/.local/bin/ai-config` 照舊是指向
   `versions/<版號>/app/ai-config` 的 symlink。onedir 經由 symlink 啟動時會
-  找到真正的 `_internal`(A4000 實測)。
+  找到真正的 `_internal`(x86_64 工作站 實測)。
 - **Windows**:`~/.local/bin/ai-config.exe` 換成一支 Rust 寫的小啟動器。
   它讀 `versions/active`,以同樣的參數、主控台與標準輸入輸出啟動
   `versions/<版號>/app/ai-config.exe`(舊版則是 `versions/<版號>/ai-config.exe`),
@@ -91,7 +91,7 @@ PSModulePath,載不到 `Get-FileHash`、`Expand-Archive`(CI 實際踩到)。
 - CI:三個平台建 onedir 並跑 `help`;Windows 另外經由啟動器跑一次
   `help` 與 git credential helper 煙霧測試。啟動器在 Linux 與 Windows
   跑 `cargo test`。
-- 實機:A4000、gb10 本機;Windows 請 `debug acg` session 量測更新時間、
+- 實機:x86_64 工作站、aarch64 機器;Windows 請那台的 session 量測更新時間、
   `acg --version` 與 hook 的啟動時間,並確認 cmd 打 `acg`、雙擊、
   `acg gui` 三種啟動方式。
 
@@ -127,12 +127,12 @@ pywebview 在 Linux 要用系統的 GTK/WebKit2GTK 或 Qt,都很難打包進獨�
 
 ## 實測紀錄
 
-- A4000(x86_64)以乾淨 venv 建的 onedir:解開 50MB、tar.gz 21MB。
+- x86_64 工作站以乾淨 venv 建的 onedir:解開 50MB、tar.gz 21MB。
   `--version` 平均 0.20 秒、statusline 0.15 秒;同機 onefile 1.0.98 為
   0.65 與 0.7 秒。假家目錄內:壓縮檔安裝、重裝同版、`acg versions`、
   新版切到磁碟上的版本不下載、退回 1.0.97 再由舊版切回來仍可用,全部通過。
 
-- gb10(aarch64)用 CI 產物:同一組 12 項全過;`--version` 62 ms、statusline 48 ms。
+- aarch64 機器用 CI 產物:同一組 12 項全過;`--version` 62 ms、statusline 48 ms。
 - macOS(CI runner,沒有實機):arm64 與 x86_64 各 12 項全過;`--version`
   114 / 228 ms、statusline 82 / 214 ms。
 - Windows 實機(`debug acg`,假家目錄):從 zip 安裝 4 秒(同機 onefile 更新

@@ -108,7 +108,7 @@ def test_notice_spelled_the_msys_way_is_accepted(migrated, monkeypatch):
 def test_msys_translation_leaves_other_shapes_alone():
     translate = memory_hooks._from_msys_path
     assert translate("/c/Users/x") == r"c:\Users\x"
-    for untouched in ("/home/human/ai-config", r"C:\Users\x", "/cd/Users/x", "/"):
+    for untouched in ("/home/me/ai-config", r"C:\Users\x", "/cd/Users/x", "/"):
         assert translate(untouched) is None
 
 

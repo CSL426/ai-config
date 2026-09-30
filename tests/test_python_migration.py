@@ -727,7 +727,7 @@ def test_codex_hook_trust_stays_on_each_machine() -> None:
     """[hooks.state.*] records which hooks this machine trusts, keyed by its paths.
 
     Synced, the Windows machine carried a trust entry for
-    /home/human/openVman/... — a path that exists only on the Linux box.
+    /home/me/project/... — a path that exists only on the Linux box.
     Like [projects.*], it is kept out of the repo and preserved on apply.
     """
     from ai_config.tools.codex import filter_codex_config, merge_codex_config
@@ -735,7 +735,7 @@ def test_codex_hook_trust_stays_on_each_machine() -> None:
     shared = (
         'personality = "pragmatic"\n\n'
         "[hooks.state]\n\n"
-        '[hooks.state."/home/human/openVman/.codex/hooks.json:pre_tool_use:0:0"]\n'
+        '[hooks.state."/home/me/project/.codex/hooks.json:pre_tool_use:0:0"]\n'
         'trusted_hash = "sha256:linux"\n\n'
         "[features]\nx = true\n"
     )
@@ -759,7 +759,7 @@ def test_codex_hook_trust_stays_on_each_machine() -> None:
 def test_apply_drops_hook_trust_for_paths_this_machine_lacks(tmp_path: Path) -> None:
     """Making [hooks.state.*] local protected what earlier syncs had left.
 
-    Windows and gb10 kept a trust entry for /home/human/openVman/... —
+    Windows and the ARM machine kept a trust entry for /home/me/project/... —
     brought over before hook trust stopped syncing, then preserved as
     their own. The file it trusts does not exist there, so it can never
     be used, and codex warned about the settings misplaced under it on

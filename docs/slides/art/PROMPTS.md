@@ -81,8 +81,8 @@
 
 ## 第四輪:整理比比拉布圖示(2026-09-24)
 
-來源:`/home/human/ai-config/gui/src/assets/bibilabu.png`(250×250),
-另一份 `/home/human/ai-config/assets/icon.png`(256×256)是同一張圖。
+來源:`gui/src/assets/bibilabu.png`(250×250),
+另一份 `assets/icon.png`(256×256)是同一張圖。
 
 **只整理,不換風格。** 角色、姿勢、表情、配色、3D 質感都保持原樣,
 看起來要是「同一張圖的高畫質版」,不是重新畫一隻。上面「所有圖都要遵守」的

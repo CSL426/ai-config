@@ -4,7 +4,7 @@
 
 ## 需求
 
-一份 `main` 是所有機器的共同基底。某台機器（例如 A4000、gb10）
+一份 `main` 是所有機器的共同基底。某台機器（例如 workstation、arm-box）
 有自己的差異時，把差異存成一個命名的設定組。設定組可以有很多個。
 新機器第一次設定時，從清單裡挑一個設定組套用，或只用 main。
 
@@ -25,14 +25,14 @@
 ├── agy/
 ├── memory/                     不受設定組影響
 └── hosts/
-    ├── A4000/
+    ├── workstation/
     │   ├── host.toml           說明與移除清單
     │   ├── claude/
     │   │   ├── mcp.json        只放與 main 不同的伺服器
     │   │   └── settings.json   只放與 main 不同的鍵
     │   └── codex/
     │       └── config.toml     只放與 main 不同的表
-    └── gb10/
+    └── arm-box/
         └── ...
 ```
 
@@ -101,8 +101,8 @@ status 對綁定設定組的機器要顯示三件事：目前設定組名稱、�
 3. `acg apply` 以疊合結果投影到各工具。
 4. 之後在這台調整的設定，push 時按上一節規則進對應的層。
 
-從一台既有機器建立新設定組：`acg host save A4000` 會把這台與
-main 的差異存進去，再 `acg host use A4000` 綁定，之後 push。
+從一台既有機器建立新設定組：`acg host save workstation` 會把這台與
+main 的差異存進去，再 `acg host use workstation` 綁定，之後 push。
 
 ## 安全
 

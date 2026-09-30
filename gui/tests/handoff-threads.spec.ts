@@ -20,7 +20,7 @@ test("列出待接手的工作線與過期標示", async ({ page }) => {
   await openWith(page, [
     { thread: "排程", project: "CSL426--ai-config", state: "open",
       age_days: 0, stale: false, summary: "還剩:等 Windows 回報" },
-    { thread: "admin 拆分", project: "CreateIntelligens--openVman", state: "open",
+    { thread: "admin 拆分", project: "owner--project", state: "open",
       age_days: 7, stale: true, summary: "還剩:push 並開 PR" },
   ]);
   const rows = page.locator(".handoff-thread");

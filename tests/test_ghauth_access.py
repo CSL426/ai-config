@@ -26,7 +26,7 @@ from ai_config import (
         ("https://github.com/owner/repo.git", "owner/repo"),
         # 多帳號常用的 SSH alias,URL 上看不出 host 其實是 github.com
         ("git@github-work:owner/repo.git", "owner/repo"),
-        ("ssh://git@github-csl426:CSL426/myccskills.git", "CSL426/myccskills"),
+        ("ssh://git@github-personal:you/ai-config-data.git", "you/ai-config-data"),
         ("https://gitlab.com/owner/repo.git", ""),
         ("/srv/local/repo", ""),
         ("", ""),

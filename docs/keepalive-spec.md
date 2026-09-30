@@ -54,7 +54,7 @@ Claude 的用量視窗長五小時，從那個帳號當天第一次呼叫起算�
 增加一個獨立區段，不動現有欄位。
 
 ```toml
-host = "gpu-a4000"
+host = "workstation"
 slot = "04:10"          # autopush 的，不受影響
 
 [keepalive]

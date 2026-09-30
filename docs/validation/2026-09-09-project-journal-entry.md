@@ -23,7 +23,7 @@
 - Linux ARM64 隔離環境使用本次來源：實際執行註冊的 command／args，
   入口可讀、重複執行成功、維持 local，停用後仍可讀日誌。
 - 隔離測試沒有修改該機正式安裝、記憶資料或 Claude 會話。
-- 2026-09-10 gb10（Linux aarch64）正式安裝實測，使用 `69877a8` 的 Standalone
+- 2026-09-10 Linux aarch64 機器正式安裝實測，使用 `69877a8` 的 Standalone
   Release 產物：`memory enable` 寫入兩筆 hook；`Breeze-ASR-360` 原本缺少
   `.remember`，以 `claude -p` 開真實會話後成為指向本機日誌的 symlink，
   維持 local，Git exclude 已含 `.remember`；再開一次會話不重複建立；已
