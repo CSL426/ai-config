@@ -7,10 +7,16 @@ an install or update failure.
 
 On a machine that belongs to someone else, installing a user-scope plugin
 changes the owner's Claude Code. AI_CONFIG_NO_PLUGIN=1 skips the whole step.
+
+The marketplace is pinned to the release this acg came from. Left on main,
+Claude Code refreshed it on start: a Windows machine ran plugin 1.0.105
+against CLI 1.0.103 for a day, and its memory skill promised a nightly
+adopt that only 1.0.104 does. Pinned, /acg moves only when acg does.
 """
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -66,9 +72,19 @@ def _installed(claude: str) -> "bool | None":
     )
 
 
-def _marketplace_known(claude: str) -> bool:
+def _marketplace(claude: str) -> "dict | None":
     markets = _listed(claude, "marketplace", "list") or []
-    return any(isinstance(m, dict) and m.get("name") == MARKETPLACE for m in markets)
+    return next(
+        (m for m in markets if isinstance(m, dict) and m.get("name") == MARKETPLACE), None,
+    )
+
+
+def _release_ref() -> "str | None":
+    """The tag of the release running now; None from an unreleased checkout."""
+    from .version import current_version
+
+    version = current_version() or ""
+    return f"v{version}" if re.fullmatch(r"\d+(?:\.\d+){1,3}", version) else None
 
 
 def _update(claude: str) -> None:
@@ -80,9 +96,12 @@ def _update(claude: str) -> None:
         log_warn(f"plugin 沒有更新:{last or f'exit {done.returncode}'}")
 
 
-def _install(claude: str, repository: str) -> None:
-    if not _marketplace_known(claude):
-        added = _run(claude, "marketplace", "add", repository)
+def _install(claude: str, repository: str, ref: "str | None", known: bool) -> None:
+    if not known:
+        added = _run(claude, "marketplace", "add", f"{repository}#{ref}" if ref else repository)
+        if added.returncode != 0 and ref:
+            # 這個版本號沒有對應的 tag(還沒發布的原始碼):退回追預設分支
+            added = _run(claude, "marketplace", "add", repository)
         if added.returncode != 0:
             log_warn(f"沒有裝上 /acg:{_last_line(added) or 'marketplace add 失敗'}")
             return
@@ -103,9 +122,18 @@ def ensure(repository: str) -> None:
     try:
         installed = _installed(claude)
         # 查不出來(舊版 Claude Code 沒有 --json)就照舊只更新,不冒險重裝
-        if installed is False:
-            _install(claude, repository)
-        else:
+        if installed is None:
             _update(claude)
+            return
+        market = _marketplace(claude)
+        ref = _release_ref()
+        if market is not None and ref and market.get("ref") != ref:
+            # 對同名 marketplace 再 add 不會換 ref,只能拿掉重加;拿掉會連 plugin 一起移除
+            _run(claude, "marketplace", "remove", MARKETPLACE)
+            market, installed = None, False
+        if installed:
+            _update(claude)
+        else:
+            _install(claude, repository, ref, known=market is not None)
     except (OSError, subprocess.SubprocessError) as exc:
         log_warn(f"/acg 沒有更新:{exc}")

@@ -261,6 +261,9 @@ Claude Code when `claude` is on the machine, so the skill arrives with the
 CLI; set `AI_CONFIG_NO_PLUGIN=1` to skip that, e.g. on a machine whose
 Claude Code belongs to someone else. By hand it is `claude plugin
 marketplace add CSL426/ai-config`, then `claude plugin install acg@acg`.
+acg pins the marketplace to its own release tag (`CSL426/ai-config#v<version>`),
+so /acg changes only when `acg update` does; Claude Code's own marketplace
+refresh cannot move it ahead of the CLI.
 Each subcommand is its own entry in the / menu, `/acg:status`, `/acg:sync`,
 `/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:autoupdate`, `/acg:msg`,
 `/acg:handoff`, `/acg:handoffs`, `/acg:pickup`; those are user-only, so they

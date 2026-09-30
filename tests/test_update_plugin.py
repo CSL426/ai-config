@@ -33,6 +33,12 @@ def _fake(monkeypatch: pytest.MonkeyPatch, plugins, markets, *, failing=()) -> l
     return seen
 
 
+@pytest.fixture(autouse=True)
+def _unreleased(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most tests are about install versus update; pinning has its own below."""
+    monkeypatch.setattr(claude_plugin, "_release_ref", lambda: None)
+
+
 def _mutations(seen: list) -> list:
     return [args for args in seen if args[-1:] != ["--json"]]
 
@@ -145,3 +151,81 @@ def test_the_installed_version_brings_the_plugin_and_can_be_told_not_to(script: 
     assert "Installation" not in line
     assert "__claude-plugin" in text
     assert "__refresh-hooks" in text
+
+
+def test_the_marketplace_follows_this_release_not_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On main, Claude Code moved /acg ahead of the CLI by itself."""
+    monkeypatch.setattr(claude_plugin, "_release_ref", lambda: "v1.0.106")
+    seen = _fake(monkeypatch, [], [])
+
+    claude_plugin.ensure("CSL426/ai-config")
+
+    assert _mutations(seen) == [
+        ["plugin", "marketplace", "add", "CSL426/ai-config#v1.0.106"],
+        ["plugin", "install", "acg@acg", "--scope", "user"],
+    ]
+
+
+@pytest.mark.parametrize("market", [
+    {"name": "acg"},                       # 以前加的,追 main
+    {"name": "acg", "ref": "v1.0.105"},   # 上一版
+])
+def test_a_marketplace_on_another_ref_is_moved_to_this_release(
+    monkeypatch: pytest.MonkeyPatch, market: dict,
+) -> None:
+    """Adding the same name again keeps the old ref, so it is removed and re-added."""
+    monkeypatch.setattr(claude_plugin, "_release_ref", lambda: "v1.0.106")
+    seen = _fake(monkeypatch, USER_ACG, [market])
+
+    claude_plugin.ensure("CSL426/ai-config")
+
+    assert _mutations(seen) == [
+        ["plugin", "marketplace", "remove", "acg"],
+        ["plugin", "marketplace", "add", "CSL426/ai-config#v1.0.106"],
+        ["plugin", "install", "acg@acg", "--scope", "user"],
+    ]
+
+
+def test_a_marketplace_already_on_this_release_is_only_updated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(claude_plugin, "_release_ref", lambda: "v1.0.106")
+    seen = _fake(monkeypatch, USER_ACG, [{"name": "acg", "ref": "v1.0.106"}])
+
+    claude_plugin.ensure("CSL426/ai-config")
+
+    assert _mutations(seen) == [["plugin", "update", "acg@acg"]]
+
+
+def test_a_version_without_a_tag_falls_back_to_the_default_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A source checkout reports a version that has not been released yet."""
+    monkeypatch.setattr(claude_plugin, "_release_ref", lambda: "v9.9.9")
+    seen: list = []
+
+    def run(argv, **kwargs):
+        args = list(argv[1:])
+        seen.append(args)
+        if args[-1:] == ["--json"]:
+            return subprocess.CompletedProcess(argv, 0, "[]", "")
+        code = 1 if args[-1].endswith("#v9.9.9") else 0
+        return subprocess.CompletedProcess(argv, code, "done", "no such ref" if code else "")
+
+    monkeypatch.setattr(claude_plugin.subprocess, "run", run)
+    monkeypatch.setattr(claude_plugin, "claude_binary", lambda: "/bin/claude")
+    monkeypatch.delenv(claude_plugin.OPT_OUT, raising=False)
+
+    claude_plugin.ensure("CSL426/ai-config")
+
+    assert _mutations(seen) == [
+        ["plugin", "marketplace", "add", "CSL426/ai-config#v9.9.9"],
+        ["plugin", "marketplace", "add", "CSL426/ai-config"],
+        ["plugin", "install", "acg@acg", "--scope", "user"],
+    ]
+
+
+def test_the_release_ref_is_this_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config import version
+
+    monkeypatch.undo()
+    monkeypatch.setattr(version, "current_version", lambda: "1.0.106")
+    assert claude_plugin._release_ref() == "v1.0.106"
+    monkeypatch.setattr(version, "current_version", lambda: "unknown")
+    assert claude_plugin._release_ref() is None
