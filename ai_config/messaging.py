@@ -7,8 +7,9 @@ lists who is on line across tools and delivers a message by name.
 Codex: a TUI started with `--remote unix://` attaches to the account's
 app-server daemon, which speaks JSON-RPC over a WebSocket on a unix
 socket. The daemon lists loaded threads and queues a message into one
-(`thread/queue/add`, the call `codex queue` makes). Everything here is Codex's own internal protocol, so failures are
-reported plainly rather than papered over.
+(`thread/queue/add`, the call `codex queue` makes). Everything here is
+Codex's own internal protocol, so failures are reported plainly rather
+than papered over.
 
 Windows: the daemon's socket is a real AF_UNIX socket there too, but
 CPython on Windows has no AF_UNIX, so acg talks through
