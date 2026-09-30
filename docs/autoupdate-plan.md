@@ -22,7 +22,7 @@ autopush 之後(05:00 前後),避開 keepalive 的整點。
 | acg | `acg update`(非互動,已是最新就跳過) | 一律 |
 | Claude Code | `claude update` | `claude` 存在 |
 | Codex | `codex update`(官方獨立安裝版) | `codex` 為獨立安裝版 |
-| Antigravity | 待查官方更新方式 | `agy` 存在 |
+| Antigravity | `agy update` | `agy` 存在 |
 
 一項失敗不影響其他項。每項的結果(版本前後、成功或原因)記在本機
 狀態檔,沿用自動上傳失敗的做法:`autoupdate status` 列出、Claude 新
@@ -32,7 +32,12 @@ session 開頭提示一次、GUI 自動化頁面顯示。
 
 - 更新進行中可能有 session 正在用舊版。acg 已是 onedir 版本目錄,
   Claude Code 與 Codex 的官方安裝也都是版本目錄加連結,不會覆寫執行中的
-  檔案;Antigravity 要查。
+  檔案。Antigravity 是單一執行檔,`agy update` 先把舊檔改名為
+  `agy.<數字>.old` 再把新檔改名就位(2026-09-30 在 workstation 以 strace
+  實測,1.2.13→1.2.14,當時另有一個 agy 在執行,沒受影響)。
+- Antigravity 自己也有更新器:每次啟動在背景檢查(15 分鐘內不重查),
+  keepalive 一天四次啟動它就會觸發。但 2026-09-30 12:00 那次沒有升上
+  1.2.14,五分鐘後手動 `agy update` 才升上,所以排程裡仍要明確跑一次。
 - 不是官方獨立安裝版的 Codex(npm 全域)不自動更新,只在 status 提醒,
   免得碰到要 sudo 的系統目錄。
 - `acg update` 本身會更新 /acg plugin,不必另外處理。
@@ -45,5 +50,6 @@ CLI、`--help`、`ai_config/guide.py`、GUI 自動化頁面(開關與時間,與
 
 ## 未知
 
-- Antigravity CLI 的官方更新方式與安裝版面。
+- Antigravity 內建更新器 12:00 那次為何沒升級(當時新版是否已發布)。
+- Windows 上 `agy update` 替換執行中 exe 的行為。
 - Windows 上 `claude update` 在排程(無主控台)下的行為。
