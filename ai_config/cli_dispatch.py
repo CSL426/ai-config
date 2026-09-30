@@ -4,6 +4,7 @@ __main__ keeps usage(), the --help text, and passes it in here.
 """
 
 import os
+import subprocess
 import sys
 from collections.abc import Callable
 
@@ -20,6 +21,7 @@ from .console import (
     log_error,
     log_info,
     log_success,
+    log_warn,
     set_force,
 )
 from .paths import ALL_TOOLS, CONFIG_ERROR, ENTRYPOINT, SCRIPT_DIR
@@ -32,6 +34,20 @@ def resolve_tool(tool: str) -> str:
         log_error(f"Unknown tool: {tool}")
         sys.exit(1)
     return tool
+
+
+def _refresh_windows_schedules() -> None:
+    """Existing tasks keep the command they were made with; rewrite them once."""
+    try:
+        from .autopush import refresh_windows_task
+        from .keepalive_scheduler import refresh_windows_tasks
+
+        for line in [refresh_windows_task(), *refresh_windows_tasks()]:
+            if line:
+                log_info(line)
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        # 順手的修正不能讓 update 失敗;下次更新會再試
+        log_warn(f"排程沒有改成不開視窗:{exc}")
 
 
 def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
@@ -121,6 +137,7 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         from .hooks import refresh_all
 
         refresh_all()
+        _refresh_windows_schedules()
         return 0
     if cmd == "__nightly":
         # 隱藏命令:每晚排程的進入點,先更新(若開啟)再上傳記憶(若開啟)

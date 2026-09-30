@@ -236,7 +236,8 @@ def test_the_windows_task_goes_through_cmd() -> None:
     argv = autopush.schtasks_argv(4, 12)
     command = argv[argv.index("/TR") + 1]
 
-    assert command.startswith("cmd /c ")
+    # conhost --headless:Windows Terminal 當預設主控台時,只有 cmd 會開一個看得到的視窗
+    assert command.startswith("conhost.exe --headless cmd /c ")
     assert "--if-stale" in command
 
 
@@ -507,3 +508,21 @@ def test_the_scheduled_push_adopts_touched_projects_first(
     assert command.run_memory(["push", "--if-stale", "12"]) == 0
 
     assert order == ["adopt", "decide"]
+
+
+def test_a_task_made_before_headless_is_rewritten_at_its_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(autopush, "platform_name", lambda: "windows")
+    monkeypatch.setattr(autopush, "schedule_installed", lambda: True)
+    monkeypatch.setattr(autopush, "_scheduled_at", lambda: (4, 0))
+    xml = {"text": "<Command>cmd</Command><Arguments>/c ai-config.exe __nightly</Arguments>"}
+    monkeypatch.setattr(autopush.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, xml["text"], ""))
+    rebuilt = []
+    monkeypatch.setattr(autopush, "install", lambda hour: rebuilt.append(hour) or [])
+
+    assert "04:00" in autopush.refresh_windows_task()
+    assert rebuilt == [4]
+
+    xml["text"] = "<Command>conhost.exe</Command><Arguments>--headless cmd /c x</Arguments>"
+    assert autopush.refresh_windows_task() == ""
+    assert rebuilt == [4]

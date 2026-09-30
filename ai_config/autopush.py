@@ -386,8 +386,34 @@ def schtasks_argv(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
     command = " ".join(_quote(part) for part in _run_args(stale_hours))
     return [
         "schtasks", "/Create", "/F", "/TN", _TASK, "/SC", "DAILY",
-        "/ST", f"{hour:02d}:{minute:02d}", "/TR", f"cmd /c {command}",
+        "/ST", f"{hour:02d}:{minute:02d}", "/TR", windows_command(command),
     ]
+
+
+def windows_command(command: str) -> str:
+    """cmd for usable standard handles, inside a console nobody sees.
+
+    With Windows Terminal as the default console, `cmd /c` alone opened a
+    visible terminal for the whole five-minute nightly run. A headless
+    conhost gives the same console without a window (measured: none shown,
+    result 0). --headless is undocumented; it exists since Windows 10 1809.
+    """
+    return f"conhost.exe --headless cmd /c {command}"
+
+
+def refresh_windows_task() -> str:
+    """Rewrite a task made before it ran headless, at the time it already has."""
+    if platform_name() != "windows" or not schedule_installed():
+        return ""
+    listed = subprocess.run(
+        ["schtasks", "/Query", "/TN", _TASK, "/XML"],
+        capture_output=True, text=True, **NATIVE, check=False, timeout=60,
+    )
+    at = _scheduled_at()
+    if listed.returncode != 0 or "--headless" in listed.stdout or at is None:
+        return ""
+    install(at[0])
+    return f"每晚排程改成不開視窗執行({at[0]:02d}:{at[1]:02d})"
 
 
 def systemd_dir() -> Path:
