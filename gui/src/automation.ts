@@ -150,7 +150,7 @@ function renderAutopush(info: MemoryInfo): void {
     installed: false, last_push: "", reason: "", slot: "", host: "", others: [],
   };
   toggle.checked = state.installed;
-  const parts: string[] = ["沒有變更或十二小時內推過就跳過。"];
+  const parts: string[] = ["上傳前先同步有日誌的專案；沒有變更或十二小時內推過就跳過。"];
   if (state.last_push) {
     parts.push(`上次上傳：${localTime(state.last_push)}`);
   }

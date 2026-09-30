@@ -68,6 +68,9 @@ def _run_memory(args: list[str]) -> int:
                 return 1
             rest = []
         if stale is not None:
+            # 有日誌的專案先收進共用記憶,這一趟就一起推上去
+            for line in memory_lifecycle.adopt_touched():
+                log_info(line)
             decision = auto.decide(stale)
             # 時間表住在記憶目錄裡,decide 會先把落後的部分接上,所以讓位要在
             # 它之後才看得到別台剛認領的時段。反過來的話,撞號要等到隔天才發現
