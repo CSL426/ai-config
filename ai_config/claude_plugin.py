@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from .console import log_info, log_success, log_warn
@@ -80,7 +81,11 @@ def _marketplace(claude: str) -> "dict | None":
 
 
 def _release_ref() -> "str | None":
-    """The tag of the release running now; None from an unreleased checkout."""
+    """The tag this version would have. Only the format is checked here.
+
+    A packaged build always has its tag; a source checkout may carry a
+    version that was never released, and _install falls back for that.
+    """
     from .version import current_version
 
     version = current_version() or ""
@@ -99,8 +104,9 @@ def _update(claude: str) -> None:
 def _install(claude: str, repository: str, ref: "str | None", known: bool) -> None:
     if not known:
         added = _run(claude, "marketplace", "add", f"{repository}#{ref}" if ref else repository)
-        if added.returncode != 0 and ref:
-            # 這個版本號沒有對應的 tag(還沒發布的原始碼):退回追預設分支
+        if added.returncode != 0 and ref and not getattr(sys, "frozen", False):
+            # 原始碼的版本號可能還沒發布、沒有 tag,這時才退回預設分支。打包版
+            # 一定有 tag,失敗多半是網路;退回的話 Claude Code 又會追到 main 前面
             added = _run(claude, "marketplace", "add", repository)
         if added.returncode != 0:
             log_warn(f"沒有裝上 /acg:{_last_line(added) or 'marketplace add 失敗'}")
@@ -129,7 +135,11 @@ def ensure(repository: str) -> None:
         ref = _release_ref()
         if market is not None and ref and market.get("ref") != ref:
             # 對同名 marketplace 再 add 不會換 ref,只能拿掉重加;拿掉會連 plugin 一起移除
-            _run(claude, "marketplace", "remove", MARKETPLACE)
+            removed = _run(claude, "marketplace", "remove", MARKETPLACE)
+            if removed.returncode != 0:
+                # 沒拿掉就重加,ref 不會變;留著原本那份比裝到一半好
+                log_warn(f"/acg 沒有改到 {ref}:{_last_line(removed) or 'marketplace remove 失敗'}")
+                return
             market, installed = None, False
         if installed:
             _update(claude)

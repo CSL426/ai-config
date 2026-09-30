@@ -211,6 +211,7 @@ def test_a_version_without_a_tag_falls_back_to_the_default_branch(monkeypatch: p
     monkeypatch.setattr(claude_plugin.subprocess, "run", run)
     monkeypatch.setattr(claude_plugin, "claude_binary", lambda: "/bin/claude")
     monkeypatch.delenv(claude_plugin.OPT_OUT, raising=False)
+    monkeypatch.delattr(claude_plugin.sys, "frozen", raising=False)
 
     claude_plugin.ensure("CSL426/ai-config")
 
@@ -229,3 +230,24 @@ def test_the_release_ref_is_this_version(monkeypatch: pytest.MonkeyPatch) -> Non
     assert claude_plugin._release_ref() == "v1.0.106"
     monkeypatch.setattr(version, "current_version", lambda: "unknown")
     assert claude_plugin._release_ref() is None
+
+
+def test_a_packaged_build_does_not_fall_back_to_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Its tag exists; a failed add is the network, and main would unpin it again."""
+    monkeypatch.setattr(claude_plugin, "_release_ref", lambda: "v1.0.106")
+    monkeypatch.setattr(claude_plugin.sys, "frozen", True, raising=False)
+    seen = _fake(monkeypatch, [], [], failing=("marketplace",))
+
+    claude_plugin.ensure("CSL426/ai-config")
+
+    assert _mutations(seen) == [["plugin", "marketplace", "add", "CSL426/ai-config#v1.0.106"]]
+
+
+def test_a_marketplace_that_will_not_go_is_left_as_it_was(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-adding without removing keeps the old ref; do not reinstall for nothing."""
+    monkeypatch.setattr(claude_plugin, "_release_ref", lambda: "v1.0.106")
+    seen = _fake(monkeypatch, USER_ACG, [{"name": "acg"}], failing=("marketplace",))
+
+    claude_plugin.ensure("CSL426/ai-config")
+
+    assert _mutations(seen) == [["plugin", "marketplace", "remove", "acg"]]
