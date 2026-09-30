@@ -194,6 +194,23 @@ def test_scan_finds_every_journal_under_a_root(journal_project, tmp_path):
     assert deep in found
 
 
+def test_scan_finds_a_project_whose_journal_remember_already_linked(journal_project):
+    """remember makes .remember a link to memory/journal/<slug> on its own.
+
+    That project is "local" and waiting for adopt, but the scan skipped every
+    link before looking at its name, so Breeze-ASR-360 never showed up.
+    """
+    from ai_config import memory_index
+
+    local = memory_journal.journal_link(journal_project)
+    local.mkdir(parents=True)
+    (local / "recent.md").write_text("notes", encoding="utf-8")
+    symlink(journal_project / ".remember", local, directory=True)
+
+    assert memory_journal.journal_state(journal_project)[0] == "local"
+    assert journal_project in memory_index.unadopted_below(journal_project.parent)
+
+
 def test_scan_skips_what_is_already_adopted(journal_project, monkeypatch):
     from ai_config import memory_index
 
