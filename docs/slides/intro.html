@@ -287,7 +287,8 @@
     current = next;
     slides[current].classList.add('is-active');
     slides[current].removeAttribute('aria-hidden');
-    counter.textContent = `${pad(current + 1)} ∕ ${pad(slides.length)}`;
+    const chapter = slides[current].dataset.chapter;
+    counter.textContent = `${chapter ? chapter + ' · ' : ''}${pad(current + 1)} ∕ ${pad(slides.length)}`;
     markers.forEach((marker, markerIndex) => {
       marker.classList.toggle('is-past', markerIndex < current);
       marker.tabIndex = markerIndex === current ? 0 : -1;
