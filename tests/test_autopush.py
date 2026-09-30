@@ -471,3 +471,17 @@ def test_nothing_left_to_push_clears_an_old_failure(
     _changes(monkeypatch, False)
     autopush.decide()
     assert autopush.last_failure() is None
+
+
+def test_an_unreadable_status_keeps_the_failure(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """git status failing is not 'nothing to push'; the notice must survive it."""
+    assert autopush.push_and_record(lambda: 1) == 1
+    monkeypatch.setattr(autopush, "_memory_has_changes", lambda: None)
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: False)
+
+    decision = autopush.decide()
+
+    assert decision.push is False
+    assert autopush.last_failure() is not None
