@@ -151,3 +151,16 @@ def _claude_settings_stay_out_of_home(
     monkeypatch.setattr(paths, "CLAUDE_HOME", guard)
     monkeypatch.setattr(locking, "BACKUP_BASE", tmp_path / "backup-guard")
     monkeypatch.setattr(memory_lifecycle, "BACKUP_BASE", tmp_path / "backup-guard")
+
+
+@pytest.fixture(autouse=True)
+def _browser_mode_never_waits_long(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test that reaches the browser server by accident must not hang the run.
+
+    Without a display the desktop app now serves a page instead of failing,
+    and three tests written for the old behaviour sat for ten minutes each
+    waiting for a browser that never came.
+    """
+    from ai_config import gui_server
+
+    monkeypatch.setattr(gui_server, "IDLE_BEFORE_CLAIM", 5.0)

@@ -223,7 +223,7 @@ interface AcgApi {
   relogin_gdrive(): Promise<RunResult>;
   open_data_dir(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
-  select_project(): Promise<ProjectSelection>;
+  select_project(path?: string): Promise<ProjectSelection>;
   memory_info(projectToken?: string): Promise<MemoryInfo>;
   set_autopush(wanted: boolean): Promise<OperationResult>;
   set_handoff_reminder(enabled: boolean, threshold: number): Promise<OperationResult>;

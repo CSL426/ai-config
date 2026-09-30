@@ -70,14 +70,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 每個組建都帶前端:Windows 用 pywebview 走系統的 WebView2 開視窗;
+          # Linux/macOS 沒辦法可攜地打包 GTK/Cocoa,改由瀏覽器開同一個頁面
           - os: ubuntu-22.04
             asset: ai-config-linux-x86_64
+            extra_args: "--add-data=ai_config/gui_assets:gui_assets"
           - os: ubuntu-22.04-arm
             asset: ai-config-linux-aarch64
+            extra_args: "--add-data=ai_config/gui_assets:gui_assets"
           - os: windows-latest
             asset: ai-config-windows-x86_64
-            # Windows 是唯一內建 GUI 的組建:pywebview 走系統的 WebView2,
-            # 不必打包瀏覽器;Linux/macOS 需要額外的 GTK/Cocoa 執行期依賴。
             extra_args: >-
               --icon assets/icon.ico
               "--add-data=ai_config/gui_assets;gui_assets"
@@ -85,10 +87,10 @@ jobs:
             with_gui: "true"
           - os: macos-15-intel
             asset: ai-config-macos-x86_64
-            extra_args: "--icon assets/icon.icns"
+            extra_args: "--icon assets/icon.icns --add-data=ai_config/gui_assets:gui_assets"
           - os: macos-14
             asset: ai-config-macos-arm64
-            extra_args: "--icon assets/icon.icns"
+            extra_args: "--icon assets/icon.icns --add-data=ai_config/gui_assets:gui_assets"
 
     steps:
       - name: Check out repository
@@ -125,7 +127,6 @@ jobs:
           rm -f ai_config/gdrive_auth.py.bak
 
       - name: Set up Node
-        if: matrix.with_gui == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -133,13 +134,11 @@ jobs:
       # pnpm 版本釘死:package.json 沒有 packageManager 欄位,靠 corepack 的
       # 預設值會隨 Node 版本漂移,而 lockfileVersion 9 需要 pnpm 9 以上。
       - name: Set up pnpm
-        if: matrix.with_gui == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 10.33.0
 
       - name: Build GUI frontend
-        if: matrix.with_gui == 'true'
         shell: bash
         run: |
           cd gui
@@ -266,6 +265,52 @@ jobs:
           print(result.stdout)
           print(result.stderr)
           raise SystemExit(result.returncode)
+
+      # 用真的執行檔開瀏覽器模式:頁面有打包進去、代碼換得到 token、bridge 叫得動。
+      # macOS 沒有實機,這是它的 desktop 唯一的實測
+      - name: Serve the desktop page from the executable
+        env:
+          AI_CONFIG_SHARE_DIR: ${{ steps.layout.outputs.share }}
+          ENTRY: ${{ steps.layout.outputs.entry }}
+        shell: python
+        run: |
+          import json
+          import os
+          import re
+          import socket
+          import subprocess
+          import urllib.request
+
+          probe = socket.socket()
+          probe.bind(("127.0.0.1", 0))
+          port = probe.getsockname()[1]
+          probe.close()
+          env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+          server = subprocess.Popen(
+              [os.environ["ENTRY"], "desktop", "--port", str(port)],
+              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+          )
+          try:
+              first = server.stdout.readline().decode("utf-8", "replace")
+              print(first)
+              code = re.search(r"#c=([\w-]+)", first).group(1)
+              base = f"http://127.0.0.1:{port}"
+              page = urllib.request.urlopen(base + "/", timeout=10).read().decode("utf-8")
+              assert "<script" in page, page[:200]
+
+              def post(path, body, token=None):
+                  headers = {"Content-Type": "application/json"}
+                  if token:
+                      headers["X-Acg-Token"] = token
+                  request = urllib.request.Request(base + path, json.dumps(body).encode(), headers)
+                  return json.load(urllib.request.urlopen(request, timeout=30))
+
+              token = post("/api/__claim", {"code": code})["token"]
+              info = post("/api/get_info", [], token)["result"]
+              print(info)
+              assert info["version"], info
+          finally:
+              server.terminate()
 
       # 真的裝一次、跑、退回舊版再切回來;macOS 沒有實機,這是它唯一的實測
       - name: End-to-end install

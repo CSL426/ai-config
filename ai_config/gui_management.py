@@ -104,6 +104,26 @@ def _autoupdate_state() -> dict:
         return {"installed": False, "time": "", "last_run": "", "steps": []}
 
 
+def _folder_dialog():
+    import webview
+
+    if not webview.windows:
+        raise RuntimeError("沒有可用的原生視窗")
+    return webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
+
+
+def _typed_folder(path) -> list:
+    """A folder typed into the browser page, held to what a dialog would return."""
+    if not isinstance(path, str) or "\0" in path:
+        raise ValueError("請輸入資料夾的完整路徑")
+    if not path.strip():
+        return []
+    chosen = Path(path.strip()).expanduser()
+    if not chosen.is_absolute() or not chosen.is_dir():
+        raise ValueError(f"找不到這個資料夾:{path}")
+    return [str(chosen)]
+
+
 def outcome(code=0, output="", error=None, backup=None, recovery=False):
     return {"code": code, "output": output, "error": error,
             "backup_path": str(backup) if backup else None,
@@ -201,22 +221,20 @@ class ManagementApi:
         finally:
             self._lock.release()
 
-    def select_project(self):
+    def select_project(self, path=None):
         """One folder serves the project's memory and its deploy panel.
 
-        Choosing it twice, once per panel, let the two drift apart.
+        Choosing it twice, once per panel, let the two drift apart. The
+        browser page has no folder dialog (and may be on another machine),
+        so it passes the path typed in instead.
         """
         result = {"cancelled": False, "project_token": None, "root": None,
                   "memory_root": None, "key": None, "stable": False}
         if not self._lock.acquire(blocking=False):
             return {**result, **outcome(1, "另一個動作正在執行", "BUSY")}
         try:
-            import webview
-
             self._ensure_configured()
-            if not webview.windows:
-                raise RuntimeError("沒有可用的原生視窗")
-            selected = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
+            selected = _typed_folder(path) if path is not None else _folder_dialog()
             if not selected:
                 return {**result, **outcome(), "cancelled": True}
             return {**result, **self._choose_project(Path(selected[0]))}
@@ -240,17 +258,13 @@ class ManagementApi:
         return {**outcome(), "project_token": token, "root": str(root),
                 "memory_root": str(memory_root), "key": key.key, "stable": key.stable}
 
-    def select_skill_directory(self):
+    def select_skill_directory(self, path=None):
         result = {"cancelled": False, "path": None}
         if not self._lock.acquire(blocking=False):
             return {**result, **outcome(1, "另一個動作正在執行", "BUSY")}
         try:
-            import webview
-
             self._ensure_configured()
-            if not webview.windows:
-                raise RuntimeError("沒有可用的原生視窗")
-            selected = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
+            selected = _typed_folder(path) if path is not None else _folder_dialog()
             if not selected:
                 return {**result, **outcome(), "cancelled": True}
             # Keep links visible so the CLI can reject unsafe source paths.

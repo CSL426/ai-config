@@ -600,12 +600,13 @@ def test_relogin_rejects_unavailable_actions_without_oauth(
             api._lock.release()
 
 
-def test_frozen_build_without_assets_points_at_pip(
+def test_frozen_build_without_assets_points_at_update(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from ai_config import desktop as gui_module
 
-    # 打包版但沒有前端資源:不能叫使用者去 build 不存在的原始碼
+    # 每個平台的執行檔都附前端;少了就是壞掉或太舊的那份,換新的才有用。
+    # 也不能叫使用者去 build 不存在的原始碼
     monkeypatch.setattr(gui_module.sys, "_MEIPASS", str(tmp_path), raising=False)
     monkeypatch.setattr(gui_module, "_ASSETS_DIR", tmp_path / "missing")
 
@@ -613,7 +614,7 @@ def test_frozen_build_without_assets_points_at_pip(
     output = capsys.readouterr()
     combined = output.out + output.err
     assert "pnpm" not in combined
-    assert "pip install" in combined
+    assert "update" in combined
 
 
 def test_source_checkout_without_assets_says_to_build(

@@ -235,23 +235,48 @@ def hide_console() -> bool:
     return True
 
 
-def run_gui() -> int:
+def run_browser(port: int = 0) -> int:
+    """Serve the page on 127.0.0.1 for the browser; see gui_server."""
+    from .gui_server import serve
+
     index = gui_index_path()
     if not index.is_file():
-        if getattr(sys, "_MEIPASS", ""):
-            # 打包版沒有原始碼可以 build,叫使用者 pnpm build 是無效的指示
-            log_error("這個平台的執行檔沒有內建 Desktop 介面(目前只有 Windows 版有)。")
-            log_info('改用 pip 安裝即可使用:pip install "ai-config[gui]"')
-        elif (Path(__file__).resolve().parents[1] / "gui/package.json").is_file():
-            log_error(
-                "找不到 Desktop 介面的檔案,請先建置:\n"
-                "  cd gui && pnpm install && pnpm build"
-            )
-        else:
-            log_error("目前安裝的套件未包含 Desktop 介面資源。")
-            log_info(f"缺少:{index}")
-            log_info("請安裝含 GUI 資源的套件；在其他 checkout 建置不會更新這份套件。")
-        return 1
+        return _missing_assets(index)
+    # 指定埠號是要給 SSH 轉發或腳本用:只印網址,不在這台開瀏覽器
+    return serve(GuiApi(), index.parent, port, open_browser=not port and not _missing_display())
+
+
+def _missing_assets(index: Path) -> int:
+    if getattr(sys, "_MEIPASS", ""):
+        log_error("這個執行檔沒有包含 Desktop 介面的檔案。")
+        log_info(f"執行 {sys.argv[0]} update 換成完整的版本")
+    elif (Path(__file__).resolve().parents[1] / "gui/package.json").is_file():
+        log_error(
+            "找不到 Desktop 介面的檔案,請先建置:\n"
+            "  cd gui && pnpm install && pnpm build"
+        )
+    else:
+        log_error("目前安裝的套件未包含 Desktop 介面資源。")
+        log_info(f"缺少:{index}")
+        log_info("請安裝含 GUI 資源的套件；在其他 checkout 建置不會更新這份套件。")
+    return 1
+
+
+def run_gui(browser: bool = False, port: int = 0) -> int:
+    """A native window where one can open, otherwise the browser.
+
+    Linux and macOS executables carry no window toolkit, and a machine
+    reached over SSH has no display; both get the same page in a browser.
+    """
+    index = gui_index_path()
+    if not index.is_file():
+        return _missing_assets(index)
+    if browser or _missing_display():
+        return run_browser(port)
+    return _run_window(index)
+
+
+def _run_window(index: Path) -> int:
     # 在 import webview 之前就藏:打包版載入 pywebview 要好幾秒,
     # 藏在後面的話那個黑視窗會杵在畫面上直到視窗開啟。
     # 失敗時 show_console() 會把它叫回來,訊息才看得到。
@@ -262,17 +287,12 @@ def run_gui() -> int:
     except ImportError:
         if hidden_console:
             show_console()
-        log_error('pywebview 尚未安裝,請執行:pip install "ai-config[gui]"')
-        return 1
+        # Linux、macOS 的執行檔沒有視窗元件;同一個頁面改在瀏覽器裡開
+        return run_browser()
     except Exception as exc:  # noqa: BLE001 - native runtime loading can fail too
         if hidden_console:
             show_console()
         log_error(f"無法載入桌面介面:{type(exc).__name__}: {exc}")
-        return 1
-
-    if _missing_display():
-        log_error("沒有可用的桌面連線(DISPLAY／WAYLAND_DISPLAY 未設定)。")
-        log_info("請在圖形桌面的終端機執行 acg gui，或使用已設定圖形轉送的 SSH。")
         return 1
 
     # Windows: 分離工作列群組,避免顯示預設 Python 圖示
@@ -306,10 +326,8 @@ def run_gui() -> int:
             # Windows 10 較舊的版本沒有預裝 WebView2,pywebview 就開不起來
             log_info("Windows 需要 Microsoft Edge WebView2 執行期,可從以下網址安裝:")
             log_info("https://developer.microsoft.com/microsoft-edge/webview2/")
-        else:
-            log_info(
-                "Linux 需要系統的 WebKit2GTK 套件,"
-                "例如 Debian/Ubuntu 的 gir1.2-webkit2-4.1 與 python3-gi"
-            )
-        return 1
+            return 1
+        # GTK 或 Cocoa 起不來時,瀏覽器還是能用
+        log_info("改在瀏覽器裡開啟")
+        return run_browser()
     return 0
