@@ -155,8 +155,12 @@ def _remove_replaced(binary: str) -> "tuple[int, int]":
             if leftover.is_symlink() or not leftover.is_file():
                 continue
             size = leftover.stat().st_size
+        except OSError:
+            continue
+        try:
             leftover.unlink()
         except OSError:
+            # 只有刪不掉才算「使用中」;讀不到大小的不是這種情況
             kept += 1
             continue
         freed += size
