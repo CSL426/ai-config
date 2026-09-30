@@ -142,8 +142,8 @@ def push_and_record(push: "Callable[[], int]") -> int:
     return code
 
 
-def _memory_has_changes() -> bool:
-    """Whether the notebook differs from its last commit.
+def _memory_has_changes() -> "bool | None":
+    """Whether the notebook differs from its last commit; None when git could not say.
 
     Milliseconds, against seconds for a real push. Every scheduled run
     starts here so a quiet day costs nothing.
@@ -155,8 +155,10 @@ def _memory_has_changes() -> bool:
             capture_output=True, text=True, **UTF8, check=False, timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
-        return False
-    return result.returncode == 0 and bool(result.stdout.strip())
+        return None
+    if result.returncode != 0:
+        return None
+    return bool(result.stdout.strip())
 
 
 def _provider() -> str:
@@ -291,9 +293,12 @@ def decide(stale_hours: float = DEFAULT_STALE_HOURS) -> Decision:
     # 一台永遠不接上的機器會一直讀到自己那份舊的,看不到別台認領了哪一分鐘
     behind = _behind_upstream()
     caught_up = _catch_up() if behind else True
-    if not _memory_has_changes():
-        # 沒有待推的內容,之前的失敗就過去了:可能是手動 memory push 推上去了
-        # (那條路不經排程記錄),或把被擋的內容刪掉了。不清的話會一直報
+    changes = _memory_has_changes()
+    if changes is None:
+        # 問不到不等於沒有:失敗紀錄要留著,不然一次 git 逾時就把提醒抹掉
+        return Decision(False, "無法確認記憶有沒有變更(git status 失敗)")
+    if not changes:
+        # 確定沒有待推的內容,之前的失敗就過去了:內容推上去了或被拿掉了
         failure_path().unlink(missing_ok=True)
         return Decision(False, "記憶沒有變更")
     if not caught_up:

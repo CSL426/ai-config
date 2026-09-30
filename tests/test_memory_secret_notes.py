@@ -85,3 +85,13 @@ def test_a_literal_value_is_still_a_credential(line: str) -> None:
     from ai_config.safety import looks_like_secret
 
     assert looks_like_secret(line)
+
+
+@pytest.mark.parametrize("line", [
+    "password=<hunter2",  # 沒收尾的不是佔位符
+    "token=<" + "a" * 60 + ">",  # 太長的尖括號可能包著真值
+])
+def test_only_a_short_closed_placeholder_is_let_through(line: str) -> None:
+    from ai_config.safety import looks_like_secret
+
+    assert looks_like_secret(line)

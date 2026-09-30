@@ -93,7 +93,11 @@ def _run_memory(args: list[str]) -> int:
             return auto.push_and_record(
                 lambda: do_push(MEMORY_SCOPE, allow_secrets=False, scheduled=True),
             )
-        return do_push(MEMORY_SCOPE, allow_secrets=allow_secrets)
+        code = do_push(MEMORY_SCOPE, allow_secrets=allow_secrets)
+        if code == 0:
+            # 手動推成功也算:排程的失敗提醒要馬上消失,冷卻時間也從這次算起
+            auto.record_push()
+        return code
     if command == "handoff":
         return memory_handoff._handoff(rest)
     log_error(USAGE)

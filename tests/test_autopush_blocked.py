@@ -57,6 +57,16 @@ def test_a_blocked_scheduled_push_is_reported_until_resolved(tmp_path: Path) -> 
     assert "credential" in status
     assert "memory/topics/deploy.md" in status
 
+    # 手動推成功也會清掉提醒(換成一則乾淨的筆記)
+    note.write_text("# deploy\n\nnothing secret\n", encoding="utf-8")
+    assert _acg(data, home, "memory", "push", "--force").returncode == 0
+    assert "上次自動推送失敗" not in _acg(data, home, "memory", "autopush", "status").stdout
+
+    # 再被擋一次,接著用「拿掉內容」的方式解決
+    note.write_text("# deploy\n\nghp_" + "b" * 30 + "\n", encoding="utf-8")
+    assert _acg(data, home, "memory", "push", "--if-stale", "0").returncode == 1
+    assert "上次自動推送失敗" in _acg(data, home, "memory", "autopush", "status").stdout
+
     # 把內容拿掉之後沒有東西要推,失敗就不再回報
     note.unlink()
     run_git(data, "reset", "-q")
