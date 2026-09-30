@@ -1,0 +1,236 @@
+"""Bring acg and every AI CLI on this machine up to date, once a day.
+
+Updates that wait for a person drift: on 2026-09-30 two machines each
+still carried a stale Codex (0.147.0, 0.77.0) nobody had noticed, and
+three machines once sat a dozen acg releases apart. Each CLI already knows
+how to update itself; this only makes sure somebody asks it to.
+
+Every tool here installs a new version beside the old one and swaps a
+link or renames, so a session that is running during the update keeps
+the files it started with.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from . import paths
+from .daily_job import DailyJob
+from .paths import HOME
+from .subproc import UTF8
+
+DEFAULT_TIME = (5, 30)
+TOOLS = ("claude", "codex", "agy")
+_STEP_TIMEOUT = 600
+_VERSION = re.compile(r"\d+(?:\.\d+)+")
+
+
+def state_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME") or str(HOME / ".local" / "state")
+    return Path(base) / "acg"
+
+
+def result_path() -> Path:
+    return state_dir() / "autoupdate-last.json"
+
+
+def job() -> DailyJob:
+    return DailyJob(
+        unit="acg-autoupdate",
+        label="com.csl426.acg.autoupdate",
+        task="acg autoupdate",
+        description="Update acg and the AI CLIs",
+        argv=(*paths.scheduled_command(), "autoupdate", "run"),
+        log_path=state_dir() / "autoupdate.log",
+        # 四個工具各自下載,一個卡住最多十分鐘,整體給一小時
+        max_minutes=60,
+    )
+
+
+@dataclass
+class Step:
+    name: str
+    before: str = ""
+    after: str = ""
+    ok: bool = True
+    note: str = ""
+
+    def line(self) -> str:
+        mark = "✓" if self.ok else "✗"
+        if self.note:
+            return f"{mark} {self.name}:{self.note}"
+        if self.before and self.after and self.before != self.after:
+            return f"{mark} {self.name}:{self.before} → {self.after}"
+        return f"{mark} {self.name}:{self.after or self.before} 已是最新"
+
+
+# ─── finding and asking each tool ─────────────────────────────
+
+def _binary(tool: str) -> "str | None":
+    """The stable launcher, found even where the scheduler's PATH is bare.
+
+    A systemd user service starts without ~/.local/bin on PATH, which is
+    exactly where these CLIs install themselves.
+    """
+    from .keepalive_settings import tool_binary
+
+    found = tool_binary(tool)
+    if Path(found).is_file():
+        return found
+    return shutil.which(found)
+
+
+def _run(argv: list, timeout: float = _STEP_TIMEOUT) -> "tuple[int, str]":
+    env = {**os.environ, "AI_CONFIG_NO_UPDATE_CHECK": "1", "AI_CONFIG_NO_AUTOPUSH": "1"}
+    try:
+        done = subprocess.run(
+            argv, capture_output=True, text=True, **UTF8, check=False,
+            timeout=timeout, stdin=subprocess.DEVNULL, env=env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        return 124, f"{int(timeout)} 秒內沒有結束"
+    except OSError as exc:
+        return 127, str(exc)
+    return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+
+def _version(argv: list) -> str:
+    code, output = _run([*argv, "--version"], timeout=60)
+    match = _VERSION.search(output) if code == 0 else None
+    return match.group(0) if match else ""
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_ERROR_HINT = re.compile(r"error|fail|denied|permission|invalid|✗|失敗", re.IGNORECASE)
+
+
+def _reason(code: int, output: str) -> str:
+    """The line that says why, rather than the last line printed."""
+    lines = [_ANSI.sub("", line).strip() for line in output.splitlines()]
+    lines = [line for line in lines if line]
+    flagged = [line for line in lines if _ERROR_HINT.search(line)]
+    picked = (flagged or lines or [f"結束碼 {code}"])[-1]
+    return picked[:300]
+
+
+def _is_npm_install(binary: str) -> bool:
+    """Linux links into node_modules; Windows puts a codex.cmd shim in %APPDATA%\\npm."""
+    path = Path(binary)
+    if path.parent.name.lower() == "npm":
+        return True
+    try:
+        return "node_modules" in path.resolve().parts
+    except OSError:
+        return False
+
+
+def _update(name: str, argv: list, command: list) -> Step:
+    step = Step(name, before=_version(argv))
+    code, output = _run([*argv, *command])
+    step.after = _version(argv)
+    if code != 0:
+        step.ok, step.note = False, _reason(code, output)
+    return step
+
+
+def _update_tool(tool: str) -> "Step | None":
+    binary = _binary(tool)
+    if binary is None:
+        return None
+    if tool == "codex" and _is_npm_install(binary):
+        # npm 全域安裝多半在要 sudo 的系統目錄;自動跑只會失敗,改成提醒
+        return Step(tool, before=_version([binary]), note=(
+            f"npm 全域安裝({binary}),不自動更新;"
+            "建議改用官方獨立安裝版"
+        ))
+    return _update(tool, [binary], ["update"])
+
+
+def _update_acg() -> Step:
+    return _update("acg", paths.scheduled_command(), ["update"])
+
+
+# ─── one run ──────────────────────────────────────────────────
+
+def run() -> int:
+    """Update every tool, one failing not stopping the rest, and remember how it went.
+
+    acg goes last: its update also refreshes the /acg plugin through
+    `claude`, which should already be the new one by then.
+    """
+    steps = [step for step in (_update_tool(tool) for tool in TOOLS) if step]
+    steps.append(_update_acg())
+    for step in steps:
+        print(step.line(), flush=True)
+    record = {"when": datetime.now(UTC).isoformat(), "steps": [asdict(s) for s in steps]}
+    path = result_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    return 0 if all(step.ok for step in steps) else 1
+
+
+def last_run() -> "dict | None":
+    try:
+        record = json.loads(result_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or not isinstance(record.get("steps"), list):
+        return None
+    steps = []
+    for raw in record["steps"]:
+        if not isinstance(raw, dict) or not isinstance(raw.get("name"), str):
+            continue
+        steps.append(Step(
+            name=raw["name"], before=str(raw.get("before", "")),
+            after=str(raw.get("after", "")), ok=raw.get("ok") is not False,
+            note=str(raw.get("note", "")),
+        ))
+    return {"when": str(record.get("when", "")), "steps": steps}
+
+
+def failures() -> "tuple[str, list[Step]]":
+    """When the last run was and what failed in it; nothing once a run succeeds."""
+    last = last_run()
+    if last is None:
+        return "", []
+    return last["when"], [step for step in last["steps"] if not step.ok]
+
+
+# ─── schedule ─────────────────────────────────────────────────
+
+def parse_clock(value: str) -> "tuple[int, int]":
+    hour, sep, minute = value.partition(":")
+    try:
+        parsed = (int(hour), int(minute) if sep else 0)
+    except ValueError:
+        raise ValueError(f"看不懂這個時間:{value}(格式是 HH:MM)") from None
+    if not (0 <= parsed[0] <= 23 and 0 <= parsed[1] <= 59):
+        raise ValueError(f"時間要在 00:00 到 23:59 之間:{value}")
+    return parsed
+
+
+def enable(clock: "str | None" = None) -> list:
+    hour, minute = parse_clock(clock) if clock else DEFAULT_TIME
+    return job().enable(hour, minute)
+
+
+def disable() -> list:
+    return job().disable() or ["沒有排定的自動更新"]
+
+
+def status() -> dict:
+    scheduled = job()
+    at = scheduled.scheduled_at()
+    last = last_run()
+    return {
+        "installed": scheduled.installed(),
+        "time": f"{at[0]:02d}:{at[1]:02d}" if at else "",
+        "last_run": last["when"] if last else "",
+        "steps": [asdict(step) for step in last["steps"]] if last else [],
+    }

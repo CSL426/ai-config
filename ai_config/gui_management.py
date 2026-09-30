@@ -94,6 +94,15 @@ def _autopush_state() -> dict:
         return blank
 
 
+def _autoupdate_state() -> dict:
+    try:
+        from . import autoupdate
+
+        return autoupdate.status()
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return {"installed": False, "time": "", "last_run": "", "steps": []}
+
+
 def outcome(code=0, output="", error=None, backup=None, recovery=False):
     return {"code": code, "output": output, "error": error,
             "backup_path": str(backup) if backup else None,
@@ -277,6 +286,7 @@ class ManagementApi:
                  "handoffs": [],
                  "autopush": {"installed": False, "last_push": "", "reason": "",
                               "slot": "", "host": "", "others": []},
+                 "autoupdate": {"installed": False, "time": "", "last_run": "", "steps": []},
                  "handoff_reminder": None, "remember_hosts": None,
                  "changed_paths": [], "entries": [], "project": None, "locations": [],
                  "actions": {action: {"allowed": False, "reason": "請先設定資料庫"}
@@ -329,6 +339,7 @@ class ManagementApi:
                     "index_dangling": state.index_dangling,
                     "secret_notes": state.secret_notes,
                     "autopush": _autopush_state(),
+                    "autoupdate": _autoupdate_state(),
                     "keepalive": _keepalive_state(),
                     "handoffs": _handoff_threads(),
                     "handoff_reminder": _handoff_reminder_state(),
@@ -425,6 +436,22 @@ class ManagementApi:
                 return {**outcome(code, message, "KEEPALIVE_REFUSED"),
                         "output": message}
             return {**outcome(), "output": message}
+        except (OSError, RuntimeError, ValueError) as exc:
+            return failure(exc)
+        finally:
+            self._lock.release()
+
+    def set_autoupdate(self, wanted, clock=None):
+        """Schedule or unschedule the daily tool update; a clock moves it."""
+        if not isinstance(wanted, bool) or not (clock is None or isinstance(clock, str)):
+            return outcome(1, "參數不正確", "INVALID_ARGUMENT")
+        if not self._lock.acquire(blocking=False):
+            return outcome(1, "另一個動作正在執行", "BUSY")
+        try:
+            from . import autoupdate
+
+            lines = autoupdate.enable(clock or None) if wanted else autoupdate.disable()
+            return {**outcome(), "output": "\n".join(lines)}
         except (OSError, RuntimeError, ValueError) as exc:
             return failure(exc)
         finally:

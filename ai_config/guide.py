@@ -39,6 +39,7 @@ project, status, pull, push, and sync.
 | `deploy --remove [dir]` | take back everything deploy put into that project |
 | `list` | managed tools, file counts, backup snapshot count |
 | `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send> [tool]` | anchor this machine's usage window for claude, codex or agy; off by default, settings stay local |
+| `autoupdate <status\\|enable [HH:MM]\\|disable\\|run>` | update acg, Claude Code, Codex and Antigravity once a day on this machine; off by default |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `gui [--shortcut]` | open the desktop app; `--shortcut` puts acg on the desktop and in the app menu (Windows, Linux; the Windows installer does it on first install) |
 | `setup` | configure the data repo remote and verify push access |
@@ -227,6 +228,21 @@ autopush status` prints it, a new Claude session is told at start (the
 memory-entry hook), and the desktop app's automation page shows it. Tell the
 user rather than retrying with `--allow-secrets`.
 
+## Keeping the tools current
+
+`{entrypoint} autoupdate enable [HH:MM]` registers a daily run (default 05:30)
+with the same platform scheduler as autopush. Each run asks every CLI on the
+machine to update itself — `claude update`, `codex update`, `agy update` — and
+then `acg update`, which also refreshes the /acg plugin. A tool that is not
+installed is skipped; a Codex installed through npm is reported, not updated,
+because its directory usually needs sudo. One failure does not stop the rest.
+`autoupdate run` does the same thing now.
+
+The last run's versions and failures stay in local state. `autoupdate status`
+prints them, a new Claude session is told at start when something failed, and
+the desktop app's automation page shows them. A run where everything succeeds
+clears the failure.
+
 ## The /acg skill
 
 The first install and every `update` put this repository's plugin into
@@ -235,7 +251,7 @@ CLI; set `AI_CONFIG_NO_PLUGIN=1` to skip that, e.g. on a machine whose
 Claude Code belongs to someone else. By hand it is `claude plugin
 marketplace add CSL426/ai-config`, then `claude plugin install acg@acg`.
 Each subcommand is its own entry in the / menu, `/acg:status`, `/acg:sync`,
-`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:msg`,
+`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:autoupdate`, `/acg:msg`,
 `/acg:handoff`, `/acg:handoffs`, `/acg:pickup`; those are user-only, so they
 cost no context until picked. The `acg` skill reads the same files: type
 `/acg <subcommand>`, or just say "交接" or "接著做" and it fires on its own. It wraps the CLI below

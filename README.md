@@ -167,6 +167,13 @@ A command that stops because it never got its confirmation exits non-zero.
   Pass a version (`1.0.13` or `v1.0.13`) to install that release specifically;
   a pinned version skips the latest-release comparison, so it can also
   downgrade. Malformed versions are rejected before anything is downloaded.
+- `autoupdate status|enable [HH:MM]|disable|run` — Once a day (default
+  05:30), run `claude update`, `codex update`, `agy update` and then
+  `acg update` on this machine, through the same platform scheduler as the
+  memory autopush. Tools that are not installed are skipped, a Codex installed
+  through npm is reported instead of updated, and one failure does not stop
+  the rest. `status` shows the last run's versions; a failure is also shown at
+  the start of a new Claude session and on the desktop app's automation page.
 - `version` / `--version` / `-V` — Show the installed version without network
   access. Both command names show the shared `ai-config (acg)` product label.
 
@@ -230,7 +237,8 @@ claude plugin install acg@acg
 ```
 
 Each subcommand is its own entry in the / menu: `/acg:status`, `/acg:sync`,
-`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:msg`, and
+`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:autoupdate`,
+`/acg:msg`, and
 three for session handoff (`/acg:handoff` records where a work thread got to,
 `/acg:handoffs` lists waiting threads, and `/acg:pickup` claims one and reads
 its notes back). Typing `/acg <subcommand>` does the same.

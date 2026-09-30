@@ -65,6 +65,7 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}, co
       set_handoff_reminder: success,
       set_remember_host: success,
       set_autopush_slot: success,
+      set_autoupdate: success,
       set_keepalive: success,
       memory_info: {
         ...success, data_root: "/tmp/data/memory", shared_path: "/tmp/shared-memory",

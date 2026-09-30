@@ -17,6 +17,7 @@ COMMANDS = (
     "config",
     "memory",
     "msg",
+    "autoupdate",
     "gui",
     "desktop",
     "skill",
