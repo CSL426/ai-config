@@ -363,7 +363,18 @@ Start menu on first install (set `AI_CONFIG_NO_SHORTCUT=1` to skip it);
 plus a desktop icon when a Desktop folder exists. Windows 10 builds without
 Microsoft Edge WebView2 need that runtime installed first.
 
-Elsewhere, build and install from the same source checkout:
+On Linux and macOS the released executable opens the same page in the
+browser instead: `acg gui` serves it on 127.0.0.1 and opens the default
+browser. The server stops about a minute and a half after the tab is closed.
+On a machine without a display, such as one reached over SSH, it prints the
+URL instead. Add `--port <n>` to pick the port, then forward it with
+`ssh -L <n>:127.0.0.1:<n> <host>` and open the URL on your own computer.
+Only the page acg opened can drive it. The link carries a one-time code that
+becomes a session token, so a copied or reused link stops working. Folder
+pickers become a path prompt, because the browser may be on another machine.
+`--browser` forces this mode where a window could open.
+
+To get a native window outside Windows, build and install from a source checkout:
 
 ```bash
 cd gui && pnpm install && pnpm build # frontend → ai_config/gui_assets/

@@ -41,7 +41,7 @@ project, status, pull, push, and sync.
 | `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send> [tool]` | anchor this machine's usage window for claude, codex or agy; off by default, settings stay local |
 | `autoupdate <status\\|enable [hour]\\|disable\\|run>` | update acg, Claude Code, Codex and Antigravity nightly, before the memory push; off by default |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
-| `gui [--shortcut]` | open the desktop app; `--shortcut` puts acg on the desktop and in the app menu (Windows, Linux; the Windows installer does it on first install) |
+| `gui [--shortcut\\|--browser\\|--port <n>]` | open the desktop app: a window on Windows, the same page in the browser on Linux and macOS or without a display; `--port` only prints the URL, for `ssh -L`; `--shortcut` puts acg on the desktop and in the app menu (Windows, Linux; the Windows installer does it on first install) |
 | `setup` | configure the data repo remote and verify push access |
 | `update [version]` | install the latest release, or a pinned one (also downgrades); refuses to start while another update is running; also runs `claude plugin update acg@acg` so the `/acg` skill keeps up |
 | `skill` | print this guide |

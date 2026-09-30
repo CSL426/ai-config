@@ -278,7 +278,7 @@ def test_desktop_is_an_alias_for_gui(monkeypatch: pytest.MonkeyPatch) -> None:
     from ai_config import desktop as gui_module
 
     seen = []
-    monkeypatch.setattr(gui_module, "run_gui", lambda: seen.append("ran") or 0)
+    monkeypatch.setattr(gui_module, "run_gui", lambda **_: seen.append("ran") or 0)
     # 兩個名稱都要走同一條路徑;這裡不分離,才能觀察到實際呼叫
     monkeypatch.setattr(gui_module, "detach_and_run_gui", lambda: False)
 
@@ -294,7 +294,7 @@ def test_desktop_detaches_by_default_and_waits_on_request(
     from ai_config import desktop as gui_module
 
     ran = []
-    monkeypatch.setattr(gui_module, "run_gui", lambda: ran.append("fg") or 0)
+    monkeypatch.setattr(gui_module, "run_gui", lambda **_: ran.append("fg") or 0)
     monkeypatch.setattr(gui_module, "detach_and_run_gui", lambda: True)
 
     # 預設分離,終端機立刻回到提示字元
@@ -305,6 +305,23 @@ def test_desktop_detaches_by_default_and_waits_on_request(
     assert main_module.main(["desktop", "--wait"]) == 0
     assert ran == ["fg"]
 
+
+
+
+def test_a_chosen_port_serves_in_the_foreground_for_ssh(monkeypatch) -> None:
+    """The URL has to reach the terminal the user is forwarding from."""
+    from ai_config import __main__ as main_module
+    from ai_config import desktop as gui_module
+
+    calls = []
+    monkeypatch.setattr(gui_module, "run_gui", lambda **kw: calls.append(kw) or 0)
+    monkeypatch.setattr(gui_module, "detach_and_run_gui", lambda: pytest.fail("不該放到背景"))
+
+    assert main_module.main(["desktop", "--port", "8765"]) == 0
+    assert main_module.main(["desktop", "--port", "99999"]) == 1
+    assert main_module.main(["desktop", "--port"]) == 1
+
+    assert calls == [{"browser": True, "port": 8765}]
 
 def test_detach_skips_when_already_detached(
     monkeypatch: pytest.MonkeyPatch,
@@ -557,10 +574,14 @@ def test_native_console_recognizes_same_executable_parent(tmp_path) -> None:
     assert json.loads(result.stdout) == {"shared": False, "frozen": True}
 
 
-def test_gui_restores_console_when_window_creation_fails(tmp_path, monkeypatch) -> None:
+def test_a_window_that_fails_outside_windows_falls_back_to_the_browser(tmp_path, monkeypatch) -> None:
+    """GTK or Cocoa missing is not the end: the same page opens in the browser."""
     from ai_config import desktop as gui_module
 
     monkeypatch.setenv("DISPLAY", ":test")
+    monkeypatch.setattr(sys, "platform", "linux")
+    browser = Mock(return_value=0)
+    monkeypatch.setattr(gui_module, "run_browser", browser)
     index = tmp_path / "index.html"
     index.touch()
     monkeypatch.setattr(gui_module, "gui_index_path", lambda: index)
@@ -573,17 +594,21 @@ def test_gui_restores_console_when_window_creation_fails(tmp_path, monkeypatch) 
     )
     monkeypatch.setitem(sys.modules, "webview", webview)
 
-    assert gui_module.run_gui() == 1
+    assert gui_module.run_gui() == 0
     show.assert_called_once_with()
     webview.start.assert_not_called()
+    browser.assert_called_once_with()
 
 
-def test_gui_reports_missing_display_before_starting_native_backend(
+def test_without_a_display_the_page_is_served_for_a_browser_elsewhere(
     tmp_path,
     monkeypatch,
-    capsys,
 ):
+    """Over SSH there is no window to open; the URL goes to a forwarded browser."""
     from ai_config import desktop as gui_module
+
+    browser = Mock(return_value=0)
+    monkeypatch.setattr(gui_module, "run_browser", browser)
 
     index = tmp_path / "index.html"
     index.touch()
@@ -594,9 +619,9 @@ def test_gui_reports_missing_display_before_starting_native_backend(
     webview = SimpleNamespace(create_window=Mock(), start=Mock())
     monkeypatch.setitem(sys.modules, "webview", webview)
     assert gui_module.detach_and_run_gui() is False
-    assert gui_module.run_gui() == 1
+    assert gui_module.run_gui() == 0
     webview.create_window.assert_not_called()
-    assert "沒有可用的桌面連線" in capsys.readouterr().err
+    browser.assert_called_once_with(0)
 
 
 def test_installed_gui_missing_assets_does_not_suggest_building_another_checkout(
@@ -615,11 +640,19 @@ def test_installed_gui_missing_assets_does_not_suggest_building_another_checkout
     assert "pnpm build" not in output.err + output.out
 
 
-@pytest.mark.parametrize("error", [ImportError("missing"), RuntimeError("native")])
+@pytest.mark.parametrize(("error", "code", "browsed"), [
+    # 打包版的 Linux/macOS 沒有 pywebview:改開瀏覽器;載入本身壞掉才是錯誤
+    (ImportError("missing"), 0, True),
+    (RuntimeError("native"), 1, False),
+])
 def test_gui_restores_console_when_runtime_import_fails(
-    tmp_path, monkeypatch, error
+    tmp_path, monkeypatch, error, code, browsed
 ) -> None:
     from ai_config import desktop as gui_module
+
+    monkeypatch.setenv("DISPLAY", ":test")
+    browser = Mock(return_value=0)
+    monkeypatch.setattr(gui_module, "run_browser", browser)
 
     index = tmp_path / "index.html"
     index.touch()
@@ -636,8 +669,9 @@ def test_gui_restores_console_when_runtime_import_fails(
 
     monkeypatch.setattr(builtins, "__import__", import_module)
 
-    assert gui_module.run_gui() == 1
+    assert gui_module.run_gui() == code
     show.assert_called_once_with()
+    assert browser.called is browsed
 
 
 @pytest.mark.parametrize(("argv", "offered"), [

@@ -174,17 +174,27 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
             from .desktop import create_desktop_shortcut
 
             return create_desktop_shortcut()
-        wait = args[1:] == ["--wait"]
-        if not wait and len(args) != 1:
-            log_error(f"Usage: {ENTRYPOINT} {cmd} [--shortcut] [--wait]")
-            return 1
+        rest, wait, browser, port = list(args[1:]), False, False, 0
+        while rest:
+            flag = rest.pop(0)
+            if flag == "--wait":
+                wait = True
+            elif flag == "--browser":
+                browser = True
+            elif flag == "--port" and rest and rest[0].isdigit() and int(rest[0]) < 65536:
+                port = int(rest.pop(0))
+            else:
+                log_error(
+                    f"Usage: {ENTRYPOINT} {cmd} [--shortcut] [--wait] [--browser] [--port <埠>]"
+                )
+                return 1
         from .desktop import detach_and_run_gui, run_gui
 
         # 預設放進背景,讓終端機立刻拿回控制權;--wait 保留前景模式,
-        # 錯誤訊息才看得到
-        if not wait and detach_and_run_gui():
+        # 錯誤訊息才看得到。指定埠號多半是要給 SSH 轉發,網址要印在前景
+        if not wait and not port and detach_and_run_gui():
             return 0
-        return run_gui()
+        return run_gui(browser=browser or bool(port), port=port)
 
     if CONFIG_ERROR:
         log_error(CONFIG_ERROR)

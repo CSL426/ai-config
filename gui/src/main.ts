@@ -6,6 +6,7 @@
  */
 
 import "./style.css";
+import { connectHttpBridge } from "./http-bridge";
 import "./status";
 import "./memory";
 import "./automation";
@@ -43,4 +44,10 @@ else {
   window.addEventListener("pywebviewready", () => { void boot(); }, { once: true });
   repoEl.textContent = "等待後端連線…";
   feedback(appNotice, "正在連接應用程式；請透過 acg gui 啟動此介面。");
+  const launched = location.hash.includes("c=");
+  void connectHttpBridge().then((connected) => {
+    if (!connected && launched) {
+      feedback(appNotice, "這個頁面的連結已經用過或已過期；請重新執行 acg desktop 開啟新的連結。", true);
+    }
+  });
 }
