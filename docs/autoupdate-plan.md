@@ -10,19 +10,23 @@
 
 ## 介面
 
-`acg autoupdate status | enable [時:分] | disable`,與 `memory autopush`、
+`acg autoupdate status | enable [時:分] | disable | run`,與 `memory autopush`、
 `keepalive` 同一套排程機制:Linux 用 systemd user timer、macOS 用
-LaunchAgent、Windows 用工作排程器;每台一個時段,多台自動錯開。預設在
-autopush 之後(05:00 前後),避開 keepalive 的整點。
+LaunchAgent、Windows 用工作排程器(共用的部分抽成 `ai_config/daily_job.py`)。
+預設 05:30,在 autopush 之後、避開 keepalive 的整點。各台更新互不相干,
+所以不走 autopush 的共用時間表,每台自己設時間。
 
-排程執行 `acg __autoupdate`,依序:
+排程執行 `acg autoupdate run`(也可以手動跑),依序:
 
 | 項目 | 指令 | 只在這台有裝時 |
 | --- | --- | --- |
-| acg | `acg update`(非互動,已是最新就跳過) | 一律 |
 | Claude Code | `claude update` | `claude` 存在 |
-| Codex | `codex update`(官方獨立安裝版) | `codex` 為獨立安裝版 |
+| Codex | `codex update`(官方獨立安裝版) | `codex` 不在 node_modules 底下 |
 | Antigravity | `agy update` | `agy` 存在 |
+| acg | `acg update`(已是最新就跳過) | 一律,排最後 |
+
+acg 排最後:它更新時會透過 `claude` 順便更新 /acg plugin,那時 claude
+應該已經是新的。
 
 一項失敗不影響其他項。每項的結果(版本前後、成功或原因)記在本機
 狀態檔,沿用自動上傳失敗的做法:`autoupdate status` 列出、Claude 新
@@ -47,6 +51,12 @@ session 開頭提示一次、GUI 自動化頁面顯示。
 CLI、`--help`、`ai_config/guide.py`、GUI 自動化頁面(開關與時間,與
 自動上傳同一列版面)、`plugin/skills/` 的子指令說明、`plugin.json` 版號,
 以及三個平台的排程測試。
+
+## 驗證
+
+- 2026-09-30 A4000 從原始碼實跑 `autoupdate run`:claude 2.1.285、codex
+  0.159.2、agy 1.2.14 皆已是最新,acg 1.0.100 → 1.0.101,共 28 秒,
+  `status` 正確列出各工具結果。
 
 ## 未知
 
