@@ -6,8 +6,8 @@ lists who is on line across tools and delivers a message by name.
 
 Codex: a TUI started with `--remote unix://` attaches to the account's
 app-server daemon, which speaks JSON-RPC over a WebSocket on a unix
-socket. The daemon lists loaded threads and `codex queue` delivers into
-one. Everything here is Codex's own internal protocol, so failures are
+socket. The daemon lists loaded threads and queues a message into one
+(`thread/queue/add`, the call `codex queue` makes). Everything here is Codex's own internal protocol, so failures are
 reported plainly rather than papered over.
 
 Windows: the daemon's socket is a real AF_UNIX socket there too, but
@@ -29,13 +29,13 @@ import struct
 import subprocess
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
 from .paths import HOME
 from .processes import pid_alive
-from .subproc import UTF8
 
 SOCKET = Path("app-server-control") / "app-server-control.sock"
 
@@ -217,7 +217,11 @@ class CodexDaemon:
         self._ws = _WebSocket(socket_path(home))
         self._next = 0
         try:
-            self.call("initialize", {"clientInfo": {"name": "acg", "version": "1"}})
+            # thread/queue/add 是 experimental 方法,要先宣告才能用
+            self.call("initialize", {
+                "clientInfo": {"name": "acg", "version": "1"},
+                "capabilities": {"experimentalApi": True},
+            })
             self._ws.send({"jsonrpc": "2.0", "method": "initialized"})
         except BaseException:
             self._ws.close()
@@ -499,16 +503,20 @@ def _codex_binary() -> str:
 
 
 def send_codex(peer: Peer, body: str) -> None:
+    """Queue a message into the thread, the same call `codex queue` makes.
+
+    Not by running `codex queue`: on Windows that is codex.cmd, and cmd.exe
+    cuts an argument at its first newline, so only the header arrived.
+    """
     assert peer.home is not None
-    env = {**os.environ, "CODEX_HOME": str(peer.home)}
-    result = subprocess.run(
-        [_codex_binary(), "queue", "--remote", f"unix://{socket_path(peer.home)}",
-         "--thread", peer.id, "--message", body],
-        capture_output=True, text=True, **UTF8, timeout=30, check=False, env=env,
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        raise MessagingError(f"codex queue 失敗:{detail[-1] if detail else result.returncode}")
+    try:
+        with CodexDaemon(peer.home) as daemon:
+            daemon.call("thread/queue/add", {
+                "threadId": peer.id, "clientUserMessageId": str(uuid.uuid4()),
+                "input": [{"type": "text", "text": body, "text_elements": []}],
+            })
+    except OSError as exc:
+        raise MessagingError(f"連不上 {peer.label} 的 Codex daemon:{exc}") from exc
 
 
 def _turn_has_tag(turn: dict, tag: str) -> bool:
