@@ -522,3 +522,9 @@ def test_each_codex_account_is_called_with_its_cheapest_model(
     assert csl[csl.index("-m") + 1] == "csl-small"
     assert "-m" not in next(v for k, v in seen.items() if k != ".codex-csl")
     assert "csl-small" in keepalive_settings.log_path("codex").read_text(encoding="utf-8")
+
+
+def test_keepalive_tasks_run_without_a_window(state: Path) -> None:
+    """They fire during the day, where a terminal popping up is most visible."""
+    for argv in keepalive_scheduler.schtasks_argv(("07:00",)):
+        assert argv[argv.index("/TR") + 1].startswith("conhost.exe --headless cmd /c ")

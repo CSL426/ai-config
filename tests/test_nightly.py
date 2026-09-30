@@ -72,7 +72,7 @@ def test_the_timer_runs_the_nightly_entry_with_room_for_updates(machine: Path) -
     assert "OnCalendar=*-*-* 04:20:00" in timer_text
     assert "Persistent=true" in timer_text
     argv = autopush.schtasks_argv(4, 12, 20)
-    assert argv[argv.index("/TR") + 1] == "cmd /c acg __nightly --if-stale 12"
+    assert argv[argv.index("/TR") + 1] == "conhost.exe --headless cmd /c acg __nightly --if-stale 12"
     parsed = plistlib.loads(autopush.launchd_plist(4, 12, 20))
     assert parsed["ProgramArguments"] == ["acg", "__nightly", "--if-stale", "12"]
     assert parsed["ExitTimeOut"] == 3600

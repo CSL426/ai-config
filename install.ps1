@@ -250,16 +250,32 @@ function Expand-Build([string]$Archive) {
     return $Root
 }
 
+function Save-Url([string]$Url, [string]$OutFile) {
+    # curl.exe ships with Windows 10 1803 and later. On one machine it fetched
+    # the 13.5 MB release in 79 s where Invoke-WebRequest under Windows
+    # PowerShell 5.1 took 249 s, and it can show progress, so a manual update
+    # no longer sits silent for minutes. Progress is off when the caller
+    # turned PowerShell's off (the desktop app and the scheduler read output).
+    $Curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+    if (Test-Path -LiteralPath $Curl -PathType Leaf) {
+        $Meter = if ($ProgressPreference -eq 'SilentlyContinue') { '--silent' } else { '--progress-bar' }
+        & $Curl --fail --location --show-error --retry 2 $Meter --output $OutFile $Url
+        if ($LASTEXITCODE -ne 0) { throw "curl.exe exited $LASTEXITCODE for $Url" }
+        return
+    }
+    Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $OutFile
+}
+
 function Get-VerifiedDownload([string]$BaseUrl, [string]$Name, [string]$Directory) {
     # $null when the release has no such asset, so the caller can fall back
     $Download = Join-Path $Directory $Name
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/$Name" -OutFile $Download
+        Save-Url "$BaseUrl/$Name" $Download
     }
     catch {
         return $null
     }
-    Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/$Name.sha256" -OutFile "$Download.sha256"
+    Save-Url "$BaseUrl/$Name.sha256" "$Download.sha256"
     $Expected = ((Get-Content -LiteralPath "$Download.sha256" -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
     $Actual = (Get-Sha256 $Download)
     if ($Actual -ne $Expected) { Fail "Downloaded $Name checksum mismatch" }

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from . import keepalive_settings
+from .autopush import windows_command
 from .subproc import NATIVE, UTF8
 from .systemd_timer import forget_missed_runs
 
@@ -78,7 +79,7 @@ def schtasks_argv(times, tool: str = keepalive_settings.DEFAULT_TOOL) -> list:
         [
             "schtasks", "/Create", "/F",
             "/TN", f"{label} {at.replace(':', '')}",
-            "/SC", "DAILY", "/ST", at, "/TR", f"cmd /c {command}",
+            "/SC", "DAILY", "/ST", at, "/TR", windows_command(command),
         ]
         for at in times
     ]
@@ -288,3 +289,25 @@ def installed(tool: str = keepalive_settings.DEFAULT_TOOL) -> bool:
         capture_output=True, text=True, **NATIVE, check=False,
     )
     return label in (found.stdout or "")
+
+
+def refresh_windows_tasks() -> list:
+    """Rewrite keepalive tasks made before they ran headless; lines to report."""
+    if platform_name() != "windows":
+        return []
+    lines = []
+    for tool in keepalive_settings.TOOLS:
+        times = keepalive_settings.load(tool).times
+        if not times or not installed(tool):
+            continue
+        label = _TASK if tool == keepalive_settings.DEFAULT_TOOL else f"{_TASK} {tool}"
+        listed = subprocess.run(
+            ["schtasks", "/Query", "/TN", f"{label} {times[0].replace(':', '')}", "/XML"],
+            capture_output=True, text=True, **NATIVE, check=False,
+        )
+        if listed.returncode != 0 or "--headless" in listed.stdout:
+            continue
+        code, _ = enable(times, tool=tool)
+        if code == 0:
+            lines.append(f"{tool} 的 keepalive 排程改成不開視窗執行")
+    return lines
