@@ -11,11 +11,15 @@ stops before touching anything. A recent push is skipped too, which keeps a
 day from filling up with one commit per session.
 """
 
+import contextlib
+import io
+import json
 import os
 import plistlib
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -60,6 +64,82 @@ def record_push(when: "datetime | None" = None) -> None:
     path = state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text((when or datetime.now(UTC)).isoformat(), encoding="utf-8")
+    failure_path().unlink(missing_ok=True)
+
+
+def failure_path() -> Path:
+    """Why the last unattended push did not happen, until one succeeds.
+
+    A push blocked at 04:18 left nothing but a line in the journal; status
+    kept showing the last success, and nobody learned of it for a day.
+    """
+    return state_path().with_name("autopush-failure.json")
+
+
+def last_failure() -> "dict | None":
+    try:
+        record = json.loads(failure_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or not isinstance(record.get("reason"), str):
+        return None
+    paths = record.get("paths")
+    return {
+        "when": str(record.get("when", "")),
+        "reason": record["reason"],
+        "paths": [p for p in paths if isinstance(p, str)] if isinstance(paths, list) else [],
+    }
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _summarize(output: str, code: int) -> "tuple[str, list[str]]":
+    """The first error line and the paths listed under it."""
+    lines = [_ANSI.sub("", line) for line in output.splitlines()]
+    for index, line in enumerate(lines):
+        if line.startswith("✗"):
+            paths = []
+            for follow in lines[index + 1:]:
+                if not follow.startswith("  ") or len(paths) >= 10:
+                    break
+                paths.append(follow.strip())
+            return line[1:].strip(), paths
+    return f"結束碼 {code}", []
+
+
+class _Tee(io.TextIOBase):
+    def __init__(self, stream, sink: io.StringIO) -> None:
+        self._stream, self._sink = stream, sink
+
+    def write(self, text: str) -> int:
+        self._sink.write(text)
+        return self._stream.write(text)
+
+    def flush(self) -> None:
+        self._stream.flush()
+
+
+def push_and_record(push: "Callable[[], int]") -> int:
+    """Run an unattended push, remembering success or why it failed.
+
+    The output still goes where it always did (the journal, the task log);
+    a copy is kept only to name the reason afterwards.
+    """
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(_Tee(sys.stdout, captured)), \
+            contextlib.redirect_stderr(_Tee(sys.stderr, captured)):
+        code = push()
+    if code == 0:
+        record_push()
+        return code
+    reason, paths = _summarize(captured.getvalue(), code)
+    path = failure_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "when": datetime.now(UTC).isoformat(), "reason": reason, "paths": paths,
+    }, ensure_ascii=False), encoding="utf-8")
+    return code
 
 
 def _memory_has_changes() -> bool:
@@ -212,6 +292,9 @@ def decide(stale_hours: float = DEFAULT_STALE_HOURS) -> Decision:
     behind = _behind_upstream()
     caught_up = _catch_up() if behind else True
     if not _memory_has_changes():
+        # 沒有待推的內容,之前的失敗就過去了:可能是手動 memory push 推上去了
+        # (那條路不經排程記錄),或把被擋的內容刪掉了。不清的話會一直報
+        failure_path().unlink(missing_ok=True)
         return Decision(False, "記憶沒有變更")
     if not caught_up:
         return Decision(False, "落後遠端且無法自動接上,請自己 acg pull 處理")
@@ -520,6 +603,7 @@ def status() -> dict:
         "platform": name,
         "installed": installed,
         "last_push": last.isoformat() if last else "",
+        "last_failure": last_failure(),
         "would_push": decision.push,
         "reason": decision.reason,
     }
@@ -550,8 +634,7 @@ def opportunistic_push() -> None:
         log_info(
             f"記憶超過 {DEFAULT_STALE_HOURS:g} 小時沒保存,正在自動上傳…"
         )
-        if do_push(MEMORY_SCOPE, allow_secrets=False) == 0:
-            record_push()
+        push_and_record(lambda: do_push(MEMORY_SCOPE, allow_secrets=False))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         # 順手做的事不該讓使用者原本的指令失敗
         return
