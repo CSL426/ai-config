@@ -60,6 +60,7 @@ class Step:
     ok: bool = True
     note: str = ""
     freed: int = 0
+    kept: int = 0
 
     def line(self) -> str:
         mark = "✓" if self.ok else "✗"
@@ -71,6 +72,9 @@ class Step:
             text = f"{self.after or self.before} 已是最新"
         if self.freed:
             text += f"(清掉舊執行檔 {self.freed // 2**20} MB)"
+        if self.kept:
+            # 只說清掉多少,會讓人以為殘留都沒了;被佔用刪不掉的也要講
+            text += f"({self.kept} 個舊執行檔使用中,下次再清)"
         return f"{mark} {self.name}:{text}"
 
 
@@ -144,28 +148,34 @@ def _update(name: str, argv: list, command: list) -> Step:
     return step
 
 
-def _remove_replaced(binary: str) -> int:
-    """Delete the executables a self-update renamed aside; bytes freed.
+def _remove_replaced(binary: str) -> "tuple[int, int]":
+    """Delete the executables a self-update renamed aside: (bytes freed, files kept).
 
     agy leaves agy.<n>.old and claude on Windows claude.exe.old.<n> beside
     the launcher, 200 MB each, and never removes them: one Windows machine
     carried 700 MB of them. A daily update would add one a day. A copy a
     running session still holds cannot be deleted on Windows; it stays for
-    the next run.
+    the next run. On a machine with a dozen Claude sessions open that can
+    be every run, so the kept count is reported rather than hidden.
     """
     launcher = Path(binary)
-    freed = 0
-    for pattern in (f"{launcher.name}.*.old", f"{launcher.name}.old.*"):
-        for leftover in launcher.parent.glob(pattern):
-            try:
-                if leftover.is_symlink() or not leftover.is_file():
-                    continue
-                size = leftover.stat().st_size
-                leftover.unlink()
-            except OSError:
+    leftovers = {
+        leftover
+        for pattern in (f"{launcher.name}.*.old", f"{launcher.name}.old.*")
+        for leftover in launcher.parent.glob(pattern)
+    }
+    freed = kept = 0
+    for leftover in sorted(leftovers):
+        try:
+            if leftover.is_symlink() or not leftover.is_file():
                 continue
-            freed += size
-    return freed
+            size = leftover.stat().st_size
+            leftover.unlink()
+        except OSError:
+            kept += 1
+            continue
+        freed += size
+    return freed, kept
 
 
 def _update_tool(tool: str) -> "Step | None":
@@ -179,7 +189,7 @@ def _update_tool(tool: str) -> "Step | None":
             "建議改用官方獨立安裝版"
         ))
     step = _update(tool, [binary], ["update"])
-    step.freed = _remove_replaced(binary)
+    step.freed, step.kept = _remove_replaced(binary)
     return step
 
 
@@ -233,6 +243,7 @@ def last_run() -> "dict | None":
             after=str(raw.get("after", "")), ok=raw.get("ok") is not False,
             note=str(raw.get("note", "")),
             freed=raw["freed"] if isinstance(raw.get("freed"), int) else 0,
+            kept=raw["kept"] if isinstance(raw.get("kept"), int) else 0,
         ))
     return {"when": str(record.get("when", "")), "steps": steps}
 

@@ -184,7 +184,10 @@ function autoupdateLine(step: AutoupdateStep): string {
       ? `${step.before} → ${step.after}`
       : `${step.after || step.before} 已是最新`);
   const freed = Math.floor((step.freed ?? 0) / 2 ** 20);
-  return freed ? `${text}（清掉舊執行檔 ${freed} MB）` : text;
+  const kept = step.kept ?? 0;
+  return text
+    + (freed ? `（清掉舊執行檔 ${freed} MB）` : "")
+    + (kept ? `（${kept} 個舊執行檔使用中，下次再清）` : "");
 }
 
 function renderAutoupdate(info: MemoryInfo): void {

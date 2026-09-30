@@ -238,6 +238,11 @@ installed is skipped; a Codex installed through npm is reported, not updated,
 because its directory usually needs sudo. One failure does not stop the rest.
 `autoupdate run` does the same thing now.
 
+After each tool updates, the old executables it renamed aside (`agy.<n>.old`,
+`claude.exe.old.<n>` on Windows, about 200 MB each) are deleted. On Windows a
+copy still held by a running session cannot be deleted; the step then says how
+many were kept, and a later run removes them.
+
 The last run's versions and failures stay in local state. `autoupdate status`
 prints them, a new Claude session is told at start when something failed, and
 the desktop app's automation page shows them. A run where everything succeeds

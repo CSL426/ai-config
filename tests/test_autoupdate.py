@@ -136,22 +136,45 @@ def test_executables_renamed_aside_are_removed(tmp_path: Path) -> None:
     (bin_dir / "claude.exe.old.123").write_bytes(b"other tool")
     (bin_dir / "agy.exe.settings").write_bytes(b"not a leftover")
 
-    assert autoupdate._remove_replaced(str(launcher)) == 3072
+    assert autoupdate._remove_replaced(str(launcher)) == (3072, 0)
 
     assert sorted(p.name for p in bin_dir.iterdir()) == [
         "agy.exe", "agy.exe.settings", "claude.exe.old.123",
     ]
 
 
+def test_a_leftover_still_in_use_is_counted_not_hidden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows: a running claude.exe holds its renamed image; the delete fails."""
+    launcher = tmp_path / "claude.exe"
+    launcher.write_bytes(b"new")
+    held = tmp_path / "claude.exe.old.1790710458279.14456"
+    held.write_bytes(b"x" * 4096)
+    (tmp_path / "claude.exe.old.1789755128646").write_bytes(b"x" * 1024)
+    real_unlink = Path.unlink
+
+    def unlink(self, *args, **kwargs):
+        if self == held:
+            raise PermissionError("in use")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+
+    assert autoupdate._remove_replaced(str(launcher)) == (1024, 1)
+    assert held.exists()
+
+
 def test_the_space_freed_is_reported_and_remembered(tools, monkeypatch: pytest.MonkeyPatch) -> None:
     tools({"agy": ["1.2.13", "1.2.14"], "acg": ["1.0.101"]})
-    monkeypatch.setattr(autoupdate, "_remove_replaced", lambda binary: 200 * 2**20)
+    monkeypatch.setattr(autoupdate, "_remove_replaced", lambda binary: (200 * 2**20, 1))
 
     autoupdate.run()
 
     step = autoupdate.last_run()["steps"][0]
     assert step.freed == 200 * 2**20
-    assert step.line() == "✓ agy:1.2.13 → 1.2.14(清掉舊執行檔 200 MB)"
+    assert step.kept == 1
+    assert step.line() == "✓ agy:1.2.13 → 1.2.14(清掉舊執行檔 200 MB)(1 個舊執行檔使用中,下次再清)"
 
 
 def test_a_tool_that_hangs_is_a_failure_not_a_stall(state: Path, monkeypatch: pytest.MonkeyPatch) -> None:

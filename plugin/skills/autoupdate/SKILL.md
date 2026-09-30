@@ -17,6 +17,10 @@ allowed-tools: Bash(acg autoupdate status), Bash(ai-config autoupdate status)
 用 npm 全域安裝的 Codex 不會自動更新,因為那個目錄通常要 sudo。status 會列出這種情況,
 建議改用官方獨立安裝版(`codex` 解析到 `~/.codex/packages/standalone/` 的那種)。
 
+每個工具更新完,會刪掉它自我更新時留在旁邊的舊執行檔(`agy.<n>.old`、Windows 上的
+`claude.exe.old.<n>`,一個約 200 MB)。Windows 上還被執行中 session 占用的舊檔刪不掉,
+會顯示「N 個舊執行檔使用中,下次再清」;這不是錯誤,關掉那些舊 session 後下一次就會清掉。
+
 有工具標 ✗ 時,那行後面就是它自己的錯誤訊息,照著講給使用者聽。處理完可以用
 `acg autoupdate run` 立即重跑;全部成功就會清掉失敗紀錄,新 session 開頭也不再提醒。
 
