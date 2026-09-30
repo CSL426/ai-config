@@ -497,5 +497,57 @@ SHELL_FUNCTION = """claude() {{
 }}"""
 
 
-def shell_function() -> str:
+# 開 TUI 才掛上 daemon,exec、queue 這類子指令照原樣跑。daemon 的工作目錄是它
+# 啟動時的目錄,新對話沒帶 --cd 會跑到那裡去;resume/fork 沿用舊對話的目錄,不帶
+CODEX_FUNCTION = """codex() {{
+  local attach=""
+  case "${{1:-}}" in
+    -h|--help|-V|--version) ;;
+    ""|-*|resume|fork) attach=1 ;;
+    {subcommands}) ;;
+    *) attach=1 ;;
+  esac
+  case " $* " in *" --remote "*|*" --remote="*) attach="" ;; esac
+  if [ -n "$attach" ]; then
+    local home="${{CODEX_HOME:-$HOME/.codex}}"
+    if [ ! -S "$home/{socket}" ]; then
+      CODEX_HOME="$home" command codex app-server daemon start >/dev/null 2>&1
+    fi
+    if [ "${{1:-}}" = resume ] || [ "${{1:-}}" = fork ]; then
+      local sub="$1"; shift
+      set -- "$sub" --remote unix:// "$@"
+    else
+      case " $* " in
+        *" -C "*|*" --cd "*|*" --cd="*) set -- --remote unix:// "$@" ;;
+        *) set -- --remote unix:// --cd "$PWD" "$@" ;;
+      esac
+    fi
+  fi
+  command codex "$@"
+}}"""
+
+# codex 0.159 不開 TUI 的子指令;codex 新增子指令時要跟著加,否則會被當成提示文字、多帶上 --remote
+CODEX_SUBCOMMANDS = (
+    "agents", "exec", "e", "review", "login", "logout", "mcp", "plugin", "app-server",
+    "remote-control", "completion", "update", "doctor", "sandbox", "debug", "apply", "a",
+    "queue", "archive", "delete", "migrate-rollouts", "unarchive", "cloud", "exec-server",
+    "features", "help",
+)
+
+
+def claude_function() -> str:
     return SHELL_FUNCTION.format(config=shlex.quote(str(channel_config_path())))
+
+
+def codex_function() -> str:
+    return CODEX_FUNCTION.format(subcommands="|".join(CODEX_SUBCOMMANDS), socket=SOCKET.as_posix())
+
+
+def shell_functions() -> str:
+    """The block `acg msg setup` asks the user to put in ~/.bashrc."""
+    return (
+        "# >>> acg msg >>>\n"
+        "# 照常打 claude、codex,別的 session 就能用 acg msg 傳話進來(acg msg setup 產生)\n"
+        f"{claude_function()}\n{codex_function()}\n"
+        "# <<< acg msg <<<"
+    )
