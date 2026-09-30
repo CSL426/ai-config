@@ -8,6 +8,25 @@ configuration lives in a separate Git repository at the location selected during
 setup. A source checkout is optional, and neither repository must be nested
 inside the other.
 
+The desktop app shows whether every tool matches the saved configuration, and
+what the machine does on its own each night: update the AI CLIs, then save the
+shared memory.
+
+<p>
+  <img src="docs/screenshots/home.png" alt="Home: each tool compared with the saved configuration" width="48%">
+  <img src="docs/screenshots/automation.png" alt="Automation: nightly update and memory push, usage-window keepalive, reminders" width="48%">
+</p>
+
+<details>
+<summary>Memory and skills</summary>
+
+<img src="docs/screenshots/memory.png" alt="Shared memory and handoff threads" width="48%">
+<img src="docs/screenshots/skills.png" alt="Sharing Claude skills with Codex and Antigravity" width="48%">
+
+</details>
+
+Screenshots come from the app running on mock data: `cd gui && pnpm screenshots`.
+
 ## Installation
 
 ### Standalone installer
