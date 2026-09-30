@@ -263,6 +263,9 @@ claude plugin marketplace add CSL426/ai-config
 claude plugin install acg@acg
 ```
 
+acg pins that marketplace to the release it came from (`CSL426/ai-config#v<version>`),
+so the plugin and the CLI always move together.
+
 Each subcommand is its own entry in the / menu: `/acg:status`, `/acg:sync`,
 `/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:autoupdate`,
 `/acg:msg`, and
