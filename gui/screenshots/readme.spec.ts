@@ -1,4 +1,4 @@
-import { test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { boot, queue } from "../tests/mock-bridge";
 
 // 圖會放進公開的 README:只用中性的名稱與路徑,不放任何真實機器或專案
@@ -74,7 +74,9 @@ test("首頁", async ({ page }) => {
   const run = { code: 0, output: status };
   await boot(page, { ...info, list_skills: [{ skills }], run: [run, run] });
   await page.locator("[data-cmd=status]").click();
-  await page.waitForTimeout(300);
+  // 等解析完的狀態,不等固定時間:CI 慢一點就會拍到還沒更新的畫面
+  await expect(page.locator("[data-tool-row=codex]")).toContainText("有差異");
+  await expect(page.locator("[data-tool-row=claude]")).toContainText("一致");
   await page.screenshot({ path: out("home") });
 });
 
@@ -82,7 +84,7 @@ test("記憶", async ({ page }) => {
   await boot(page, { ...info, list_skills: [{ skills }] });
   await queue(page, "memory_info", memory);
   await page.locator("#memory-open").click();
-  await page.waitForTimeout(300);
+  await expect(page.locator("#memory-panel")).toContainText("release checklist");
   await page.screenshot({ path: out("memory") });
 });
 
@@ -92,13 +94,14 @@ test("自動化", async ({ page }) => {
   await boot(page, { ...info, list_skills: [{ skills }] });
   await queue(page, "memory_info", memory);
   await page.locator("#automation-open").click();
-  await page.waitForTimeout(300);
+  await expect(page.locator("#autoupdate-steps")).toContainText("1.0.103 → 1.0.104");
+  await expect(page.locator("#keepalive-window")).toContainText("07:00");
   await page.screenshot({ path: out("automation") });
 });
 
 test("技能", async ({ page }) => {
   await boot(page, { ...info, list_skills: [{ skills }, { skills }] });
   await page.locator("#package-open").click();
-  await page.waitForTimeout(300);
+  await expect(page.getByText("test-writer")).toBeVisible();
   await page.screenshot({ path: out("skills") });
 });
