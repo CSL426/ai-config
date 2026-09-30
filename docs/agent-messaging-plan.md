@@ -8,7 +8,7 @@
 `ListAgents` / `SendMessage` 一樣互相傳話:列出誰在線上、用名字指定對象、
 對方用同一個方式回覆。使用者照常打 `claude`、`codex`,不必記額外參數。
 
-## 已驗證(2026-09-24,workstation)
+## 已驗證(2026-09-24,x86_64 工作站)
 
 - Codex 0.156.1:`codex app-server daemon start` 起的 daemon 在
   `$CODEX_HOME/app-server-control/app-server-control.sock` 上跑

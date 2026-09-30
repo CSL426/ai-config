@@ -552,7 +552,7 @@ def test_the_summary_does_not_keep_half_a_bold_marker() -> None:
     """Next items are written as "1. **Do X**。rest"; the list showed "Do X**".
 
     Only the leading asterisks were stripped, so every bolded item ended
-    in a stray "**" — reported from the project session's list.
+    in a stray "**" — reported from another project's session list.
     """
     body = "## Next\n1. **優先：push 並開 PR。** 五個 commit 還在本機。\n"
 

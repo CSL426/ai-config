@@ -38,7 +38,7 @@ def test_a_machine_without_the_block_still_gets_none() -> None:
 def test_gather_keeps_the_database_wording_over_a_stale_machine() -> None:
     """A machine still on the old release pushed its old rules back.
 
-    That happened: the database carried the new handoff rules, workstation had
+    That happened: the database carried the new handoff rules, one machine had
     not applied them yet, and its `acg push` gathered the old block and
     reverted the database for every machine.
     """

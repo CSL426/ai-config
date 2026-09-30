@@ -759,7 +759,7 @@ def test_codex_hook_trust_stays_on_each_machine() -> None:
 def test_apply_drops_hook_trust_for_paths_this_machine_lacks(tmp_path: Path) -> None:
     """Making [hooks.state.*] local protected what earlier syncs had left.
 
-    Windows and arm-box kept a trust entry for /home/me/project/... —
+    Windows and the ARM machine kept a trust entry for /home/me/project/... —
     brought over before hook trust stopped syncing, then preserved as
     their own. The file it trusts does not exist there, so it can never
     be used, and codex warned about the settings misplaced under it on
