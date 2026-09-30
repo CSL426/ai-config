@@ -295,3 +295,52 @@ def test_powershell_installer_puts_the_launcher_on_path(tmp_path: Path) -> None:
     assert (version_root / "ai-config.exe").read_bytes() == b"second"
     assert not list(bin_dir.glob("ai-config.exe.old-*"))
     assert not [p for p in (share_dir / "versions").iterdir() if p.name.startswith(".")]
+
+
+def test_powershell_installer_waits_out_a_file_held_without_delete_sharing(tmp_path: Path) -> None:
+    """The 1.0.99 update on Windows failed renaming the exe on PATH.
+
+    A onefile acg opens its own exe without delete sharing while it
+    unpacks, and Claude Code starts one for the status line all the time.
+    Renaming a running exe is allowed; renaming a file held that way is not
+    until the handle closes, a moment later.
+    """
+    import threading
+    import time
+
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+
+    standalone = tmp_path / "ai-config-source.exe"
+    standalone.write_bytes(b"standalone-binary")
+    bin_dir = tmp_path / "bin"
+    share_dir = tmp_path / "share"
+    (share_dir / "versions").mkdir(parents=True)
+    (share_dir / "versions" / "active").write_text("1.0.0", encoding="utf-8")
+    bin_dir.mkdir()
+    destination = bin_dir / "ai-config.exe"
+    destination.write_bytes(b"old-binary")
+
+    # Python 在 Windows 上的 open() 不給 FILE_SHARE_DELETE,跟 onefile 解壓時一樣
+    held = destination.open("rb")
+    releaser = threading.Thread(target=lambda: (time.sleep(2), held.close()))
+    releaser.start()
+    try:
+        env = os.environ.copy()
+        env.update({
+            "AI_CONFIG_BINARY_PATH": str(standalone),
+            "AI_CONFIG_BIN_DIR": str(bin_dir),
+            "AI_CONFIG_SHARE_DIR": str(share_dir),
+            "AI_CONFIG_SKIP_PATH_UPDATE": "1",
+            "AI_CONFIG_SKIP_COMPLETION": "1",
+            "AI_CONFIG_READY_ATTEMPTS": "1",
+        })
+        result = _run_installer(powershell, env)
+    finally:
+        releaser.join()
+        held.close()
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert destination.read_bytes() == b"standalone-binary"
+    assert not (bin_dir / "ai-config.exe.new").exists()

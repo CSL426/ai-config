@@ -70,6 +70,25 @@ function Copy-WithRetry([string]$Source, [string]$Destination) {
     }
 }
 
+function Move-WithRetry([string]$Source, [string]$Destination) {
+    # Windows lets a running exe be renamed, but not a file some process has
+    # open without delete sharing. A onefile acg opens its own exe that way
+    # while it unpacks, and Claude Code starts one for the status line all
+    # the time: the 1.0.99 update on Windows failed on exactly that. Those
+    # processes last well under a second, so wait them out.
+    $Attempts = 50
+    for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+        try {
+            Move-Item -LiteralPath $Source -Destination $Destination
+            return
+        }
+        catch {
+            if ($Attempt -eq $Attempts) { throw }
+            Start-Sleep -Milliseconds 200
+        }
+    }
+}
+
 function Replace-Binary([string]$Source, [string]$Destination) {
     # `ai-config update` runs this while its own exe is still executing.
     # Windows refuses to overwrite a running exe but lets it be renamed, so
@@ -82,13 +101,13 @@ function Replace-Binary([string]$Source, [string]$Destination) {
     $Aside = $null
     if (Test-Path -LiteralPath $Destination -PathType Leaf) {
         $Aside = "$Destination.old-" + [guid]::NewGuid().ToString('N')
-        Move-Item -LiteralPath $Destination -Destination $Aside
+        Move-WithRetry $Destination $Aside
     }
     try {
-        Move-Item -LiteralPath $Staged -Destination $Destination
+        Move-WithRetry $Staged $Destination
     }
     catch {
-        if ($Aside) { Move-Item -LiteralPath $Aside -Destination $Destination -Force }
+        if ($Aside) { Move-WithRetry $Aside $Destination }
         Remove-Item -LiteralPath $Staged -Force -ErrorAction SilentlyContinue
         throw
     }
