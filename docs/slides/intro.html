@@ -111,6 +111,28 @@
     </div>
   </section>
 
+  <section class="slide" data-chapter="二、方法">
+    <div class="story-grid timeline-layout">
+      <div class="story-copy">
+        <h2>9 點上班，<br><span class="accent nowrap">7 點先喚醒</span></h2>
+        <p class="lede">用量每 5 小時算一輪，從第一次使用才開始計時。keepalive 會在你選的時間，用最便宜的模型先送一句話，讓這一輪提早開始。</p>
+        <p class="tiny-note">每個工具各開一次：<code>acg keepalive enable claude</code>（Codex、Antigravity 換成 <code>codex</code>、<code>agy</code>）。預設 07:00、12:05、17:10、22:15：Claude 從整點起算，Codex 從送出那一秒起算，晚幾分鐘兩邊都接得上。預設關閉，同一個帳號開一台就夠。</p>
+      </div>
+      <figure class="picture timeline" aria-label="9 點才開始用與 7 點先喚醒的額度視窗對照">
+        <div class="timeline-row">
+          <p class="timeline-name">9 點才開始用<span>上班時間 2 輪</span></p>
+          <div class="timeline-track"><span class="workday" style="--l: 21.43%; --w: 64.29%" aria-hidden="true"></span><span class="window a" style="--l: 21.43%; --w: 35.71%">9–14</span><span class="window a" style="--l: 57.14%; --w: 35.71%">14–19</span></div>
+        </div>
+        <div class="timeline-row">
+          <p class="timeline-name">7 點先喚醒<span>上班時間 3 輪</span></p>
+          <div class="timeline-track"><span class="workday" style="--l: 21.43%; --w: 64.29%" aria-hidden="true"></span><span class="window b" style="--l: 7.14%; --w: 35.71%">7–12</span><span class="window b" style="--l: 42.86%; --w: 35.71%">12–17</span><span class="window b continues" style="--l: 78.57%; --w: 21.43%">17–22</span></div>
+        </div>
+        <div class="timeline-axis" aria-hidden="true"><span style="--l: 7.14%">07:00</span><span style="--l: 21.43%">09:00</span><span style="--l: 42.86%">12:00</span><span style="--l: 57.14%">14:00</span><span style="--l: 78.57%">17:00</span><span style="--l: 92.86%">19:00</span></div>
+        <figcaption><span class="workday-key" aria-hidden="true"></span>上班時間 9:00–18:00。第二列的 17–22 雖然只用到一小時，那一小時是全新的額度。</figcaption>
+      </figure>
+    </div>
+  </section>
+
   <section class="slide" data-chapter="三、結果">
     <div class="story-grid">
       <div class="story-copy">
@@ -196,29 +218,21 @@
     </div>
   </section>
 
-  <section class="slide" data-chapter="三、結果">
-    <div class="story-grid timeline-layout">
-      <div class="story-copy">
-        <h2>9 點上班，<br><span class="accent nowrap">7 點先喚醒</span></h2>
-        <p class="lede">用量每 5 小時算一輪，從第一次使用才開始計時。keepalive 會在你選的時間，用最便宜的模型先送一句話，讓這一輪提早開始。</p>
-        <p class="tiny-note">每個工具各開一次：<code>acg keepalive enable claude</code>（Codex、Antigravity 換成 <code>codex</code>、<code>agy</code>）。預設 07:00、12:05、17:10、22:15：Claude 從整點起算，Codex 從送出那一秒起算，晚幾分鐘兩邊都接得上。預設關閉，同一個帳號開一台就夠。</p>
-      </div>
-      <figure class="picture timeline" aria-label="9 點才開始用與 7 點先喚醒的額度視窗對照">
-        <div class="timeline-row">
-          <p class="timeline-name">9 點才開始用<span>上班時間 2 輪</span></p>
-          <div class="timeline-track"><span class="workday" style="--l: 21.43%; --w: 64.29%" aria-hidden="true"></span><span class="window a" style="--l: 21.43%; --w: 35.71%">9–14</span><span class="window a" style="--l: 57.14%; --w: 35.71%">14–19</span></div>
-        </div>
-        <div class="timeline-row">
-          <p class="timeline-name">7 點先喚醒<span>上班時間 3 輪</span></p>
-          <div class="timeline-track"><span class="workday" style="--l: 21.43%; --w: 64.29%" aria-hidden="true"></span><span class="window b" style="--l: 7.14%; --w: 35.71%">7–12</span><span class="window b" style="--l: 42.86%; --w: 35.71%">12–17</span><span class="window b continues" style="--l: 78.57%; --w: 21.43%">17–22</span></div>
-        </div>
-        <div class="timeline-axis" aria-hidden="true"><span style="--l: 7.14%">07:00</span><span style="--l: 21.43%">09:00</span><span style="--l: 42.86%">12:00</span><span style="--l: 57.14%">14:00</span><span style="--l: 78.57%">17:00</span><span style="--l: 92.86%">19:00</span></div>
-        <figcaption><span class="workday-key" aria-hidden="true"></span>上班時間 9:00–18:00。第二列的 17–22 雖然只用到一小時，那一小時是全新的額度。</figcaption>
-      </figure>
+  <section class="slide" data-chapter="四、限制">
+    <!-- 論文會在結論前把做不到的講清楚;這幾條前面都散在各頁的小字裡,這裡收攏一次 -->
+    <div class="thanks limits">
+      <h2>現在還<span class="accent">做不到的</span></h2>
+      <ul class="thanks-list">
+        <li><strong>登入</strong><span>登入資訊從不上傳，所以每台電腦、每個工具都要自己登入一次。</span></li>
+        <li><strong>Desktop</strong><span>Windows 免安裝可直接用；macOS 與 Linux 目前是實驗版。</span></li>
+        <li><strong>傳話</strong><span>只支援 Linux / macOS。Antigravity 只能送、收不到，它開著的對話還沒有收訊息的管道。</span></li>
+        <li><strong>技能</strong><span>Claude 桌面版的 Chat 不讀本機技能，要用 <code>acg package</code> 打成 ZIP 手動上傳。</span></li>
+        <li><strong>記憶</strong><span>啟用或同步之後，要開新會話才讀得到；開著的會話不會自己更新。</span></li>
+      </ul>
+      <p class="tiny-note">這些是現況，不是設計；哪一條先解，看 <a href="https://github.com/CSL426/ai-config/issues">issues</a> 上誰提得多。</p>
     </div>
   </section>
-
-  <section class="slide close-slide" data-chapter="四、結論">
+  <section class="slide close-slide" data-chapter="五、結論">
     <!-- 四位萌寵謝幕：跟前面每一頁同一組夥伴，設定包已經打包好 -->
     <figure class="close-art"><img src="./img/12-wave.webp" width="1200" height="611" alt="比比拉布、八嘎柴柴、我的刀盾與巴巴博一朝你揮手，腳邊放著打包好的黃色設定包" decoding="async"></figure>
     <h2>從這裡<span class="accent">開始</span></h2>
@@ -240,7 +254,7 @@
         <li><strong>圖示</strong><span>工具標誌取自 Simple Icons（CC0），各為 Anthropic、OpenAI、Google、Git 專案的商標。</span></li>
         <li><strong>夥伴</strong><span>八嘎柴柴、我的刀盾、比比拉布、巴巴博一：網路迷因角色，只當裝飾，不代表任何人的立場。</span></li>
         <li><strong>插圖</strong><span>由 Antigravity 搜尋素材並生成，提示詞在投影片資料夾的 <code>art/PROMPTS.md</code>。</span></li>
-        <li><strong>實拍</strong><span>第 7–10 頁的畫面來自真的會話，在示範專案 kobe、jordan 裡拍攝。</span></li>
+        <li><strong>實拍</strong><span>第 8–11 頁的畫面來自真的會話，在示範專案 kobe、jordan 裡拍攝。</span></li>
         <li><strong>作者</strong><span>懶惰的我自己：懶得在每台電腦重新教一次 AI，才有了這個工具。</span></li>
       </ul>
       <p class="tiny-note">原始碼與問題回報：<a href="https://github.com/CSL426/ai-config">github.com/CSL426/ai-config</a></p>
@@ -251,7 +265,7 @@
 <footer class="deck-chrome">
   <span class="brand">ai-config · acg</span>
   <nav class="slide-strip" id="slide-strip" aria-label="投影片進度"></nav>
-  <span class="counter" id="counter">01 ∕ 13</span>
+  <span class="counter" id="counter">01 ∕ 14</span>
 </footer>
 
 <script>

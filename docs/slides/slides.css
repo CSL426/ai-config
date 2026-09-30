@@ -275,8 +275,9 @@ p code, li code, small code { white-space: nowrap; }
 .slide[data-chapter]::before { content: attr(data-chapter); position: absolute; top: clamp(0.5rem, 1.6vw, 1.2rem); left: clamp(1.15rem, 6vw, 6.5rem); padding: 0.2em 0.7em; border: 1px solid var(--color-sky-deep); border-radius: 999rem; color: var(--color-sky-deep); font: 700 var(--text-sm)/1.2 var(--font-body); letter-spacing: 0.08em; }
 .slide-marker.chapter-start { margin-left: var(--space-sm); }
 .thanks { display: grid; gap: var(--space-md); width: min(100%, 44rem); margin-inline: auto; }
+.limits h2 { margin-bottom: 0; }
 .thanks-list { display: grid; gap: var(--space-sm); list-style: none; padding: 0; margin: 0; }
-.thanks-list li { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: var(--space-sm); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-rule); color: var(--color-ink-soft); }
+.thanks-list li { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: var(--space-sm); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-rule); color: var(--color-ink-soft); }
 .thanks-list strong { color: var(--color-ink); }
 .authors { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-md); color: var(--color-muted); font-size: var(--text-sm); }
 .authors strong { color: var(--color-ink); }
