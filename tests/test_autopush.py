@@ -120,7 +120,7 @@ def test_an_impossible_hour_is_refused(hour: int) -> None:
 
     schedule_table.record("test-host", schedule_table.Slot(4, 10))
     with pytest.raises(ValueError):
-        autopush.enable(hour)
+        autopush.install(hour)
     # 拒絕就不能留下痕跡,否則表項會壞掉、下次從頭認領
     assert schedule_table.load().hosts["test-host"] == schedule_table.Slot(4, 10)
 
@@ -134,8 +134,10 @@ def test_the_table_never_points_at_the_real_notebook(tmp_path: Path) -> None:
 def test_the_opportunistic_path_stays_out_of_the_way(
     notebook: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 裝了排程就不該再順手推,否則一天推兩次
-    monkeypatch.setattr(autopush, "_schedule_installed", lambda: True)
+    # 開了每晚上傳就不該再順手推,否則一天推兩次
+    from ai_config import nightly
+
+    monkeypatch.setattr(nightly, "enabled", lambda feature: feature == "autopush")
     called = []
     monkeypatch.setattr(autopush, "decide", lambda *a: called.append(1))
 
@@ -149,7 +151,7 @@ def test_the_opportunistic_path_can_be_switched_off(
 ) -> None:
     monkeypatch.setenv("AI_CONFIG_NO_AUTOPUSH", "1")
     called = []
-    monkeypatch.setattr(autopush, "_schedule_installed", lambda: called.append(1))
+    monkeypatch.setattr(autopush, "decide", lambda *a: called.append(1))
 
     autopush.opportunistic_push()
 
@@ -159,7 +161,7 @@ def test_the_opportunistic_path_can_be_switched_off(
 def test_a_failure_never_breaks_the_command_it_rode_in_on(
     notebook: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(autopush, "_schedule_installed", lambda: False)
+    monkeypatch.setattr(autopush, "schedule_installed", lambda: False)
 
     def boom(*_args: object) -> None:
         raise OSError("git 壞了")
@@ -263,11 +265,12 @@ def test_windows_sets_the_limit_after_creating_the_task(
     monkeypatch.setattr(autopush.subprocess, "run", fake_run)
     monkeypatch.setattr(autopush, "platform_name", lambda: "windows")
 
-    lines = autopush.enable(4)
+    lines = autopush.install(4)
 
     assert any("powershell" in str(call) for call in seen)
-    assert any("ExecutionTimeLimit" in str(call) for call in seen)
-    assert any("15 分鐘" in line for line in lines)
+    assert any("PT60M" in str(call) for call in seen)
+    # 每晚排程也要更新四個工具,十五分鐘不夠
+    assert any("60 分鐘" in line for line in lines)
 
 
 def test_the_remote_is_asked_even_with_nothing_to_send(
@@ -296,10 +299,10 @@ def test_a_changed_slot_moves_the_schedule_by_itself(
     monkeypatch.setattr(schedule_table, "memory_dir", lambda: notebook)
     monkeypatch.setattr(schedule_table, "host_name", lambda: "mine")
     schedule_table.record("mine", schedule_table.Slot(4, 30))
-    monkeypatch.setattr(autopush, "_schedule_installed", lambda: True)
+    monkeypatch.setattr(autopush, "schedule_installed", lambda: True)
     monkeypatch.setattr(autopush, "_scheduled_at", lambda: (4, 0))
     asked = []
-    monkeypatch.setattr(autopush, "enable", lambda hour: asked.append(hour))
+    monkeypatch.setattr(autopush, "install", lambda hour: asked.append(hour))
 
     message = autopush.reconcile_slot()
 
@@ -315,10 +318,10 @@ def test_an_unchanged_slot_leaves_the_schedule_alone(
     monkeypatch.setattr(schedule_table, "memory_dir", lambda: notebook)
     monkeypatch.setattr(schedule_table, "host_name", lambda: "mine")
     schedule_table.record("mine", schedule_table.Slot(4, 30))
-    monkeypatch.setattr(autopush, "_schedule_installed", lambda: True)
+    monkeypatch.setattr(autopush, "schedule_installed", lambda: True)
     monkeypatch.setattr(autopush, "_scheduled_at", lambda: (4, 30))
     monkeypatch.setattr(
-        autopush, "enable", lambda hour: pytest.fail("時段沒變不該重建排程")
+        autopush, "install", lambda hour: pytest.fail("時段沒變不該重建排程")
     )
 
     assert autopush.reconcile_slot() == ""
@@ -332,9 +335,9 @@ def test_no_schedule_means_nothing_to_reconcile(
     monkeypatch.setattr(schedule_table, "memory_dir", lambda: notebook)
     monkeypatch.setattr(schedule_table, "host_name", lambda: "mine")
     schedule_table.record("mine", schedule_table.Slot(4, 30))
-    monkeypatch.setattr(autopush, "_schedule_installed", lambda: False)
+    monkeypatch.setattr(autopush, "schedule_installed", lambda: False)
     monkeypatch.setattr(
-        autopush, "enable", lambda hour: pytest.fail("沒裝排程不該去建")
+        autopush, "install", lambda hour: pytest.fail("沒裝排程不該去建")
     )
 
     assert autopush.reconcile_slot() == ""
@@ -419,7 +422,7 @@ def test_the_installed_schedule_keeps_its_names() -> None:
     assert autopush._TASK == "acg memory autopush"
     assert "OnCalendar=*-*-* 04:10:00" in timer
     assert "Persistent=true" in timer
-    assert "memory push" in service
+    assert "__nightly --if-stale 12" in service
 
 
 def test_a_blocked_push_leaves_a_reason_until_one_succeeds(

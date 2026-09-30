@@ -10,13 +10,20 @@
 
 ## 介面
 
-`acg autoupdate status | enable [時:分] | disable | run`,與 `memory autopush`、
-`keepalive` 同一套排程機制:Linux 用 systemd user timer、macOS 用
-LaunchAgent、Windows 用工作排程器(共用的部分抽成 `ai_config/daily_job.py`)。
-預設 05:30,在 autopush 之後、避開 keepalive 的整點。各台更新互不相干,
-所以不走 autopush 的共用時間表,每台自己設時間。
+`acg autoupdate status | enable [時] | disable | run`。1.0.102 時它有自己的排程
+(05:30);2026-09-30 使用者決定和 `memory autopush` 綁在一起(1.0.103):
 
-排程執行 `acg autoupdate run`(也可以手動跑),依序:
+- 只有一個每晚排程,就是 autopush 原本那一個(unit `acg-autopush`、工作
+  「acg memory autopush」),指令改成 `acg __nightly --if-stale 12`。
+- 開了自動更新就先更新,再用安裝位置的啟動器(也就是剛裝好的新版)跑
+  `memory push --if-stale`。理由:gb10 的日誌被佔位符誤判擋了一晚,修正白天
+  就發布了,只是還沒裝;綁在一起的話當晚就生效。
+- 兩個開關各自獨立(`~/.local/state/acg/nightly.json`):上傳記憶和替換
+  執行檔是兩種不同的同意,開一個不會順便開另一個;有一個開著排程就在。
+  沒有設定檔的舊排程照舊解讀成「只上傳」,所以沒重新 enable 的機器行為不變。
+- 時段就是 autopush 在共用時間表裡的時段;單次上限從 15 分鐘放寬到 60 分鐘。
+
+更新的部分(也可以用 `acg autoupdate run` 手動跑)依序:
 
 | 項目 | 指令 | 只在這台有裝時 |
 | --- | --- | --- |

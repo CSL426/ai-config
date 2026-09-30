@@ -167,10 +167,11 @@ A command that stops because it never got its confirmation exits non-zero.
   Pass a version (`1.0.13` or `v1.0.13`) to install that release specifically;
   a pinned version skips the latest-release comparison, so it can also
   downgrade. Malformed versions are rejected before anything is downloaded.
-- `autoupdate status|enable [HH:MM]|disable|run` — Once a day (default
-  05:30), run `claude update`, `codex update`, `agy update` and then
-  `acg update` on this machine, through the same platform scheduler as the
-  memory autopush. Tools that are not installed are skipped, a Codex installed
+- `autoupdate status|enable [hour]|disable|run` — Each night, before the
+  memory push, run `claude update`, `codex update`, `agy update` and then
+  `acg update` on this machine. It rides on the memory autopush schedule and
+  its time, so the push runs with the acg just installed; the two switches are
+  independent. Tools that are not installed are skipped, a Codex installed
   through npm is reported instead of updated, and one failure does not stop
   the rest. `status` shows the last run's versions; a failure is also shown at
   the start of a new Claude session and on the desktop app's automation page.

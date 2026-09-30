@@ -35,6 +35,7 @@ DEFAULT_STALE_HOURS = 12
 _LABEL = "com.csl426.acg.autopush"
 _UNIT = "acg-autopush"
 _TASK = "acg memory autopush"
+_MAX_MINUTES = 60
 
 
 def state_path() -> Path:
@@ -243,11 +244,11 @@ def reconcile_slot() -> str:
             wanted = moved
         else:
             wanted = current.hosts.get(host)
-        if wanted is None or not _schedule_installed():
+        if wanted is None or not schedule_installed():
             return ""
         if _scheduled_at() == (wanted.hour, wanted.minute):
             return ""
-        enable(wanted.hour)
+        install(wanted.hour)
         return f"時段改為 {wanted},排程已跟著更新"
     except (ImportError, OSError, RuntimeError, ValueError):
         return ""
@@ -321,7 +322,8 @@ def _acg_command() -> list[str]:
 
 
 def _run_args(stale_hours: float) -> list[str]:
-    return [*_acg_command(), "memory", "push", "--if-stale", str(stale_hours)]
+    # 每晚排程:開了自動更新就先更新,再用新版上傳(見 nightly.py)
+    return [*_acg_command(), "__nightly", "--if-stale", str(stale_hours)]
 
 
 def systemd_units(hour: int, stale_hours: float, minute: int = 0) -> tuple[str, str]:
@@ -329,17 +331,17 @@ def systemd_units(hour: int, stale_hours: float, minute: int = 0) -> tuple[str, 
     command = " ".join(_quote(part) for part in _run_args(stale_hours))
     service = (
         "[Unit]\n"
-        "Description=Save acg shared memory\n\n"
+        "Description=acg nightly: update tools, save shared memory\n\n"
         "[Service]\n"
         "Type=oneshot\n"
-        # 保存記憶是幾秒的事。真的卡住就砍掉,不要讓一個停住的行程
-        # 佔著到下一次排程,那只會讓問題更難察覺
-        "RuntimeMaxSec=900\n"
+        # 保存記憶是幾秒的事,更新四個工具是幾分鐘。真的卡住就砍掉,
+        # 不要讓一個停住的行程佔著到下一次排程,那只會讓問題更難察覺
+        f"RuntimeMaxSec={_MAX_MINUTES * 60}\n"
         f"ExecStart={command}\n"
     )
     timer = (
         "[Unit]\n"
-        "Description=Save acg shared memory daily\n\n"
+        "Description=acg nightly run\n\n"
         "[Timer]\n"
         f"OnCalendar=*-*-* {hour:02d}:{minute:02d}:00\n"
         # 機器在排定時間關著或睡著時,開機後補跑,不要整天漏掉
@@ -362,7 +364,7 @@ def launchd_plist(hour: int, stale_hours: float, minute: int = 0) -> bytes:
         "ProgramArguments": _run_args(stale_hours),
         "StartCalendarInterval": {"Hour": hour, "Minute": minute},
         "RunAtLoad": False,
-        "ExitTimeOut": 900,
+        "ExitTimeOut": _MAX_MINUTES * 60,
         "StandardOutPath": str(_log_path()),
         "StandardErrorPath": str(_log_path()),
     })
@@ -414,10 +416,24 @@ def _systemctl(*args: str) -> subprocess.CompletedProcess:
     )
 
 
-def enable(
+def enable(hour: "int | None" = None) -> list[str]:
+    """Turn on the nightly memory save; the schedule is shared with autoupdate."""
+    from . import nightly
+
+    return nightly.turn_on("autopush", hour)
+
+
+def disable() -> list[str]:
+    """Turn off the nightly save; the schedule stays while autoupdate needs it."""
+    from . import nightly
+
+    return nightly.turn_off("autopush")
+
+
+def install(
     hour: "int | None" = None, stale_hours: float = DEFAULT_STALE_HOURS
 ) -> list[str]:
-    """Register the daily run with whatever scheduler this platform has.
+    """Register the nightly run with whatever scheduler this platform has.
 
     With no hour given, take one from the shared table so machines do not
     all wake at once. An explicit hour wins and is recorded, so asking for
@@ -483,15 +499,16 @@ def _enable_systemd(hour: int, stale_hours: float, minute: int = 0) -> list[str]
     (directory / f"{_UNIT}.timer").write_text(timer, encoding="utf-8")
     lines = [f"寫入 {directory / (_UNIT + '.timer')}"]
     forget_missed_runs(f"{_UNIT}.timer")
-    reload_result = _systemctl("daemon-reload")
-    if reload_result.returncode != 0:
-        lines.append("systemctl daemon-reload 失敗,請手動執行")
-        return lines
-    started = _systemctl("enable", "--now", f"{_UNIT}.timer")
+    reloaded = _systemctl("daemon-reload")
+    started = reloaded if reloaded.returncode != 0 else _systemctl(
+        "enable", "--now", f"{_UNIT}.timer"
+    )
     if started.returncode != 0:
-        lines.append(f"啟用 timer 失敗:{(started.stderr or '').strip()}")
-        return lines
-    lines.append(f"已排定每天 {hour:02d}:00 檢查")
+        # 留著檔案的話狀態會說已排定,其實 systemd 根本沒載入
+        for suffix in (".timer", ".service"):
+            (directory / f"{_UNIT}{suffix}").unlink(missing_ok=True)
+        raise RuntimeError(f"啟用 timer 失敗:{(started.stderr or '').strip()}")
+    lines.append(f"已排定每天 {hour:02d}:{minute:02d}")
     lines.append("關機錯過的排程會在開機後補跑")
     return lines
 
@@ -515,7 +532,7 @@ def _enable_launchd(hour: int, stale_hours: float, minute: int = 0) -> list[str]
     if loaded.returncode != 0:
         lines.append(f"載入 LaunchAgent 失敗:{(loaded.stderr or '').strip()}")
         return lines
-    lines.append(f"已排定每天 {hour:02d}:00 檢查")
+    lines.append(f"已排定每天 {hour:02d}:{minute:02d}")
     return lines
 
 
@@ -528,9 +545,9 @@ def _enable_schtasks(hour: int, stale_hours: float, minute: int = 0) -> list[str
         raise RuntimeError(
             f"建立工作排程失敗:{(created.stderr or created.stdout).strip()}"
         )
-    lines = [f"已排定每天 {hour:02d}:00 檢查(工作排程器:{_TASK})"]
+    lines = [f"已排定每天 {hour:02d}:{minute:02d}(工作排程器:{_TASK})"]
     if _limit_windows_runtime():
-        lines.append("單次執行超過 15 分鐘會被中止")
+        lines.append(f"單次執行超過 {_MAX_MINUTES} 分鐘會被中止")
     return lines
 
 
@@ -544,7 +561,7 @@ def _limit_windows_runtime() -> bool:
     """
     script = (
         f"$t = Get-ScheduledTask -TaskName '{_TASK}'; "
-        "$t.Settings.ExecutionTimeLimit = 'PT15M'; "
+        f"$t.Settings.ExecutionTimeLimit = 'PT{_MAX_MINUTES}M'; "
         "Set-ScheduledTask -TaskName $t.TaskName -Settings $t.Settings"
     )
     try:
@@ -557,11 +574,15 @@ def _limit_windows_runtime() -> bool:
     return done.returncode == 0
 
 
-def disable() -> list[str]:
+def uninstall() -> list[str]:
     """Remove the schedule. Leaves the memory and its state file alone."""
     name = platform_name()
     if name == "linux":
-        _systemctl("disable", "--now", f"{_UNIT}.timer")
+        timer = systemd_dir() / f"{_UNIT}.timer"
+        stopped = _systemctl("disable", "--now", f"{_UNIT}.timer")
+        if stopped.returncode != 0 and timer.exists():
+            # 檔案刪了但 timer 還在跑的話,狀態會說已停用,排程卻照舊
+            raise RuntimeError(f"停用 timer 失敗:{(stopped.stderr or '').strip()}")
         removed = []
         for suffix in (".timer", ".service"):
             path = systemd_dir() / f"{_UNIT}{suffix}"
@@ -569,7 +590,7 @@ def disable() -> list[str]:
                 path.unlink()
                 removed.append(str(path))
         _systemctl("daemon-reload")
-        return [f"移除 {path}" for path in removed] or ["沒有排定的自動推送"]
+        return [f"移除 {path}" for path in removed] or ["沒有排定的每晚排程"]
     if name == "macos":
         path = launchd_path()
         subprocess.run(
@@ -577,7 +598,7 @@ def disable() -> list[str]:
             capture_output=True, check=False, timeout=30,
         )
         if not path.exists():
-            return ["沒有排定的自動推送"]
+            return ["沒有排定的每晚排程"]
         path.unlink()
         return [f"移除 {path}"]
     removed = subprocess.run(
@@ -585,28 +606,21 @@ def disable() -> list[str]:
         capture_output=True, text=True, **NATIVE, check=False, timeout=60,
     )
     if removed.returncode != 0:
-        return ["沒有排定的自動推送"]
+        return ["沒有排定的每晚排程"]
     return [f"移除工作排程:{_TASK}"]
 
 
 def status() -> dict:
     """What is scheduled, when it last pushed, and what it would do now."""
-    name = platform_name()
-    if name == "linux":
-        installed = (systemd_dir() / f"{_UNIT}.timer").is_file()
-    elif name == "macos":
-        installed = launchd_path().is_file()
-    else:
-        listed = subprocess.run(
-            ["schtasks", "/Query", "/TN", _TASK],
-            capture_output=True, text=True, **NATIVE, check=False, timeout=60,
-        )
-        installed = listed.returncode == 0
+    from . import nightly
+
     last = _read_last_push()
     decision = decide()
     return {
-        "platform": name,
-        "installed": installed,
+        "platform": platform_name(),
+        "installed": nightly.enabled("autopush"),
+        # 自動上傳關了、只剩自動更新時排程也還在,時段設定要看這個
+        "scheduled": schedule_installed(),
         "last_push": last.isoformat() if last else "",
         "last_failure": last_failure(),
         "would_push": decision.push,
@@ -625,7 +639,9 @@ def opportunistic_push() -> None:
     if os.environ.get("AI_CONFIG_NO_AUTOPUSH"):
         return
     try:
-        if _schedule_installed():
+        from . import nightly
+
+        if nightly.enabled("autopush"):
             return
         decision = decide()
         if not decision.push:
@@ -645,7 +661,7 @@ def opportunistic_push() -> None:
         return
 
 
-def _schedule_installed() -> bool:
+def schedule_installed() -> bool:
     name = platform_name()
     if name == "linux":
         return (systemd_dir() / f"{_UNIT}.timer").is_file()

@@ -85,7 +85,8 @@ def _autopush_state() -> dict:
             for name, slot in sorted(table.hosts.items())
             if name != host
         ]
-        return {"installed": state["installed"], "last_push": state["last_push"],
+        return {"installed": state["installed"], "scheduled": state["scheduled"],
+                "last_push": state["last_push"],
                 "last_failure": state["last_failure"],
                 "reason": state["reason"], "host": host,
                 "slot": str(mine) if mine else "", "others": others}
@@ -441,16 +442,16 @@ class ManagementApi:
         finally:
             self._lock.release()
 
-    def set_autoupdate(self, wanted, clock=None):
-        """Schedule or unschedule the daily tool update; a clock moves it."""
-        if not isinstance(wanted, bool) or not (clock is None or isinstance(clock, str)):
+    def set_autoupdate(self, wanted):
+        """Turn the nightly tool update on or off; its time is the autopush slot."""
+        if not isinstance(wanted, bool):
             return outcome(1, "參數不正確", "INVALID_ARGUMENT")
         if not self._lock.acquire(blocking=False):
             return outcome(1, "另一個動作正在執行", "BUSY")
         try:
             from . import autoupdate
 
-            lines = autoupdate.enable(clock or None) if wanted else autoupdate.disable()
+            lines = autoupdate.enable() if wanted else autoupdate.disable()
             return {**outcome(), "output": "\n".join(lines)}
         except (OSError, RuntimeError, ValueError) as exc:
             return failure(exc)
@@ -477,7 +478,8 @@ class ManagementApi:
             schedule_table.record(
                 schedule_table.host_name(), schedule_table.Slot(hour, minute)
             )
-            lines = autopush.enable(hour)
+            # 只搬時段,不動開關:自動上傳關著、只開自動更新時也能改時間
+            lines = autopush.install(hour)
             return {**outcome(), "output": "\n".join(lines)}
         except (OSError, RuntimeError, ValueError) as exc:
             return failure(exc)

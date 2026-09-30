@@ -122,6 +122,14 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
 
         refresh_all()
         return 0
+    if cmd == "__nightly":
+        # 隱藏命令:每晚排程的進入點,先更新(若開啟)再上傳記憶(若開啟)
+        from .nightly import run as run_nightly
+
+        stale = 12.0
+        if args[1:2] == ["--if-stale"] and len(args) == 3:
+            stale = float(args[2])
+        return run_nightly(stale)
     if cmd == "__update-check":
         # 隱藏命令:被動更新檢查的背景行程進入點
         from .commands.update import run_update_check_refresh

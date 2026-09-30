@@ -20,11 +20,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import paths
-from .daily_job import DailyJob
 from .paths import HOME
 from .subproc import UTF8
 
-DEFAULT_TIME = (5, 30)
 TOOLS = ("claude", "codex", "agy")
 _STEP_TIMEOUT = 600
 _VERSION = re.compile(r"\d+(?:\.\d+)+")
@@ -37,19 +35,6 @@ def state_dir() -> Path:
 
 def result_path() -> Path:
     return state_dir() / "autoupdate-last.json"
-
-
-def job() -> DailyJob:
-    return DailyJob(
-        unit="acg-autoupdate",
-        label="com.csl426.acg.autoupdate",
-        task="acg autoupdate",
-        description="Update acg and the AI CLIs",
-        argv=(*paths.scheduled_command(), "autoupdate", "run"),
-        log_path=state_dir() / "autoupdate.log",
-        # 四個工具各自下載,一個卡住最多十分鐘,整體給一小時
-        max_minutes=60,
-    )
 
 
 @dataclass
@@ -257,33 +242,27 @@ def failures() -> "tuple[str, list[Step]]":
 
 
 # ─── schedule ─────────────────────────────────────────────────
+# 沒有自己的排程:跟自動上傳共用每晚那一個,先更新再上傳(見 nightly.py)
 
-def parse_clock(value: str) -> "tuple[int, int]":
-    hour, sep, minute = value.partition(":")
-    try:
-        parsed = (int(hour), int(minute) if sep else 0)
-    except ValueError:
-        raise ValueError(f"看不懂這個時間:{value}(格式是 HH:MM)") from None
-    if not (0 <= parsed[0] <= 23 and 0 <= parsed[1] <= 59):
-        raise ValueError(f"時間要在 00:00 到 23:59 之間:{value}")
-    return parsed
+def enable(hour: "int | None" = None) -> list:
+    from . import nightly
 
-
-def enable(clock: "str | None" = None) -> list:
-    hour, minute = parse_clock(clock) if clock else DEFAULT_TIME
-    return job().enable(hour, minute)
+    return nightly.turn_on("autoupdate", hour)
 
 
 def disable() -> list:
-    return job().disable() or ["沒有排定的自動更新"]
+    from . import nightly
+
+    return nightly.turn_off("autoupdate")
 
 
 def status() -> dict:
-    scheduled = job()
-    at = scheduled.scheduled_at()
+    from . import autopush, nightly
+
+    at = autopush._scheduled_at() if autopush.schedule_installed() else None
     last = last_run()
     return {
-        "installed": scheduled.installed(),
+        "installed": nightly.enabled("autoupdate"),
         "time": f"{at[0]:02d}:{at[1]:02d}" if at else "",
         "last_run": last["when"] if last else "",
         "steps": [asdict(step) for step in last["steps"]] if last else [],
