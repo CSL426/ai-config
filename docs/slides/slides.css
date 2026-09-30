@@ -137,7 +137,6 @@ p code, li code, small code { white-space: nowrap; }
 .loop-copy .workflow-line { grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; gap: var(--space-xs); margin-top: var(--space-md); }
 .loop-copy .workflow-arrow { display: none; }
 .loop-copy .workflow-step { width: auto; min-width: 0; min-height: 0; padding: var(--space-xs) var(--space-sm); transform: none; }
-.logo-credit { position: absolute; right: clamp(1rem, 3vw, 2.5rem); bottom: calc(var(--space-xl) + 2.75rem); max-width: min(90%, 28rem); margin: 0; color: var(--color-muted); font-size: var(--text-xs, 0.75rem); text-align: end; }
 .callouts { display: grid; gap: var(--space-md); }
 .timeline { display: grid; gap: var(--space-md); }
 .timeline-row { display: grid; gap: var(--space-2xs); }
@@ -310,3 +309,13 @@ p code, li code, small code { white-space: nowrap; }
   .meme-sticker.at-tr { right: -0.5rem; top: -1rem; }
   .meme-sticker img { height: clamp(2.4rem, 8vw, 3.8rem); }
 }
+
+/* 論文式章節:每頁左上角標出所屬章節,頁碼在換章處分段 */
+.slide[data-chapter]::before { content: attr(data-chapter); position: absolute; top: clamp(0.5rem, 1.6vw, 1.3rem); left: clamp(1.15rem, 6vw, 6.5rem); color: var(--color-muted); font: 700 var(--text-xs)/1 var(--font-mono); letter-spacing: 0.12em; }
+.slide-marker.chapter-start { margin-left: var(--space-sm); }
+.thanks { display: grid; gap: var(--space-md); width: min(100%, 44rem); margin-inline: auto; }
+.thanks-list { display: grid; gap: var(--space-sm); list-style: none; padding: 0; margin: 0; }
+.thanks-list li { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: var(--space-sm); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-rule); color: var(--color-ink-soft); }
+.thanks-list strong { color: var(--color-ink); }
+.authors { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-md); color: var(--color-muted); font-size: var(--text-sm); }
+.authors strong { color: var(--color-ink); }
