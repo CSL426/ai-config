@@ -146,6 +146,9 @@ function Test-Launcher([string]$Path) {
 function Set-ActiveVersion([string]$Resolved) {
     New-Item -ItemType Directory -Force -Path $VersionsDir | Out-Null
     Write-Utf8NoBom $ActiveMarker $Resolved
+    # Releases before 1.0.99 wrote the record one level up; nothing reads it
+    # now, and a stale value there would only mislead whoever looks
+    Remove-Item -LiteralPath (Join-Path $ShareDir 'active') -Force -ErrorAction SilentlyContinue
     Remove-StaleVersions $Resolved
 }
 
@@ -232,7 +235,7 @@ function Install-Launcher([string]$Launcher, [string]$Destination) {
     $StillRunning = @(Get-ChildItem -Path "$Destination.old-*" -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Length -ge 4MB })
     if ($StillRunning.Count -gt 0) {
-        Write-Warn 'The acg that started this update may print "Error -3 while decompressing data" as it exits; the update itself is complete.'
+        Write-Warn 'The acg that started this update may print a zlib "Error -3" or "Error -5 while decompressing data" as it exits; the update itself is complete.'
     }
 }
 
