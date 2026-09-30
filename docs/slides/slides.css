@@ -281,6 +281,9 @@ p code, li code, small code { white-space: nowrap; }
 @media (max-width: 34rem) {
   /* 手機寬度下表格已經要捲動，輔助插圖先讓位給表格 */
   .aside-art { display: none; }
+  /* 三欄在手機上只剩一個英文專案名的寬度,內距讓給字,名稱才不會被拆開 */
+  .mem-grid { grid-template-columns: 3.2rem repeat(3, minmax(0, 1fr)); gap: var(--space-2xs); }
+  .mem-band, .mem-dev { padding: var(--space-2xs); font-size: var(--text-xs); }
   .workflow-guard { margin-top: var(--space-sm); }
 }
 @media (max-height: 42rem) and (min-width: 52.01rem) {
