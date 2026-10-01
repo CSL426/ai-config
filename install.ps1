@@ -250,15 +250,19 @@ function Expand-Build([string]$Archive) {
     return $Root
 }
 
-function Save-Url([string]$Url, [string]$OutFile) {
+function Save-Url([string]$Url, [string]$OutFile, [string]$Label = '') {
     # curl.exe ships with Windows 10 1803 and later. On one machine it fetched
     # the 13.5 MB release in 79 s where Invoke-WebRequest under Windows
     # PowerShell 5.1 took 249 s, and it can show progress, so a manual update
     # no longer sits silent for minutes. Progress is off when the caller
     # turned PowerShell's off (the desktop app and the scheduler read output).
+    # Only a labelled download gets a bar, and its label goes right above it:
+    # four unnamed bars (archive, launcher and their checksums) read as one
+    # download stuck repeating itself.
+    if ($Label) { Write-Step "Downloading $Label" }
     $Curl = Join-Path $env:SystemRoot 'System32\curl.exe'
     if (Test-Path -LiteralPath $Curl -PathType Leaf) {
-        $Meter = if ($ProgressPreference -eq 'SilentlyContinue') { '--silent' } else { '--progress-bar' }
+        $Meter = if (-not $Label -or $ProgressPreference -eq 'SilentlyContinue') { '--silent' } else { '--progress-bar' }
         & $Curl --fail --location --show-error --retry 2 $Meter --output $OutFile $Url
         if ($LASTEXITCODE -ne 0) { throw "curl.exe exited $LASTEXITCODE for $Url" }
         return
@@ -270,7 +274,7 @@ function Get-VerifiedDownload([string]$BaseUrl, [string]$Name, [string]$Director
     # $null when the release has no such asset, so the caller can fall back
     $Download = Join-Path $Directory $Name
     try {
-        Save-Url "$BaseUrl/$Name" $Download
+        Save-Url "$BaseUrl/$Name" $Download $Name
     }
     catch {
         return $null
@@ -490,7 +494,6 @@ else {
     $TemporaryDir = Join-Path ([IO.Path]::GetTempPath()) ("ai-config-" + [guid]::NewGuid())
     New-Item -ItemType Directory -Path $TemporaryDir | Out-Null
     try {
-        Write-Step "Downloading $Archive"
         $Downloaded = Get-VerifiedDownload $BaseUrl $Archive $TemporaryDir
         if ($Downloaded) {
             $Launcher = Get-VerifiedDownload $BaseUrl $LauncherAsset $TemporaryDir
@@ -501,7 +504,7 @@ else {
         }
         else {
             # Releases before 1.0.99 ship a single onefile exe
-            Write-Step "No archive in this release; downloading $Asset"
+            Write-Step "No archive in this release"
             $Downloaded = Get-VerifiedDownload $BaseUrl $Asset $TemporaryDir
             if (-not $Downloaded) { Fail "Could not download $Asset" }
             Install-Binary $Downloaded $Destination

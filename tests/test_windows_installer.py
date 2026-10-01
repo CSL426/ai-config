@@ -344,3 +344,34 @@ def test_powershell_installer_waits_out_a_file_held_without_delete_sharing(tmp_p
     assert result.returncode == 0, result.stderr + result.stdout
     assert destination.read_bytes() == b"standalone-binary"
     assert not (bin_dir / "ai-config.exe.new").exists()
+
+
+def test_every_download_bar_is_named_and_checksums_have_none(tmp_path: Path) -> None:
+    """Four unnamed bars (archive, launcher, two checksums) looked like one stuck download."""
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+    source = (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")
+    functions = "\n".join(
+        line for line in source.splitlines() if line.startswith("function Write-Step")
+    )
+    start = source.index("function Save-Url")
+    functions += "\n" + source[start:source.index("\n}\n", start) + 3]
+    for name in ("big.zip", "big.zip.sha256"):
+        (tmp_path / name).write_bytes(b"x" * 200_000)
+    url = (tmp_path / "big.zip").as_uri()
+    script = (
+        f"{functions}\n$ProgressPreference = 'Continue'\n"
+        f"Save-Url '{url}' {_powershell_literal(tmp_path / 'a.zip')} 'big.zip'\n"
+        f"Save-Url '{url}.sha256' {_powershell_literal(tmp_path / 'a.zip.sha256')}\n"
+    )
+
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    output = result.stdout + result.stderr
+    assert output.count("Downloading") == 1 and "Downloading big.zip" in output
+    assert (tmp_path / "a.zip.sha256").stat().st_size == 200_000
