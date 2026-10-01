@@ -403,3 +403,35 @@ def test_adopt_from_the_subdirectory_reaches_its_old_journal(journal_project, mo
 
     target = memory_journal.project_journal_dir(memory_paths.project_key(root))
     assert (target / "today-2026-07-30.md").read_text() == "nested notes"
+
+
+def test_remembers_own_logs_stay_under_the_ignored_names(journal_project):
+    """A4000: moved aside as logs.from-api they fell outside .gitignore, ready to be pushed."""
+    import subprocess
+
+    root = journal_project
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    assert memory_lifecycle.execute("adopt", root).code == 0
+    target = memory_journal.project_journal_dir(memory_paths.project_key(root))
+    for name in memory_journal.RUNTIME_DIRS:
+        (target / name).mkdir(exist_ok=True)
+    nested = root / "api"
+    legacy = nested / ".remember"
+    (legacy / "logs").mkdir(parents=True)
+    (legacy / "logs" / "memory-2026-07-07.log").write_text("plugin log")
+    (legacy / "tmp").mkdir()
+    (legacy / "tmp" / "save-session.pid").write_text("42")
+    (legacy / "today-2026-07-07.md").write_text("notes")
+
+    planned = {
+        Path(c["destination"]) for c in memory_plan.plan("adopt", nested).changes
+        if c["operation"] == "move"
+    }
+    assert memory_lifecycle.execute("adopt", nested).code == 0
+
+    assert planned and all(path.exists() for path in planned)
+    assert (target / "logs" / "from-api" / "memory-2026-07-07.log").read_text() == "plugin log"
+    assert (target / "tmp" / "from-api" / "save-session.pid").is_file()
+    assert not list(target.glob("*.from-*"))
+    ignored = (target / ".gitignore").read_text().split()
+    assert {"logs/", "tmp/"} <= set(ignored)

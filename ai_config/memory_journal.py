@@ -121,6 +121,26 @@ def _journal_destination(destination: Path, name: str, origin: str) -> Path:
     return candidate
 
 
+# remember 自己的執行期目錄;journal 的 .gitignore 忽略的正是這兩個名字
+RUNTIME_DIRS = ("logs", "tmp")
+
+
+def journal_destination(destination: Path, entry: Path, origin: str, held: "Path | None") -> Path:
+    """Where one moved entry lands; `held` is what already has its name there.
+
+    remember's own logs/ and tmp/ go under the existing ones as from-<origin>.
+    Renamed aside as logs.from-<origin> they fell outside the journal's
+    .gitignore, and a migration on A4000 left a month of plugin logs ready
+    to be pushed with the notes.
+    """
+    if (
+        entry.name in RUNTIME_DIRS and entry.is_dir()
+        and held is not None and held.is_dir()
+    ):
+        return _journal_destination(destination / entry.name, f"from-{origin}", origin)
+    return _journal_destination(destination, entry.name, origin)
+
+
 class JournalRecoveryError(RuntimeError):
     recovery_required = True
 
@@ -189,7 +209,10 @@ def _move_contents(
         for entry in sorted(source.iterdir()):
             if not include_metadata and entry.name in (".gitignore", MIGRATED_NOTE):
                 continue
-            target = _journal_destination(destination, entry.name, source.parent.name)
+            existing = destination / entry.name
+            target = journal_destination(
+                destination, entry, source.parent.name, existing if existing.exists() else None,
+            )
             records.append((entry, target, _journal_fingerprint(entry)))
             shutil.move(str(entry), str(target))
             count += 1
