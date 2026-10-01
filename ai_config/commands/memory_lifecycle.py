@@ -156,6 +156,8 @@ class MemoryExecutionResult:
     code: int = 0
     backup_path: str | None = None
     recovery_required: bool = False
+    # 預覽就證明什麼都不用改時為 False;每晚的報告不該把它說成「已同步」
+    changed: bool = True
 
 
 class MemoryOperationError(RuntimeError):
@@ -180,7 +182,7 @@ def execute(
             log_success("這個專案的日誌已經在共用記憶裡")
         else:
             log_info("這個專案的日誌本來就沒有接進共用記憶")
-        return MemoryExecutionResult(code=0)
+        return MemoryExecutionResult(code=0, changed=False)
     with _mutation(
         enabling=action == "enable", action=action, project=project,
         lock_held=lock_held,
@@ -190,7 +192,7 @@ def execute(
         elif action == "disable":
             result.code = _disable()
         elif action == "adopt":
-            result.code = _adopt(operation.project)
+            result.code = _adopt(operation.project, operation.nested)
         else:
             result.code = _release(operation.project)
     return result
@@ -482,7 +484,7 @@ def _disable() -> int:
     return 0
 
 
-def _adopt(project: Path | None = None) -> int:
+def _adopt(project: Path | None = None, nested: Path | None = None) -> int:
     log_header("Adopt project journal")
     if not memory_journal.remember_installed():
         log_error("找不到 remember plugin,沒有日誌可以接管")
@@ -501,6 +503,8 @@ def _adopt(project: Path | None = None) -> int:
         raise RuntimeError(f"remember 的 data_dir 已另外設定為 {other},先移除再重試")
     root = memory_paths.project_root(project)
     lines = memory_journal.adopt_journal(root)
+    if nested is not None:
+        lines.extend(memory_journal.absorb_nested_journal(nested, root))
     if not lines:
         log_success("這個專案的日誌已經在共用記憶裡")
         return 0
@@ -556,10 +560,10 @@ def adopt_touched(root: "Path | None" = None) -> list:
         except (OSError, RuntimeError, ValueError) as exc:
             lines.append(f"同步失敗:{tilde(project)}:{exc}")
             continue
-        lines.append(
-            f"已同步專案日誌:{tilde(project)}" if result.code == 0
-            else f"同步失敗:{tilde(project)}"
-        )
+        if result.code != 0:
+            lines.append(f"同步失敗:{tilde(project)}")
+        elif result.changed:
+            lines.append(f"已同步專案日誌:{tilde(project)}")
     return lines
 
 

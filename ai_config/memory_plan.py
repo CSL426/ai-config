@@ -21,6 +21,8 @@ class MemoryPlan:
     relevant_paths: list[Path] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     relevant_values: dict = field(default_factory=dict)
+    # 子目錄自己留下的 .remember;adopt 時一併搬進上層專案的日誌
+    nested: Path | None = None
 
     def change(
         self,
@@ -283,6 +285,47 @@ def _journal(result: MemoryPlan) -> None:
     _entry_changes(result, root, target, migrating=migrate)
 
 
+def _nested_journal(result: MemoryPlan, requested: Path) -> None:
+    """A subdirectory's own .remember, moved into its repository's journal.
+
+    remember once keyed a session started in a subdirectory to that
+    directory. Its notes stayed in <subdir>/.remember while the repository
+    was adopted: the nightly scan found them, adopt resolved to the root,
+    had nothing to do, reported the project synced, and the notes never
+    left the machine.
+    """
+    root = result.project
+    assert root is not None
+    if requested.resolve() == root.resolve():
+        return
+    legacy = memory_journal.legacy_journal_dir(requested)
+    if not memory_journal._is_legacy_journal(legacy):
+        return
+    memory_journal._check_journal_tree(legacy)
+    target = memory_journal.project_journal_dir(memory_paths.project_key(root))
+    result.nested = requested
+    result.relevant_paths.append(legacy)
+    occupied = {
+        Path(change["destination"]).name for change in result.changes
+        if Path(change["destination"]).parent == target
+    }
+    if target.exists():
+        occupied.update(entry.name for entry in target.iterdir())
+    for entry in sorted(legacy.iterdir()):
+        if entry.name in (".gitignore", memory_journal.MIGRATED_NOTE):
+            continue
+        name, number = entry.name, 0
+        while name in occupied:
+            number += 1
+            name = f"{entry.name}.from-{requested.name}" + ("" if number == 1 else f"-{number}")
+        occupied.add(name)
+        result.change("move", target / name, "搬入子目錄留下的舊日誌", source=entry)
+    _text_change(
+        result, legacy / memory_journal.MIGRATED_NOTE, memory_journal.migrated_note(target),
+        "記錄舊日誌搬移目的地",
+    )
+
+
 def _entry_changes(
     result: MemoryPlan, root: Path, target: Path, *, migrating: bool = False
 ) -> None:
@@ -323,6 +366,7 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
         memory_paths.assert_plain_path(project, directory=True)
         if not project.is_dir():
             raise ValueError(f"Project directory does not exist: {project}")
+        requested = project
         project = memory_paths.project_root(project)
         memory_paths.assert_plain_path(project, directory=True)
     elif project is not None:
@@ -397,6 +441,8 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
             _index_and_link(result)
             _journal_config(result)
         _journal(result)
+        if action == "adopt":
+            _nested_journal(result, requested)
         if project is not None and not memory_paths.project_key(project).stable:
             result.warnings.append("專案鍵值依本機目錄名稱，跨機器一致性未保證。")
     result.relevant_paths = list(dict.fromkeys(result.relevant_paths))

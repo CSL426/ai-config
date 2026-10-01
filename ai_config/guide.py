@@ -475,6 +475,11 @@ before it pushes, so a project where any session has worked reaches the other
 machines without anyone scanning for it. A project without a git remote is
 listed in the run's log instead, because its key is only the directory name;
 adopt it by hand. `AI_CONFIG_NO_AUTO_ADOPT=1` turns this off.
+A subdirectory of a repository can hold its own `.remember` from before
+remember keyed sessions to the repository root; adopting it (by hand from
+inside it, by path, or nightly) moves those notes into the repository's
+journal, keeping both copies of a file name both have, and leaves the
+migration note behind.
 Local hooks restore the project's `.remember` entry after migration,
 so the journal remains visible inside the project without enabling Git sync.
 They only replace a missing entry or a verified migration notice; other content
