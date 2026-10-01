@@ -136,3 +136,35 @@ def test_effort_is_picked_per_machine_like_the_model() -> None:
         )
     )
     assert merged == {"effortLevel": "max", "theme": "dark"}
+
+
+def _market(ref: "str | None" = None, repo: str = "CSL426/ai-config") -> dict:
+    source = {"source": "github", "repo": repo}
+    if ref:
+        source["ref"] = ref
+    return {"extraKnownMarketplaces": {"acg": {"source": source}}}
+
+
+def test_the_acg_release_pin_stays_on_its_machine() -> None:
+    # 每台把 /acg 釘在自己跑的版本;收進資料庫的話三台的夜間 push 互相覆蓋,
+    # apply 之後下一次 update 又把 marketplace 拆掉重加
+    filtered = json.loads(filter_claude_settings(json.dumps(_market("v1.0.114"))))
+    assert filtered == _market()
+
+    merged = json.loads(
+        merge_claude_settings(json.dumps(_market("v1.0.200")), json.dumps(_market("v1.0.113")))
+    )
+    assert merged == _market("v1.0.113")
+
+    # 這台還沒釘版本:不從資料庫帶一個進來
+    merged = json.loads(merge_claude_settings(json.dumps(_market("v1.0.200")), "{}"))
+    assert merged == _market()
+
+
+def test_a_pin_for_another_repository_is_not_carried_over() -> None:
+    merged = json.loads(
+        merge_claude_settings(
+            json.dumps(_market(repo="someone/fork")), json.dumps(_market("v1.0.113"))
+        )
+    )
+    assert merged == _market(repo="someone/fork")

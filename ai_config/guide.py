@@ -181,7 +181,8 @@ Pull still downloads the entire repository, including shared memory.
 
 - **`permissions`, `env`, `model`, `modelSettings`, `effortLevel`, and `autoMode` are
   machine-local and never synced**
-  (plus `trustedWorkspaces` on agy). Each machine keeps its own allowlist and
+  (plus `trustedWorkspaces` on agy, and the `ref` that pins the `acg`
+  marketplace to the release each machine runs). Each machine keeps its own allowlist and
   environment, so a difference there is expected, not
   drift. `env` matters most: Claude Code sets those variables without a shell,
   so a value like `CODEX_HOME=~/.codex` is not expanded and only an absolute
