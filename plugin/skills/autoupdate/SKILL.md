@@ -25,6 +25,10 @@ plugin),然後才用剛裝好的 acg 上傳記憶。所以白天發布的修正,
 `claude.exe.old.<n>`,一個約 200 MB)。Windows 上還被執行中 session 占用的舊檔刪不掉,
 會顯示「N 個舊執行檔使用中,下次再清」;這不是錯誤,關掉那些舊 session 後下一次就會清掉。
 
+Codex 自己不清舊版:獨立安裝版與 app-server daemon 每升一版就在
+`~/.codex*/packages/*/releases/` 多留一份(一份約 400 MB,曾經累積到 14 GB)。codex 那一步
+會刪掉 `current` 指向以外、也沒有執行中 codex 在用的版本;npm 裝的 codex 也會清 daemon 的舊版。
+
 有工具標 ✗ 時,那行後面就是它自己的錯誤訊息,照著講給使用者聽。處理完可以用
 `acg autoupdate run` 立即重跑;全部成功就會清掉失敗紀錄,新 session 開頭也不再提醒。
 

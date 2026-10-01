@@ -187,19 +187,127 @@ def _remove_replaced(binary: str) -> "tuple[int, int]":
     return freed, kept
 
 
+_ASIDE = ".acg-old"
+
+
+def _running_executables() -> "set[Path] | None":
+    """Where this user's processes run from; None when that cannot be told.
+
+    Windows answers through the rename in _remove_release instead: a
+    directory holding a running executable cannot be renamed there.
+    """
+    if os.name == "nt":
+        return set()
+    proc = Path("/proc")
+    if proc.is_dir():
+        found = set()
+        for entry in proc.iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                target = os.readlink(entry / "exe")
+            except OSError:
+                continue
+            found.add(Path(target.removesuffix(" (deleted)")))
+        return found
+    try:
+        listed = subprocess.run(
+            ["ps", "-axo", "comm="], capture_output=True, text=True, **UTF8,
+            check=False, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if listed.returncode != 0:
+        return None
+    return {Path(line.strip()) for line in listed.stdout.splitlines() if line.strip()}
+
+
+def _tree_size(path: Path) -> int:
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += (Path(root) / name).lstat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def _remove_release(release: Path) -> bool:
+    """Rename aside, then delete; False when something still runs from it."""
+    aside = release.with_name(f"{release.name}{_ASIDE}")
+    try:
+        release.rename(aside)
+    except OSError:
+        return False
+    shutil.rmtree(aside, ignore_errors=True)
+    return True
+
+
+def _prune_codex_releases(home: "Path | None" = None) -> "tuple[int, int]":
+    """Delete the codex releases nothing points at any more: (bytes freed, releases kept).
+
+    The standalone installer and the app-server daemon each unpack every
+    new version into <CODEX_HOME>/packages/<kind>/releases/<version> and
+    switch `current` to it, never removing the old ones: one machine
+    carried 14 GB of them across three homes. The release `current` names
+    stays, and so does one a running codex still executes from.
+    """
+    from .safety import is_reparse_point
+
+    home = home or HOME
+    running = _running_executables()
+    if running is None:
+        return 0, 0
+    freed = kept = 0
+    for releases in sorted(home.glob(".codex*/packages/*/releases")):
+        if is_reparse_point(releases) or not releases.is_dir():
+            continue
+        try:
+            current = (releases.parent / "current").resolve(strict=True)
+            entries = sorted(releases.iterdir())
+        except OSError:
+            continue  # 不知道哪一版在用,整個目錄都不碰
+        for release in entries:
+            if release.name.endswith(_ASIDE):
+                # 上次搬開了卻沒刪完的,這次接著刪
+                shutil.rmtree(release, ignore_errors=True)
+                continue
+            if is_reparse_point(release) or not release.is_dir():
+                continue
+            real = release.resolve()
+            if real == current:
+                continue
+            if any(path.is_relative_to(real) for path in running):
+                kept += 1
+                continue
+            size = _tree_size(release)
+            if _remove_release(release):
+                freed += size
+            else:
+                kept += 1
+    return freed, kept
+
+
 def _update_tool(tool: str) -> "Step | None":
     binary = _binary(tool)
     if binary is None:
         return None
     if tool == "codex" and _is_npm_install(binary):
         # npm 全域安裝多半在要 sudo 的系統目錄;自動跑只會失敗,改成提醒
-        return Step(tool, before=_version([binary]), note=(
+        step = Step(tool, before=_version([binary]), note=(
             f"npm 全域安裝({binary}),不自動更新;"
             "建議改用官方獨立安裝版"
         ))
-    home = _codex_home(binary) if tool == "codex" else None
-    step = _update(tool, [binary], ["update"], {"CODEX_HOME": str(home)} if home else None)
-    step.freed, step.kept = _remove_replaced(binary)
+    else:
+        home = _codex_home(binary) if tool == "codex" else None
+        step = _update(tool, [binary], ["update"], {"CODEX_HOME": str(home)} if home else None)
+        step.freed, step.kept = _remove_replaced(binary)
+    if tool == "codex":
+        # npm 版也會有 daemon 自己下載的版本堆在 packages 底下
+        freed, kept = _prune_codex_releases()
+        step.freed += freed
+        step.kept += kept
     return step
 
 
