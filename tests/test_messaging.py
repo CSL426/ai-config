@@ -228,6 +228,17 @@ def test_the_command_lists_and_reports_errors(
     assert run_msg(["bogus"]) == 1
 
 
+def test_a_sent_message_names_the_tool_without_a_stray_space(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands.msg import run_msg
+
+    peer = messaging.Peer("claude", "s-1", "debug acg", "", "", "idle", pid=7)
+    monkeypatch.setattr(messaging, "send", lambda *_a, **_k: (peer, ""))
+    assert run_msg(["send", "debug acg", "嗨"]) == 0
+    assert "已送到 debug acg(claude)" in capsys.readouterr().out
+
+
 def test_one_session_held_by_two_processes_is_told_apart_by_pid(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
 ) -> None:

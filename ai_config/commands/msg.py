@@ -58,7 +58,8 @@ def _send(args: list) -> int:
         return 1
     target, text = rest
     peer, reply = messaging.send(target, text, wait=wait, sender=sender)
-    log_success(f"已送到 {peer.label}({peer.tool} {peer.account})")
+    tool = f"{peer.tool} {peer.account}".strip()  # Claude 沒有帳號欄
+    log_success(f"已送到 {peer.label}({tool})")
     if wait:
         print()
         print(reply or "(對方這一輪沒有文字回覆)")
