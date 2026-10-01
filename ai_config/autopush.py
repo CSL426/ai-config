@@ -284,8 +284,13 @@ def _scheduled_at() -> "tuple[int, int] | None":
         return None
 
 
-def decide(stale_hours: float = DEFAULT_STALE_HOURS) -> Decision:
-    """Whether a scheduled run should push, and the reason either way."""
+def decide(stale_hours: float = DEFAULT_STALE_HOURS, preview: bool = False) -> Decision:
+    """Whether a scheduled run should push, and the reason either way.
+
+    A preview answers the same question without acting on it: it neither
+    rebases onto the remote nor clears the failure record, so `status`
+    stays read-only.
+    """
     if not memory_dir().is_dir():
         return Decision(False, "沒有記憶目錄")
     # 先問遠端再看本機。順序反過來的話,沒有變更的機器永遠不會 fetch,
@@ -293,14 +298,15 @@ def decide(stale_hours: float = DEFAULT_STALE_HOURS) -> Decision:
     # 落後就先接上,即使沒有東西要推。共用的時間表就住在記憶目錄裡,
     # 一台永遠不接上的機器會一直讀到自己那份舊的,看不到別台認領了哪一分鐘
     behind = _behind_upstream()
-    caught_up = _catch_up() if behind else True
+    caught_up = _catch_up() if behind and not preview else True
     changes = _memory_has_changes()
     if changes is None:
         # 問不到不等於沒有:失敗紀錄要留著,不然一次 git 逾時就把提醒抹掉
         return Decision(False, "無法確認記憶有沒有變更(git status 失敗)")
     if not changes:
         # 確定沒有待推的內容,之前的失敗就過去了:內容推上去了或被拿掉了
-        failure_path().unlink(missing_ok=True)
+        if not preview:
+            failure_path().unlink(missing_ok=True)
         return Decision(False, "記憶沒有變更")
     if not caught_up:
         return Decision(False, "落後遠端且無法自動接上,請自己 acg pull 處理")
@@ -641,7 +647,7 @@ def status() -> dict:
     from . import nightly
 
     last = _read_last_push()
-    decision = decide()
+    decision = decide(preview=True)
     return {
         "platform": platform_name(),
         "installed": nightly.enabled("autopush"),
