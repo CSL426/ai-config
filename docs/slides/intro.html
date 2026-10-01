@@ -190,6 +190,23 @@
   <section class="slide" data-chapter="三、結果">
     <div class="story-grid stack">
       <div class="story-copy">
+        <h2>不只終端機，<span class="accent nowrap">桌面版也讀得到</span></h2>
+        <p class="lede">Codex 和 Antigravity 的桌面版、Claude 桌面版的 Code 分頁，讀的跟終端機是同一份設定：技能、規則、共用記憶，裝一次到處都在。</p>
+        <p class="tiny-note">Claude 桌面版的 Chat 例外：技能要用 <code>acg package</code> 打成 ZIP 上傳。</p>
+      </div>
+      <!-- 三家各一張,並排比單張更能說「哪個都一樣」 -->
+      <figure class="picture shot-trio">
+        <a class="shot-link" href="./img/shot-desktop-claude.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-desktop-claude.webp" width="1325" height="801" alt="Claude 桌面版的對話畫面" decoding="async"></a>
+        <a class="shot-link" href="./img/shot-desktop-agy.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-desktop-agy.webp" width="1402" height="901" alt="Antigravity 桌面版的對話畫面" decoding="async"></a>
+        <a class="shot-link" href="./img/shot-desktop-codex.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-desktop-codex.webp" width="1090" height="760" alt="Codex 桌面版的對話畫面" decoding="async"></a>
+        <figcaption>Claude、Antigravity、Codex 的桌面版</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="slide" data-chapter="三、結果">
+    <div class="story-grid stack">
+      <div class="story-copy">
         <h2>換個會話，<span class="highlight">接上同一條線</span></h2>
         <p class="lede">收工時說「交接」（<code>/acg handoff</code>），寫下做到哪、下一步是什麼；下一個會話說「接著做」（<code>/acg pickup</code>），讀回進度就接上。</p>
         <p class="tiny-note">交接跟著筆記同步：在桌機交接，到筆電也接得上。<code>/acg</code> 需先裝 Claude Code 的 acg plugin。</p>
@@ -225,7 +242,7 @@
       <ul class="thanks-list">
         <li><strong>登入</strong><span>登入資訊從不上傳，所以每台電腦、每個工具都要自己登入一次。</span></li>
         <li><strong>Desktop</strong><span>Windows 免安裝可直接用；macOS 與 Linux 目前是實驗版。</span></li>
-        <li><strong>傳話</strong><span>只支援 Linux / macOS。Antigravity 只能送、收不到，它開著的對話還沒有收訊息的管道。</span></li>
+        <li><strong>傳話</strong><span>Linux 與 Windows 都能收發；macOS 上的 Claude 還收不到。Antigravity 只能送、收不到，它開著的對話還沒有收訊息的管道。</span></li>
         <li><strong>技能</strong><span>Claude 桌面版的 Chat 不讀本機技能，要用 <code>acg package</code> 打成 ZIP 手動上傳。</span></li>
         <li><strong>記憶</strong><span>啟用或同步之後，要開新會話才讀得到；開著的會話不會自己更新。</span></li>
       </ul>

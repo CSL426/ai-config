@@ -96,6 +96,10 @@ p code, li code, small code { white-space: nowrap; }
 /* 實拍圖照寬度排會把頁面撐到要捲動;高度以視窗為上限,寬度跟著縮 */
 .story-grid.stack .gui-shot, .shot-row .gui-shot { width: auto; max-width: 100%; max-height: var(--shot-h, 37dvh); margin-inline: auto; }
 .shot-row .gui-shot { --shot-h: 26dvh; }
+/* 三家桌面版並排:各佔一欄,高度一樣才看得出是同一件事 */
+.shot-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); align-items: center; }
+.shot-trio figcaption { grid-column: 1 / -1; }
+.shot-trio .gui-shot { width: auto; max-width: 100%; max-height: 40dvh; margin-inline: auto; }
 .gui-layout .gui-shot { width: auto; max-width: 100%; max-height: 58dvh; margin-inline: auto; }
 /* 手機上截圖只剩兩成大小,點開看原圖再自己放大 */
 .shot-link { display: block; cursor: zoom-in; }
@@ -152,6 +156,7 @@ p code, li code, small code { white-space: nowrap; }
   .deck-chrome .brand { display: none; }
 }
 @media (max-width: 34rem) {
+  .shot-trio { grid-template-columns: minmax(0, 1fr); }
   .slide h1 { font-size: clamp(2.25rem, 12vw, 3.8rem); }
   .slide h2 { font-size: clamp(1.75rem, 8.6vw, 2.65rem); }
   .carry-list { grid-template-columns: 1fr; }
