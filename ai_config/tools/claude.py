@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .. import handoff_reminder
 from ..categories import selected_paths
+from ..claude_plugin import preserve_release_ref, without_release_ref
 from ..console import log_error, log_header, log_info, log_success
 from ..fsops import copy_file_to_stage, mirror_dir, overlay_dir_to_stage, safe_cp
 from ..hooks import preserve_hooks, without_hooks
@@ -47,7 +48,9 @@ _SETTINGS_LABEL = "Claude settings.json"
 def filter_claude_settings(text: str) -> str:
     filtered = filter_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
     document = json.loads(filtered)
-    cleaned = handoff_reminder.without_settings(without_hooks(document))
+    cleaned = without_release_ref(
+        handoff_reminder.without_settings(without_hooks(document))
+    )
     return (
         filtered if cleaned == document
         else json.dumps(cleaned, ensure_ascii=False, indent=2) + "\n"
@@ -60,8 +63,9 @@ def merge_claude_settings(source_text: str, target_text: str) -> str:
     )
     document = json.loads(merged)
     target = json.loads(target_text.lstrip("\ufeff"))
-    preserved = handoff_reminder.preserve_settings(
-        preserve_hooks(document, target), target,
+    preserved = preserve_release_ref(
+        handoff_reminder.preserve_settings(preserve_hooks(document, target), target),
+        target,
     )
     return (
         merged if preserved == document
@@ -70,9 +74,9 @@ def merge_claude_settings(source_text: str, target_text: str) -> str:
 
 
 def shared_claude_settings(text: str) -> dict[str, object]:
-    return handoff_reminder.without_settings(
+    return without_release_ref(handoff_reminder.without_settings(
         without_hooks(shared_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL))
-    )
+    ))
 
 
 def _stage_filtered_settings(source: Path, destination: Path) -> None:

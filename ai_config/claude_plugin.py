@@ -14,6 +14,7 @@ against CLI 1.0.103 for a day, and its memory skill promised a nightly
 adopt that only 1.0.104 does. Pinned, /acg moves only when acg does.
 """
 
+import copy
 import json
 import os
 import re
@@ -28,6 +29,43 @@ from .subproc import UTF8
 PLUGIN = "acg@acg"
 MARKETPLACE = "acg"
 OPT_OUT = "AI_CONFIG_NO_PLUGIN"
+
+
+def _market_source(document: dict) -> "dict | None":
+    markets = document.get("extraKnownMarketplaces")
+    market = markets.get(MARKETPLACE) if isinstance(markets, dict) else None
+    source = market.get("source") if isinstance(market, dict) else None
+    return source if isinstance(source, dict) else None
+
+
+def without_release_ref(document: dict) -> dict:
+    """The settings without this machine's release pin on the acg marketplace.
+
+    Each machine pins /acg to the acg it runs. Synced, every machine's
+    nightly push overwrote the others' version, and apply then made the
+    next update remove and re-add the marketplace.
+    """
+    source = _market_source(document)
+    if source is None or "ref" not in source:
+        return document
+    result = copy.deepcopy(document)
+    del _market_source(result)["ref"]
+    return result
+
+
+def preserve_release_ref(document: dict, target: dict) -> dict:
+    """Apply the shared settings while keeping this machine's release pin."""
+    result = without_release_ref(document)
+    pinned, source = _market_source(target), _market_source(result)
+    if pinned is None or "ref" not in pinned or source is None:
+        return result
+    # 資料庫改指別的 repo 時,舊的 ref 不屬於新來源
+    if {k: v for k, v in pinned.items() if k != "ref"} != source:
+        return result
+    if result is document:
+        result = copy.deepcopy(document)
+    _market_source(result)["ref"] = pinned["ref"]
+    return result
 
 
 def claude_binary() -> "str | None":
