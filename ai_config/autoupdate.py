@@ -79,8 +79,11 @@ def _binary(tool: str) -> "str | None":
     return shutil.which(found)
 
 
-def _run(argv: list, timeout: float = _STEP_TIMEOUT) -> "tuple[int, str]":
-    env = {**os.environ, "AI_CONFIG_NO_UPDATE_CHECK": "1", "AI_CONFIG_NO_AUTOPUSH": "1"}
+def _run(argv: list, timeout: float = _STEP_TIMEOUT, extra_env: "dict | None" = None) -> "tuple[int, str]":
+    env = {
+        **os.environ, "AI_CONFIG_NO_UPDATE_CHECK": "1", "AI_CONFIG_NO_AUTOPUSH": "1",
+        **(extra_env or {}),
+    }
     try:
         done = subprocess.run(
             argv, capture_output=True, text=True, **UTF8, check=False,
@@ -124,13 +127,30 @@ def _is_npm_install(binary: str) -> bool:
         return False
 
 
-def _update(name: str, argv: list, command: list) -> Step:
+def _update(name: str, argv: list, command: list, extra_env: "dict | None" = None) -> Step:
     step = Step(name, before=_version(argv))
-    code, output = _run([*argv, *command])
+    code, output = _run([*argv, *command], extra_env=extra_env)
     step.after = _version(argv)
     if code != 0:
         step.ok, step.note = False, _reason(code, output)
     return step
+
+
+def _codex_home(binary: str) -> "Path | None":
+    """The CODEX_HOME a standalone codex was installed into.
+
+    `codex update` finds its own install under $CODEX_HOME/packages/standalone;
+    one installed into ~/.codex-work answers "Could not detect the Codex
+    installation method" when the scheduler runs it with the default home.
+    """
+    try:
+        resolved = Path(binary).resolve()
+    except OSError:
+        return None
+    for parent in resolved.parents:
+        if parent.name == "standalone" and parent.parent.name == "packages":
+            return parent.parent.parent
+    return None
 
 
 def _remove_replaced(binary: str) -> "tuple[int, int]":
@@ -177,7 +197,8 @@ def _update_tool(tool: str) -> "Step | None":
             f"npm 全域安裝({binary}),不自動更新;"
             "建議改用官方獨立安裝版"
         ))
-    step = _update(tool, [binary], ["update"])
+    home = _codex_home(binary) if tool == "codex" else None
+    step = _update(tool, [binary], ["update"], {"CODEX_HOME": str(home)} if home else None)
     step.freed, step.kept = _remove_replaced(binary)
     return step
 

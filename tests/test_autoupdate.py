@@ -26,13 +26,16 @@ class FakeTools:
         self.versions = dict(versions)
         self.failing = failing or {}
         self.calls: list = []
+        self.envs: dict = {}
 
     def binary(self, tool: str) -> "str | None":
         return f"/opt/{tool}/bin/{tool}" if tool in self.versions else None
 
-    def run(self, argv: list, timeout: float = 0) -> "tuple[int, str]":
+    def run(self, argv: list, timeout: float = 0, extra_env: "dict | None" = None) -> "tuple[int, str]":
         name = Path(argv[0]).name
         self.calls.append([name, *argv[1:]])
+        if argv[-1] == "update":
+            self.envs[name] = extra_env
         if argv[-1] == "--version":
             return 0, f"{name} {self.versions[name][0]}\n"
         if name in self.failing:
@@ -123,6 +126,29 @@ def test_both_npm_layouts_are_recognized(binary: str) -> None:
 
 def test_the_standalone_codex_is_not_mistaken_for_npm() -> None:
     assert not autoupdate._is_npm_install("/home/me/.codex/packages/standalone/releases/0.159.2/bin/codex")
+
+
+def test_a_standalone_codex_updates_in_the_home_it_was_installed_into(
+    tools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / ".codex-work"
+    real = home / "packages" / "standalone" / "releases" / "0.159.2" / "bin" / "codex"
+    real.parent.mkdir(parents=True)
+    real.write_text("")
+    launcher = tmp_path / "bin" / "codex"
+    launcher.parent.mkdir()
+    try:
+        launcher.symlink_to(real)
+    except OSError:
+        launcher = real  # Windows 沒有建 symlink 的權限時,直接用本體
+    fake = tools({"codex": ["0.159.2", "0.159.3"], "acg": ["1.0.101"]})
+    monkeypatch.setattr(autoupdate, "_binary", lambda tool: str(launcher) if tool == "codex" else None)
+
+    assert autoupdate.run() == 0
+
+    # 預設的 CODEX_HOME 底下沒有這份安裝,codex update 會說認不出安裝方式
+    assert fake.envs["codex"] == {"CODEX_HOME": str(home.resolve())}
+    assert autoupdate._codex_home("/usr/local/bin/codex") is None
 
 
 def test_executables_renamed_aside_are_removed(tmp_path: Path) -> None:
