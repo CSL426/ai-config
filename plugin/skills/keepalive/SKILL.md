@@ -17,7 +17,7 @@ claude 用程式裡設定的 Haiku;agy 與 codex 從工具自己的清單挑:agy
 flash low,codex 每個帳號從自己的 `models_cache.json` 挑排序最後的那個(快取沒有價格,這是
 推測)。日誌會記下挑了哪個。
 
-codex 有好幾個帳號時(`~/.codex-set`、`~/.codex-csl` 這類各自有 `auth.json` 的目錄),每個
+codex 有好幾個帳號時(`~/.codex-work`、`~/.codex-personal` 這類各自有 `auth.json` 的目錄),每個
 帳號各自喚醒,status 會各列一行。帳號是自動找的,新增一個 `~/.codex-xxx` 不用改任何設定。
 
 兩個維度都是獨立的,不要建議「統一」:每台機器各自設定,因為各台作息不同;每個工具各自

@@ -1,12 +1,16 @@
 ---
 name: msg
-description: 傳話給另一個正在跑的 Claude / Codex session,或列出誰在線上
+description: 傳話給另一個正在跑的 Codex / Claude session,或列出 Claude、Codex、Antigravity 誰在線上
 argument-hint: '[名稱、id 或 pid] [訊息]'
 disable-model-invocation: true
 allowed-tools: Bash(acg msg list), Bash(ai-config msg list)
 ---
 
 # msg:傳話給另一個正在跑的 session
+
+對象是 Claude 而且這個 session 有 Claude Code 內建的跨 session 傳訊(`SendMessage`、`ListAgents`)
+時,優先用內建的:對方不必用 `claude-msg` 開也收得到。`acg msg` 用在對象是 Codex,或要一次列出
+三種工具誰在線上的時候。
 
 沒給對象就先執行 `acg msg list`,把名稱、工具、帳號、工作目錄告訴使用者。
 

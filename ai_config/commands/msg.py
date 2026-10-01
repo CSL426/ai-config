@@ -79,7 +79,7 @@ def _setup(print_only: bool = False) -> int:
         print(messaging.shell_block())
         return 1
     log_success(f"{'已寫入' if changed else '已經是最新的'} {rc} 裡的 acg msg 區塊;開新的終端機後生效")
-    log_info("平常照打 claude、codex。要讓別的 session 傳話給 Claude,改用 claude-msg 開:")
+    log_info("平常照打 claude、codex。要讓 Codex 等其他 session 傳話給 Claude,就用 claude-msg 開;")
     log_info("它每次啟動會問一次 development channel,按 Enter 即可(Claude Code 的規定,關不掉)")
     if "codex" in skipped:
         log_info("你已經有自己的 codex 函式,沒有加 acg 的;要讓 Codex 收得到訊息,")
