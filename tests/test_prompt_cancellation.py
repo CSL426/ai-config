@@ -178,6 +178,8 @@ def test_a_real_terminal_still_waits(monkeypatch: pytest.MonkeyPatch) -> None:
             return True
 
     monkeypatch.setattr(cli.sys, "stdin", Interactive())
+    # 假的 stdin 沒有主控台 handle;Windows 上那一關另外判斷
+    monkeypatch.setattr(cli, "_windows_console", lambda stream: True)
     asked = []
     monkeypatch.setattr("builtins.input", lambda *a: asked.append(1) or "")
 
