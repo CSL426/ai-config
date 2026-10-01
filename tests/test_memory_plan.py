@@ -338,3 +338,68 @@ def test_adopt_all_means_the_same_as_scan(journal_project, monkeypatch, capsys):
     assert command.run_memory(["adopt", "all"]) == 0
 
     assert "尚未同步的專案" in capsys.readouterr().out
+
+
+def test_a_subdirectory_journal_moves_into_its_repository(journal_project):
+    """Windows: For_spark/.remember inside the adopted GL repo was 'synced' nightly and never moved."""
+    import subprocess
+
+    root = journal_project
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    assert memory_lifecycle.execute("adopt", root).code == 0
+    target = memory_journal.project_journal_dir(memory_paths.project_key(root))
+    (target / "today-2026-07-30.md").write_text("root notes")
+    nested = root / "references" / "For_spark"
+    legacy = nested / ".remember"
+    legacy.mkdir(parents=True)
+    (legacy / ".gitignore").write_text("*\n")
+    (legacy / "today-2026-07-30.md").write_text("nested notes")
+    assert nested in memory_index.unadopted_below(root.parent)
+
+    before = tree(root.parent.parent)
+    plan = memory_plan.plan("adopt", nested)
+    assert tree(root.parent.parent) == before
+    expected = {Path(c["destination"]) for c in plan.changes if c["operation"] == "move"}
+    result = memory_lifecycle.execute("adopt", nested)
+
+    assert result.code == 0 and result.changed
+    assert expected and all(path.is_file() for path in expected)
+    # 同名的兩份都留著
+    assert {p.read_text() for p in target.glob("today-2026-07-30*")} == {"root notes", "nested notes"}
+    assert (legacy / memory_journal.MIGRATED_NOTE).is_file()
+    assert nested not in memory_index.unadopted_below(root.parent)
+    assert memory_lifecycle.execute("adopt", nested).changed is False
+
+
+def test_nothing_to_adopt_is_not_reported_as_synced(journal_project, monkeypatch):
+    _local_journal(journal_project)
+    _memory_on(monkeypatch)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root: memory_paths.ProjectKey("owner--repo", True, str(root)),
+    )
+    monkeypatch.setattr(
+        memory_lifecycle, "execute",
+        lambda action, project: memory_lifecycle.MemoryExecutionResult(code=0, changed=False),
+    )
+
+    assert memory_lifecycle.adopt_touched(journal_project.parent) == []
+
+
+def test_adopt_from_the_subdirectory_reaches_its_old_journal(journal_project, monkeypatch, capsys):
+    import subprocess
+
+    root = journal_project
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    assert memory_lifecycle.execute("adopt", root).code == 0
+    nested = root / "sub"
+    (nested / ".remember").mkdir(parents=True)
+    (nested / ".remember" / "today-2026-07-30.md").write_text("nested notes")
+
+    assert command.run_memory(["adopt", "--help"]) == 0
+    assert "找不到" not in capsys.readouterr().out
+    monkeypatch.chdir(nested)
+    assert command.run_memory(["adopt"]) == 0
+
+    target = memory_journal.project_journal_dir(memory_paths.project_key(root))
+    assert (target / "today-2026-07-30.md").read_text() == "nested notes"

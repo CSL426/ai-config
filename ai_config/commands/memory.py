@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from .. import memory_index, memory_paths
+from .. import memory_index
 from ..console import HELP_FLAGS, log_error, log_info, log_success, log_warn
 from ..paths import ENTRYPOINT
 from . import memory_handoff, memory_lifecycle
@@ -29,6 +29,9 @@ def _run_memory(args: list[str]) -> int:
     if command in HELP_FLAGS:
         log_info(USAGE)
         return 0
+    if command in {"adopt", "release"} and rest and rest[0] in HELP_FLAGS:
+        log_info(USAGE)
+        return 0
     if command == "status" and not rest:
         return memory_lifecycle._status()
     if command in {"enable", "disable"} and rest in (["codex"], ["agy"]):
@@ -44,11 +47,12 @@ def _run_memory(args: list[str]) -> int:
         if not chosen.is_dir():
             log_error(f"找不到這個專案目錄:{chosen}")
             return 1
-        return memory_lifecycle.execute(command, memory_paths.project_root(chosen)).code
+        # 交給 plan 換算成專案根目錄:子目錄自己留下的舊日誌要靠原本的路徑才找得到
+        return memory_lifecycle.execute(command, chosen.resolve()).code
     if command == "adopt" and rest and rest[0] == "--scan":
         return memory_lifecycle._adopt_scan(rest[1:])
     if command in {"enable", "disable", "adopt", "release"} and not rest:
-        project = memory_paths.project_root() if command in {"adopt", "release"} else None
+        project = Path.cwd() if command in {"adopt", "release"} else None
         return memory_lifecycle.execute(command, project).code
     if command == "path" and set(rest) <= {"--global", "--project"}:
         return _path(rest)

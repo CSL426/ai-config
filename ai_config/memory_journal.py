@@ -433,11 +433,7 @@ def adopt_journal(root: Path) -> list[str]:
         if migrate_legacy:
             note = legacy / MIGRATED_NOTE
             remember_file(note)
-            memory_paths._write_text_atomic(
-                note,
-                f"Memory data migrated to:\n  {target}\n"
-                "This directory is now empty; you may delete it.\n",
-            )
+            memory_paths._write_text_atomic(note, migrated_note(target))
         memory_paths.journal_root().mkdir(parents=True, exist_ok=True)
         _create_journal_link(target, link)
     except (OSError, RuntimeError) as exc:
@@ -479,6 +475,35 @@ def adopt_journal(root: Path) -> list[str]:
     except (OSError, RuntimeError) as exc:
         lines.append(f"專案的 .remember 入口未建立:{exc}")
     return lines
+
+
+def migrated_note(target: Path) -> str:
+    return (
+        f"Memory data migrated to:\n  {target}\n"
+        "This directory is now empty; you may delete it.\n"
+    )
+
+
+def absorb_nested_journal(nested: Path, root: Path) -> list[str]:
+    """Move a subdirectory's own .remember into its repository's journal.
+
+    See memory_plan._nested_journal for how such a journal came to be.
+    """
+    legacy = legacy_journal_dir(nested)
+    if not _is_legacy_journal(legacy):
+        return []
+    assert legacy is not None
+    target = project_journal_dir(memory_paths.project_key(root))
+    moves: list[tuple[Path, Path, str]] = []
+    try:
+        moved = _move_contents(legacy, target, moves=moves)
+        memory_paths._write_text_atomic(legacy / MIGRATED_NOTE, migrated_note(target))
+    except (OSError, RuntimeError) as exc:
+        errors = _restore_journal_moves(moves)
+        if errors:
+            raise JournalRecoveryError("子目錄日誌搬移失敗;" + ";".join(errors)) from exc
+        raise
+    return [f"搬入子目錄 {nested.name} 的 {moved} 項舊日誌"]
 
 
 def release_journal(root: Path) -> list[str]:
