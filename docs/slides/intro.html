@@ -148,7 +148,7 @@
             <p>在 Claude Code 寫好或安裝的技能，<code>acg share &lt;技能&gt;</code> 一次，Codex 和 Antigravity 也能直接用。</p>
           </div>
         </div>
-        <p class="tiny-note">Claude 桌面版的 Chat 不讀本機技能：用 <code>acg package &lt;技能&gt;</code> 打成 ZIP，到 Settings → Customize → Skills 手動上傳。</p>
+        <p class="tiny-note">Claude 桌面版不讀本機技能：用 <code>acg package &lt;技能&gt;</code> 打成 ZIP，到 Settings → Customize → Skills 手動上傳。</p>
       </div>
       <figure class="picture">
         <a class="shot-link" href="./img/shot-share.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-share.webp" width="808" height="471" alt="終端機實拍：acg skill add 裝好 propeller 技能，acg share 分享出去，acg apply 套用到 Codex；接著問 Codex 有沒有 propeller，它答得出這是提到螺旋槳時回一句冷知識的測試技能" decoding="async"></a>
@@ -191,15 +191,14 @@
     <div class="story-grid stack">
       <div class="story-copy">
         <h2>不只終端機，<span class="accent nowrap">桌面版也讀得到</span></h2>
-        <p class="lede">Codex 和 Antigravity 的桌面版、Claude 桌面版的 Code 分頁，讀的跟終端機是同一份設定：技能、規則、共用記憶，裝一次到處都在。</p>
-        <p class="tiny-note">Claude 桌面版的 Chat 例外：技能要用 <code>acg package</code> 打成 ZIP 上傳。</p>
+        <p class="lede">Codex 和 Antigravity 的桌面版，讀的跟終端機是同一份設定：技能、規則、共用記憶，裝一次兩邊都在。</p>
+        <p class="tiny-note">Claude 桌面版還不讀本機技能，Antigravity IDE 也另有一份；這兩個之後再接。</p>
       </div>
-      <!-- 三家各一張,並排比單張更能說「哪個都一樣」 -->
-      <figure class="picture shot-trio">
-        <a class="shot-link" href="./img/shot-desktop-claude.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-desktop-claude.webp" width="1325" height="801" alt="Claude 桌面版的對話畫面" decoding="async"></a>
+      <!-- 兩家各一張,並排比單張更能說「哪個都一樣」 -->
+      <figure class="picture shot-pair">
         <a class="shot-link" href="./img/shot-desktop-agy.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-desktop-agy.webp" width="1402" height="901" alt="Antigravity 桌面版的對話畫面" decoding="async"></a>
         <a class="shot-link" href="./img/shot-desktop-codex.webp" target="_blank" rel="noopener" title="點開看原尺寸"><img class="gui-shot" src="./img/shot-desktop-codex.webp" width="1090" height="760" alt="Codex 桌面版的對話畫面" decoding="async"></a>
-        <figcaption>Claude、Antigravity、Codex 的桌面版</figcaption>
+        <figcaption>Antigravity 與 Codex 的桌面版</figcaption>
       </figure>
     </div>
   </section>
@@ -243,7 +242,7 @@
         <li><strong>登入</strong><span>登入資訊從不上傳，所以每台電腦、每個工具都要自己登入一次。</span></li>
         <li><strong>Desktop</strong><span>Windows 免安裝可直接用；macOS 與 Linux 目前是實驗版。</span></li>
         <li><strong>傳話</strong><span>Linux 與 Windows 都能收發；macOS 上的 Claude 還收不到。Antigravity 只能送、收不到，它開著的對話還沒有收訊息的管道。</span></li>
-        <li><strong>技能</strong><span>Claude 桌面版的 Chat 不讀本機技能，要用 <code>acg package</code> 打成 ZIP 手動上傳。</span></li>
+        <li><strong>技能</strong><span>Claude 桌面版（Chat 與 Code 分頁都是）不讀本機技能，要用 <code>acg package</code> 打成 ZIP 手動上傳；Antigravity IDE 用自己另一份技能目錄。</span></li>
         <li><strong>記憶</strong><span>啟用或同步之後，要開新會話才讀得到；開著的會話不會自己更新。</span></li>
       </ul>
       <p class="tiny-note">這些是現況，不是設計；哪一條先解，看 <a href="https://github.com/CSL426/ai-config/issues">issues</a> 上誰提得多。</p>
