@@ -37,6 +37,7 @@ from typing import Self
 
 from .paths import HOME
 from .processes import pid_alive
+from .subproc import NATIVE
 
 SOCKET = Path("app-server-control") / "app-server-control.sock"
 
@@ -338,7 +339,7 @@ def claude_peers() -> list:
             name=str(record.get("name") or ""), account="", cwd=str(record.get("cwd") or ""),
             status=str(record.get("status") or ""), home=None, pid=pid,
             # 送信不需要 channel,只有收信要;說清楚免得對方以為自己的送信壞了
-            unreachable="" if reachable else "這個 session 不是用 acg channel 開的,只能發訊息、收不到",
+            unreachable="" if reachable else "這個 session 不是用 claude-msg 開的,只能發訊息、收不到",
         ))
     return peers
 
@@ -609,20 +610,10 @@ def write_channel_config(command: "list | None" = None) -> Path:
     return path
 
 
-# 只有互動式開 Claude 才帶 channel:-p 沒人能按掉每次都會跳的警告,子指令也用不到
-CLAUDE_PLAIN = (
-    "agents", "attach", "auth", "auto-mode", "doctor", "gateway", "import", "install", "logs",
-    "mcp", "plugin", "plugins", "project", "respawn", "rm", "setup-token", "stop", "kill",
-    "ultrareview", "update", "-p", "--print", "-v", "--version", "-h", "--help",
-)
-SHELL_FUNCTION = """claude() {{
-  case "${{1:-}}" in
-    {plain})
-      command claude "$@"; return ;;
-  esac
-  case " $* " in *" -p "*|*" --print "*) command claude "$@"; return ;; esac
-  command claude --mcp-config {config} \\
-    --dangerously-load-development-channels server:acg "$@"
+# 掛 channel 的 Claude 每次啟動都要人按一次 development channel 警告,所以只在要收訊息時才用;
+# 平常的 claude 不動
+CLAUDE_MSG_FUNCTION = """claude-msg() {{
+  command claude --mcp-config {config} --dangerously-load-development-channels server:acg "$@"
 }}"""
 
 
@@ -664,18 +655,13 @@ CODEX_SUBCOMMANDS = (
 )
 
 
-# PowerShell 版:同樣的判斷。比對一律分大小寫,codex 的 -c 是設定、-C 才是目錄
-POWERSHELL_FUNCTIONS = """# >>> acg msg >>>
-# 照常打 claude、codex,別的 session 就能用 acg msg 傳話進來(acg msg setup 產生)
-function claude {{
+# PowerShell 版:同樣的判斷。比對一律分大小寫,codex 的 -c 是設定、-C 才是目錄。
+# 只用 ASCII:Windows PowerShell 5.1 把沒有 BOM 的 profile 當系統碼頁讀
+POWERSHELL_CLAUDE_MSG = """function claude-msg {{
   $exe = (Get-Command claude -CommandType Application -ErrorAction Stop)[0].Source
-  $first = if ($args.Count) {{ [string]$args[0] }} else {{ '' }}
-  if ($first -cin @({claude_plain}) -or $args -ccontains '-p' -or $args -ccontains '--print') {{
-    & $exe @args; return
-  }}
   & $exe --mcp-config {config} --dangerously-load-development-channels server:acg @args
-}}
-function codex {{
+}}"""
+POWERSHELL_CODEX = """function codex {{
   $exe = (Get-Command codex -CommandType Application -ErrorAction Stop)[0].Source
   $first = if ($args.Count) {{ [string]$args[0] }} else {{ '' }}
   $attach = -not ($first -cin @('-h', '--help', '-V', '--version', {codex_plain}))
@@ -698,39 +684,121 @@ function codex {{
     & $exe --remote unix:// @args; return
   }}
   & $exe --remote unix:// --cd $PWD.ProviderPath @args
-}}
-# <<< acg msg <<<"""
+}}"""
+
+BLOCK_BEGIN = "# >>> acg msg >>>"
+BLOCK_END = "# <<< acg msg <<<"
+_BLOCK_NOTE = "# Written by acg msg setup; run it again to update this block."
 
 
 def _ps_list(words) -> str:
     return ", ".join(f"'{word}'" for word in words)
 
 
-def claude_function() -> str:
-    return SHELL_FUNCTION.format(
-        plain="|".join(CLAUDE_PLAIN), config=shlex.quote(str(channel_config_path())),
-    )
+def claude_msg_function() -> str:
+    return CLAUDE_MSG_FUNCTION.format(config=shlex.quote(str(channel_config_path())))
 
 
 def codex_function() -> str:
     return CODEX_FUNCTION.format(subcommands="|".join(CODEX_SUBCOMMANDS), socket=SOCKET.as_posix())
 
 
-def powershell_functions() -> str:
-    config = str(channel_config_path()).replace("'", "''")
-    return POWERSHELL_FUNCTIONS.format(
-        claude_plain=_ps_list(CLAUDE_PLAIN), codex_plain=_ps_list(CODEX_SUBCOMMANDS),
-        config=f"'{config}'", socket=str(SOCKET).replace("/", "\\"),
+def _powershell_quoted(path: Path) -> str:
+    return "'" + str(path).replace("'", "''") + "'"
+
+
+def powershell_claude_msg() -> str:
+    return POWERSHELL_CLAUDE_MSG.format(config=_powershell_quoted(channel_config_path()))
+
+
+def powershell_codex() -> str:
+    return POWERSHELL_CODEX.format(
+        codex_plain=_ps_list(CODEX_SUBCOMMANDS), socket=str(SOCKET).replace("/", "\\"),
     )
+
+
+def shell_block(windows: "bool | None" = None, skip: "frozenset | set" = frozenset()) -> str:
+    """The block `acg msg setup` keeps in ~/.bashrc, or on Windows in $PROFILE.
+
+    `skip` names functions the file already defines itself (say a codex()
+    that switches accounts): defining ours after it would replace it.
+    """
+    windows = os.name == "nt" if windows is None else windows
+    parts = [BLOCK_BEGIN, _BLOCK_NOTE]
+    parts.append(powershell_claude_msg() if windows else claude_msg_function())
+    if "codex" not in skip:
+        parts.append(powershell_codex() if windows else codex_function())
+    parts.append(BLOCK_END)
+    return "\n".join(parts)
 
 
 def shell_functions() -> str:
-    """The block `acg msg setup` asks the user to put in ~/.bashrc, or on Windows in $PROFILE."""
+    return shell_block()
+
+
+def rc_path() -> Path:
+    """The file the block goes in: $PROFILE on Windows, else the login shell's rc."""
     if os.name == "nt":
-        return powershell_functions()
-    return (
-        "# >>> acg msg >>>\n"
-        "# 照常打 claude、codex,別的 session 就能用 acg msg 傳話進來(acg msg setup 產生)\n"
-        f"{claude_function()}\n{codex_function()}\n"
-        "# <<< acg msg <<<"
+        try:
+            found = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", "$PROFILE"],
+                capture_output=True, text=True, **NATIVE, check=False, timeout=30,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            ).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            found = ""
+        if found:
+            return Path(found)
+        return HOME / "Documents" / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1"
+    shell = Path(os.environ.get("SHELL", "")).name
+    return HOME / (".zshrc" if shell == "zsh" else ".bashrc")
+
+
+def _outside_block(text: str) -> str:
+    kept, inside = [], False
+    for line in text.splitlines(keepends=True):
+        if line.strip() == BLOCK_BEGIN:
+            inside = True
+        elif inside and line.strip() == BLOCK_END:
+            inside = False
+        elif not inside:
+            kept.append(line)
+    return "".join(kept)
+
+
+def _defines(text: str, name: str, windows: bool) -> bool:
+    pattern = (
+        rf"^\s*function\s+{re.escape(name)}\b" if windows
+        else rf"^\s*(?:function\s+{re.escape(name)}\b|{re.escape(name)}\s*\(\s*\))"
     )
+    return re.search(pattern, text, re.MULTILINE | (re.IGNORECASE if windows else 0)) is not None
+
+
+def install_shell_block(path: "Path | None" = None, windows: "bool | None" = None) -> "tuple[Path, set, bool]":
+    """Write or refresh the block in the shell's startup file: (file, skipped, changed).
+
+    Everything outside the markers is left byte for byte, including a BOM.
+    A file that is not UTF-8 is refused rather than rewritten in the wrong
+    encoding; the caller then prints the block for the user to add.
+    """
+    windows = os.name == "nt" if windows is None else windows
+    path = path or rc_path()
+    raw = path.read_bytes() if path.exists() else b""
+    bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+    try:
+        text = raw[len(bom):].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MessagingError(f"{path} 不是 UTF-8,沒有改它") from exc
+    outside = _outside_block(text)
+    skipped = {name for name in ("codex",) if _defines(outside, name, windows)}
+    head = outside.rstrip("\n")
+    updated = (head + "\n\n" if head else "") + shell_block(windows, skipped) + "\n"
+    if updated == text:
+        return path, skipped, False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if raw:
+        path.with_name(path.name + ".acg-bak").write_bytes(raw)
+    staged = path.with_name(f".{path.name}.acg-new")
+    staged.write_bytes(bom + updated.encode("utf-8"))
+    os.replace(staged, path)
+    return path, skipped, True

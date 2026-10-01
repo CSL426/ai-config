@@ -163,7 +163,7 @@ def test_the_powershell_functions_attach_like_the_bash_ones(
 
     def run(line: str, env: "dict | None" = None) -> list:
         log.unlink(missing_ok=True)
-        script = f"{messaging.powershell_functions()}\n{line}\n"
+        script = f"{messaging.shell_block(windows=True)}\n{line}\n"
         subprocess.run(
             [powershell, "-NoProfile", "-NonInteractive", "-Command", script], cwd=work, check=True,
             env={**os.environ, "PATH": f"{bin_dir};{os.environ['PATH']}", "CODEX_HOME": "", **(env or {})},
@@ -186,6 +186,55 @@ def test_the_powershell_functions_attach_like_the_bash_ones(
         f"codex CODEX_HOME={codex_home} --remote unix:// --cd {work}"]
 
     config = messaging.channel_config_path()
-    assert run("claude") == [
+    assert run("claude-msg") == [
         f"claude CODEX_HOME= --mcp-config {config} --dangerously-load-development-channels server:acg"]
-    assert run("claude -p hi") == ["claude CODEX_HOME= -p hi"]
+
+
+def test_setup_writes_the_block_once_and_keeps_the_rest_of_the_file(tmp_path: Path) -> None:
+    rc = tmp_path / ".bashrc"
+    old_block = "# >>> acg msg >>>\nclaude() { :; }\n# <<< acg msg <<<\n"
+    mine = "export PATH=$HOME/bin:$PATH\n# 中文註解\n"
+    rc.write_text(mine + "\n" + old_block + "alias ll='ls -l'\n", encoding="utf-8")
+
+    path, skipped, changed = messaging.install_shell_block(rc, windows=False)
+
+    text = rc.read_text(encoding="utf-8")
+    assert changed and skipped == set() and path == rc
+    assert text.startswith(mine) and "alias ll='ls -l'" in text
+    assert "claude() {" not in text, "舊區塊整段換掉"
+    assert text.count("# >>> acg msg >>>") == 1 and "claude-msg() {" in text and "codex() {" in text
+    assert (tmp_path / ".bashrc.acg-bak").read_text(encoding="utf-8").endswith("alias ll='ls -l'\n")
+    assert messaging.install_shell_block(rc, windows=False)[2] is False
+
+
+def test_setup_does_not_override_a_codex_function_of_your_own(tmp_path: Path) -> None:
+    """A4000's codex() switches accounts; ours defined after it would replace it."""
+    rc = tmp_path / ".bashrc"
+    rc.write_text('codex() {\n  CODEX_HOME="$HOME/.codex-set" command codex "$@"\n}\n', encoding="utf-8")
+
+    _path, skipped, _changed = messaging.install_shell_block(rc, windows=False)
+
+    assert skipped == {"codex"}
+    assert rc.read_text(encoding="utf-8").count("codex() {") == 1
+
+
+def test_setup_keeps_a_powershell_profile_bom_and_stays_ascii(tmp_path: Path) -> None:
+    profile = tmp_path / "Microsoft.PowerShell_profile.ps1"
+    profile.write_bytes(b"\xef\xbb\xbfSet-Alias g git\r\nfunction Codex { codex.cmd @args }\r\n")
+
+    _path, skipped, _changed = messaging.install_shell_block(profile, windows=True)
+
+    raw = profile.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbfSet-Alias g git")
+    # Windows PowerShell 5.1 讀沒有 BOM 的檔案用系統碼頁;區塊本身只用 ASCII
+    assert messaging.shell_block(windows=True).isascii()
+    assert skipped == {"codex"} and b"function claude-msg" in raw
+
+
+def test_setup_refuses_a_file_it_cannot_read_back(tmp_path: Path) -> None:
+    rc = tmp_path / ".bashrc"
+    rc.write_bytes("# 註解\n".encode("cp950"))
+
+    with pytest.raises(messaging.MessagingError, match="UTF-8"):
+        messaging.install_shell_block(rc, windows=False)
+    assert rc.read_bytes() == "# 註解\n".encode("cp950")

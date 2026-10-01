@@ -7,7 +7,7 @@ from ..console import log_error, log_info, log_success
 from ..paths import ENTRYPOINT
 
 _USAGE = (
-    "Usage: {entry} msg list | setup | send <名稱、id 或 pid> <訊息> [--wait [秒]] [--from <我的名稱>]"
+    "Usage: {entry} msg list | setup [--print] | send <名稱、id 或 pid> <訊息> [--wait [秒]] [--from <我的名稱>]"
 )
 _DEFAULT_WAIT = 300.0
 
@@ -66,21 +66,45 @@ def _send(args: list) -> int:
     return 0
 
 
-def _setup() -> int:
+def _setup(print_only: bool = False) -> int:
     path = messaging.write_channel_config()
     log_success(f"已寫入 Claude channel 設定:{path}")
-    profile = "PowerShell 的 $PROFILE" if os.name == "nt" else "~/.bashrc"
-    log_info(f"把下面這段加進 {profile}(已經有舊的 acg msg 區塊就整段換掉),之後照常打 claude、codex,")
-    log_info("別的 session 就能傳話進來。每次開 Claude 會多一個 development channel 警告,按 Enter 即可")
-    log_info("(官方規定,關不掉)。自己已經有 codex 函式的(例如切換帳號),把 --remote 那段併進去,")
-    log_info("不要兩個都留:後定義的會蓋掉先定義的")
-    if os.name == "nt":
+    if print_only:
+        print(messaging.shell_block())
+        return 0
+    try:
+        rc, skipped, changed = messaging.install_shell_block()
+    except (OSError, messaging.MessagingError) as exc:
+        log_error(f"沒辦法寫入 shell 設定:{exc};請自己把下面這段加進去")
+        print(messaging.shell_block())
+        return 1
+    log_success(f"{'已寫入' if changed else '已經是最新的'} {rc} 裡的 acg msg 區塊;開新的終端機後生效")
+    log_info("平常照打 claude、codex。要讓別的 session 傳話給 Claude,改用 claude-msg 開:")
+    log_info("它每次啟動會問一次 development channel,按 Enter 即可(Claude Code 的規定,關不掉)")
+    if "codex" in skipped:
+        log_info("你已經有自己的 codex 函式,沒有加 acg 的;要讓 Codex 收得到訊息,")
+        log_info('它開 TUI 時要帶 --remote unix:// --cd "$PWD"(resume/fork 不帶 --cd)')
+    if os.name == "nt" and _profile_blocked():
         # Windows 用戶端預設執行原則是 Restricted,$PROFILE 根本不會載入
-        log_info("開新的 PowerShell 後函式沒生效的話,執行原則要允許本機腳本:")
+        log_info("PowerShell 目前不載入 $PROFILE;要讓函式生效,執行一次:")
         log_info("  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned")
-    print()
-    print(messaging.shell_functions())
     return 0
+
+
+def _profile_blocked() -> bool:
+    import subprocess
+
+    from ..subproc import NATIVE
+
+    try:
+        policy = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"],
+            capture_output=True, text=True, **NATIVE, check=False, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return policy in {"Restricted", "AllSigned"}
 
 
 def run_msg(args: list) -> int:
@@ -91,8 +115,8 @@ def run_msg(args: list) -> int:
     try:
         if action == "list" and len(args) <= 1:
             return _list()
-        if action == "setup" and len(args) == 1:
-            return _setup()
+        if action == "setup" and args[1:] in ([], ["--print"]):
+            return _setup(print_only=args[1:] == ["--print"])
         if action == "send":
             return _send(args[1:])
     except messaging.MessagingError as exc:
