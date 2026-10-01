@@ -21,8 +21,10 @@ class MemoryPlan:
     relevant_paths: list[Path] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     relevant_values: dict = field(default_factory=dict)
-    # 子目錄自己留下的 .remember;adopt 時一併搬進上層專案的日誌
+    # 子目錄自己的日誌;adopt 時併進上層專案的日誌
     nested: Path | None = None
+    # False:不動舊時代的 .remember(每晚排程);手動 adopt 才搬
+    old_journals: bool = True
 
     def change(
         self,
@@ -223,7 +225,7 @@ def _journal(result: MemoryPlan) -> None:
         _entry_changes(result, root, target)
         return
     memory_journal._check_journal_tree(link)
-    migrate = memory_journal._is_legacy_journal(legacy)
+    migrate = result.old_journals and memory_journal._is_legacy_journal(legacy)
     if migrate:
         memory_journal._check_journal_tree(legacy)
     if not target.exists():
@@ -291,48 +293,67 @@ def _journal(result: MemoryPlan) -> None:
 
 
 def _nested_journal(result: MemoryPlan, requested: Path) -> None:
-    """A subdirectory's own .remember, moved into its repository's journal.
+    """A subdirectory's own journal, folded into its repository's.
 
-    remember once keyed a session started in a subdirectory to that
-    directory. Its notes stayed in <subdir>/.remember while the repository
-    was adopted: the nightly scan found them, adopt resolved to the root,
-    had nothing to do, reported the project synced, and the notes never
-    left the machine.
+    remember keys a journal to the directory Claude started in; only a
+    linked worktree is sent to its main checkout. A session started in a
+    repository subdirectory therefore got a journal of its own, which adopt
+    resolved to the already adopted root and left behind: the nightly log
+    said "已同步專案日誌" and the notes never left the machine.
+
+    Its current journal (journal/<subdir slug>) is moved into the root's
+    and replaced by a link to it, so later sessions there write straight
+    into the repository's journal. An old-era <subdir>/.remember is moved
+    too, unless the plan leaves old journals alone (the nightly run).
     """
     root = result.project
     assert root is not None
     if requested.resolve() == root.resolve():
         return
+    link = memory_journal.journal_link(requested)
+    local = link.is_dir() and not (link.is_symlink() or memory_journal.is_reparse_point(link))
     legacy = memory_journal.legacy_journal_dir(requested)
-    if not memory_journal._is_legacy_journal(legacy):
+    old = result.old_journals and memory_journal._is_legacy_journal(legacy)
+    if not local and not old:
         return
-    memory_journal._check_journal_tree(legacy)
     target = memory_journal.project_journal_dir(memory_paths.project_key(root))
     result.nested = requested
-    result.relevant_paths.append(legacy)
     occupied = {entry.name: entry for entry in target.iterdir()} if target.exists() else {}
     for change in result.changes:
         planned = Path(change["destination"])
         if planned.parent == target:
             occupied[planned.name] = Path(change["source"]) if change["source"] else planned
-    for entry in sorted(legacy.iterdir()):
-        if entry.name in (".gitignore", memory_journal.MIGRATED_NOTE):
-            continue
-        held = occupied.get(entry.name)
-        if entry.name in memory_journal.RUNTIME_DIRS and entry.is_dir() and held is not None and held.is_dir():
-            dest = memory_journal.journal_destination(target, entry, requested.name, held)
-        else:
-            name, number = entry.name, 0
-            while name in occupied:
-                number += 1
-                name = f"{entry.name}.from-{requested.name}" + ("" if number == 1 else f"-{number}")
-            dest = target / name
-            occupied[name] = entry
-        result.change("move", dest, "搬入子目錄留下的舊日誌", source=entry)
-    _text_change(
-        result, legacy / memory_journal.MIGRATED_NOTE, memory_journal.migrated_note(target),
-        "記錄舊日誌搬移目的地",
-    )
+
+    def move_all(source: Path, skip: tuple, reason: str) -> None:
+        memory_journal._check_journal_tree(source)
+        result.relevant_paths.append(source)
+        origin = source.parent.name
+        for entry in sorted(source.iterdir()):
+            if entry.name in skip:
+                continue
+            held = occupied.get(entry.name)
+            if entry.name in memory_journal.RUNTIME_DIRS and entry.is_dir() and held is not None and held.is_dir():
+                dest = memory_journal.journal_destination(target, entry, origin, held)
+            else:
+                name, number = entry.name, 0
+                while name in occupied:
+                    number += 1
+                    name = f"{entry.name}.from-{origin}" + ("" if number == 1 else f"-{number}")
+                dest = target / name
+                occupied[name] = entry
+            result.change("move", dest, reason, source=entry)
+
+    if local:
+        move_all(link, (), "搬入子目錄的日誌")
+        result.change("rmdir", link, "移除搬空的子目錄日誌")
+        result.change("link", link, "子目錄的 session 直接寫進專案日誌", source=target, target=target)
+    if old:
+        assert legacy is not None
+        move_all(legacy, (".gitignore", memory_journal.MIGRATED_NOTE), "搬入子目錄留下的舊日誌")
+        _text_change(
+            result, legacy / memory_journal.MIGRATED_NOTE, memory_journal.migrated_note(target),
+            "記錄舊日誌搬移目的地",
+        )
 
 
 def _entry_changes(
@@ -365,7 +386,7 @@ def _entry_changes(
         _text_change(result, path, text, "專案的 git 不再列出 .remember")
 
 
-def plan(action: str, project: Path | None = None) -> MemoryPlan:
+def plan(action: str, project: Path | None = None, *, old_journals: bool = True) -> MemoryPlan:
     """Validate and describe an operation without changing any filesystem state."""
     if action not in ACTIONS:
         raise ValueError(f"Unknown memory action: {action}")
@@ -389,6 +410,7 @@ def plan(action: str, project: Path | None = None) -> MemoryPlan:
     if action in {"enable", "adopt"} and config_state == "other":
         raise RuntimeError(f"remember 的 data_dir 已另外設定為 {config_value}")
     result = MemoryPlan(action, project)
+    result.old_journals = old_journals
     result.relevant_values = {"remember_installed": memory_journal.remember_installed()}
     result.relevant_paths = [
         memory_paths.memory_dir(),

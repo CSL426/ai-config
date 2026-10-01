@@ -234,12 +234,13 @@ def test_projects_with_a_journal_are_adopted_before_the_nightly_push(journal_pro
     adopted = []
     monkeypatch.setattr(
         memory_lifecycle, "execute",
-        lambda action, project: adopted.append((action, project)) or memory_lifecycle.MemoryExecutionResult(code=0),
+        lambda action, project, **kw: adopted.append((action, project, kw)) or memory_lifecycle.MemoryExecutionResult(code=0),
     )
 
     lines = memory_lifecycle.adopt_touched(journal_project.parent)
 
-    assert adopted == [("adopt", journal_project)]
+    # 每晚只收現在還在寫的日誌,舊時代的 .remember 不動
+    assert adopted == [("adopt", journal_project, {"old_journals": False})]
     assert "已同步專案日誌" in lines[0]
 
 
@@ -380,7 +381,7 @@ def test_nothing_to_adopt_is_not_reported_as_synced(journal_project, monkeypatch
     )
     monkeypatch.setattr(
         memory_lifecycle, "execute",
-        lambda action, project: memory_lifecycle.MemoryExecutionResult(code=0, changed=False),
+        lambda action, project, **kw: memory_lifecycle.MemoryExecutionResult(code=0, changed=False),
     )
 
     assert memory_lifecycle.adopt_touched(journal_project.parent) == []
@@ -435,3 +436,53 @@ def test_remembers_own_logs_stay_under_the_ignored_names(journal_project):
     assert not list(target.glob("*.from-*"))
     ignored = (target / ".gitignore").read_text().split()
     assert {"logs/", "tmp/"} <= set(ignored)
+
+
+def test_the_nightly_leaves_an_old_era_remember_alone(journal_project, monkeypatch):
+    """An old .remember never changes again; moving or reporting it nightly is noise."""
+    legacy = journal_project / ".remember"
+    legacy.mkdir()
+    (legacy / "today-2026-07-30.md").write_text("old notes")
+    _memory_on(monkeypatch)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root: memory_paths.ProjectKey("owner--repo", True, str(root)),
+    )
+    monkeypatch.setattr(memory_lifecycle, "execute", lambda *a, **k: pytest.fail("不該動舊日誌"))
+
+    assert memory_lifecycle.adopt_touched(journal_project.parent) == []
+    assert (legacy / "today-2026-07-30.md").read_text() == "old notes"
+
+
+def test_a_subdirectory_session_journal_joins_its_repository(journal_project):
+    """remember keys a journal to the launch directory; a session in For_spark got its own."""
+    import subprocess
+
+    root = journal_project
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    assert memory_lifecycle.execute("adopt", root).code == 0
+    target = memory_journal.project_journal_dir(memory_paths.project_key(root))
+    nested = root / "references" / "For_spark"
+    nested.mkdir(parents=True)
+    current = memory_journal.journal_link(nested)
+    current.mkdir(parents=True)
+    (current / "today-2026-10-01.md").write_text("new notes")
+    old = nested / ".remember"
+    old.mkdir()
+    (old / "today-2026-07-30.md").write_text("old notes")
+
+    planned = {
+        Path(c["destination"]) for c in memory_plan.plan("adopt", nested, old_journals=False).changes
+        if c["operation"] == "move"
+    }
+    result = memory_lifecycle.execute("adopt", nested, old_journals=False)
+
+    assert result.code == 0 and result.changed
+    assert planned and all(path.exists() for path in planned)
+    assert (target / "today-2026-10-01.md").read_text() == "new notes"
+    # 之後在子目錄開的 session 直接寫進專案日誌
+    assert memory_journal.journal_state(nested)[0] == "adopted"
+    assert (current / "today-2026-10-01.md").read_text() == "new notes"
+    # 每晚排程不碰舊時代的 .remember
+    assert (old / "today-2026-07-30.md").read_text() == "old notes"
+    assert not (old / memory_journal.MIGRATED_NOTE).exists()

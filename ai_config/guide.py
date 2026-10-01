@@ -475,11 +475,16 @@ before it pushes, so a project where any session has worked reaches the other
 machines without anyone scanning for it. A project without a git remote is
 listed in the run's log instead, because its key is only the directory name;
 adopt it by hand. `AI_CONFIG_NO_AUTO_ADOPT=1` turns this off.
-A subdirectory of a repository can hold its own `.remember` from before
-remember keyed sessions to the repository root; adopting it (by hand from
-inside it, by path, or nightly) moves those notes into the repository's
-journal, keeping both copies of a file name both have, and leaves the
-migration note behind.
+The nightly adopt takes only journals sessions are writing now. An
+old-era `<project>/.remember` folder (written before acg moved journals out
+of projects) never changes again, so the nightly run neither moves nor
+reports it; `adopt` by hand still moves it.
+remember keys a journal to the directory Claude started in, so a session
+started in a repository subdirectory gets a journal of its own. Adopting
+that subdirectory (nightly, by hand from inside it, or by path) folds it
+into the repository's journal and links it there, so later sessions in the
+subdirectory write straight into the repository's journal. A file name
+both have keeps both copies.
 Local hooks restore the project's `.remember` entry after migration,
 so the journal remains visible inside the project without enabling Git sync.
 They only replace a missing entry or a verified migration notice; other content

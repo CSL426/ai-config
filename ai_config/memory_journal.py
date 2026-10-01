@@ -391,7 +391,7 @@ def journal_state(root: Path) -> tuple[str, str]:
     return "none", ""
 
 
-def adopt_journal(root: Path) -> list[str]:
+def adopt_journal(root: Path, *, old_journals: bool = True) -> list[str]:
     """Route this project's journal into projects/<key>/journal.
 
     Returns human-readable lines describing what moved. The plugin's own
@@ -409,7 +409,7 @@ def adopt_journal(root: Path) -> list[str]:
     link = journal_link(root)
     lines: list[str] = []
     legacy = legacy_journal_dir(root)
-    migrate_legacy = _is_legacy_journal(legacy)
+    migrate_legacy = old_journals and _is_legacy_journal(legacy)
     _check_journal_tree(target)
     _check_journal_tree(link)
     if migrate_legacy:
@@ -507,26 +507,46 @@ def migrated_note(target: Path) -> str:
     )
 
 
-def absorb_nested_journal(nested: Path, root: Path) -> list[str]:
-    """Move a subdirectory's own .remember into its repository's journal.
+def absorb_nested_journal(nested: Path, root: Path, *, old_journals: bool = True) -> list[str]:
+    """Fold a subdirectory's own journal into its repository's.
 
-    See memory_plan._nested_journal for how such a journal came to be.
+    See memory_plan._nested_journal: the same two sources, in the same order.
     """
-    legacy = legacy_journal_dir(nested)
-    if not _is_legacy_journal(legacy):
-        return []
-    assert legacy is not None
     target = project_journal_dir(memory_paths.project_key(root))
+    link = journal_link(nested)
+    local = link.is_dir() and not (link.is_symlink() or is_reparse_point(link))
+    old = legacy_journal_dir(nested)
+    migrate = old_journals and _is_legacy_journal(old)
     moves: list[tuple[Path, Path, str]] = []
+    lines: list[str] = []
+    emptied = linked = False
     try:
-        moved = _move_contents(legacy, target, moves=moves)
-        memory_paths._write_text_atomic(legacy / MIGRATED_NOTE, migrated_note(target))
+        if local:
+            moved = _move_contents(link, target, include_metadata=True, moves=moves)
+            os.rmdir(link)
+            emptied = True
+            _create_journal_link(target, link)
+            linked = True
+            lines.append(f"子目錄 {nested.name} 的日誌併入專案日誌({moved} 項),之後直接寫進去")
+        if migrate:
+            assert old is not None
+            moved = _move_contents(old, target, moves=moves)
+            memory_paths._write_text_atomic(old / MIGRATED_NOTE, migrated_note(target))
+            lines.append(f"搬入子目錄 {nested.name} 的 {moved} 項舊日誌")
     except (OSError, RuntimeError) as exc:
-        errors = _restore_journal_moves(moves)
+        errors: list[str] = []
+        try:
+            if linked:
+                _remove_journal_link(link, target)
+            if emptied:
+                link.mkdir(parents=True, exist_ok=True)
+        except (OSError, RuntimeError) as restore_exc:
+            errors.append(str(restore_exc))
+        errors.extend(_restore_journal_moves(moves))
         if errors:
             raise JournalRecoveryError("子目錄日誌搬移失敗;" + ";".join(errors)) from exc
         raise
-    return [f"搬入子目錄 {nested.name} 的 {moved} 項舊日誌"]
+    return lines
 
 
 def release_journal(root: Path) -> list[str]:
