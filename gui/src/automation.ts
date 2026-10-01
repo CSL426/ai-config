@@ -196,11 +196,13 @@ function renderAutoupdate(info: MemoryInfo): void {
   const state = info.autoupdate ?? { installed: false, time: "", last_run: "", steps: [] };
   $<HTMLInputElement>("#autoupdate-toggle").checked = state.installed;
   // 沒更新成功的工具要看得到,不然一台落後好幾版也沒人發現
-  const failed = state.steps.filter((step) => !step.ok);
+  // 安裝方式讓它沒辦法自動更新的（⚠）也要提醒，不只失敗的
+  const failed = state.steps.filter((step) => !step.ok || step.warn);
+  const what = state.steps.some((step) => !step.ok) ? "有工具失敗" : "有工具需要處理";
   const warning = $("#autoupdate-failure");
   warning.hidden = failed.length === 0;
   warning.textContent = failed.length
-    ? `上次自動更新有工具失敗（${localTime(state.last_run)}）：`
+    ? `上次自動更新${what}（${localTime(state.last_run)}）：`
       + failed.map((step) => `${step.name} ${step.note}`).join("；")
       + "。處理後在終端機執行 acg autoupdate run，全部成功就會清掉這則。"
     : "";
@@ -217,7 +219,7 @@ function renderAutoupdate(info: MemoryInfo): void {
     const item = document.createElement("li");
     const label = document.createElement("code");
     label.textContent = step.name;
-    item.append(label, `${step.ok ? "" : " ✗"}：${autoupdateLine(step)}`);
+    item.append(label, `${!step.ok ? " ✗" : step.warn ? " ⚠" : ""}：${autoupdateLine(step)}`);
     list.append(item);
   }
   if (!state.steps.length) {

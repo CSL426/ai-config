@@ -114,6 +114,9 @@ def test_an_npm_codex_is_reported_not_updated(tools, monkeypatch: pytest.MonkeyP
     assert ["codex", "update"] not in fake.calls
     step = autoupdate.last_run()["steps"][0]
     assert step.name == "codex" and step.ok and "npm" in step.note
+    # 沒失敗,但要有人處理:排程不算失敗,可是要提醒
+    assert step.warn and step.line().startswith("⚠ codex:")
+    assert [s.name for s in autoupdate.failures()[1]] == ["codex"]
 
 
 @pytest.mark.parametrize("binary", [
@@ -346,6 +349,23 @@ def test_a_new_session_hears_about_a_failed_update(
     output = capsys.readouterr().out
     assert output.count("自動更新") == 1
     assert "agy:Update failed: network" in output
+
+
+def test_a_new_session_hears_about_a_codex_that_cannot_update_itself(
+    tools, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    tools({"codex": ["0.156.1"], "acg": ["1.0.101"]})
+    monkeypatch.setattr(
+        autoupdate, "_binary",
+        lambda tool: "/usr/lib/node_modules/@openai/codex/bin/codex" if tool == "codex" else None,
+    )
+    assert autoupdate.run() == 0, "警告不讓排程算失敗"
+    capsys.readouterr()
+
+    memory_hooks._announce_failed_autoupdate({"hook_event_name": "SessionStart"})
+
+    output = capsys.readouterr().out
+    assert "需要處理" in output and "npm" in output
 
 
 def test_the_desktop_app_toggles_it(monkeypatch: pytest.MonkeyPatch) -> None:

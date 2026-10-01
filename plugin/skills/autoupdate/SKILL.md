@@ -29,8 +29,9 @@ Codex 自己不清舊版:獨立安裝版與 app-server daemon 每升一版就在
 `~/.codex*/packages/*/releases/` 多留一份(一份約 400 MB,曾經累積到 14 GB)。codex 那一步
 會刪掉 `current` 指向以外、也沒有執行中 codex 在用的版本;npm 裝的 codex 也會清 daemon 的舊版。
 
-有工具標 ✗ 時,那行後面就是它自己的錯誤訊息,照著講給使用者聽。處理完可以用
-`acg autoupdate run` 立即重跑;全部成功就會清掉失敗紀錄,新 session 開頭也不再提醒。
+有工具標 ✗ 時,那行後面就是它自己的錯誤訊息,照著講給使用者聽。標 ⚠ 的沒有失敗,但安裝方式
+讓它沒辦法自動更新(例如 npm 裝的 codex),要使用者處理,一樣講清楚該怎麼做。處理完可以用
+`acg autoupdate run` 立即重跑;全部成功且沒有 ⚠ 就會清掉紀錄,新 session 開頭也不再提醒。
 
 沒啟用就照實說,啟用方式是 `acg autoupdate enable [時]`。不要替使用者決定時間,也不要
 自己去啟用或執行 `run`,那會真的下載並替換這台的工具。

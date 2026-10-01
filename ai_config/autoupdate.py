@@ -46,9 +46,11 @@ class Step:
     note: str = ""
     freed: int = 0
     kept: int = 0
+    # 沒有失敗,但安裝方式讓它沒辦法自動更新,要有人處理;不讓排程算失敗
+    warn: bool = False
 
     def line(self) -> str:
-        mark = "✓" if self.ok else "✗"
+        mark = "✗" if not self.ok else "⚠" if self.warn else "✓"
         if self.note:
             text = self.note
         elif self.before and self.after and self.before != self.after:
@@ -295,7 +297,7 @@ def _update_tool(tool: str) -> "Step | None":
         return None
     if tool == "codex" and _is_npm_install(binary):
         # npm 全域安裝多半在要 sudo 的系統目錄;自動跑只會失敗,改成提醒
-        step = Step(tool, before=_version([binary]), note=(
+        step = Step(tool, before=_version([binary]), warn=True, note=(
             f"npm 全域安裝({binary}),不自動更新;"
             "建議改用官方獨立安裝版"
         ))
@@ -362,16 +364,20 @@ def last_run() -> "dict | None":
             note=str(raw.get("note", "")),
             freed=raw["freed"] if isinstance(raw.get("freed"), int) else 0,
             kept=raw["kept"] if isinstance(raw.get("kept"), int) else 0,
+            warn=raw.get("warn") is True,
         ))
     return {"when": str(record.get("when", "")), "steps": steps}
 
 
 def failures() -> "tuple[str, list[Step]]":
-    """When the last run was and what failed in it; nothing once a run succeeds."""
+    """When the last run was and what needs a person: failed or warned steps.
+
+    A run where everything succeeds without a warning clears it.
+    """
     last = last_run()
     if last is None:
         return "", []
-    return last["when"], [step for step in last["steps"] if not step.ok]
+    return last["when"], [step for step in last["steps"] if not step.ok or step.warn]
 
 
 # ─── schedule ─────────────────────────────────────────────────
