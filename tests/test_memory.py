@@ -364,3 +364,18 @@ def test_the_rules_let_a_tools_own_auto_memory_be() -> None:
     """
     assert "不寫進工具" not in memory_paths.RULES_BLOCK
     assert "auto memory" in memory_paths.RULES_BLOCK
+
+
+def test_the_rules_say_when_a_handoff_is_written() -> None:
+    """A session wrote a handoff at 17% context because it asked another session for help.
+
+    Asking for a part of the work is a message, not a handoff; both the
+    rules block and the handoff skill say so.
+    """
+    repo = Path(__file__).resolve().parents[1]
+    skill = (repo / "plugin" / "skills" / "handoff" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    for text in (memory_paths.RULES_BLOCK, skill):
+        assert "/clear" in text
+        assert "acg msg" in text

@@ -421,6 +421,28 @@ def test_binding_prefers_the_installed_executable(
     assert ghauth_binding._acg_command() == [installed.as_posix()]
 
 
+def test_binding_from_a_checkout_uses_the_installed_launcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 從原始碼執行 init 時寫成 python -m ai_config,離開原始碼目錄
+    # 就找不到模組,資料庫的 push 全部失敗
+    python = tmp_path / "venv" / "bin" / "python"
+    installed = tmp_path / ".local" / "bin" / "ai-config"
+    python.parent.mkdir(parents=True)
+    python.write_text("")
+    monkeypatch.setattr(ghauth_binding.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(ghauth_binding.sys, "executable", str(python))
+    monkeypatch.setattr(ghauth_binding, "standalone_install_path", lambda: installed)
+
+    # 沒裝啟動器:只能用手上的直譯器
+    assert ghauth_binding._acg_command() == [python.as_posix(), "-m", "ai_config"]
+
+    installed.parent.mkdir(parents=True)
+    installed.write_text("")
+    assert ghauth_binding.helper_executable() == (installed, python)
+    assert ghauth_binding._acg_command() == [installed.as_posix()]
+
+
 def test_stale_binding_is_repointed_before_git_is_asked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
