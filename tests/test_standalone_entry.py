@@ -721,3 +721,14 @@ def test_standalone_usage_names_the_installed_command() -> None:
     output = result.stdout + result.stderr
     assert "Usage: acg memory handoff" in output
     assert "ai-config.sh" not in output and "ai-config.ps1" not in output
+
+
+def test_a_null_stdin_cannot_answer_the_pause() -> None:
+    """排程以 DEVNULL 當 stdin;Windows 的 NUL 讓 isatty() 回 True,nightly.log 裡多了一行「按 Enter」。"""
+    probe = subprocess.run(
+        [sys.executable, "-c", "from ai_config import cli; print(cli._stdin_can_answer())"],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+
+    assert probe.stdout.strip() == "False", probe.stderr

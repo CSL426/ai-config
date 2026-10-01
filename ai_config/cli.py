@@ -225,6 +225,23 @@ def _stdin_can_answer() -> bool:
     if stream is None:
         return False
     try:
-        return bool(stream.isatty())
+        if not stream.isatty():
+            return False
+        return sys.platform != "win32" or _windows_console(stream)
     except (AttributeError, OSError, ValueError):
         return False
+
+
+def _windows_console(stream) -> bool:
+    """Windows 的 NUL 也是字元裝置,isatty() 會說是:排程以 DEVNULL 當 stdin
+    起的子行程因此印出「按 Enter」。只有真的主控台 GetConsoleMode 才會成功。
+    """
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel = ctypes.windll.kernel32
+    kernel.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel.GetConsoleMode.restype = wintypes.BOOL
+    mode = wintypes.DWORD()
+    return bool(kernel.GetConsoleMode(msvcrt.get_osfhandle(stream.fileno()), ctypes.byref(mode)))
