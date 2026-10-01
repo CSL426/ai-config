@@ -232,7 +232,11 @@ def _journal(result: MemoryPlan) -> None:
     # suffixes as sequential real moves, including incoming .gitignore files.
     occupied = {p.name: p for p in target.iterdir()} if target.exists() else {}
 
-    def destination(name: str, origin: str) -> Path:
+    def destination(entry: Path, origin: str) -> Path:
+        name = entry.name
+        held = occupied.get(name)
+        if name in memory_journal.RUNTIME_DIRS and entry.is_dir() and held is not None and held.is_dir():
+            return memory_journal.journal_destination(target, entry, origin, held)
         candidate, number = name, 0
         while candidate in occupied:
             number += 1
@@ -247,8 +251,9 @@ def _journal(result: MemoryPlan) -> None:
         for entry in sorted(source.iterdir()):
             if source == legacy and entry.name in (".gitignore", memory_journal.MIGRATED_NOTE):
                 continue
-            dest = destination(entry.name, source.parent.name)
-            occupied[dest.name] = entry
+            dest = destination(entry, source.parent.name)
+            if dest.parent == target:
+                occupied[dest.name] = entry
             result.change(
                 "move",
                 dest,
@@ -265,7 +270,7 @@ def _journal(result: MemoryPlan) -> None:
         prior_ignore is not None
         and prior_ignore.read_bytes() != memory_journal.JOURNAL_GITIGNORE.encode()
     ):
-        dest = destination(".gitignore", "journal")
+        dest = destination(ignore, "journal")
         result.change("move", dest, "保留原日誌忽略設定", source=ignore)
         result.change("add", ignore, "寫入日誌同步忽略設定")
     elif prior_ignore is None:
@@ -305,21 +310,25 @@ def _nested_journal(result: MemoryPlan, requested: Path) -> None:
     target = memory_journal.project_journal_dir(memory_paths.project_key(root))
     result.nested = requested
     result.relevant_paths.append(legacy)
-    occupied = {
-        Path(change["destination"]).name for change in result.changes
-        if Path(change["destination"]).parent == target
-    }
-    if target.exists():
-        occupied.update(entry.name for entry in target.iterdir())
+    occupied = {entry.name: entry for entry in target.iterdir()} if target.exists() else {}
+    for change in result.changes:
+        planned = Path(change["destination"])
+        if planned.parent == target:
+            occupied[planned.name] = Path(change["source"]) if change["source"] else planned
     for entry in sorted(legacy.iterdir()):
         if entry.name in (".gitignore", memory_journal.MIGRATED_NOTE):
             continue
-        name, number = entry.name, 0
-        while name in occupied:
-            number += 1
-            name = f"{entry.name}.from-{requested.name}" + ("" if number == 1 else f"-{number}")
-        occupied.add(name)
-        result.change("move", target / name, "搬入子目錄留下的舊日誌", source=entry)
+        held = occupied.get(entry.name)
+        if entry.name in memory_journal.RUNTIME_DIRS and entry.is_dir() and held is not None and held.is_dir():
+            dest = memory_journal.journal_destination(target, entry, requested.name, held)
+        else:
+            name, number = entry.name, 0
+            while name in occupied:
+                number += 1
+                name = f"{entry.name}.from-{requested.name}" + ("" if number == 1 else f"-{number}")
+            dest = target / name
+            occupied[name] = entry
+        result.change("move", dest, "搬入子目錄留下的舊日誌", source=entry)
     _text_change(
         result, legacy / memory_journal.MIGRATED_NOTE, memory_journal.migrated_note(target),
         "記錄舊日誌搬移目的地",
