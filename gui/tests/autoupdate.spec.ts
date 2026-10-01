@@ -106,3 +106,22 @@ test("舊版後端沒有這個欄位時不會壞掉", async ({ page }) => {
   await expect(page.locator("#autoupdate-toggle")).not.toBeChecked();
   await expect(page.locator("#autopush-toggle")).not.toBeChecked();
 });
+
+test("沒失敗但沒辦法自動更新的工具也要提醒", async ({ page }) => {
+  await boot(page);
+  const warned = {
+    ...ran,
+    steps: [
+      { name: "codex", before: "0.156.1", after: "", ok: true, warn: true,
+        note: "npm 全域安裝(C:\\npm\\codex.CMD),不自動更新;建議改用官方獨立安裝版" },
+      { name: "acg", before: "1.0.110", after: "1.0.110", ok: true, note: "" },
+    ],
+  };
+  await openAutomation(page, { ...base, autoupdate: warned });
+
+  const banner = page.locator("#autoupdate-failure");
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("有工具需要處理");
+  await expect(banner).toContainText("codex npm 全域安裝");
+  await expect(page.locator("#autoupdate-steps")).toContainText("codex ⚠：npm 全域安裝");
+});

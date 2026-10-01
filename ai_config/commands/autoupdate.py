@@ -39,6 +39,8 @@ def _status() -> int:
         print(f"    {step.line()}")
     if any(not step.ok for step in last["steps"]):
         log_warn(f"有工具沒更新成功;處理後可用 {ENTRYPOINT} autoupdate run 立即重跑")
+    elif any(step.warn for step in last["steps"]):
+        log_warn(f"有工具需要處理(⚠ 那行);處理後可用 {ENTRYPOINT} autoupdate run 確認")
     return 0
 
 

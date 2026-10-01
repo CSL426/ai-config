@@ -260,8 +260,10 @@ listed, is left alone.
 
 The last run's versions and failures stay in local state. `autoupdate status`
 prints them, a new Claude session is told at start when something failed, and
-the desktop app's automation page shows them. A run where everything succeeds
-clears the failure.
+the desktop app's automation page shows them. A step that did not fail but
+needs a person, such as a codex installed through npm that cannot update
+itself, is marked ⚠ and reported the same way, without failing the nightly
+run. A run where everything succeeds without a warning clears it.
 
 The nightly run's full output is in the systemd journal on Linux
 (`journalctl --user -u acg-autopush.service`) and in `nightly.log` in acg's

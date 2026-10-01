@@ -222,8 +222,9 @@ def _announce_failed_autoupdate(value: dict) -> None:
     if not failed:
         return
     names = ";".join(f"{step.name}:{step.note}" for step in failed)
+    what = "有工具失敗" if any(not step.ok for step in failed) else "有工具需要處理"
     print(
-        f"acg:上次自動更新有工具失敗({when[:16].replace('T', ' ')} UTC):{names}。"
+        f"acg:上次自動更新{what}({when[:16].replace('T', ' ')} UTC):{names}。"
         "請告訴使用者;處理後執行 acg autoupdate run,全部成功就會清掉這筆紀錄。"
     )
 
