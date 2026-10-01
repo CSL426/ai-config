@@ -45,10 +45,10 @@ def helper_executable() -> "tuple[Path, Path | None]":
     the installer copies it to ~/.local/bin. The binding must outlive
     that copy, so it points at the installed executable whenever one
     exists; the second value names the running copy when it was not used.
+    Run from a checkout, ``python -m ai_config`` only works inside that
+    directory, so the installed executable wins there too.
     """
     running = Path(sys.executable)
-    if not getattr(sys, "frozen", False):
-        return running, None
     installed = standalone_install_path()
     try:
         if installed.is_file():
@@ -63,12 +63,13 @@ def helper_executable() -> "tuple[Path, Path | None]":
 
 
 def _acg_command() -> list[str]:
-    executable = str(helper_executable()[0])
+    chosen = helper_executable()[0]
+    executable = str(chosen)
     if os.name == "nt":
         # git 在 Windows 用它自帶的 sh 執行 helper;反斜線在 sh 裡是跳脫字元,
         # 正斜線的 Windows 路徑兩邊都認得
         executable = Path(executable).as_posix()
-    if getattr(sys, "frozen", False):
+    if getattr(sys, "frozen", False) or chosen != Path(sys.executable):
         return [executable]
     return [executable, "-m", "ai_config"]
 
