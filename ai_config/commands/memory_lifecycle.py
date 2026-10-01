@@ -169,11 +169,16 @@ class MemoryOperationError(RuntimeError):
 
 def execute(
     action: str, project: Path | None = None, *, lock_held: bool = False,
+    old_journals: bool = True,
 ) -> MemoryExecutionResult:
-    """Execute a validated lifecycle action; callers never change process cwd."""
+    """Execute a validated lifecycle action; callers never change process cwd.
+
+    old_journals=False leaves old-era .remember folders where they are:
+    the nightly run adopts what sessions are writing now, not leftovers.
+    """
     from ..memory_plan import plan
 
-    operation = plan(action, project)
+    operation = plan(action, project, old_journals=old_journals)
     if action in {"adopt", "release"} and not operation.changes:
         # 沒有事要做就不要建備份;預覽已經證明什麼都不會改
         for warning in operation.warnings:
@@ -185,14 +190,14 @@ def execute(
         return MemoryExecutionResult(code=0, changed=False)
     with _mutation(
         enabling=action == "enable", action=action, project=project,
-        lock_held=lock_held,
+        lock_held=lock_held, old_journals=old_journals,
     ) as result:
         if action == "enable":
             result.code = _enable()
         elif action == "disable":
             result.code = _disable()
         elif action == "adopt":
-            result.code = _adopt(operation.project, operation.nested)
+            result.code = _adopt(operation.project, operation.nested, old_journals=old_journals)
         else:
             result.code = _release(operation.project)
     return result
@@ -201,7 +206,7 @@ def execute(
 @contextmanager
 def _mutation(
     *, enabling: bool, action: str | None = None,
-    project: Path | None = None, lock_held: bool = False,
+    project: Path | None = None, lock_held: bool = False, old_journals: bool = True,
 ):
     # Preflight before creating the lock or snapshot: refused inputs stay intact.
     memory_paths.preflight_memory()
@@ -211,7 +216,7 @@ def _mutation(
         if action is not None:
             from ..memory_plan import plan
 
-            operation = plan(action, project)
+            operation = plan(action, project, old_journals=old_journals)
         else:
             operation = None
         memory_paths.preflight_memory()
@@ -484,7 +489,9 @@ def _disable() -> int:
     return 0
 
 
-def _adopt(project: Path | None = None, nested: Path | None = None) -> int:
+def _adopt(
+    project: Path | None = None, nested: Path | None = None, *, old_journals: bool = True,
+) -> int:
     log_header("Adopt project journal")
     if not memory_journal.remember_installed():
         log_error("找不到 remember plugin,沒有日誌可以接管")
@@ -502,9 +509,9 @@ def _adopt(project: Path | None = None, nested: Path | None = None) -> int:
     elif other:
         raise RuntimeError(f"remember 的 data_dir 已另外設定為 {other},先移除再重試")
     root = memory_paths.project_root(project)
-    lines = memory_journal.adopt_journal(root)
+    lines = memory_journal.adopt_journal(root, old_journals=old_journals)
     if nested is not None:
-        lines.extend(memory_journal.absorb_nested_journal(nested, root))
+        lines.extend(memory_journal.absorb_nested_journal(nested, root, old_journals=old_journals))
     if not lines:
         log_success("這個專案的日誌已經在共用記憶裡")
         return 0
@@ -552,11 +559,14 @@ def adopt_touched(root: "Path | None" = None) -> list:
         return []
     lines = []
     for project in memory_index.unadopted_below(root or memory_paths.HOME):
+        # 只剩舊時代 .remember 的:設定好之後就不會再變,每晚不搬也不提;要的話手動 adopt
+        if memory_journal.journal_state(project)[0] == "legacy":
+            continue
         if not memory_paths.project_key(project).stable:
             lines.append(f"沒有 git 遠端,不自動同步:{tilde(project)}(要同步請手動 adopt)")
             continue
         try:
-            result = execute("adopt", project)
+            result = execute("adopt", project, old_journals=False)
         except (OSError, RuntimeError, ValueError) as exc:
             lines.append(f"同步失敗:{tilde(project)}:{exc}")
             continue
