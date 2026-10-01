@@ -239,6 +239,11 @@ def test_the_windows_task_goes_through_cmd() -> None:
     # conhost --headless:Windows Terminal 當預設主控台時,只有 cmd 會開一個看得到的視窗
     assert command.startswith("conhost.exe --headless cmd /c ")
     assert "--if-stale" in command
+    # 沒有 journal 的 Windows,失敗的那一晚只剩結束碼;輸出要留下來
+    log = autopush._log_path()
+    assert command.endswith((f"> {log} 2>&1", f'> "{log}" 2>&1'))
+    # 日誌不能在要推上去的記憶目錄裡
+    assert not autopush._log_path().is_relative_to(autopush.memory_dir())
 
 
 def test_every_platform_caps_how_long_one_run_may_take() -> None:
@@ -523,9 +528,15 @@ def test_a_task_made_before_headless_is_rewritten_at_its_time(monkeypatch: pytes
     assert "04:00" in autopush.refresh_windows_task()
     assert rebuilt == [4]
 
+    # 不開視窗但沒寫日誌的(1.0.106 建的)也要重建
     xml["text"] = "<Command>conhost.exe</Command><Arguments>--headless cmd /c x</Arguments>"
+    assert "04:00" in autopush.refresh_windows_task()
+    assert rebuilt == [4, 4]
+
+    xml["text"] = ("<Command>conhost.exe</Command>"
+                   "<Arguments>--headless cmd /c x > C:\\s\\nightly.log 2>&1</Arguments>")
     assert autopush.refresh_windows_task() == ""
-    assert rebuilt == [4]
+    assert rebuilt == [4, 4]
 
 
 def test_status_previews_without_rebasing_or_clearing_the_failure(
