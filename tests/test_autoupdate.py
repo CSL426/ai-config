@@ -151,6 +151,71 @@ def test_a_standalone_codex_updates_in_the_home_it_was_installed_into(
     assert autoupdate._codex_home("/usr/local/bin/codex") is None
 
 
+def _release(releases: Path, version: str) -> Path:
+    binary = releases / version / "bin" / "codex"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"x" * 1000)
+    return binary
+
+
+def _current(releases: Path, version: str) -> None:
+    try:
+        (releases.parent / "current").symlink_to(releases / version, target_is_directory=True)
+    except OSError:
+        pytest.skip("這台不能建 symlink")
+
+
+def test_old_codex_releases_go_but_current_and_running_ones_stay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    releases = tmp_path / ".codex-work" / "packages" / "standalone" / "releases"
+    _release(releases, "0.150.0")
+    running = _release(releases, "0.156.0")
+    _release(releases, "0.159.3")
+    _current(releases, "0.159.3")
+    (releases / "0.149.0.acg-old").mkdir()  # 上次搬開了沒刪完
+    monkeypatch.setattr(autoupdate, "_running_executables", lambda: {running.resolve()})
+
+    freed, kept = autoupdate._prune_codex_releases(tmp_path)
+
+    # 開著好幾天的 session 還在用舊版;刪了它要叫起的 helper 就找不到
+    assert sorted(p.name for p in releases.iterdir()) == ["0.156.0", "0.159.3"]
+    assert (freed, kept) == (1000, 1)
+
+
+def test_codex_releases_are_left_alone_when_in_doubt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    releases = tmp_path / ".codex" / "packages" / "app-server-daemon" / "releases"
+    _release(releases, "0.150.0")
+    _release(releases, "0.159.3")
+    monkeypatch.setattr(autoupdate, "_running_executables", lambda: set())
+
+    # 沒有 current:不知道哪一版在用,整個不碰
+    assert autoupdate._prune_codex_releases(tmp_path) == (0, 0)
+    _current(releases, "0.159.3")
+    # 看不到有哪些行程在跑:也不碰
+    monkeypatch.setattr(autoupdate, "_running_executables", lambda: None)
+    assert autoupdate._prune_codex_releases(tmp_path) == (0, 0)
+    assert len(list(releases.iterdir())) == 2
+
+
+def test_an_npm_codex_still_gets_its_daemon_releases_pruned(
+    tools, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tools({"codex": ["0.156.1"], "acg": ["1.0.101"]})
+    monkeypatch.setattr(
+        autoupdate, "_binary",
+        lambda tool: "/usr/lib/node_modules/@openai/codex/bin/codex" if tool == "codex" else None,
+    )
+    monkeypatch.setattr(autoupdate, "_prune_codex_releases", lambda: (850 * 2**20, 0))
+
+    autoupdate.run()
+
+    step = autoupdate.last_run()["steps"][0]
+    assert step.name == "codex" and step.freed == 850 * 2**20 and "npm" in step.note
+
+
 def test_executables_renamed_aside_are_removed(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

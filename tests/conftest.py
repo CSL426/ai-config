@@ -164,3 +164,14 @@ def _browser_mode_never_waits_long(monkeypatch: pytest.MonkeyPatch) -> None:
     from ai_config import gui_server
 
     monkeypatch.setattr(gui_server, "IDLE_BEFORE_CLAIM", 5.0)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_codex_pruning(tmp_path_factory, monkeypatch):
+    """autoupdate 會真的刪 ~/.codex*/packages 底下的舊版;任何測試都指到空目錄。
+
+    曾經有一次測試沒隔離,在開發機上真的刪掉 11 GB 的 codex 舊版。
+    """
+    from ai_config import autoupdate
+
+    monkeypatch.setattr(autoupdate, "HOME", tmp_path_factory.mktemp("codex-home"))

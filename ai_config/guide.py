@@ -249,6 +249,15 @@ After each tool updates, the old executables it renamed aside (`agy.<n>.old`,
 copy still held by a running session cannot be deleted; the step then says how
 many were kept, and a later run removes them.
 
+Codex never removes its own old versions: the standalone install and the
+app-server daemon unpack each one into
+`<CODEX_HOME>/packages/<kind>/releases/<version>`, about 400 MB each, and one
+machine carried 14 GB of them. The codex step deletes every release except the
+one `current` points to and any a running codex still executes from, in every
+`~/.codex*` home, also when codex itself came from npm. A release whose
+`current` cannot be read, or a machine whose running processes cannot be
+listed, is left alone.
+
 The last run's versions and failures stay in local state. `autoupdate status`
 prints them, a new Claude session is told at start when something failed, and
 the desktop app's automation page shows them. A run where everything succeeds
