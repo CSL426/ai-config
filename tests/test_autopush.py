@@ -526,3 +526,21 @@ def test_a_task_made_before_headless_is_rewritten_at_its_time(monkeypatch: pytes
     xml["text"] = "<Command>conhost.exe</Command><Arguments>--headless cmd /c x</Arguments>"
     assert autopush.refresh_windows_task() == ""
     assert rebuilt == [4]
+
+
+def test_status_previews_without_rebasing_or_clearing_the_failure(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows 實測:看一眼 status,data repo 就被 rebase 了。查狀態不該動任何東西。"""
+    assert autopush.push_and_record(lambda: 1) == 1
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: True)
+    caught: list = []
+    monkeypatch.setattr(autopush, "_catch_up", lambda: caught.append(1) or True)
+    monkeypatch.setattr(autopush, "schedule_installed", lambda: False)
+    _changes(monkeypatch, False)
+
+    report = autopush.status()
+
+    assert caught == []
+    assert report["reason"] == "記憶沒有變更"
+    assert autopush.last_failure() is not None
