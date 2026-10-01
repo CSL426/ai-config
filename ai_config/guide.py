@@ -263,6 +263,11 @@ prints them, a new Claude session is told at start when something failed, and
 the desktop app's automation page shows them. A run where everything succeeds
 clears the failure.
 
+The nightly run's full output is in the systemd journal on Linux
+(`journalctl --user -u acg-autopush.service`) and in `nightly.log` in acg's
+local state directory (`~/.local/state/acg/`) on Windows and macOS. Windows
+keeps the last night only; launchd appends.
+
 ## The /acg skill
 
 The first install and every `update` put this repository's plugin into

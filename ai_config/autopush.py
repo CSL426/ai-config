@@ -377,7 +377,12 @@ def launchd_plist(hour: int, stale_hours: float, minute: int = 0) -> bytes:
 
 
 def _log_path() -> Path:
-    return memory_dir() / "logs" / "autopush.log"
+    """The scheduled run's own output, on machines without a journal.
+
+    Local state, not the notebook: a log inside the synced repository was
+    committed and pushed along with the memory it was logging.
+    """
+    return state_path().with_name("nightly.log")
 
 
 def schtasks_argv(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
@@ -392,19 +397,26 @@ def schtasks_argv(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
     command = " ".join(_quote(part) for part in _run_args(stale_hours))
     return [
         "schtasks", "/Create", "/F", "/TN", _TASK, "/SC", "DAILY",
-        "/ST", f"{hour:02d}:{minute:02d}", "/TR", windows_command(command),
+        "/ST", f"{hour:02d}:{minute:02d}", "/TR", windows_command(command, _log_path()),
     ]
 
 
-def windows_command(command: str) -> str:
+def windows_command(command: str, log: "Path | None" = None) -> str:
     """cmd for usable standard handles, inside a console nobody sees.
 
     With Windows Terminal as the default console, `cmd /c` alone opened a
     visible terminal for the whole five-minute nightly run. A headless
     conhost gives the same console without a window (measured: none shown,
     result 0). --headless is undocumented; it exists since Windows 10 1809.
+
+    With a log, the run's output replaces it each night. Linux has the
+    journal; Windows kept nothing, so a failed night left only its exit
+    code. Overwriting keeps it bounded: cmd holds the file open for the
+    whole run, so nothing could rotate it.
     """
-    return f"conhost.exe --headless cmd /c {command}"
+    if log is None:
+        return f"conhost.exe --headless cmd /c {command}"
+    return f"conhost.exe --headless cmd /c {command} > {_quote(str(log))} 2>&1"
 
 
 def refresh_windows_task() -> str:
@@ -416,10 +428,11 @@ def refresh_windows_task() -> str:
         capture_output=True, text=True, **NATIVE, check=False, timeout=60,
     )
     at = _scheduled_at()
-    if listed.returncode != 0 or "--headless" in listed.stdout or at is None:
+    current = "--headless" in listed.stdout and _log_path().name in listed.stdout
+    if listed.returncode != 0 or current or at is None:
         return ""
     install(at[0])
-    return f"每晚排程改成不開視窗執行({at[0]:02d}:{at[1]:02d})"
+    return f"每晚排程改成不開視窗執行,輸出寫進 {_log_path()}({at[0]:02d}:{at[1]:02d})"
 
 
 def systemd_dir() -> Path:
@@ -569,6 +582,8 @@ def _enable_launchd(hour: int, stale_hours: float, minute: int = 0) -> list[str]
 
 
 def _enable_schtasks(hour: int, stale_hours: float, minute: int = 0) -> list[str]:
+    # cmd 開不了日誌檔就整個不跑,目錄要先在
+    _log_path().parent.mkdir(parents=True, exist_ok=True)
     created = subprocess.run(
         schtasks_argv(hour, stale_hours, minute),
         capture_output=True, text=True, **NATIVE, check=False, timeout=60,
