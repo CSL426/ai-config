@@ -93,7 +93,7 @@ def test_claude_sessions_are_listed_with_whether_they_can_receive(
 
     [peer] = messaging.claude_peers()
     assert (peer.id, peer.name) == ("s-live", "acg")
-    assert "channel" in peer.unreachable
+    assert "claude-msg" in peer.unreachable
 
     messaging.channel_socket(me).parent.mkdir(parents=True)
     messaging.channel_socket(me).write_text("")
