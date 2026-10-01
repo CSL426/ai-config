@@ -100,10 +100,18 @@ def _report_unadopted() -> None:
         return
     here = memory_paths.project_root()
     others = [project for project in pending if project != here]
-    if others:
+    # 舊時代的 .remember 排程不碰,混在一起算會讓人以為今晚就會處理
+    old = [p for p in others if memory_journal.journal_state(p)[0] == "legacy"]
+    current = len(others) - len(old)
+    if current:
         log_info(
-            f"另外 {len(others)} 個專案的日誌還沒同步"
-            f"({ENTRYPOINT} memory adopt all 可一次處理)"
+            f"另外 {current} 個專案的日誌還沒同步;每晚排程會處理有 git 遠端的,"
+            f"現在處理用 {ENTRYPOINT} memory adopt all"
+        )
+    if old:
+        log_info(
+            f"另有 {len(old)} 個專案只剩舊時代的 .remember;排程不會搬,"
+            f"要同步就手動 {ENTRYPOINT} memory adopt <路徑>,不要就刪掉"
         )
 
 

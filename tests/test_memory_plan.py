@@ -318,7 +318,9 @@ def test_status_counts_the_projects_still_waiting(
 
     memory_lifecycle._report_unadopted()
 
-    assert "adopt all" in capsys.readouterr().out
+    # 這個是舊時代的 .remember:排程不碰,提示手動 adopt 那個路徑
+    out = capsys.readouterr().out
+    assert "1 個專案只剩舊時代的 .remember" in out and "memory adopt <路徑>" in out
 
 
 def test_adopt_all_means_the_same_as_scan(journal_project, monkeypatch, capsys):
@@ -486,3 +488,20 @@ def test_a_subdirectory_session_journal_joins_its_repository(journal_project):
     # 每晚排程不碰舊時代的 .remember
     assert (old / "today-2026-07-30.md").read_text() == "old notes"
     assert not (old / memory_journal.MIGRATED_NOTE).exists()
+
+
+def test_status_tells_old_era_journals_apart_from_ones_the_nightly_takes(monkeypatch, capsys, tmp_path):
+    """Windows: For_spark's old .remember was counted as 'tonight's run will handle it'; it won't."""
+    current, old, here = tmp_path / "Nook", tmp_path / "For_spark", tmp_path / "here"
+    monkeypatch.setattr(memory_index, "unadopted_below", lambda root: [current, old, here])
+    monkeypatch.setattr(memory_paths, "project_root", lambda *a: here)
+    monkeypatch.setattr(
+        memory_journal, "journal_state",
+        lambda project: ("legacy", "") if project == old else ("local", ""),
+    )
+
+    memory_lifecycle._report_unadopted()
+
+    out = capsys.readouterr().out
+    assert "另外 1 個專案的日誌還沒同步" in out and "排程會處理" in out
+    assert "另有 1 個專案只剩舊時代的 .remember" in out and "排程不會搬" in out
