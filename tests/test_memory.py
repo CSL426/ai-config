@@ -354,3 +354,13 @@ def test_home_remember_config_dir_is_not_a_legacy_journal(
     project = tmp_path / "proj"
     (project / ".remember").mkdir(parents=True)
     assert memory_journal.legacy_journal_dir(project) == project / ".remember"
+
+
+def test_the_rules_let_a_tools_own_auto_memory_be() -> None:
+    """Claude Code's auto memory instructions always won over "don't write auto memory".
+
+    A prompt audit found six notes written after that rule shipped; the
+    rule now splits the two instead of forbidding one.
+    """
+    assert "不寫進工具" not in memory_paths.RULES_BLOCK
+    assert "auto memory" in memory_paths.RULES_BLOCK
