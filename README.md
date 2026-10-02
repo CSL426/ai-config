@@ -34,6 +34,26 @@ The desktop app does the same for people who would rather not use a terminal.
 
 Screenshots come from the app running on mock data: `cd gui && pnpm screenshots`.
 
+## What it does
+
+- **One copy of your AI setup, on every machine.** Rules (`CLAUDE.md`,
+  `AGENTS.md`), skills, agents, commands, MCP servers and tool settings for
+  Claude Code, Codex and Antigravity live in a private Git repository (or a
+  Google Drive folder). `push` saves this machine's setup there; `pull` and
+  `apply` bring another machine up to it.
+- **Write a skill once, use it in all three tools.** Claude skills are
+  projected to Codex (`~/.agents/skills`) and Antigravity
+  (`~/.gemini/config/skills`) with their frontmatter adjusted.
+- **A shared notebook.** With `memory enable`, all three tools read and write
+  the same notes: a global layer and one layer per project, keyed by the
+  project's Git remote so it matches across machines. It saves itself nightly.
+- **Handoffs between sessions.** Record where a work thread got to before a
+  context fills up; the next session picks it up, on this machine or another.
+- **Messages between live sessions** (`msg`), **nightly tool updates**
+  (`autoupdate`), and **usage-window anchoring** (`keepalive`).
+- **Never copies credentials.** Login files are excluded everywhere, and every
+  push is scanned for secrets before it leaves the machine.
+
 ## Installation
 
 ### Standalone installer
@@ -140,6 +160,131 @@ If an old editable launcher shadows the standalone command, `update`
 automatically delegates to the installed standalone executable instead of
 requiring PATH or pyenv cleanup first.
 
+## After installing
+
+### The first machine
+
+Gather what this machine already has, review it, and save it:
+
+```bash
+acg init          # copy live configuration into the data repository
+acg status        # nothing should differ now
+acg push          # shows the diff and asks before committing and pushing
+```
+
+### Every other machine
+
+Look before you overwrite: `apply` replaces this machine's configuration with
+the saved one, after a backup in `~/.ai-config-backup/`.
+
+```bash
+acg pull          # fast-forward the data repository, then show status
+acg apply         # deploy it
+```
+
+In `status`, a `-` line is a file that exists only on this machine and that
+`apply` would delete. If it is worth keeping, run `acg init` (or `acg push`)
+before `apply`. In `~/.claude/skills` this includes skills installed by hand;
+hand-installed skills in Codex's and Antigravity's folders are reported but
+never deleted.
+
+On a machine that has not applied the latest configuration, `apply` before
+you `push`: a push gathers the live configuration, so it would save this
+machine's older copy over the newer one.
+
+### For an AI agent
+
+`acg skill` prints a guide written for an agent: every command, what syncs
+where, and the rules below. It is compiled into the binary and works before
+`setup`. The `/acg` skill in Claude Code covers the same ground.
+
+- Run `acg status` first; it is read-only.
+- Never `push` without the user's approval; it commits.
+- Without a terminal, add `--force` so `[y/N]` prompts are answered.
+- Ask for the data repository's URL and path; never guess them.
+
+## Optional features
+
+Everything below is off until a machine turns it on, and each is set per
+machine.
+
+| Feature | Turn on | Where |
+|---|---|---|
+| Shared notebook, handoff reminder at 70% context | `acg memory enable` | Every machine |
+| Save the notebook every night | `acg memory autopush enable [hour]` | Every machine; give each a different hour |
+| Update Claude Code, Codex, Antigravity and acg nightly | `acg autoupdate enable` | Every machine; runs in the autopush slot |
+| Start a tool's five-hour usage window at chosen times | `acg keepalive enable [HH:MM ...] [tool]` | **One machine per account**; the window belongs to the account |
+| Send messages to other live sessions | `acg msg setup`, then start Claude with `claude-msg` | Linux and Windows; macOS Claude cannot receive yet |
+| Record Codex and Antigravity sessions in the journal | `acg memory enable codex` / `agy` | Where you use them |
+| Refuse commit messages that are not `type: description` | `acg hooks enable commit-style` | Optional |
+
+`acg memory autopush status`, `acg autoupdate status`, `acg keepalive status`
+and `acg hooks list` show what is on. A nightly run that fails is reported at
+the start of the next Claude session until it succeeds.
+
+Things to leave alone:
+
+- **Do not edit `~/.agents/skills` or `~/.gemini/config/skills` by hand.**
+  `apply` rebuilds every skill acg manages there from the Claude copy, so a
+  file added inside one disappears. Change the skill in `~/.claude/skills`
+  and push, or use `acg skill add <dir>`.
+- **Do not copy acg's hooks into `settings.json` yourself.** They name this
+  machine's executable, so acg keeps them out of the repository and puts
+  them back on each machine. Your own hooks are synced; write their paths
+  with `~/`, not `/home/<you>/`.
+- **Settings that belong to one machine are never synced:** Claude's
+  `permissions`, `env`, `model`, `effortLevel`, `autoMode`; Codex's
+  `[projects.*]`, `notify`, `model`; Antigravity's `trustedWorkspaces`. A
+  difference there is expected, not drift.
+- **Do not sync `~/.ssh/config`.** See
+  [two GitHub accounts](docs/multiple-github-accounts.md).
+
+Environment variables: `AI_CONFIG_REPO` overrides the data repository path;
+`AI_CONFIG_NO_PLUGIN=1` skips installing `/acg` into Claude Code;
+`AI_CONFIG_NO_AUTOPUSH=1` stops the opportunistic memory save at the end of a
+command; `AI_CONFIG_NO_AUTO_ADOPT=1` stops the nightly run from syncing new
+project journals; `AI_CONFIG_NO_SHORTCUT=1` skips the Windows desktop
+shortcut.
+
+## Common problems
+
+- **A new rule, skill or note does not show up.** Tools read them when a
+  session starts. Open a new session; an open one does not reload.
+- **Plugins are missing on a new machine.** After `apply`, Claude Code
+  downloads the plugins your settings enable in the background on its first
+  start. Run `/reload-plugins` or start it again.
+- **`push` stops with "Potential credential content would be committed".** It
+  lists the files. Replace a real value with a placeholder such as `<TOKEN>`
+  or `$API_KEY`, which pass. Use `--allow-secrets` only after checking that
+  what it flagged is not a secret.
+- **`push` or `pull` refuses to start.** Both refuse states they cannot
+  handle safely: pre-staged changes, a branch behind or diverged from the
+  remote, a merge in progress. The message says which; `pull` before `push`,
+  and commit or discard local edits in the data repository before `pull`.
+- **Claude Desktop does not see your skills.** It does not read local skill
+  folders. `acg package <skill>` makes a ZIP to upload under Settings →
+  Customize → Skills. Codex and Antigravity desktop apps, and the Antigravity
+  IDE, read the same skills as their CLIs.
+- **Codex's skill-creator refuses `templates/` or `workflows/`.** Its
+  scaffolding only accepts `scripts/`, `references/` and `assets/`. Codex
+  itself loads any folder, and acg copies the whole skill.
+- **Codex fails with `bwrap: loopback: Failed RTM_NEWADDR`** on Ubuntu 24.04.
+  AppArmor stops unprivileged user namespaces from configuring networking.
+  Allow bubblewrap with a profile, then run
+  `sudo apparmor_parser -r /etc/apparmor.d/bwrap`:
+
+  ```text
+  # /etc/apparmor.d/bwrap
+  abi <abi/4.0>,
+  include <tunables/global>
+  profile bwrap /usr/bin/bwrap flags=(unconfined) {
+    userns,
+    include if exists <local/bwrap>
+  }
+  ```
+
+- **`msg setup` changes nothing on Windows.** PowerShell's execution policy
+  may keep `$PROFILE` from loading; setup prints how to allow it.
 ## CLI usage
 
 ```bash
