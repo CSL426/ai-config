@@ -70,8 +70,8 @@ with frontmatter normalized for their stricter parsers. Tool-specific
 `codex/skills/` and `agy/skills/` are also sources. Projection precedence is
 Claude agents, tool-specific skills, Claude skills, shared/both, shared/tool
 (later sources win). Shared-only skills need `claude/shared/{{both,codex,agy}}/`.
-Projection copies `SKILL.md`, `examples/`, `references/`, `scripts/`, and
-`agents/`; other resources remain in the Claude copy.
+Projection copies the whole skill directory, `SKILL.md` rewritten for the
+tool; credential files are left out and a symlink is refused.
 
 `status` also lists skill directories that exist in a tool's live skills
 directory but were never deployed by ai-config (hand-installed skills, or

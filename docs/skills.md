@@ -34,8 +34,8 @@ cannot be shared across tools. A skill is the portable unit.
   `.ai-config-codex-skills-migrated`)
 - Antigravity → `~/.gemini/config/skills/` (the editor and CLI share this store)
 
-Only `SKILL.md` plus the `examples/`, `references/`, `scripts/`, and `agents/`
-subdirectories are copied. Anything else in a skill directory stays local.
+The whole skill directory is copied, including `templates/`, `data/`,
+`assets/` and files at its top level; only credential files are left out.
 
 ## Installing a skill
 
