@@ -203,6 +203,13 @@ Pull still downloads the entire repository, including shared memory.
   changes are left unstaged, not lost.
 - **A `-` line means the file exists only live and `apply` would delete it.**
   Run `init` first if that content is worth keeping.
+- **On a machine behind the repository, `apply` before `push`.** A push
+  gathers live configuration first, so it would save this machine's older
+  copy over the newer one. Check `status` for `~` lines on files you did not
+  change here.
+- **Never patch `~/.agents/skills` or `~/.gemini/config/skills` by hand.**
+  `apply` rebuilds every skill it manages from the Claude copy, deleting files
+  added inside it. Fix the skill in `~/.claude/skills` and push it.
 - **Credentials are never copied.** `.credentials.json`, `auth.json`,
   `oauth_creds.json`, `google_accounts.json`, and `trustedFolders.json` are
   always excluded.
