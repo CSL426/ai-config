@@ -1,4 +1,4 @@
-"""Skill syncing: copy SKILL.md plus supporting directories per skill, shared
+"""Skill syncing: copy each skill whole (SKILL.md rewritten for the tool), shared
 skill projection, and managed-orphan reconciliation."""
 
 import os
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .console import log_info, log_warn
 from .frontmatter import sanitize_skill_frontmatter
-from .fsops import mirror_dir
+from .fsops import is_excluded, mirror_dir
 from .paths import ACKNOWLEDGED_NAME, MANIFEST_NAME, SCRIPT_DIR
 
 
@@ -56,10 +56,18 @@ def sync_skills(src_skills: Path, dst_skills: Path) -> None:
                 dst_skill / "SKILL.md",
                 skill_dir.name,
             )
-        for supporting_dir in ("examples", "references", "scripts", "agents"):
-            source = skill_dir / supporting_dir
-            if source.is_dir():
-                mirror_dir(source, dst_skill / supporting_dir)
+        # 整個技能都要帶過去:只挑 examples/references/scripts/agents 時,
+        # templates/、data/、assets/ 與根目錄的檔案在 Codex 和 agy 都不見,
+        # 手動補回去也會被下一次 apply 刪掉
+        for entry in sorted(skill_dir.iterdir()):
+            if entry.name == "SKILL.md" or is_excluded(entry):
+                continue
+            if entry.is_symlink():
+                raise RuntimeError(f"Refusing symlink in skill: {entry}")
+            if entry.is_dir():
+                mirror_dir(entry, dst_skill / entry.name)
+            elif entry.is_file():
+                shutil.copy2(entry, dst_skill / entry.name)
 
 
 def sync_shared_skills(tool: str, dst_skills: Path) -> None:

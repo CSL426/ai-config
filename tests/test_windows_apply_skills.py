@@ -491,8 +491,8 @@ def test_managed_skills_use_allowlist_and_prune_only_manifest_orphans(
     write(repo_dir / "codex/skills/current/references/reference.md", "reference\n")
     write(repo_dir / "codex/skills/current/scripts/run.ps1", "Write-Output ok\n")
     write(repo_dir / "codex/skills/current/agents/helper.md", "helper\n")
-    write(repo_dir / "codex/skills/current/ignored.txt", "ignored\n")
-    write(repo_dir / "codex/skills/current/assets/ignored.md", "ignored\n")
+    write(repo_dir / "codex/skills/current/notes.txt", "notes\n")
+    write(repo_dir / "codex/skills/current/assets/logo.md", "logo\n")
     write(home_dir / ".agents/skills/hand-installed/SKILL.md", "hand installed\n")
 
     first = run_script(repo_dir, home_dir, "apply", "codex")
@@ -509,10 +509,11 @@ def test_managed_skills_use_allowlist_and_prune_only_manifest_orphans(
         "references/reference.md",
         "scripts/run.ps1",
         "agents/helper.md",
+        # 整個技能都帶過去,不只上面四個資料夾
+        "notes.txt",
+        "assets/logo.md",
     ):
         assert (skills / "current" / relative_path).is_file()
-    assert not (skills / "current/ignored.txt").exists()
-    assert not (skills / "current/assets").exists()
     write(skills / "current/stale-managed.txt", "stale\n")
     write(skills / "current/.credentials.json", "live secret\n")
 
