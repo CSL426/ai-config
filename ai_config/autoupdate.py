@@ -299,7 +299,9 @@ def _update_tool(tool: str) -> "Step | None":
         # npm 全域安裝多半在要 sudo 的系統目錄;自動跑只會失敗,改成提醒
         step = Step(tool, before=_version([binary]), warn=True, note=(
             f"npm 全域安裝({binary}),不自動更新;"
-            "建議改用官方獨立安裝版"
+            # 換裝後 PATH 指向新位置;一直開著的終端機程式還拿著舊 PATH,
+            # 開新分頁也一樣找不到 codex(Windows 上真的發生過)
+            "建議改用官方獨立安裝版,換裝後要完全關掉終端機程式再開,只開新分頁不夠"
         ))
     else:
         home = _codex_home(binary) if tool == "codex" else None
