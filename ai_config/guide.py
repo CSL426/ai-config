@@ -208,7 +208,9 @@ Pull still downloads the entire repository, including shared memory.
   copy over the newer one. Every apply and push records the commit the live
   configuration matches; a push that would gather over later commits lists
   them and asks, and `--force` does not answer that question. Without a
-  terminal the push stops: run `apply <tool>`, then push.
+  terminal it does not ask and stops: run `apply <tool>`, then push. Only
+  when the user decides this machine's copy should win, add
+  `--overwrite-newer`.
 - **`apply` names files added by hand inside a managed Codex or agy skill**
   before it removes them (they are in the backup). Move them into the
   Claude copy of the skill and push instead.

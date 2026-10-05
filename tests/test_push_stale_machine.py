@@ -63,3 +63,48 @@ def test_a_machine_that_never_applied_is_not_stopped(machine) -> None:
     pushed = run_data_cli(data, home, "push", "claude", "--force")
 
     assert "這台上次 apply 之後" not in pushed.stdout
+
+
+def _behind(machine) -> "tuple[Path, Path, Path, Path]":
+    remote, other, data, home = machine
+    assert run_data_cli(data, home, "apply", "claude").returncode == 0
+    commit_and_push_settings(other, json.dumps({"theme": "dark"}), "feat: dark theme")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    return remote, other, data, home
+
+
+def test_an_open_stdin_nobody_writes_to_does_not_hang_the_push(machine) -> None:
+    # agent 的背景 shell:stdin 開著卻永遠沒人寫,讀它的話 push 會卡到天荒地老
+    import os
+    import subprocess
+    import sys
+
+    from data_repo_helpers import REPO_ROOT
+
+    _, _, data, home = _behind(machine)
+    env = {**os.environ, "AI_CONFIG_REPO": str(data), "HOME": str(home),
+           "USERPROFILE": str(home), "PYTHONPATH": str(REPO_ROOT)}
+    with subprocess.Popen(
+        [sys.executable, "-m", "ai_config", "push", "claude", "--force"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, env=env,
+    ) as process:
+        try:
+            process.wait(timeout=60)
+        finally:
+            if process.poll() is None:
+                process.kill()
+        out = process.stdout.read() if process.stdout else ""
+    assert process.returncode == 1, out
+    assert "--overwrite-newer" in out
+
+
+def test_overwrite_newer_is_the_deliberate_way_through(machine) -> None:
+    remote, _, data, home = _behind(machine)
+    (home / ".claude/settings.json").write_text('{"theme": "light"}\n', encoding="utf-8")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--force", "--overwrite-newer")
+
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert "--overwrite-newer" in pushed.stdout
+    assert json.loads(run_git(remote, "show", "HEAD:claude/settings.json"))["theme"] == "light"

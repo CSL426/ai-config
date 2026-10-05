@@ -193,6 +193,8 @@ you `push`: a push gathers the live configuration, so it would save this
 machine's older copy over the newer one. acg remembers the commit each apply
 and push left this machine at; a push that would gather over later commits
 lists them and asks first, and `--force` does not skip that question.
+Without a terminal it stops instead of asking; `--overwrite-newer` is how you
+say this machine's copy should win.
 
 `acg setup` ends by printing which of these two paths applies, and the
 desktop app shows the same next step on its home page, with the features
