@@ -190,7 +190,13 @@ never deleted.
 
 On a machine that has not applied the latest configuration, `apply` before
 you `push`: a push gathers the live configuration, so it would save this
-machine's older copy over the newer one.
+machine's older copy over the newer one. acg remembers the commit each apply
+and push left this machine at; a push that would gather over later commits
+lists them and asks first, and `--force` does not skip that question.
+
+`acg setup` ends by printing which of these two paths applies, and the
+desktop app shows the same next step on its home page, with the features
+below that are still off, until the step is done.
 
 ### For an AI agent
 
@@ -226,8 +232,9 @@ Things to leave alone:
 
 - **Do not edit `~/.agents/skills` or `~/.gemini/config/skills` by hand.**
   `apply` rebuilds every skill acg manages there from the Claude copy, so a
-  file added inside one disappears. Change the skill in `~/.claude/skills`
-  and push, or use `acg skill add <dir>`.
+  file added inside one disappears; apply names such files and backs them up
+  first. Change the skill in `~/.claude/skills` and push, or use
+  `acg skill add <dir>`.
 - **Do not copy acg's hooks into `settings.json` yourself.** They name this
   machine's executable, so acg keeps them out of the repository and puts
   them back on each machine. Your own hooks are synced; write their paths
