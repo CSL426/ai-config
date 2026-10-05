@@ -13,6 +13,7 @@ import "./automation";
 import "./deploy";
 import "./skills";
 import "./connection";
+import "./onboarding";
 
 import { initializeSelects } from "./select";
 import { appNotice, repoEl } from "./dom";
@@ -30,6 +31,7 @@ async function boot(): Promise<void> {
   if (state.connected && state.configured) {
     await loadSkills();
     // 打開就是想知道現在的狀況;不必先按一顆「檢查」
+    // 檢查完狀態會發 acg:status-changed,「下一步」卡片跟著更新
     await runCommand("status");
   }
 }

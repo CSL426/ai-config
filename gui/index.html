@@ -234,6 +234,32 @@ claude plugin install acg@acg</textarea>
           </button>
         </div>
 
+        <aside class="next-step" id="next-step" hidden aria-labelledby="next-step-title">
+          <div class="next-step-main" id="next-step-main">
+            <h3 class="next-step-title" id="next-step-title"></h3>
+            <p class="next-step-text" id="next-step-text"></p>
+            <button class="btn btn-primary next-step-go" id="next-step-go"></button>
+          </div>
+          <div class="next-step-suggest" id="next-step-suggest">
+            <p class="next-step-label">建議每台各自開啟</p>
+            <ul class="next-step-list">
+              <li data-feature="memory">
+                <button class="link-btn next-step-link" data-open="memory-open">共用記憶</button>
+                <span class="next-step-why">三個工具讀同一本筆記</span>
+              </li>
+              <li data-feature="autopush">
+                <button class="link-btn next-step-link" data-open="automation-open">每晚保存筆記</button>
+                <span class="next-step-why">每台設不同時間</span>
+              </li>
+              <li data-feature="autoupdate">
+                <button class="link-btn next-step-link" data-open="automation-open">每晚更新工具</button>
+                <span class="next-step-why">Claude、Codex、Antigravity 與 acg</span>
+              </li>
+            </ul>
+            <button class="link-btn next-step-dismiss" id="next-step-dismiss">知道了，不再提示</button>
+          </div>
+        </aside>
+
         <div class="tool-rows" id="tool-rows">
           <div class="tool-row" data-tool-row="claude">
             <span class="tool-dot" aria-hidden="true"></span>

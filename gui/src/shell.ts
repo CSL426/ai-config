@@ -67,7 +67,7 @@ export function syncControls(): void {
   $<HTMLButtonElement>("#info-retry").disabled = state.running;
   updateBtn.disabled = blocked || state.updateInstalled;
   for (const control of document.querySelectorAll<HTMLButtonElement>(
-    "[data-cmd], .scope-tab, #package-open",
+    "[data-cmd], .scope-tab, #package-open, #next-step-go",
   )) control.disabled = blocked || !state.configured || state.restartRequired;
   for (const control of setupBox.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
     "input, button",
