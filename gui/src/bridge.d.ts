@@ -18,6 +18,16 @@ export interface AcgInfo {
   config_error: string;
 }
 
+/** 新機器或第一台還差哪一步;首頁的「下一步」卡片照它顯示。 */
+export interface OnboardingInfo {
+  configured: boolean;
+  repo_empty: boolean;
+  applied: boolean;
+  memory: boolean;
+  autopush: boolean;
+  autoupdate: boolean;
+}
+
 export interface RunResult {
   code: number;
   output: string;
@@ -224,6 +234,7 @@ interface AcgApi {
   open_data_dir(): Promise<RunResult>;
   run(cmd: AcgCommand, tool?: string): Promise<RunResult>;
   select_project(path?: string): Promise<ProjectSelection>;
+  onboarding_info(): Promise<OnboardingInfo>;
   memory_info(projectToken?: string): Promise<MemoryInfo>;
   set_autopush(wanted: boolean): Promise<OperationResult>;
   set_handoff_reminder(enabled: boolean, threshold: number): Promise<OperationResult>;

@@ -18,6 +18,8 @@ def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(autopush, "HOME", tmp_path)
     # 狀態檔改放本機之後,沒有這行測試會寫進真的家目錄
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    # 不然會去問這台真的資料庫:它一落後遠端,這裡的推送判斷就全部變成「不推」
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: False)
     return root
 
 

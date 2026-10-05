@@ -79,13 +79,20 @@ function rememberStatus(mark: "ok" | "pending", title: string, sub: string): voi
 
 setRequestStale((reason) => markStale(reason));
 
+/** 首頁的「下一步」卡片聽這個事件;它在別的檔案,不必互相 import。 */
+function announceStatusChange(): void {
+  document.dispatchEvent(new Event("acg:status-changed"));
+}
+
 export function markStale(reason: string): void {
+  announceStatusChange();
   if (!lastStatus) { invalidateToolStates(); return; }
   lastStatus.stale = reason;
   renderHeroClock();
 }
 
 export function updateStatus(result: RunResult, tool: string): void {
+  announceStatusChange();
   if (result.code !== 0) {
     invalidateToolStates();
     setHero("fail", "檢查未完成", firstErrorLine(result.output));

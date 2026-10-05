@@ -1803,3 +1803,56 @@ summary:focus-visible,
 .deploy-group .skill-item { flex-wrap: wrap; row-gap: 0; }
 .deploy-group .skill-name { flex: 1 1 10rem; }
 .deploy-group .skill-tag { margin-inline-start: auto; color: var(--color-ink-soft); background: var(--color-paper-2); font-weight: 500; }
+
+/* ── 下一步(新機器或第一台的引導) ─────────────
+ * 設定完只剩一個存檔路徑時,新手不知道該上傳還是套用。
+ * 卡片沿用記憶總覽的左側強調邊,做完那一步就自己消失。 */
+.next-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-paper-3);
+  border-inline-start: .25rem solid var(--color-accent);
+  border-radius: var(--radius-md);
+  text-align: start;
+}
+.next-step[hidden], .next-step-main[hidden], .next-step-suggest[hidden] { display: none; }
+.next-step-main { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xs); }
+.next-step-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+.next-step-text { margin: 0; color: var(--color-ink-soft); font-size: .8125rem; line-height: 1.6; }
+.next-step-go { margin-block-start: var(--space-xs); }
+.next-step-main:not([hidden]) + .next-step-suggest {
+  padding-block-start: var(--space-sm);
+  border-top: 1px solid var(--color-paper-3);
+}
+.next-step-suggest { display: flex; flex-direction: column; gap: var(--space-xs); }
+.next-step-label { margin: 0; font-size: .75rem; font-weight: 700; color: var(--color-ink-soft); }
+.next-step-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .125rem; }
+.next-step-list li { display: flex; align-items: center; gap: var(--space-xs); flex-wrap: wrap; min-width: 0; }
+.next-step-list li::before {
+  content: "";
+  flex: none;
+  inline-size: .75rem;
+  block-size: .75rem;
+  border: 1px solid var(--color-ink-soft);
+  border-radius: 50%;
+}
+.next-step-list li.is-done::before {
+  border-color: var(--color-success);
+  background:
+    linear-gradient(var(--color-success), var(--color-success)) center / .375rem .375rem no-repeat;
+}
+.next-step-link { color: var(--color-accent-strong); padding-inline: 0; }
+.next-step-list li.is-done .next-step-link { color: var(--color-ink-soft); }
+.next-step-why { color: var(--color-ink-soft); font-size: .75rem; min-width: 0; overflow-wrap: anywhere; }
+.next-step-list li.is-done .next-step-why::after { content: "・已開啟"; color: var(--color-success); }
+.next-step-dismiss { align-self: flex-start; padding-inline: 0; font-weight: 400; }

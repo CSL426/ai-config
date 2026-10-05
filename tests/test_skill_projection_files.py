@@ -70,3 +70,30 @@ def test_a_symlink_at_the_top_of_a_skill_is_refused(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="symlink"):
         sync_skills(src, tmp_path / "dst")
     assert not (tmp_path / "dst/demo/notes.txt").exists()
+
+
+def test_apply_names_files_added_by_hand_before_removing_them(tmp_path: Path) -> None:
+    # 同事把缺的資料庫 rsync 進 ~/.agents/skills,下一次 apply 就默默不見
+    repo_dir = tmp_path / "repo"
+    home_dir = tmp_path / "home"
+    repo_dir.mkdir()
+    home_dir.mkdir()
+    copy_runtime_files(repo_dir)
+    write(repo_dir / "claude/skills/demo/SKILL.md", "---\nname: demo\ndescription: d\n---\n")
+    write(repo_dir / "codex/config.toml", 'personality = "gpt-5"\n')
+    first = run_ai_config(repo_dir, home_dir, "apply", "codex")
+    assert first.returncode == 0, first.stderr + first.stdout
+    assert "直接加進" not in first.stdout
+
+    live = home_dir / ".agents/skills/demo"
+    write(live / "data/patched.csv", "by hand\n")
+
+    second = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert second.returncode == 0, second.stderr + second.stdout
+    assert "直接加進" in second.stdout
+    assert "demo/data/patched.csv" in second.stdout
+    assert "~/.claude/skills/" in second.stdout
+    assert not (live / "data/patched.csv").exists()
+    backups = list((home_dir / ".ai-config-backup").rglob("patched.csv"))
+    assert backups, "apply should back the file up before removing it"

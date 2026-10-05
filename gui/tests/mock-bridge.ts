@@ -134,6 +134,11 @@ export async function boot(page: Page, replies: Record<string, Reply[]> = {}, co
       },
       run_update: success,
       config_info: { code: 0, output: "provider: gdrive\nsigned in: yes" },
+      // 預設是已經上手的機器:卡片不出現,其他測試與截圖不受影響
+      onboarding_info: {
+        configured: true, repo_empty: false, applied: true,
+        memory: true, autopush: true, autoupdate: true,
+      },
       open_data_dir: success,
       relogin_gdrive: { code: 0, output: "✓ Google 帳號已重新登入" },
       setup_gdrive: success,

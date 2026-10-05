@@ -4,10 +4,10 @@ The steps live in push_preflight, push_review and push_publish; this is
 the order they run in and the CLI's exit codes.
 """
 
-from .. import push_preflight, push_publish, push_review
+from .. import applied_state, push_preflight, push_publish, push_review
 from ..config import configured_remote_provider
 from ..console import log_error, log_header, log_info, log_success
-from .apply import _init_tools
+from .apply import _init_tools, _selected_tools
 from .sync import _git_failure, _remote_is_read_only, _run_repo_git
 
 
@@ -42,13 +42,17 @@ def do_push(
         return 1
 
     if preflight.ahead:
-        return push_publish._push_existing_commits(selected, preflight.ahead)
+        return _recorded(selected, push_publish._push_existing_commits(selected, preflight.ahead))
 
     # 記憶隨時都可能有未保存的修改;只有它髒不能讓工具設定跳過收集
     if preflight.has_changes and not push_preflight._only_memory_changes():
         log_info("Reviewing existing uncommitted configuration changes")
-    elif tool != push_preflight.MEMORY_SCOPE and not _init_tools(tool):
-        return 1
+    elif tool != push_preflight.MEMORY_SCOPE:
+        if not applied_state.confirm_gather(_selected_tools(tool)):
+            log_info("Cancelled; nothing was gathered")
+            return 1
+        if not _init_tools(tool):
+            return 1
 
     status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
     if status.returncode != 0:
@@ -94,4 +98,13 @@ def do_push(
         return 1
     if not ready_to_commit:
         return 1
-    return push_publish._commit_and_push(commit_message, selected, reviewed_diff)
+    return _recorded(
+        selected, push_publish._commit_and_push(commit_message, selected, reviewed_diff)
+    )
+
+
+def _recorded(selected: "list[str]", result: int) -> int:
+    # 推上去之後,這台的設定就是資料庫的 HEAD
+    if result == 0:
+        applied_state.record(selected)
+    return result

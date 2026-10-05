@@ -45,6 +45,8 @@ def usage() -> None:
     print("  pull [tool]     Safely fast-forward repo changes, then show status")
     print("  push [tool]     Gather, review, commit, and push local configuration")
     print("                  --allow-secrets skip the credential-content check")
+    print("                  asks first when it would overwrite settings another")
+    print("                  machine pushed after this one last applied")
     print("  sync [tool]     Alias for pull")
     print("  list            List managed tools")
     print("  package [skill] Zip a shared skill for Claude Desktop upload")

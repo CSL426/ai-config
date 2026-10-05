@@ -205,11 +205,13 @@ Pull still downloads the entire repository, including shared memory.
   Run `init` first if that content is worth keeping.
 - **On a machine behind the repository, `apply` before `push`.** A push
   gathers live configuration first, so it would save this machine's older
-  copy over the newer one. Check `status` for `~` lines on files you did not
-  change here.
-- **Never patch `~/.agents/skills` or `~/.gemini/config/skills` by hand.**
-  `apply` rebuilds every skill it manages from the Claude copy, deleting files
-  added inside it. Fix the skill in `~/.claude/skills` and push it.
+  copy over the newer one. Every apply and push records the commit the live
+  configuration matches; a push that would gather over later commits lists
+  them and asks, and `--force` does not answer that question. Without a
+  terminal the push stops: run `apply <tool>`, then push.
+- **`apply` names files added by hand inside a managed Codex or agy skill**
+  before it removes them (they are in the backup). Move them into the
+  Claude copy of the skill and push instead.
 - **Credentials are never copied.** `.credentials.json`, `auth.json`,
   `oauth_creds.json`, `google_accounts.json`, and `trustedFolders.json` are
   always excluded.

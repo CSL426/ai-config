@@ -1,5 +1,6 @@
 """apply / init commands: deploy repo config to tool homes, or gather it back."""
 
+from .. import applied_state
 from ..backup import create_backup
 from ..categories import validate_category
 from ..console import log_error, log_warn
@@ -39,6 +40,9 @@ def apply_tools(tools: list[str], *, category: str = "all") -> bool:
                 f"Restore from backup if needed: {snapshot}"
             )
         return False
+    if category == "all":
+        # 只套一部分時,其餘部分可能還是舊的,不算跟資料庫一致
+        applied_state.record(tools)
     return True
 
 
