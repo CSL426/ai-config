@@ -842,3 +842,35 @@ def test_setup_leaves_an_existing_identity_alone(
         capture_output=True, text=True, check=False,
     )
     assert local.returncode == 1, "已有身分就不該在儲存庫裡蓋一層"
+
+
+def test_setup_ends_by_saying_what_to_run_next(tmp_path: Path) -> None:
+    # setup 以前只印出存檔位置,新手不知道接著要 init 還是 apply
+    remote, _ = create_data_remote(tmp_path)
+    config = tmp_path / "config" / "config.json"
+    data_repo = tmp_path / "data"
+    data_repo.mkdir()
+
+    result = _run_setup(config, "--data-dir", str(data_repo), "--repo-url", str(remote))
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    # 遠端已經有 claude 的設定:這台是第二台,該 apply
+    assert "下一步" in result.stdout
+    assert " apply " in result.stdout
+    assert " init " not in result.stdout
+    assert "memory enable" in result.stdout
+
+
+def test_an_empty_repository_is_told_to_init_and_push(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    empty = tmp_path / "data"
+    for tool in ("claude", "codex", "agy"):
+        (empty / tool).mkdir(parents=True)
+    (empty / "claude/.gitkeep").write_text("", encoding="utf-8")
+
+    setup_cli._print_next_steps(empty)
+
+    out = capsys.readouterr().out
+    assert " init " in out and " push " in out
+    assert " apply " not in out

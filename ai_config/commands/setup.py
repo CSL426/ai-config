@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .. import applied_state
 from ..config import (
     GDRIVE_FOLDER_DEFAULT,
     ConfigError,
@@ -12,7 +13,8 @@ from ..config import (
     default_data_repo,
     normalize_gdrive_space,
 )
-from ..console import ask, log_error, log_info
+from ..console import ask, log_error, log_header, log_info
+from ..paths import ENTRYPOINT
 from . import setup_gdrive, setup_git
 
 
@@ -44,6 +46,25 @@ def _has_usable_remote(data_dir: Path, remote_name: str) -> bool:
     except setup_git.SetupError:
         return False
     return setup_git._remote_url(data_dir, remote_name) is not None
+
+
+def _print_next_steps(data_dir: Path) -> None:
+    """Say what to run next: setup used to end on a saved path and nothing else."""
+    log_header("下一步")
+    if applied_state.repo_has_config(data_dir):
+        print("資料庫已經有設定,這台照它設定:")
+        print(f"  {ENTRYPOINT} status    先看會改動哪些(- 開頭的是這台獨有、apply 會刪的)")
+        print(f"  {ENTRYPOINT} apply     套用到這台,會先備份到 ~/.ai-config-backup/")
+    else:
+        print("資料庫還是空的,這台是第一台:")
+        print(f"  {ENTRYPOINT} init      把這台的設定收進資料庫")
+        print(f"  {ENTRYPOINT} status    確認收進去的內容")
+        print(f"  {ENTRYPOINT} push      看過差異、確認後才上傳")
+    print("建議每台各自開啟:")
+    print(f"  {ENTRYPOINT} memory enable              三個工具共用一本筆記")
+    print(f"  {ENTRYPOINT} memory autopush enable 4   每晚保存筆記(每台設不同時間)")
+    print(f"  {ENTRYPOINT} autoupdate enable          每晚順便更新各個工具")
+    log_info(f"完整說明:{ENTRYPOINT} skill,或 README 的 After installing")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -152,6 +173,7 @@ def run_setup(argv: "list[str] | None" = None) -> int:
                     GDRIVE_FOLDER_DEFAULT,
                 )
             setup_gdrive.setup_gdrive_repository(data_dir, gdrive_folder, gdrive_space)
+            _print_next_steps(data_dir)
             return 0
 
         if (
@@ -170,6 +192,7 @@ def run_setup(argv: "list[str] | None" = None) -> int:
             replace_remote=args.replace_remote,
             account=(args.account or "").strip() or None,
         )
+        _print_next_steps(data_dir)
     except SetupCancelled:
         log_info("Cancelled; nothing was changed")
         return 130
