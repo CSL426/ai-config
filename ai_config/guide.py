@@ -193,7 +193,7 @@ Pull still downloads the entire repository, including shared memory.
   requires read access and treats missing push access as a warning, leaving
   the machine able to run `status`, `pull`, and `apply`. `push` then refuses
   up front instead of failing against the remote.
-- **Codex `[projects.*]`, `[hooks.state.*]` and top-level `notify`, `model` and
+- **Codex `[projects.*]`, `[hooks.state.*]`, `[windows]` and top-level `notify`, `model` and
   `model_reasoning_effort` are preserved** on the target machine; apply
   updates only general settings. Which model a machine runs is picked
   there, like Claude's `model`.
