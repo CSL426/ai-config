@@ -283,8 +283,26 @@ shortcut.
   }
   ```
 
+- **`command not found` right after installing or switching a tool.** The
+  installer added a new folder to PATH, but a terminal app that was already
+  running keeps the PATH it started with, and so do its new tabs. Close every
+  window of the terminal app (Windows Terminal, or the IDE whose terminal you
+  use) and start it again. To fix only the current shell, put the folder on
+  PATH yourself, e.g. in Git Bash:
+  `export PATH="$HOME/AppData/Local/Programs/OpenAI/Codex/bin:$PATH"`.
 - **`msg setup` changes nothing on Windows.** PowerShell's execution policy
   may keep `$PROFILE` from loading; setup prints how to allow it.
+## Reporting a bug
+
+Open an issue at <https://github.com/CSL426/ai-config/issues>. Include:
+
+- `acg --version` and the operating system
+- the command you ran and its full output
+- `acg status` if the problem is about what syncs
+
+Remove anything private from the output first: repository URLs, host names,
+paths under your home directory, and anything the credential check flagged.
+
 ## CLI usage
 
 ```bash
