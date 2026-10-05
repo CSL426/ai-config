@@ -135,12 +135,16 @@ def push_and_record(push: "Callable[[], int]") -> int:
         record_push()
         return code
     reason, paths = _summarize(captured.getvalue(), code)
+    _record_failure(reason, paths)
+    return code
+
+
+def _record_failure(reason: str, paths: "list[str]") -> None:
     path = failure_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
         "when": datetime.now(UTC).isoformat(), "reason": reason, "paths": paths,
     }, ensure_ascii=False), encoding="utf-8")
-    return code
 
 
 def _memory_has_changes() -> "bool | None":
@@ -210,11 +214,33 @@ def _catch_up() -> bool:
     real conflict aborts and stays for a person, because resolving one
     unattended could silently drop somebody's notes.
     """
+    head = _git("rev-parse", "HEAD")
+    before = head.stdout.strip() if head is not None and head.returncode == 0 else ""
+    stashes = _stash_count()
     result = _git("rebase", "--autostash", "@{upstream}")
-    if result is not None and result.returncode == 0:
+    if (result is not None and result.returncode == 0
+            and not _unmerged() and _stash_count() == stashes):
         return True
     _git("rebase", "--abort")
+    # 搬上去之後把本機改動套回來時衝突,git 會把改動留在 stash、把衝突標記
+    # 留在工作區,資料庫就卡在半途:之後每次 pull 都失敗,一台機器因此三天
+    # 沒同步。改動在 stash 裡完整保留,回到原本的 commit 再套回去,就是嘗試前的樣子
+    if before and stashes is not None and (_stash_count() or 0) > stashes:
+        _git("reset", "-q", "--hard", before)
+        _git("stash", "pop", "-q")
     return False
+
+
+def _stash_count() -> "int | None":
+    listed = _git("stash", "list")
+    if listed is None or listed.returncode != 0:
+        return None
+    return len(listed.stdout.splitlines())
+
+
+def _unmerged() -> bool:
+    listed = _git("diff", "--name-only", "--diff-filter=U")
+    return listed is None or listed.returncode != 0 or bool(listed.stdout.strip())
 
 
 @dataclass
@@ -309,7 +335,11 @@ def decide(stale_hours: float = DEFAULT_STALE_HOURS, preview: bool = False) -> D
             failure_path().unlink(missing_ok=True)
         return Decision(False, "記憶沒有變更")
     if not caught_up:
-        return Decision(False, "落後遠端且無法自動接上,請自己 acg pull 處理")
+        reason = "落後遠端且無法自動接上,請自己 acg pull 處理"
+        if not preview:
+            # 只是跳過的話沒有人會知道;記成失敗,新的 session 開頭就會提醒
+            _record_failure(reason, [])
+        return Decision(False, reason)
     last = _read_last_push()
     if last is not None:
         waited = datetime.now(UTC) - last

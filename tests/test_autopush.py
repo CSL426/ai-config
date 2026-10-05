@@ -10,6 +10,17 @@ import pytest
 from ai_config import autopush
 
 
+@pytest.fixture(autouse=True)
+def _never_the_real_data_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 這裡的 decide() 曾經對這台真的資料庫做 rebase --autostash,
+    # 把它卡在衝突裡三天。要模擬落後或接上的測試會自己蓋掉這兩個
+    def refuse() -> bool:
+        raise AssertionError("a test reached the real data repository")
+
+    monkeypatch.setattr(autopush, "_behind_upstream", lambda: False)
+    monkeypatch.setattr(autopush, "_catch_up", refuse)
+
+
 @pytest.fixture
 def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "memory"
@@ -18,8 +29,6 @@ def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(autopush, "HOME", tmp_path)
     # 狀態檔改放本機之後,沒有這行測試會寫進真的家目錄
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    # 不然會去問這台真的資料庫:它一落後遠端,這裡的推送判斷就全部變成「不推」
-    monkeypatch.setattr(autopush, "_behind_upstream", lambda: False)
     return root
 
 
