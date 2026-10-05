@@ -18,5 +18,8 @@ allowed-tools: Bash(acg status:*), Bash(ai-config status:*), Bash(acg push:*), B
 - 落後遠端時會被拒絕,要先 `/acg sync`。
 - 若它擋下憑證內容,不要用 `--allow-secrets` 繞過。把它抓到的檔案告訴使用者,讓他
   自己判斷。
+- 若它說「這台上次 apply 之後,資料庫又收到其他機器的設定更新」,表示這台的設定
+  比資料庫舊,push 會把別台的更新蓋回去。`--force` 跳不過這一步。把列出的更新告訴
+  使用者,建議先 `acg apply <工具>` 再 push;要不要覆蓋由他在終端機自己回答。
 
 引數:`$ARGUMENTS`

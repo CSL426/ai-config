@@ -292,6 +292,25 @@ class ManagementApi:
         finally:
             self._lock.release()
 
+    def onboarding_info(self):
+        """What a new machine still has to do; the home page shows it until done."""
+        from . import applied_state
+
+        blank = {"configured": False, "repo_empty": False, "applied": True,
+                 "memory": False, "autopush": False, "autoupdate": False}
+        if paths.CONFIG_ERROR or not (paths.SCRIPT_DIR / "claude").is_dir():
+            return blank
+        try:
+            memory = memory_index.inspect(paths.HOME).enabled
+        except (OSError, RuntimeError, ValueError):
+            memory = False
+        return {"configured": True,
+                "repo_empty": not applied_state.repo_has_config(paths.SCRIPT_DIR),
+                "applied": applied_state.has_record(),
+                "memory": memory,
+                "autopush": bool(_autopush_state()["installed"]),
+                "autoupdate": bool(_autoupdate_state()["installed"])}
+
     def memory_info(self, project_token=None):
         empty = {"data_root": str(paths.SCRIPT_DIR), "shared_path": str(paths.MEMORY_LINK),
                  "shared_status": "missing", "tracked": False, "git_status": "untracked",
@@ -599,6 +618,11 @@ class ManagementApi:
                     from .applyplan import execute
 
                     backup = execute(candidate)
+                    if candidate.category == "all":
+                        # 跟 CLI 的 apply 一樣:記下這台現在對齊資料庫的哪個 commit
+                        from . import applied_state
+
+                        applied_state.record(candidate.tools)
                     return outcome(output="套用完成", backup=backup)
                 from .commands.memory_lifecycle import execute
                 from .memory_plan import plan
