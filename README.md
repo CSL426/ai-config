@@ -243,7 +243,7 @@ Things to leave alone:
   with `~/`, not `/home/<you>/`.
 - **Settings that belong to one machine are never synced:** Claude's
   `permissions`, `env`, `model`, `effortLevel`, `autoMode`; Codex's
-  `[projects.*]`, `notify`, `model`; Antigravity's `trustedWorkspaces`. A
+  `[projects.*]`, `[windows]`, `notify`, `model`; Antigravity's `trustedWorkspaces`. A
   difference there is expected, not drift.
 - **Do not sync `~/.ssh/config`.** See
   [two GitHub accounts](docs/multiple-github-accounts.md).

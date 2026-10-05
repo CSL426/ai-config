@@ -53,6 +53,9 @@ _HOOK_STATE_HEADER = re.compile(r"^\[hooks\.state(\]|\.)")
 # Codex 自己寫的介面狀態:新模型提示顯示過幾次、做過哪些模型遷移。
 # 不是設定,同步過去只會讓每次 status 都冒出差異
 _UI_STATE_HEADER = re.compile(r"^\[(tui\.model_availability_nux|notice\.model_migrations)\]")
+# Codex 在 Windows 上自己寫的 [windows](sandbox = "unelevated" 這類),依這台
+# 能不能提權而定。不留著的話 apply 刪掉、Codex 寫回,status 永遠多一條差異
+_WINDOWS_HEADER = re.compile(r"^\[windows(\]|\.)")
 # 跟設定混在同一個區塊裡的狀態旗標:[tui] 還有 status_line 這種真正的偏好
 _MACHINE_LOCAL_TABLE_KEYS = {"tui": {"screen_reader_detection_done"}}
 _TABLE_NAME = re.compile(r"^\[([A-Za-z0-9_.-]+)\]\s*$")
@@ -66,6 +69,7 @@ def _is_machine_local_header(line: str) -> bool:
         or _MARKETPLACE_HEADER.match(line)
         or _HOOK_STATE_HEADER.match(line)
         or _UI_STATE_HEADER.match(line)
+        or _WINDOWS_HEADER.match(line)
     )
 _TOP_LEVEL_ASSIGNMENT = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
 # 模型與思考強度是每台自己挑的,常常只是為了問一個問題臨時切換;跟 Claude

@@ -847,3 +847,26 @@ def test_codex_ui_state_stays_on_each_machine() -> None:
     assert applied["notice"]["model_migrations"] == {"x": "y"}
     assert applied["notice"]["hide_full_access_warning"] is True
     assert applied["features"]["x"] is True
+
+
+def test_codex_windows_table_stays_on_the_machine_that_wrote_it(tmp_path: Path) -> None:
+    # Codex 在 Windows 自己寫 [windows] sandbox = "unelevated";apply 刪掉、
+    # Codex 寫回,status 每次都多一條差異
+    repo_dir, home_dir = make_repo(tmp_path)
+    (repo_dir / "claude").mkdir(exist_ok=True)
+    write(repo_dir / "codex/config.toml", 'personality = "pragmatic"\n')
+    write(
+        home_dir / ".codex/config.toml",
+        'personality = "pragmatic"\n\n[windows]\nsandbox = "unelevated"\n',
+    )
+
+    applied = run_ai_config(repo_dir, home_dir, "apply", "codex")
+    assert applied.returncode == 0, applied.stderr + applied.stdout
+    assert 'sandbox = "unelevated"' in (home_dir / ".codex/config.toml").read_text()
+
+    status = run_ai_config(repo_dir, home_dir, "status", "codex")
+    assert "config.toml" not in status.stdout, status.stdout
+
+    gathered = run_ai_config(repo_dir, home_dir, "init", "codex")
+    assert gathered.returncode == 0, gathered.stderr + gathered.stdout
+    assert "[windows]" not in (repo_dir / "codex/config.toml").read_text()
