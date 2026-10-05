@@ -13,6 +13,7 @@ from .sync import _git_failure, _remote_is_read_only, _run_repo_git
 
 def do_push(
     tool: str, allow_secrets: bool = False, scheduled: bool = False,
+    overwrite_newer: bool = False,
 ) -> int:
     # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
     # 才會為 True(GUI 走不到,維持硬擋)。
@@ -48,7 +49,7 @@ def do_push(
     if preflight.has_changes and not push_preflight._only_memory_changes():
         log_info("Reviewing existing uncommitted configuration changes")
     elif tool != push_preflight.MEMORY_SCOPE:
-        if not applied_state.confirm_gather(_selected_tools(tool)):
+        if not applied_state.confirm_gather(_selected_tools(tool), overwrite_newer):
             log_info("Cancelled; nothing was gathered")
             return 1
         if not _init_tools(tool):

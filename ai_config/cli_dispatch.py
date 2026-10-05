@@ -410,10 +410,13 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         args = [cmd, *positional]
 
     allow_secrets = False
+    overwrite_newer = False
     positional: list[str] = []
     for token in args[1:]:
         if cmd == "push" and token == "--allow-secrets":
             allow_secrets = True
+        elif cmd == "push" and token == "--overwrite-newer":
+            overwrite_newer = True
         else:
             positional.append(token)
     tool = positional[0] if positional else "all"
@@ -448,7 +451,7 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         if code != 0:
             return code
     elif cmd == "push":
-        code = do_push(tool, allow_secrets=allow_secrets)
+        code = do_push(tool, allow_secrets=allow_secrets, overwrite_newer=overwrite_newer)
         if code != 0:
             return code
     elif cmd == "status":

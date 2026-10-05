@@ -20,6 +20,7 @@ allowed-tools: Bash(acg status:*), Bash(ai-config status:*), Bash(acg push:*), B
   自己判斷。
 - 若它說「這台上次 apply 之後,資料庫又收到其他機器的設定更新」,表示這台的設定
   比資料庫舊,push 會把別台的更新蓋回去。`--force` 跳不過這一步。把列出的更新告訴
-  使用者,建議先 `acg apply <工具>` 再 push;要不要覆蓋由他在終端機自己回答。
+  使用者,建議先 `acg apply <工具>` 再 push。只有使用者明確說要用這台的版本覆蓋,
+  才加 `--overwrite-newer` 重跑。
 
 引數:`$ARGUMENTS`

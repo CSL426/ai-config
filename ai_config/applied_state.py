@@ -11,6 +11,7 @@ asks before gathering over commits made after it.
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from .console import confirm, log_info, log_warn
@@ -94,7 +95,7 @@ def newer_commits(tool: str) -> "list[str]":
     return [line for line in (listed or "").splitlines() if line.strip()]
 
 
-def confirm_gather(tools: "list[str]") -> bool:
+def confirm_gather(tools: "list[str]", overwrite: bool = False) -> bool:
     """Ask before a push gathers over configuration this machine never applied."""
     newer = {tool: commits for tool in tools if (commits := newer_commits(tool))}
     if not newer:
@@ -113,5 +114,13 @@ def confirm_gather(tools: "list[str]") -> bool:
     )
     names = " ".join(newer) if len(newer) < len(ALL_TOOLS) else ""
     log_info(f"建議先執行 {ENTRYPOINT} apply {names}".rstrip() + ",再 push")
+    if overwrite:
+        log_warn("已指定 --overwrite-newer:用這台的版本覆蓋上面這些更新")
+        return True
+    if not sys.stdin.isatty():
+        # 沒有終端機就沒有人能回答。讀 stdin 的話,開著卻沒人寫的管道
+        # (agent 的背景 shell)會讓 push 永遠卡住
+        log_info("確定要用這台的版本覆蓋,才加 --overwrite-newer 重新執行")
+        return False
     # --force 跳不過:這一步要人判斷是不是真的要覆蓋別台的更新
     return confirm("確定要用這台的版本覆蓋嗎? [y/N] ", forceable=False)
