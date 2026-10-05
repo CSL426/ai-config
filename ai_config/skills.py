@@ -8,7 +8,7 @@ from pathlib import Path
 from .console import log_info, log_warn
 from .frontmatter import sanitize_skill_frontmatter
 from .fsops import is_excluded, mirror_dir
-from .paths import ACKNOWLEDGED_NAME, MANIFEST_NAME, SCRIPT_DIR
+from .paths import ACKNOWLEDGED_NAME, MANIFEST_NAME, SCRIPT_DIR, tilde
 
 
 def _safe_skill_name(name: str) -> bool:
@@ -242,12 +242,49 @@ def reconcile_managed_skills(staged_skills: Path, dst_skills: Path) -> None:
     manifest.write_text("\n".join(current) + "\n", encoding="utf-8", newline="\n")
 
 
+def _hand_added(staged: Path, live: Path) -> list[str]:
+    """Files inside a live managed skill that the repository does not have."""
+    if not live.is_dir() or live.is_symlink():
+        return []
+    added = []
+    for item in sorted(live.rglob("*")):
+        relative = item.relative_to(live)
+        if item.is_dir() or is_excluded(item) or (staged / relative).exists():
+            continue
+        added.append(relative.as_posix())
+    return added
+
+
+def _warn_hand_added(dst_skills: Path, found: "dict[str, list[str]]") -> None:
+    # 同事把缺的資料庫 rsync 進 ~/.agents/skills,下一次 apply 就默默不見
+    log_warn(f"這些檔案是直接加進 {tilde(dst_skills)} 的,apply 依資料庫重建技能時會刪掉:")
+    for name, paths in found.items():
+        for path in paths[:5]:
+            print(f"    {name}/{path}")
+        if len(paths) > 5:
+            print(f"    {name}/…(另外 {len(paths) - 5} 個)")
+    log_info(
+        "apply 前已備份到 ~/.ai-config-backup/。要保留就放進 "
+        "~/.claude/skills/<技能>/ 再 push,之後每次 apply 都會帶過去"
+    )
+
+
 def apply_managed_skills(staged_skills: Path, dst_skills: Path) -> None:
     if not staged_skills.is_dir():
         return
     dst_skills.mkdir(parents=True, exist_ok=True)
+    skills = []
     for skill_dir in sorted(staged_skills.iterdir()):
         if skill_dir.is_dir() and not skill_dir.name.startswith("."):
             if not _safe_skill_name(skill_dir.name):
                 raise RuntimeError(f"Unsafe staged skill name: {skill_dir.name}")
-            mirror_dir(skill_dir, dst_skills / skill_dir.name)
+            skills.append(skill_dir)
+    found = {
+        skill.name: added
+        for skill in skills
+        if (added := _hand_added(skill, dst_skills / skill.name))
+    }
+    if found:
+        _warn_hand_added(dst_skills, found)
+    for skill_dir in skills:
+        mirror_dir(skill_dir, dst_skills / skill_dir.name)
