@@ -27,6 +27,8 @@ def _list() -> int:
         where = f"  {peer.cwd}" if peer.cwd else ""
         # 平常 id 就夠辨識;撞 id 時才補 pid,免得兩行長得一模一樣
         ident = f"{peer.id[:13]} pid {peer.pid}" if peer.id in shared and peer.pid else peer.id[:13]
+        if peer.pane:
+            ident += f" · herdr {peer.pane}"
         print(f"  {mark} {tool:<10} {name}  [{ident}]  {peer.status}{where}")
     if any(peer.unreachable for peer in peers):
         log_info("● 收得到訊息;○ 目前收不到,送給它會說明原因")

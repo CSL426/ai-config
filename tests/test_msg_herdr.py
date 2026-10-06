@@ -78,7 +78,7 @@ def test_herdr_refusing_the_prompt_is_reported(monkeypatch: pytest.MonkeyPatch, 
 
 
 def _in_panes(monkeypatch: pytest.MonkeyPatch, panes: dict) -> None:
-    monkeypatch.setattr(messaging, "_herdr_pane", lambda pid: panes.get(pid, ""))
+    monkeypatch.setattr(messaging, "_herdr_pane", lambda pid, socket_path: panes.get(pid, ""))
 
 
 def test_a_session_in_a_herdr_pane_is_listed_once_by_whichever_can_receive(
@@ -169,15 +169,19 @@ def test_the_herdr_pane_of_a_process_is_read_from_its_environment() -> None:
     # Popen 在 execve 途中就返回,那時新程式的環境還沒擺好;等它自己說開始了再讀
     child = subprocess.Popen(
         [sys.executable, "-c", "import time; print('up', flush=True); time.sleep(30)"],
-        env={**os.environ, "HERDR_PANE_ID": "w7:p3"}, stdout=subprocess.PIPE, text=True,
+        env={**os.environ, "HERDR_PANE_ID": "w7:p3", "HERDR_SOCKET_PATH": "/s/default.sock"},
+        stdout=subprocess.PIPE, text=True,
     )
     try:
         assert child.stdout is not None and child.stdout.readline().strip() == "up"
-        assert messaging._herdr_pane(child.pid) == "w7:p3"
+        assert messaging._herdr_pane(child.pid, "/s/default.sock") == "w7:p3"
+        # 每個 herdr session 都有 w1:p1;別的 session 的窗格不算
+        assert messaging._herdr_pane(child.pid, "/s/other.sock") == ""
+        assert messaging._herdr_pane(child.pid, "") == ""
     finally:
         child.kill()
         child.wait()
-    assert messaging._herdr_pane(0) == ""
+    assert messaging._herdr_pane(0, "/s/default.sock") == ""
 
 
 def test_what_antigravity_did_before_answering_is_not_the_reply() -> None:
@@ -217,7 +221,7 @@ def test_a_codex_thread_is_dated_by_its_id() -> None:
 def _codex_in_pane(monkeypatch: pytest.MonkeyPatch, started: float, cwd: str = "/w") -> list:
     thread = messaging.Peer("codex", "01a10f73-cf7a-7a91-84c8-595668f1e519", "", "set", cwd, "idle")
     monkeypatch.setattr(messaging, "codex_peers", lambda: [thread])
-    monkeypatch.setattr(messaging, "_codex_clients", lambda: [("w1:p2", started)])
+    monkeypatch.setattr(messaging, "_codex_clients", lambda socket_path: [("w1:p2", started)])
     return [(p.tool, p.id[:13], p.via) for p in messaging.list_peers()]
 
 
@@ -248,3 +252,41 @@ def test_a_process_start_time_is_read() -> None:
 
     assert abs(messaging._started(os.getpid()) - time.time()) < 3600
     assert messaging._started(0) == 0.0
+
+
+def test_a_merged_codex_keeps_its_herdr_name_and_pane(herdr, monkeypatch: pytest.MonkeyPatch) -> None:
+    """2026-10-06: a codex named rtest in herdr vanished from the list once merged."""
+    thread = messaging.Peer("codex", "01a10f73-cf7a-7a91-84c8-595668f1e519", "", "set", "/w", "idle")
+    monkeypatch.setattr(messaging, "codex_peers", lambda: [thread])
+    monkeypatch.setattr(messaging, "_codex_clients", lambda socket_path: [("w1:p2", 1791260609.79)])
+    named = {"result": {"agents": [
+        {"agent": "codex", "agent_status": "idle", "cwd": "/w", "name": "rtest", "pane_id": "w1:p2"},
+    ]}}
+    monkeypatch.setattr(messaging, "_herdr", lambda *a, timeout=10.0: named if a[:2] == ("agent", "list") else None)
+
+    peers = messaging.list_peers()
+
+    assert [(p.id[:13], p.name, p.pane) for p in peers] == [("01a10f73-cf7a", "rtest", "w1:p2")]
+    assert messaging.resolve("rtest", peers) is peers[0]
+    assert messaging.resolve("w1:p2", peers) is peers[0]
+
+
+@pytest.mark.parametrize(("env", "expected"), [
+    ({"HERDR_SOCKET_PATH": "/given.sock", "HERDR_SESSION": "acgtest"}, "/given.sock"),
+    ({"HERDR_SESSION": "acgtest"}, "/acgtest.sock"),
+    ({}, "/default.sock"),
+])
+def test_the_herdr_session_is_the_one_herdr_itself_would_use(
+    monkeypatch: pytest.MonkeyPatch, env: dict, expected: str,
+) -> None:
+    for name in ("HERDR_SOCKET_PATH", "HERDR_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    sessions = {"sessions": [
+        {"name": "default", "default": True, "socket_path": "/default.sock"},
+        {"name": "acgtest", "default": False, "socket_path": "/acgtest.sock"},
+    ]}
+    monkeypatch.setattr(messaging, "_herdr", lambda *a, timeout=10.0: sessions)
+
+    assert messaging._herdr_socket() == expected
