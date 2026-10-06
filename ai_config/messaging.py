@@ -415,6 +415,74 @@ def _herdr_pane(pid: int) -> str:
     return ""
 
 
+def _started(pid: int) -> float:
+    """When a process started, in epoch seconds; 0 where that cannot be told."""
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()
+        booted = next(
+            int(line.split()[1])
+            for line in Path("/proc/stat").read_text(encoding="utf-8").splitlines()
+            if line.startswith("btime ")
+        )
+        return booted + int(fields[19]) / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration, AttributeError):
+        return 0.0
+
+
+def _codex_clients() -> list:
+    """(pane, start time) of each codex process running in a herdr pane."""
+    found = []
+    try:
+        entries = list(Path("/proc").iterdir())
+    except OSError:
+        return found
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            if (entry / "comm").read_text(encoding="utf-8").strip() != "codex":
+                continue
+        except OSError:
+            continue
+        pane = _herdr_pane(int(entry.name))
+        started = _started(int(entry.name)) if pane else 0.0
+        if pane and started:
+            found.append((pane, started))
+    return found
+
+
+def _thread_born(thread_id: str) -> float:
+    """When a Codex thread was created: its id is a UUIDv7, led by the time in milliseconds.
+
+    The daemon's createdAt is reset when it loads a thread again, hours later.
+    """
+    digits = thread_id.replace("-", "")
+    if len(digits) != 32 or digits[12:13] != "7":
+        return 0.0
+    try:
+        return int(digits[:12], 16) / 1000
+    except ValueError:
+        return 0.0
+
+
+def _codex_pane(peer: Peer, herdr: dict, clients: list) -> str:
+    """The herdr pane whose codex started this daemon thread, when exactly one did.
+
+    A daemon thread carries no client pid. A codex opened in a pane starts
+    its thread within a second of starting; one resumed or begun with /new
+    later does not match, and stays listed through both.
+    """
+    born = _thread_born(peer.id)
+    if not born:
+        return ""
+    panes = {
+        pane for pane, started in clients
+        if 0 <= born - started <= 10 and pane in herdr
+        and herdr[pane].tool == "codex" and herdr[pane].cwd == peer.cwd
+    }
+    return panes.pop() if len(panes) == 1 else ""
+
+
 def _lock_held(path: Path) -> "bool | None":
     """Whether another process holds the lock on this file; None when it cannot be opened."""
     try:
@@ -492,14 +560,18 @@ def list_peers() -> list:
     """Every live agent once, even one that both its tool and herdr can see.
 
     An agent in a herdr pane also shows up through its own tool: Claude by
-    its session record, Antigravity by its presence lock. The entry that
-    can receive stays; when both can, the tool's own channel does.
+    its session record, Antigravity by its presence lock, Codex by the
+    daemon thread its client started. The entry that can receive stays;
+    when both can, the tool's own channel does.
     """
     local = [*claude_peers(), *codex_peers(), *agy_peers()]
     herdr = {peer.id: peer for peer in herdr_peers()}
+    clients = _codex_clients() if any(p.tool == "codex" for p in herdr.values()) else []
     kept = []
     for peer in local:
-        pane = _herdr_pane(peer.pid)
+        pane = _herdr_pane(peer.pid) or (
+            _codex_pane(peer, herdr, clients) if peer.tool == "codex" else ""
+        )
         if pane not in herdr:
             kept.append(peer)
         elif peer.unreachable:

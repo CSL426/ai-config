@@ -4,7 +4,7 @@ import json
 
 from .commands.sync import _run_repo_git
 from .console import confirm as confirm_prompt
-from .console import log_info
+from .console import forced, log_info
 from .paths import ALL_TOOLS, SCRIPT_DIR, tilde
 
 _DIFF_DISPLAY_LIMIT = 200
@@ -22,6 +22,7 @@ def _print_diff_for_review(
     full_diff: str,
     stat_args: "list[str] | None",
     review_command: str,
+    committed_command: str = "",
 ) -> None:
     # 學 git 的顯示習慣:先給 diffstat 摘要;完整 diff 只在夠短時全印,
     # 太長改提示查看指令。審查一致性比對仍使用完整 diff,不受顯示影響。
@@ -30,7 +31,11 @@ def _print_diff_for_review(
         if stat.returncode == 0 and stat.stdout.strip():
             print(stat.stdout.rstrip())
     lines = full_diff.count("\n")
-    if lines <= _DIFF_DISPLAY_LIMIT:
+    if forced():
+        # 自動確認時沒有人在看;全文只會進排程的 log,把日誌內容再抄一份
+        # 自動確認的變更馬上就會提交,到時候看的是提交後的指令
+        log_info(f"Full diff: {committed_command or review_command}")
+    elif lines <= _DIFF_DISPLAY_LIMIT:
         print(full_diff, end="" if full_diff.endswith("\n") else "\n")
     else:
         log_info(
@@ -51,6 +56,7 @@ def _review_and_confirm_push(
         staged_diff,
         ["diff", "--cached"],
         f"git -C {tilde(SCRIPT_DIR)} diff --cached",
+        f"git -C {tilde(SCRIPT_DIR)} show HEAD",
     )
 
     print()

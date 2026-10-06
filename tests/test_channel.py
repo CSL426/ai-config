@@ -70,6 +70,7 @@ def test_garbage_on_the_socket_is_refused_not_pushed(state: Path) -> None:
     server.listen(path)
     try:
         with socket.socket(socket.AF_UNIX) as conn:
+            conn.settimeout(10)
             conn.connect(str(path))
             conn.sendall(b"not json\n")
             assert conn.recv(16).strip() == b"error"
@@ -138,12 +139,18 @@ def test_a_terminal_closing_still_removes_the_socket(state: Path) -> None:
         env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
     )
     path = messaging.channel_socket(4242)
-    for _ in range(100):
-        if path.exists():
-            break
-        import time
-        time.sleep(0.05)
-    assert path.exists()
-    proc.send_signal(signal.SIGHUP)
-    proc.wait(timeout=10)
+    try:
+        for _ in range(100):
+            if path.exists():
+                break
+            import time
+            time.sleep(0.05)
+        assert path.exists()
+        proc.send_signal(signal.SIGHUP)
+        proc.wait(timeout=10)
+    finally:
+        # 子程序拿著 pytest 的 stdout;它不結束,CI 那一步就等不到輸出關閉
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
     assert not path.exists()

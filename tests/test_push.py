@@ -143,6 +143,29 @@ def test_push_review_displays_new_file_content(tmp_path: Path) -> None:
     assert run_git(data_repo, "status", "--short") == "?? claude/CLAUDE.md"
 
 
+def test_a_forced_push_lists_the_files_but_not_their_content(tmp_path: Path) -> None:
+    """Nobody reads a forced push; its output lands in the nightly log.
+
+    One Windows nightly.log carried the full text of the day's journals
+    that way, a second copy of them outside the data repository.
+    """
+    _, data_repo = create_data_remote(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    claude_home = home / ".claude"
+    claude_home.mkdir()
+    (claude_home / "settings.json").write_text("{}", encoding="utf-8")
+    (claude_home / "CLAUDE.md").write_text("private working notes\n", encoding="utf-8")
+
+    result = run_data_cli(data_repo, home, "push", "claude", "--force")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "CLAUDE.md" in result.stdout
+    assert "private working notes" not in result.stdout
+    # 已經提交了,diff --cached 看不到東西
+    assert "show HEAD" in result.stdout
+
+
 def test_acg_alias_runs_push_command(tmp_path: Path) -> None:
     _, data_repo = create_data_remote(tmp_path)
     home = tmp_path / "home"

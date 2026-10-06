@@ -205,3 +205,46 @@ def test_what_antigravity_did_before_answering_is_not_the_reply() -> None:
         "Gemini 3.8 Flash (High) | v1.2.17",
     ])
     assert messaging._after_tag(screen, "482044", body) == "DEDUP-OK"
+
+
+def test_a_codex_thread_is_dated_by_its_id() -> None:
+    # UUIDv7:前 48 位元是建立時間的毫秒
+    assert messaging._thread_born("01a10f73-cf7a-7a91-84c8-595668f1e519") == 1791260610.426
+    assert messaging._thread_born("not-a-uuid") == 0.0
+    assert messaging._thread_born("01a10f73-cf7a-4a91-84c8-595668f1e519") == 0.0  # v4 沒有時間
+
+
+def _codex_in_pane(monkeypatch: pytest.MonkeyPatch, started: float, cwd: str = "/w") -> list:
+    thread = messaging.Peer("codex", "01a10f73-cf7a-7a91-84c8-595668f1e519", "", "set", cwd, "idle")
+    monkeypatch.setattr(messaging, "codex_peers", lambda: [thread])
+    monkeypatch.setattr(messaging, "_codex_clients", lambda: [("w1:p2", started)])
+    return [(p.tool, p.id[:13], p.via) for p in messaging.list_peers()]
+
+
+def test_a_codex_started_in_a_pane_is_listed_once(herdr, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 2026-10-06 實測:client 12:23:29.79 啟動,thread 12:23:30.43 建立
+    listed = _codex_in_pane(monkeypatch, started=1791260609.79)
+
+    assert ("codex", "01a10f73-cf7a", "") in listed
+    assert not any(pane == "w1:p2" for _tool, pane, _via in listed)
+
+
+@pytest.mark.parametrize(("started", "cwd"), [
+    (1791260500.0, "/w"),   # 很久以前開的 client 後來 /new 或 resume:對不上
+    (1791260609.79, "/x"),  # 時間對得上但目錄不同
+])
+def test_a_codex_that_does_not_match_stays_listed_twice(
+    herdr, monkeypatch: pytest.MonkeyPatch, started: float, cwd: str,
+) -> None:
+    listed = _codex_in_pane(monkeypatch, started=started, cwd=cwd)
+
+    assert ("codex", "01a10f73-cf7a", "") in listed
+    assert ("codex", "w1:p2", "herdr") in listed
+
+
+@linux_only
+def test_a_process_start_time_is_read() -> None:
+    import time
+
+    assert abs(messaging._started(os.getpid()) - time.time()) < 3600
+    assert messaging._started(0) == 0.0
