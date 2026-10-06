@@ -174,3 +174,46 @@ def test_baseline_does_not_swallow_skills_acg_deploys(tmp_path: Path) -> None:
 
     # acg 自己部署的不該被記成「工具自帶」
     assert acknowledged_skills(live) == {"docx"}
+
+
+def test_one_verdict_for_both_skill_checks(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Windows 2026-10-06: "✓ No unmanaged skill directories" followed by a ⚠ for one."""
+    monkeypatch.setattr(status_cmd, "check_unmanaged_skills", lambda tool: False)
+    monkeypatch.setattr(status_cmd, "check_vendor_skill_candidates", lambda tool: True)
+
+    status_cmd.check_skills_on_disk("all")
+
+    assert "No unmanaged skill directories" not in capsys.readouterr().out
+
+
+def test_nothing_on_either_check_says_so_once(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(status_cmd, "check_unmanaged_skills", lambda tool: False)
+    monkeypatch.setattr(status_cmd, "check_vendor_skill_candidates", lambda tool: False)
+
+    status_cmd.check_skills_on_disk("all")
+
+    assert capsys.readouterr().out.count("No unmanaged skill directories") == 1
+
+
+def test_a_windows_store_path_is_not_half_backslashes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(status_cmd, "tilde", lambda path: "~\\.claude\\skills")
+
+    assert status_cmd._shown_dir(Path("x")) == "~/.claude/skills/"
+
+
+def test_no_shared_mirrors_is_said_not_left_blank(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai_config import mirrors
+
+    monkeypatch.setattr(mirrors, "SCRIPT_DIR", tmp_path)
+    mirrors.check_shared_mirrors()
+    assert "No shared skill mirrors" in capsys.readouterr().out
+
+    (tmp_path / "claude" / "shared").mkdir(parents=True)
+    mirrors.check_shared_mirrors()
+    assert "No shared skill mirrors" in capsys.readouterr().out

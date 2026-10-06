@@ -402,7 +402,12 @@ def check_env_paths(tool: str) -> None:
     log_info("這類值常是從別台同步過來的殘留;env 不再同步,要自己刪掉")
 
 
-def check_vendor_skill_candidates(tool: str) -> None:
+def _shown_dir(path: Path) -> str:
+    # tilde() 在 Windows 給反斜線;後面再接 / 就成了 ~\.claude\skills/
+    return tilde(path).replace("\\", "/") + "/"
+
+
+def check_vendor_skill_candidates(tool: str) -> bool:
     """Name live skill directories the repository does not know about.
 
     Claude's store has no manifest, so unmanaged_skills is blind there.
@@ -410,24 +415,25 @@ def check_vendor_skill_candidates(tool: str) -> None:
     is discovered the way skills/synced/ was: by apply deleting it.
     """
     if tool not in ("all", "claude"):
-        return
+        return False
     names = vendor_skill_candidates(
         CLAUDE_HOME / "skills",
         claude_source_dir() / "skills",
         CLAUDE_VENDOR_SKILL_DIRS,
     )
     if not names:
-        return
+        return False
     log_warn(f"claude: {len(names)} skill 目錄只在 live,資料庫沒有")
-    print(f"    {tilde(CLAUDE_HOME / 'skills')}/")
+    print(f"    {_shown_dir(CLAUDE_HOME / 'skills')}")
     print(f"    {', '.join(names)}")
     log_info(
         "手動安裝的技能會被 apply 刪掉;若是某個工具自己維護的快取,"
         "要加進 CLAUDE_VENDOR_SKILL_DIRS 排除"
     )
+    return True
 
 
-def check_unmanaged_skills(tool: str) -> None:
+def check_unmanaged_skills(tool: str) -> bool:
     found = False
     for label, store in _skill_stores(tool):
         names = unmanaged_skills(store)
@@ -437,7 +443,7 @@ def check_unmanaged_skills(tool: str) -> None:
         log_warn(
             f"{label}: {len(names)} skill(s) on disk that ai-config does not manage"
         )
-        print(f"    {tilde(store)}/")
+        print(f"    {_shown_dir(store)}")
         # 一行一個路徑會刷掉整個畫面(某些機器有數十個工具自帶的技能),
         # 超過門檻就併成一行名稱清單
         if len(names) > _UNMANAGED_LIST_THRESHOLD:
@@ -450,7 +456,14 @@ def check_unmanaged_skills(tool: str) -> None:
         log_info(
             f"工具自帶的技能可以標記為已知,不再列出:{ENTRYPOINT} ignore-skills [tool]"
         )
-    else:
+    return found
+
+
+def check_skills_on_disk(tool: str) -> None:
+    """Both checks, then one verdict: each used to print its own, and they contradicted."""
+    found = check_unmanaged_skills(tool)
+    found = check_vendor_skill_candidates(tool) or found
+    if not found:
         log_success("No unmanaged skill directories")
 
 
@@ -489,8 +502,7 @@ def show_status(tool: str) -> None:
     log_header("Shared skill mirrors")
     check_shared_mirrors()
     log_header("Unmanaged skills")
-    check_unmanaged_skills(tool)
-    check_vendor_skill_candidates(tool)
+    check_skills_on_disk(tool)
     check_env_paths(tool)
     log_header("Plugin drift")
     check_plugin_drift()
