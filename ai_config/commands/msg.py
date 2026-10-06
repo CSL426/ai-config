@@ -1,6 +1,7 @@
 """`acg msg`: talk to other live agent sessions by name."""
 
 import os
+import shutil
 
 from .. import messaging
 from ..console import log_error, log_info, log_success
@@ -29,7 +30,20 @@ def _list() -> int:
         print(f"  {mark} {tool:<10} {name}  [{ident}]  {peer.status}{where}")
     if any(peer.unreachable for peer in peers):
         log_info("● 收得到訊息;○ 目前收不到,送給它會說明原因")
+    if messaging.outside_herdr_agy(peers):
+        _herdr_hint()
     return 0
+
+
+def _herdr_hint() -> None:
+    if shutil.which("herdr"):
+        log_info("Antigravity 要在 herdr 的窗格裡開才收得到:先執行 herdr,再在裡面開 agy")
+        return
+    log_info("Antigravity 要在 herdr 的窗格裡開才收得到;herdr 沒裝,安裝方式:")
+    if os.name == "nt":
+        print('    powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"')
+    else:
+        print("    curl -fsSL https://herdr.dev/install.sh | sh")
 
 
 def _send(args: list) -> int:

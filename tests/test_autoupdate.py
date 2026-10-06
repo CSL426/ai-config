@@ -1,5 +1,6 @@
 """Daily update of acg and the AI CLIs: every tool asked, failures remembered."""
 
+import json
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -22,9 +23,10 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 class FakeTools:
     """Each tool reports a version and moves to the next one when told to update."""
 
-    def __init__(self, versions: dict, failing: "dict | None" = None) -> None:
+    def __init__(self, versions: dict, failing: "dict | None" = None, herdr_running: int = 0) -> None:
         self.versions = dict(versions)
         self.failing = failing or {}
+        self.herdr_running = herdr_running
         self.calls: list = []
         self.envs: dict = {}
 
@@ -36,6 +38,9 @@ class FakeTools:
         self.calls.append([name, *argv[1:]])
         if argv[-1] == "update":
             self.envs[name] = extra_env
+        if argv[1:3] == ["session", "list"]:
+            sessions = [{"name": f"s{n}", "running": n < self.herdr_running} for n in range(3)]
+            return 0, json.dumps({"sessions": sessions})
         if argv[-1] == "--version":
             return 0, f"{name} {self.versions[name][0]}\n"
         if name in self.failing:
@@ -46,10 +51,12 @@ class FakeTools:
 
 @pytest.fixture
 def tools(state: Path, monkeypatch: pytest.MonkeyPatch):
-    def install(versions: dict, failing: "dict | None" = None) -> FakeTools:
-        fake = FakeTools(versions, failing)
+    def install(versions: dict, failing: "dict | None" = None, herdr_running: int = 0) -> FakeTools:
+        fake = FakeTools(versions, failing, herdr_running)
         monkeypatch.setattr(autoupdate, "_binary", fake.binary)
+        monkeypatch.setattr(autoupdate, "_herdr_binary", lambda: fake.binary("herdr"))
         monkeypatch.setattr(autoupdate, "_run", fake.run)
+        monkeypatch.setattr(autoupdate, "_herdr_latest", lambda: "")
         return fake
     return install
 
@@ -382,3 +389,62 @@ def test_the_desktop_app_toggles_it(monkeypatch: pytest.MonkeyPatch) -> None:
     enable.assert_called_once_with()
     disable.assert_called_once_with()
     assert not api._lock.locked()
+
+
+def test_herdr_is_updated_when_no_session_is_running(tools) -> None:
+    fake = tools({"herdr": ["0.9.3", "0.9.4"], "acg": ["1.0.122"]})
+
+    assert autoupdate.run() == 0
+
+    updates = [call[0] for call in fake.calls if call[-1] == "update"]
+    assert updates == ["herdr", "acg"]
+    assert autoupdate.last_run()["steps"][0].line() == "✓ herdr:0.9.3 → 0.9.4"
+
+
+def test_herdr_waits_for_a_person_while_a_session_runs(tools, monkeypatch: pytest.MonkeyPatch) -> None:
+    # herdr update 會重開 server,把窗格裡的 agent 一起中斷
+    fake = tools({"herdr": ["0.9.3", "0.9.4"], "acg": ["1.0.122"]}, herdr_running=1)
+    monkeypatch.setattr(autoupdate, "_herdr_latest", lambda: "0.9.4")
+
+    assert autoupdate.run() == 0
+
+    assert ["herdr", "update"] not in fake.calls
+    herdr = autoupdate.last_run()["steps"][0]
+    assert herdr.warn and herdr.ok
+    assert "0.9.4" in herdr.note and "herdr update" in herdr.note
+    assert autoupdate.failures()[1] == [herdr]
+
+
+@pytest.mark.parametrize("latest", ["0.9.3", "0.9.2", ""])
+def test_a_running_herdr_with_nothing_newer_is_not_reported(
+    tools, monkeypatch: pytest.MonkeyPatch, latest: str,
+) -> None:
+    fake = tools({"herdr": ["0.9.3"], "acg": ["1.0.122"]}, herdr_running=2)
+    monkeypatch.setattr(autoupdate, "_herdr_latest", lambda: latest)
+
+    assert autoupdate.run() == 0
+
+    assert ["herdr", "update"] not in fake.calls
+    assert autoupdate.failures()[1] == []
+
+
+def test_a_herdr_from_a_package_manager_is_left_to_it(
+    state: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(autoupdate, "_herdr_binary", lambda: "/opt/homebrew/Cellar/herdr/0.9.3/bin/herdr")
+    calls: list = []
+    monkeypatch.setattr(autoupdate, "_run", lambda argv, **_k: (calls.append(argv), (0, "herdr 0.9.3"))[1])
+
+    step = autoupdate._update_herdr()
+
+    assert step.ok and not step.warn and "套件管理員" in step.note
+    assert calls == [["/opt/homebrew/Cellar/herdr/0.9.3/bin/herdr", "--version"]]
+
+
+def test_herdr_is_never_installed(tools) -> None:
+    fake = tools({"acg": ["1.0.122"]})
+
+    assert autoupdate.run() == 0
+
+    assert [s.name for s in autoupdate.last_run()["steps"]] == ["acg"]
+    assert not any(call[0] == "herdr" for call in fake.calls)

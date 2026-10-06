@@ -18,7 +18,11 @@ allowed-tools: Bash(acg autoupdate status), Bash(ai-config autoupdate status), B
 自動更新沒有自己的排程,跟「每天自動上傳記憶」共用同一個每晚排程和時段:先依序叫
 `claude update`、`codex update`、`agy update`,最後是 `acg update`(它會順便更新 /acg
 plugin),然後才用剛裝好的 acg 上傳記憶。所以白天發布的修正,當晚上傳就會用到。這台沒裝的
-工具直接略過;一個失敗不會擋住其他的,也不會擋住上傳。每台機器各自設定,只影響這台。
+工具直接略過;一個失敗不會擋住其他的,也不會擋住上傳。
+
+有裝 herdr 的機器也會更新 herdr(acg 從不安裝它)。但 `herdr update` 會重開 server、中斷窗格裡的
+agent,所以只要有 herdr session 在跑就不更新;這時若真的有新版,會標 ⚠ 請使用者方便時自己跑
+`herdr update`。用 Homebrew、mise、Nix 裝的 herdr 交給那些套件管理員。每台機器各自設定,只影響這台。
 
 兩個開關互相獨立:開自動更新不會順便開自動上傳,反之亦然;只要有一個開著,排程就在。
 改時間用 `acg memory autopush enable <時>` 或桌面程式的「每晚排程的時間」,兩者一起移動。
