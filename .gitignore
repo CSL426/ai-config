@@ -41,3 +41,6 @@ __pycache__/
 /acg-test.exe
 docs/slides/art/*.png
 docs/slides/art/*.jpg
+
+# uv run 會在根目錄自動產生;這個專案不用 uv 鎖版本
+uv.lock
