@@ -65,6 +65,9 @@ class Peer:
     unreachable: str = ""
     # "herdr":由 herdr 打字進它的終端機;空字串是工具自己的管道
     via: str = ""
+    # 也在 herdr 窗格裡跑時的窗格編號與 herdr 名稱:合併成一行後還要找得到它
+    pane: str = ""
+    pane_name: str = ""
 
     @property
     def label(self) -> str:
@@ -401,18 +404,44 @@ def _lock_holder(path: Path) -> int:
     return 0
 
 
-def _herdr_pane(pid: int) -> str:
-    """The herdr pane a process runs in, from its environment; empty where that cannot be told."""
-    if not pid:
+def _herdr_socket() -> str:
+    """The socket of the herdr session herdr's own CLI talks to.
+
+    HERDR_SOCKET_PATH wins over HERDR_SESSION, which wins over the default
+    session (checked against herdr 0.9.3). Empty when it cannot be told.
+    """
+    explicit = os.environ.get("HERDR_SOCKET_PATH", "").strip()
+    if explicit:
+        return explicit
+    wanted = os.environ.get("HERDR_SESSION", "").strip()
+    listed = _herdr("session", "list", "--json", timeout=5.0)
+    sessions = (listed or {}).get("sessions")
+    for session in sessions if isinstance(sessions, list) else []:
+        if not isinstance(session, dict):
+            continue
+        if (session.get("name") == wanted) if wanted else session.get("default"):
+            return str(session.get("socket_path") or "")
+    return ""
+
+
+def _herdr_pane(pid: int, socket_path: str) -> str:
+    """The pane of that herdr session a process runs in; empty where that cannot be told.
+
+    Pane ids repeat across herdr sessions: every session has a w1:p1.
+    """
+    if not pid or not socket_path:
         return ""
     try:
         environ = Path(f"/proc/{pid}/environ").read_bytes()
     except OSError:
         return ""
-    for entry in environ.split(b"\0"):
-        if entry.startswith(b"HERDR_PANE_ID="):
-            return entry.partition(b"=")[2].decode("utf-8", "replace")
-    return ""
+    values = dict(
+        entry.decode("utf-8", "replace").split("=", 1)
+        for entry in environ.split(b"\0") if b"=" in entry
+    )
+    if os.path.normpath(values.get("HERDR_SOCKET_PATH", "")) != os.path.normpath(socket_path):
+        return ""
+    return values.get("HERDR_PANE_ID", "")
 
 
 def _started(pid: int) -> float:
@@ -429,8 +458,8 @@ def _started(pid: int) -> float:
         return 0.0
 
 
-def _codex_clients() -> list:
-    """(pane, start time) of each codex process running in a herdr pane."""
+def _codex_clients(socket_path: str) -> list:
+    """(pane, start time) of each codex process running in that herdr session's panes."""
     found = []
     try:
         entries = list(Path("/proc").iterdir())
@@ -444,7 +473,7 @@ def _codex_clients() -> list:
                 continue
         except OSError:
             continue
-        pane = _herdr_pane(int(entry.name))
+        pane = _herdr_pane(int(entry.name), socket_path)
         started = _started(int(entry.name)) if pane else 0.0
         if pane and started:
             found.append((pane, started))
@@ -566,10 +595,13 @@ def list_peers() -> list:
     """
     local = [*claude_peers(), *codex_peers(), *agy_peers()]
     herdr = {peer.id: peer for peer in herdr_peers()}
-    clients = _codex_clients() if any(p.tool == "codex" for p in herdr.values()) else []
+    socket_path = _herdr_socket() if herdr else ""
+    clients = (
+        _codex_clients(socket_path) if any(p.tool == "codex" for p in herdr.values()) else []
+    )
     kept = []
     for peer in local:
-        pane = _herdr_pane(peer.pid) or (
+        pane = _herdr_pane(peer.pid, socket_path) or (
             _codex_pane(peer, herdr, clients) if peer.tool == "codex" else ""
         )
         if pane not in herdr:
@@ -577,7 +609,10 @@ def list_peers() -> list:
         elif peer.unreachable:
             continue
         else:
-            del herdr[pane]
+            # 在 herdr 取的名字和窗格編號仍然要能用來送
+            twin = herdr.pop(pane)
+            peer.pane, peer.pane_name = pane, twin.name
+            peer.name = peer.name or twin.name
             kept.append(peer)
     return [*kept, *herdr.values()]
 
@@ -602,9 +637,9 @@ def shared_ids(peers: list) -> set:
 
 
 def resolve(target: str, peers: "list | None" = None) -> Peer:
-    """A peer by exact name, full id, an id prefix of eight or more, or pid."""
+    """A peer by exact name, full id, herdr pane or name, an id prefix of eight or more, or pid."""
     peers = list_peers() if peers is None else peers
-    exact = [p for p in peers if target in (p.name, p.id)]
+    exact = [p for p in peers if target in {p.name, p.id, p.pane, p.pane_name} - {""}]
     if not exact and len(target) >= 8:
         exact = [p for p in peers if p.id.startswith(target)]
     if not exact and target.isdigit():
@@ -732,15 +767,25 @@ def _reply_text(turn: dict) -> str:
     return (finals or texts or [""])[-1]
 
 
+_ROLLOUT_EMPTY = "is empty"
+
+
 def wait_codex_reply(peer: Peer, tag: str, timeout: float, poll: float = 2.0) -> str:
     """The answer to the turn our message started, once that turn ends."""
     assert peer.home is not None
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        with CodexDaemon(peer.home) as daemon:
-            turns = daemon.call("thread/turns/list", {
-                "threadId": peer.id, "limit": 10, "itemsView": "full",
-            }).get("data", [])
+        try:
+            with CodexDaemon(peer.home) as daemon:
+                turns = daemon.call("thread/turns/list", {
+                    "threadId": peer.id, "limit": 10, "itemsView": "full",
+                }).get("data", [])
+        except MessagingError as exc:
+            # 新 thread 的第一輪剛開始時 rollout 檔還是空的,daemon 讀它會報錯;
+            # 寫進去之後就讀得到,這不是送信失敗
+            if _ROLLOUT_EMPTY not in str(exc):
+                raise
+            turns = []
         for turn in turns:
             if not _turn_has_tag(turn, tag):
                 continue

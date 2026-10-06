@@ -398,7 +398,11 @@ listens on a named pipe; listing and sending work the same way.
   matched by time: its thread id (a UUIDv7) was created within seconds of
   the pane's codex process starting, in the same directory; one resumed or
   begun with `/new` later does not match. Elsewhere, or unmatched, it may
-  appear twice; both entries reach it. When an Antigravity
+  appear twice; both entries reach it. Only panes of the herdr session being
+  listed count (`HERDR_SOCKET_PATH`, else `HERDR_SESSION`, else the default,
+  the order herdr itself uses), since every session has its own `w1:p1`. A
+  merged entry shows `herdr <pane>` and still answers to its herdr name and
+  pane id. When an Antigravity
   runs outside herdr, `msg list` says to open it inside herdr, with herdr's
   install command if herdr is missing; acg does not install herdr.
 

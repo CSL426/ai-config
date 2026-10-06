@@ -238,3 +238,65 @@ def test_setup_refuses_a_file_it_cannot_read_back(tmp_path: Path) -> None:
     with pytest.raises(messaging.MessagingError, match="UTF-8"):
         messaging.install_shell_block(rc, windows=False)
     assert rc.read_bytes() == "# 註解\n".encode("cp950")
+
+
+def test_a_new_threads_empty_rollout_is_waited_out_not_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """2026-10-06: the first message to a fresh Codex in herdr failed this way.
+
+    The turn had started; the daemon just had not written the rollout yet.
+    """
+    answers = [
+        messaging.MessagingError(
+            "thread/turns/list:failed to read thread: rollout at /x.jsonl is empty"
+        ),
+        {"data": [{"status": "completed", "items": [
+            {"type": "userMessage", "content": [{"type": "text", "text": "#abc123 hi"}]},
+            {"type": "agentMessage", "text": "R1-OK", "phase": "finalAnswer"},
+        ]}]},
+    ]
+
+    class Daemon:
+        def __init__(self, home) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc) -> None:
+            return None
+
+        def call(self, method, params):
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+    monkeypatch.setattr(messaging, "CodexDaemon", Daemon)
+    peer = messaging.Peer("codex", "t", "", "set", "/w", "idle", home=tmp_path)
+
+    assert messaging.wait_codex_reply(peer, "abc123", timeout=5, poll=0.01) == "R1-OK"
+
+
+def test_other_daemon_errors_while_waiting_still_fail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    class Daemon:
+        def __init__(self, home) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc) -> None:
+            return None
+
+        def call(self, method, params):
+            raise messaging.MessagingError("thread/turns/list:thread not found")
+
+    monkeypatch.setattr(messaging, "CodexDaemon", Daemon)
+    peer = messaging.Peer("codex", "t", "", "set", "/w", "idle", home=tmp_path)
+
+    with pytest.raises(messaging.MessagingError, match="not found"):
+        messaging.wait_codex_reply(peer, "abc123", timeout=5, poll=0.01)
