@@ -18,6 +18,14 @@ pytestmark = pytest.mark.skipif(
     reason="the Codex daemon listens on a unix socket",
 )
 
+
+
+@pytest.fixture(autouse=True)
+def _no_real_herdr(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 不然會列出這台真的 herdr 裡開著的 agent,清單就跟測試預期的對不上
+    monkeypatch.setattr(messaging, "herdr_peers", list)
+
+
 _GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 

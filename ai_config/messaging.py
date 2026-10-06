@@ -15,6 +15,11 @@ Windows: the daemon's socket is a real AF_UNIX socket there too, but
 CPython on Windows has no AF_UNIX, so acg talks through
 `codex app-server proxy`, which relays its stdin and stdout to the
 socket. acg's own Claude channel listens on a named pipe instead.
+
+herdr: an agent started in a herdr pane, of any tool, is reached by
+herdr typing the message into its terminal (`herdr agent prompt`). That
+is how an Antigravity conversation receives at all, and a Codex there
+needs no `--remote`.
 """
 
 import base64
@@ -58,6 +63,8 @@ class Peer:
     pid: int = 0
     # 收不到時說明原因;空字串代表送得進去
     unreachable: str = ""
+    # "herdr":由 herdr 打字進它的終端機;空字串是工具自己的管道
+    via: str = ""
 
     @property
     def label(self) -> str:
@@ -369,7 +376,10 @@ def agy_peers() -> list:
             pass
         peers.append(Peer(
             tool="agy", id=conversation, name=title, account="", cwd="", status="open",
-            unreachable="Antigravity 開著的對話收不到外部訊息;它能用 acg msg send 主動傳話",
+            unreachable=(
+                "Antigravity 開著的對話收不到外部訊息;它能用 acg msg send 主動傳話,"
+                "在 herdr 裡開的 Antigravity 則收得到"
+            ),
         ))
     return peers
 
@@ -399,8 +409,56 @@ def _lock_held(path: Path) -> "bool | None":
         return None
 
 
+def _herdr(*args: str, timeout: float = 10.0) -> "dict | None":
+    """One herdr CLI call; None when herdr is missing or its server is not running."""
+    binary = shutil.which("herdr")
+    if binary is None:
+        return None
+    try:
+        done = subprocess.run(
+            # herdr 的輸出一律是 UTF-8;照系統語系解碼的話 Windows 上中文會亂掉
+            [binary, *args], capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for text in (done.stdout, done.stderr):
+        try:
+            value = json.loads(text)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def herdr_peers() -> list:
+    """Agents running in the default herdr session's panes.
+
+    herdr types into the pane's terminal, so every one of them can
+    receive, whichever tool it is. Without herdr, or with no server
+    running, there are simply none.
+    """
+    listed = _herdr("agent", "list", timeout=5.0)
+    agents = (listed or {}).get("result", {}).get("agents", [])
+    peers = []
+    for agent in agents if isinstance(agents, list) else []:
+        if not isinstance(agent, dict) or not agent.get("pane_id"):
+            continue
+        status = str(agent.get("agent_status", ""))
+        peers.append(Peer(
+            tool=str(agent.get("agent", "")), id=str(agent["pane_id"]),
+            name=str(agent.get("name") or ""), account="herdr",
+            cwd=str(agent.get("cwd", "")), status=status, via="herdr",
+            unreachable=(
+                "它停在確認或問題畫面,先在 herdr 裡處理" if status == "blocked" else ""
+            ),
+        ))
+    return peers
+
+
 def list_peers() -> list:
-    return [*claude_peers(), *codex_peers(), *agy_peers()]
+    return [*claude_peers(), *codex_peers(), *agy_peers(), *herdr_peers()]
 
 
 def shared_ids(peers: list) -> set:
@@ -566,6 +624,69 @@ def wait_codex_reply(peer: Peer, tag: str, timeout: float, poll: float = 2.0) ->
     raise MessagingError(f"等了 {int(timeout)} 秒還沒有回覆;訊息已送達,稍後可在對方的畫面看")
 
 
+def _after_tag(screen: str, tag: str, body: str = "") -> str:
+    """The agent's reply: what the pane shows after the message carrying the tag."""
+    lines = screen.splitlines()
+    marked = [index for index, line in enumerate(lines) if f"#{tag}" in line]
+    if not marked:
+        return ""
+    tail = lines[marked[-1] + 1:]
+    # 畫面先重印一次訊息本身(終端機會自動換行),之後才是對方的回答。
+    # 要從訊息開頭一段一段接著對,不能只看「有沒有出現在訊息裡」:
+    # 回答常常就是訊息裡要求的那句話
+    rest = " ".join(body.split("\n", 1)[1].split()) if "\n" in body else ""
+    while tail:
+        piece = " ".join(tail[0].split())
+        if not piece:
+            tail = tail[1:]
+            continue
+        if not rest.startswith(piece):
+            break
+        rest = rest[len(piece):].lstrip()
+        tail = tail[1:]
+    # 回答之後是輸入框:分隔線、提示符號,再下面是模型名稱與額度條,都不是回答
+    for index, line in enumerate(tail):
+        stripped = line.strip()
+        if len(stripped) >= 10 and set(stripped) <= set("─━═-"):
+            tail = tail[:index]
+            break
+        if stripped in (">", "›", "❯") or stripped.startswith(("› ", "❯ ")):
+            tail = tail[:index]
+            break
+    return "\n".join(tail).strip()
+
+
+def send_herdr(peer: Peer, body: str, tag: str, wait: float) -> str:
+    """Have herdr type the message into the agent's pane; with wait, read its reply."""
+    args = ["agent", "prompt", peer.id, body]
+    if wait > 0:
+        args += ["--wait", "--timeout", str(int(wait * 1000))]
+    result = _herdr(*args, timeout=(wait + 30) if wait > 0 else 30)
+    if result is None:
+        raise MessagingError("herdr 沒有回應;確認 herdr 在跑(herdr status)")
+    error = result.get("error")
+    if isinstance(error, dict):
+        raise MessagingError(f"herdr:{error.get('message') or error.get('code')}")
+    if wait <= 0:
+        return ""
+    read = _herdr_text("agent", "read", peer.id, "--source", "recent-unwrapped", "--lines", "200")
+    return _after_tag(read, tag, body)
+
+
+def _herdr_text(*args: str) -> str:
+    binary = shutil.which("herdr")
+    if binary is None:
+        return ""
+    try:
+        done = subprocess.run(
+            [binary, *args], capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=30, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout if done.returncode == 0 else ""
+
+
 def send(
     target: str, text: str, wait: float = 0.0, sender: str = "",
 ) -> "tuple[Peer, str]":
@@ -576,6 +697,9 @@ def send(
     if peer.unreachable:
         raise MessagingError(f"{peer.label} 收不到訊息:{peer.unreachable}")
     sender = sender.strip() or sender_name()
+    if peer.via == "herdr":
+        body, tag = compose(text, sender, reply_as=peer.label if _can_receive(sender) else "")
+        return peer, send_herdr(peer, body, tag, wait)
     if peer.tool == "claude":
         # channel 會把寄件人放進標籤屬性,內容不必再包一層
         send_claude(peer, sender, text)
