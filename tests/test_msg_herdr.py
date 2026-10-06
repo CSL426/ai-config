@@ -166,9 +166,13 @@ def test_the_holder_of_a_presence_lock_is_found(tmp_path) -> None:
 
 @linux_only
 def test_the_herdr_pane_of_a_process_is_read_from_its_environment() -> None:
-    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
-                             env={**os.environ, "HERDR_PANE_ID": "w7:p3"})
+    # Popen 在 execve 途中就返回,那時新程式的環境還沒擺好;等它自己說開始了再讀
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time; print('up', flush=True); time.sleep(30)"],
+        env={**os.environ, "HERDR_PANE_ID": "w7:p3"}, stdout=subprocess.PIPE, text=True,
+    )
     try:
+        assert child.stdout is not None and child.stdout.readline().strip() == "up"
         assert messaging._herdr_pane(child.pid) == "w7:p3"
     finally:
         child.kill()
