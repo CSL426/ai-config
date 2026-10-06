@@ -370,6 +370,12 @@ since Windows Python has no unix sockets, and a Claude session's channel
 listens on a named pipe; listing and sending work the same way.
 - Antigravity cannot receive: an open conversation keeps its own state,
   and a message sent past it forks the conversation. It can still send.
+- Agents running in herdr panes (the default herdr session; `HERDR_SESSION`
+  picks another) are listed as `<tool> herdr` with their pane id, and herdr
+  types the message into the pane (`herdr agent prompt`). That is how an
+  Antigravity conversation receives, and a Codex there needs no `--remote`.
+  An agent stopped at a question or approval screen is shown ○: answer it in
+  herdr first. `--wait` reads the reply back from the pane.
 
 A message to Codex carries the exact reply command, with `--from` set to
 the recipient's name, when the sender can receive. A failed delivery or

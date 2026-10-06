@@ -82,6 +82,8 @@ def usage() -> None:
     print("                  block in ~/.bashrc ($PROFILE on Windows): claude-msg")
     print("                  starts a Claude that can receive, codex attaches to")
     print("                  its daemon; --print only shows the block")
+    print("                  agents in herdr panes (any tool, Antigravity too)")
+    print("                  are listed and reached through herdr")
     print("  memory <status|enable|disable|adopt|release|path|push|autopush>")
     print("                  adopt [專案路徑|all|--scan [目錄]] sync one project's")
     print("                    or find every unsynced one below a directory;")

@@ -222,7 +222,7 @@ machine.
 | Save the notebook every night | `acg memory autopush enable [hour]` | Every machine; give each a different hour |
 | Update Claude Code, Codex, Antigravity and acg nightly | `acg autoupdate enable` | Every machine; runs in the autopush slot |
 | Start a tool's five-hour usage window at chosen times | `acg keepalive enable [HH:MM ...] [tool]` | **One machine per account**; the window belongs to the account |
-| Send messages to other live sessions | `acg msg setup`, then start Claude with `claude-msg` | Linux and Windows; macOS Claude cannot receive yet |
+| Send messages to other live sessions | `acg msg setup`, then start Claude with `claude-msg`; or start any agent in [herdr](https://github.com/herdrdev/herdr) | Linux and Windows; macOS Claude cannot receive yet. Antigravity receives only when it runs in herdr |
 | Record Codex and Antigravity sessions in the journal | `acg memory enable codex` / `agy` | Where you use them |
 | Refuse commit messages that are not `type: description` | `acg hooks enable commit-style` | Optional |
 
