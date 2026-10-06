@@ -3,7 +3,6 @@
 import shlex
 from pathlib import Path
 
-from .. import memory_paths
 from ..console import HELP_FLAGS, log_error, log_info, log_success, log_warn
 from ..paths import ENTRYPOINT
 
@@ -32,7 +31,8 @@ def _handoff(rest: list[str]) -> int:
             return _handoff_list(Path(args[0]) if args else None)
         if action == "write" and len(args) >= 2:
             note = hand.write(args[0], " ".join(args[1:]))
-            log_success(f"已記下交接:{note.thread}")
+            # 記在哪個專案要講:接手的 session 從別的目錄開就會找不到
+            log_success(f"已記下交接:{note.thread}(專案 {note.project})")
             # 接手的人用的是 /acg pickup 或一句「接著做」;這行會被 session
             # 照抄給使用者,只給指令會讓人以為得自己打。指令留著給沒有 plugin 的環境,
             # 名稱含空格時要引號,否則照著貼會被拆成多個參數
@@ -47,6 +47,8 @@ def _handoff(rest: list[str]) -> int:
             # 這份筆記的任務是交到下一個人手上,收工時由接手的人再寫一份
             note = hand.claim(args[0] if args else "")
             log_success(f"已接手:{note.thread}(這則交接已結案,收工時再寫新的)")
+            if note.project != hand.home_project():
+                log_info(f"這條線記在專案 {note.project},不是這個 session 的專案")
             print()
             print(note.body)
             return 0
@@ -109,14 +111,17 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
         )
     # 結束的線留在磁碟上當紀錄,但這裡問的是「有什麼可以接手」,
     # 把它們一起列出來只會讓人多判斷一次哪條還活著
+    project = hand.home_project(cwd)
     notes = [
-        note for note in hand.load_all(memory_paths.project_key(cwd).key)
+        note for note in hand.load_all(project)
         if note.state != hand.DONE
     ]
+    # 這個 session 自己留在別的專案的線,不講的話會被當成沒有,
+    # 然後去接這裡唯一一條別人的舊線
+    elsewhere = hand.named_elsewhere(project) if cwd is None else []
     if not notes:
         where = f"{cwd} 這個專案" if cwd is not None else "這個專案"
         log_info(f"{where}沒有待接手的工作線")
-        return 0
     for note in notes:
         age = hand.age_in_days(note.created)
         # 一條線放了幾天,就是該不該接它的理由;當天開的不用說
@@ -126,4 +131,9 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
         stale = "  ⚠ 可能已過期" if hand.is_stale(note) else ""
         print(f"  ○ {note.name}{waited}{stale}")
         print(f"    {hand.summary(note.body)}")
+    for note in elsewhere:
+        log_info(
+            f"這個 session 在專案 {note.project} 留了一條線:{note.name};"
+            "不帶名稱的 claim 會接它"
+        )
     return 0

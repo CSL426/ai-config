@@ -72,27 +72,52 @@ def _sessions_dir() -> Path:
     return CLAUDE_HOME / "sessions"
 
 
-def session_name() -> str:
-    """The name this session was given, or "" when it has none or it cannot be read.
+def _session_record() -> dict:
+    """What Claude Code keeps about this session in sessions/<pid>.json.
 
-    The id changes on /clear and the name does not, so the name is what
-    ties a handoff to the session that picks it up after clearing.
-    Claude Code keeps it in sessions/<pid>.json -- internal state, not an
-    interface, so anything unreadable here just means no name.
+    Internal state, not an interface: anything unreadable is an empty record.
     """
     me = session_id()
     root = _sessions_dir()
     if not me or not root.is_dir():
-        return ""
+        return {}
     for path in root.glob("*.json"):
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         if isinstance(record, dict) and record.get("sessionId") == me:
-            name = record.get("name")
-            return name.strip() if isinstance(name, str) else ""
-    return ""
+            return record
+    return {}
+
+
+def session_name() -> str:
+    """The name this session was given, or "" when it has none or it cannot be read.
+
+    The id changes on /clear and the name does not, so the name is what
+    ties a handoff to the session that picks it up after clearing.
+    """
+    name = _session_record().get("name")
+    return name.strip() if isinstance(name, str) else ""
+
+
+def session_home() -> "Path | None":
+    """The directory this session was started in, or None outside a session."""
+    cwd = _session_record().get("cwd")
+    if not isinstance(cwd, str) or not cwd:
+        return None
+    path = Path(cwd)
+    return path if path.is_dir() else None
+
+
+def home_project(cwd: "Path | None" = None) -> str:
+    """The project a thread belongs to: the session's, not wherever its shell wandered.
+
+    A session that works in a repository cloned inside its workspace has
+    its shell sitting there; after /clear the new session starts back in
+    the workspace and would look under another key.
+    """
+    return project_key(cwd or session_home()).key
 
 
 @dataclass
@@ -277,7 +302,7 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
     note = Handoff(
         path=path,
         thread=thread.strip(),
-        project=project_key(cwd).key,
+        project=home_project(cwd),
         state=OPEN,
         author=session_id() or (existing.author if existing else ""),
         claimed_by="",
@@ -303,24 +328,38 @@ def _load_or_fail(name: str) -> Handoff:
     return note
 
 
+def named_elsewhere(project: str) -> list[Handoff]:
+    """Live threads this session's name left under other projects."""
+    mine = session_name()
+    if not mine:
+        return []
+    return [
+        note for note in load_all()
+        if note.state != DONE and note.session_name == mine and note.project != project
+    ]
+
+
 def _own_thread() -> Handoff:
     """The one live thread this session's name left for it.
 
     handoff, /clear, pickup: the same name on both ends, so the session
-    need not be told which thread is its own. Anything but exactly one
-    match is handed back to the person to choose.
+    need not be told which thread is its own. This project's threads come
+    first; a thread written under another project (by an older acg, or
+    from a shell inside a nested repository) is still this session's.
+    Anything but exactly one match is handed back to the person to choose.
     """
     mine = session_name()
     if not mine:
         raise ValueError("讀不到這個 session 的名稱,請指定要認領的工作線")
+    project = home_project()
     candidates = [
-        note for note in load_all(project_key().key)
+        note for note in load_all(project)
         if note.state != DONE and note.session_name == mine
-    ]
+    ] or named_elsewhere(project)
     if not candidates:
         raise ValueError(f"沒有 session「{mine}」留下的工作線,請指定要認領的工作線")
     if len(candidates) > 1:
-        names = "、".join(note.thread for note in candidates)
+        names = "、".join(f"{note.thread}({note.project})" for note in candidates)
         raise ValueError(f"session「{mine}」留下不只一條線:{names},請指定")
     return candidates[0]
 
