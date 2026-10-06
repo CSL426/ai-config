@@ -236,6 +236,9 @@ the notebook has not changed or when a push happened within the last 12 hours.
 Machines with no schedule get the same thing opportunistically at the end of any
 acg command; set `AI_CONFIG_NO_AUTOPUSH=1` to suppress that. Both paths skip the
 confirmation but keep the credential check, so a secret still blocks the push.
+A push nobody confirms (the schedule, or `--force`) prints the files and the
+diffstat but not the diff itself, which would only copy the notebook into the
+nightly log.
 
 An unattended push that fails is remembered with its reason and the files
 involved, until a later push succeeds or nothing is left to push. `memory
@@ -391,7 +394,11 @@ listens on a named pipe; listing and sending work the same way.
 - An agent in a herdr pane that its own tool also lists (Claude by its
   session record, Antigravity by its presence lock) is listed once on Linux,
   where the process's `HERDR_PANE_ID` tells which pane it is in: the entry
-  that can receive stays. Elsewhere it may appear twice. When an Antigravity
+  that can receive stays. A Codex attached to its daemon from a pane is
+  matched by time: its thread id (a UUIDv7) was created within seconds of
+  the pane's codex process starting, in the same directory; one resumed or
+  begun with `/new` later does not match. Elsewhere, or unmatched, it may
+  appear twice; both entries reach it. When an Antigravity
   runs outside herdr, `msg list` says to open it inside herdr, with herdr's
   install command if herdr is missing; acg does not install herdr.
 

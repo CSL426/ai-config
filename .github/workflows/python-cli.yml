@@ -30,6 +30,8 @@ jobs:
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    # 卡住時別空等到 GitHub 預設的六小時上限
+    timeout-minutes: 30
     env:
       PYTHONUTF8: "1"
     strategy:

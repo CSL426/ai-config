@@ -13,7 +13,8 @@ allowed-tools: Bash(acg autoupdate status), Bash(ai-config autoupdate status), B
 
 要看完整的過程或查失敗原因,每晚的完整輸出在:Linux 是
 `journalctl --user -u acg-autopush.service`,Windows 和 macOS 是 `~/.local/state/acg/nightly.log`
-(Windows 只留最後一晚)。
+(Windows 只留最後一晚)。上傳記憶那段只列出檔名和增減行數,不印內容;要看改了什麼,照它印的
+`git -C … show HEAD` 去資料庫查。
 
 自動更新沒有自己的排程,跟「每天自動上傳記憶」共用同一個每晚排程和時段:先依序叫
 `claude update`、`codex update`、`agy update`,最後是 `acg update`(它會順便更新 /acg
