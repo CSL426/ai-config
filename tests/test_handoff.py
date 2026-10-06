@@ -582,11 +582,11 @@ def named(notebook: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     sessions.mkdir(parents=True)
     monkeypatch.setattr(handoff, "_sessions_dir", lambda: sessions)
 
-    def name_it(session: str, name: str, pid: int = 100) -> None:
-        (sessions / f"{pid}.json").write_text(
-            json.dumps({"pid": pid, "sessionId": session, "name": name}),
-            encoding="utf-8",
-        )
+    def name_it(session: str, name: str, pid: int = 100, cwd: "Path | None" = None) -> None:
+        record = {"pid": pid, "sessionId": session, "name": name}
+        if cwd is not None:
+            record["cwd"] = str(cwd)
+        (sessions / f"{pid}.json").write_text(json.dumps(record), encoding="utf-8")
 
     return name_it
 
@@ -704,3 +704,95 @@ def test_the_hint_after_writing_points_at_pickup(
     out = capsys.readouterr().out
     assert "/acg pickup" in out
     assert out.index("/acg pickup") < out.index("memory handoff claim")
+
+
+@pytest.fixture
+def nested(named, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Issue #43: a workspace repository with another one cloned inside it."""
+    workspace = tmp_path / "GL"
+    inner = workspace / "elabasia"
+    inner.mkdir(parents=True)
+
+    def by_path(cwd: "Path | None" = None) -> memory_paths.ProjectKey:
+        here = (cwd or Path.cwd()).resolve()
+        name = "aswg--elabasia" if here == inner.resolve() else "csl426--gl"
+        return memory_paths.ProjectKey(name, True, "t")
+
+    monkeypatch.setattr(handoff, "project_key", by_path)
+    monkeypatch.setattr(memory_paths, "project_key", by_path)
+    named("session-one", "SC", cwd=workspace)
+    return workspace, inner
+
+
+def test_a_thread_belongs_to_where_the_session_started_not_where_its_shell_is(
+    nested, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _workspace, inner = nested
+    monkeypatch.chdir(inner)
+
+    assert handoff.write("SQL 改寫", "內容").project == "csl426--gl"
+
+
+def test_outside_a_session_the_shell_directory_still_decides(
+    nested, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _workspace, inner = nested
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "")
+    monkeypatch.chdir(inner)
+
+    assert handoff.write("手動", "內容").project == "aswg--elabasia"
+
+
+def test_claim_finds_this_sessions_thread_under_another_project(
+    nested, named, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Written by an older acg from the inner repository; /clear started back in the workspace.
+
+    claim said this session had left nothing, and pickup then took the one
+    stale thread of the workspace instead.
+    """
+    from ai_config.commands import memory as command
+
+    workspace, inner = nested
+    handoff.write("SQL 改寫", "## Next\n- 驗證", cwd=inner)
+    named("session-old", "另一人", pid=300, cwd=workspace)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-old")
+    handoff.write("十四天前的線", "舊的")
+
+    named("session-after-clear", "SC", cwd=workspace)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-after-clear")
+    monkeypatch.chdir(workspace)
+
+    assert command.run_memory(["handoff", "list"]) == 0
+    listed = capsys.readouterr().out
+    assert "十四天前的線" in listed
+    assert "aswg--elabasia" in listed and "SQL" in listed
+
+    assert command.run_memory(["handoff", "claim"]) == 0
+    out = capsys.readouterr().out
+    assert "已接手:SQL 改寫" in out and "aswg--elabasia" in out
+    assert {n.thread for n in handoff.load_all() if n.state != handoff.DONE} == {"十四天前的線"}
+
+
+def test_this_projects_thread_wins_over_one_elsewhere(nested) -> None:
+    _workspace, inner = nested
+    handoff.write("別處的", "內容", cwd=inner)
+    handoff.write("這裡的", "內容")
+
+    assert handoff.claim().thread == "這裡的"
+
+
+def test_two_threads_elsewhere_are_not_guessed_between(nested, tmp_path: Path) -> None:
+    _workspace, inner = nested
+    handoff.write("一", "內容", cwd=inner)
+    handoff.write("二", "內容", cwd=inner)
+
+    with pytest.raises(ValueError, match="aswg--elabasia"):
+        handoff.claim()
+
+
+def test_writing_says_which_project(nested, capsys: pytest.CaptureFixture[str]) -> None:
+    from ai_config.commands import memory_handoff
+
+    assert memory_handoff._handoff(["write", "線", "內容"]) == 0
+    assert "csl426--gl" in capsys.readouterr().out

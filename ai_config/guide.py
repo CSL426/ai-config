@@ -318,7 +318,13 @@ ends, `handoff list [path]` to see what is waiting (a path reads another
 project's threads), `handoff claim [thread]`
 to take one over (with no name, the one thread this session's name left
 — the name survives `/clear`, so handoff, `/clear`, pickup needs no
-choosing), `handoff done <thread>` to close one nobody will pick up. A
+choosing), `handoff done <thread>` to close one nobody will pick up.
+Inside a Claude session a thread belongs to the project the session was
+started in (read from Claude Code's session record), not the directory its
+shell has moved to, e.g. a repository cloned inside the workspace; `write`
+says which project it used. With no name, `claim` looks in that project
+first and then in every other one, and `list` mentions this session's
+threads that sit under another project. A
 note is free text, but `## Goal / State / Verified / Refuted / Unknowns /
 Next` headings let `list` show what is still open instead of the first
 line, and keep what was checked apart from what was guessed. Picking a

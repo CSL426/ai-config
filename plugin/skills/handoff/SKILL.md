@@ -67,7 +67,8 @@ acg memory handoff remind disable
 acg memory handoff write "<名稱>" "<內容>"
 ```
 
-這行是格式示範,要換成你決定的名稱與內容。執行完把結果回報給使用者,告訴他可以 `/clear`,
+這行是格式示範,要換成你決定的名稱與內容。輸出會說記在哪個專案(以這個 session 啟動的目錄為準,
+不是 shell 目前所在的目錄)。執行完把結果回報給使用者,告訴他可以 `/clear`,
 之後打 `/acg pickup` 或說「接著做」就能接回來。
 
 引數:`$ARGUMENTS`
