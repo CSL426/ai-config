@@ -376,12 +376,43 @@ def agy_peers() -> list:
             pass
         peers.append(Peer(
             tool="agy", id=conversation, name=title, account="", cwd="", status="open",
+            pid=_lock_holder(lock),
             unreachable=(
                 "Antigravity 開著的對話收不到外部訊息;它能用 acg msg send 主動傳話,"
                 "在 herdr 裡開的 Antigravity 則收得到"
             ),
         ))
     return peers
+
+
+def _lock_holder(path: Path) -> int:
+    """The pid holding a flock on this file, from /proc/locks; 0 where that cannot be told."""
+    try:
+        found = path.stat()
+        listed = Path("/proc/locks").read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    # 1: FLOCK  ADVISORY  WRITE 2840782 08:02:102367394 0 EOF(裝置號是十六進位)
+    where = f"{os.major(found.st_dev):02x}:{os.minor(found.st_dev):02x}:{found.st_ino}"
+    for line in listed.splitlines():
+        fields = line.split()
+        if len(fields) > 5 and fields[1] == "FLOCK" and fields[5] == where and fields[4].isdigit():
+            return int(fields[4])
+    return 0
+
+
+def _herdr_pane(pid: int) -> str:
+    """The herdr pane a process runs in, from its environment; empty where that cannot be told."""
+    if not pid:
+        return ""
+    try:
+        environ = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return ""
+    for entry in environ.split(b"\0"):
+        if entry.startswith(b"HERDR_PANE_ID="):
+            return entry.partition(b"=")[2].decode("utf-8", "replace")
+    return ""
 
 
 def _lock_held(path: Path) -> "bool | None":
@@ -458,7 +489,35 @@ def herdr_peers() -> list:
 
 
 def list_peers() -> list:
-    return [*claude_peers(), *codex_peers(), *agy_peers(), *herdr_peers()]
+    """Every live agent once, even one that both its tool and herdr can see.
+
+    An agent in a herdr pane also shows up through its own tool: Claude by
+    its session record, Antigravity by its presence lock. The entry that
+    can receive stays; when both can, the tool's own channel does.
+    """
+    local = [*claude_peers(), *codex_peers(), *agy_peers()]
+    herdr = {peer.id: peer for peer in herdr_peers()}
+    kept = []
+    for peer in local:
+        pane = _herdr_pane(peer.pid)
+        if pane not in herdr:
+            kept.append(peer)
+        elif peer.unreachable:
+            continue
+        else:
+            del herdr[pane]
+            kept.append(peer)
+    return [*kept, *herdr.values()]
+
+
+def outside_herdr_agy(peers: list) -> bool:
+    """Whether an Antigravity runs where no message reaches it.
+
+    Without /proc an agy in a herdr pane is listed twice, so only more
+    local entries than herdr ones show one is really outside.
+    """
+    local = sum(1 for peer in peers if peer.tool == "agy" and peer.via != "herdr")
+    return local > sum(1 for peer in peers if peer.tool == "agy" and peer.via == "herdr")
 
 
 def shared_ids(peers: list) -> set:
@@ -653,7 +712,18 @@ def _after_tag(screen: str, tag: str, body: str = "") -> str:
         if stripped in (">", "›", "❯") or stripped.startswith(("› ", "❯ ")):
             tail = tail[:index]
             break
-    return "\n".join(tail).strip()
+    # 回答前它可能先想、先查:收起來的思考是標題加一行摘要,工具呼叫一行一個
+    start = 0
+    for index, line in enumerate(tail):
+        stripped = line.strip()
+        if stripped.startswith("▸ Thought for "):
+            start = index + 2
+        elif _ACTIVITY.match(stripped):
+            start = index + 1
+    return "\n".join(tail[start:]).strip()
+
+
+_ACTIVITY = re.compile(r"^(● \w+\(.*\)( \(ctrl\+o to expand\))?|⎿.*)$")
 
 
 def send_herdr(peer: Peer, body: str, tag: str, wait: float) -> str:

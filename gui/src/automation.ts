@@ -208,8 +208,8 @@ function renderAutoupdate(info: MemoryInfo): void {
     : "";
 
   $("#autoupdate-hint").textContent = state.installed && state.time
-    ? `每晚 ${state.time} 先更新 Claude Code、Codex、Antigravity 和 acg，再用新版上傳記憶；時間在上方「每晚排程的時間」改。`
-    : "每晚先更新 Claude Code、Codex、Antigravity 和 acg，再用新版上傳記憶；沒裝的略過，一個失敗不影響其他。";
+    ? `每晚 ${state.time} 先更新 Claude Code、Codex、Antigravity、herdr（沒有 session 在跑時）和 acg，再用新版上傳記憶；時間在上方「每晚排程的時間」改。`
+    : "每晚先更新 Claude Code、Codex、Antigravity、herdr（沒有 session 在跑時）和 acg，再用新版上傳記憶；沒裝的略過，一個失敗不影響其他。";
   const row = $("#autoupdate-steps-row");
   row.hidden = !state.installed;
   if (!state.installed) return;

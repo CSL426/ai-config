@@ -75,7 +75,7 @@ def usage() -> None:
     print("  autoupdate <status|enable [時]|disable|run>")
     print("                  update acg, Claude Code, Codex and Antigravity nightly,")
     print("                  before the memory push, on autopush's schedule; run does")
-    print("                  it now")
+    print("                  it now. herdr too, but only while no session of it runs")
     print("  msg list | setup [--print] | send <名稱、id 或 pid> <訊息> [--wait [秒]] [--from <名稱>]")
     print("                  talk to another live Claude/Codex session by name;")
     print("                  setup writes the Claude channel config and keeps a")

@@ -315,6 +315,83 @@ def _update_tool(tool: str) -> "Step | None":
     return step
 
 
+_HERDR_LATEST = "https://herdr.dev/latest.json"
+# 套件管理員裝的 herdr 由那邊更新,herdr update 自己也會拒絕
+_HERDR_MANAGED = ("/nix/store/", "/Cellar/", "/homebrew/", "/mise/")
+
+
+def _herdr_binary() -> "str | None":
+    """herdr if installed; never installed by acg, only kept current."""
+    found = shutil.which("herdr")
+    if found:
+        return found
+    for name in ("herdr", "herdr.exe"):
+        candidate = HOME / ".local" / "bin" / name
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _herdr_running(binary: str) -> "int | None":
+    """How many herdr sessions have a server running; None when it cannot be told."""
+    code, output = _run([binary, "session", "list", "--json"], timeout=30)
+    try:
+        sessions = json.loads(output).get("sessions") if code == 0 else None
+    except (ValueError, AttributeError):
+        sessions = None
+    if not isinstance(sessions, list):
+        return None
+    return sum(1 for session in sessions if isinstance(session, dict) and session.get("running"))
+
+
+def _herdr_latest() -> str:
+    """The stable channel's newest version; empty when it cannot be fetched."""
+    from urllib.request import Request, urlopen
+
+    # herdr.dev 擋 Python 預設的 User-Agent(403)
+    request = Request(_HERDR_LATEST, headers={"User-Agent": "acg-autoupdate"})
+    try:
+        with urlopen(request, timeout=30) as response:
+            version = json.loads(response.read().decode("utf-8")).get("version")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return version if isinstance(version, str) and _VERSION.fullmatch(version) else ""
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(part) for part in version.split("."))
+
+
+def _update_herdr() -> "Step | None":
+    """Update herdr, but never under a running server.
+
+    A plain `herdr update` stops and restarts every running server, which
+    ends the agents in its panes; `--handoff` only tries to keep them. So
+    with a session running the update waits for a person, and says so only
+    when there is a newer version to wait for.
+    """
+    binary = _herdr_binary()
+    if binary is None:
+        return None
+    before = _version([binary])
+    resolved = Path(binary).resolve().as_posix()
+    if any(marker in resolved for marker in _HERDR_MANAGED):
+        return Step("herdr", before=before, note=f"{before} 由套件管理員安裝,跟著它更新")
+    running = _herdr_running(binary)
+    if running is None:
+        return Step("herdr", before=before, ok=False, note="讀不到 herdr session 狀態,不敢更新")
+    if running:
+        # 預覽頻道沒有可比的版本號,查到的穩定版也舊了就當作沒有新版
+        latest = _herdr_latest()
+        if not latest or not before or _version_key(latest) <= _version_key(before):
+            return Step("herdr", before=before)
+        return Step("herdr", before=before, warn=True, note=(
+            f"有新版 {latest}(目前 {before}),但有 {running} 個 session 在跑;"
+            "herdr update 會重開 server、中斷窗格裡的 agent,方便時自己執行 herdr update"
+        ))
+    return _update("herdr", [binary], ["update"])
+
+
 def _update_acg() -> Step:
     return _update("acg", paths.scheduled_command(), ["update"])
 
@@ -339,6 +416,9 @@ def run() -> int:
 
 def _run_all() -> int:
     steps = [step for step in (_update_tool(tool) for tool in TOOLS) if step]
+    herdr = _update_herdr()
+    if herdr:
+        steps.append(herdr)
     steps.append(_update_acg())
     for step in steps:
         print(step.line(), flush=True)

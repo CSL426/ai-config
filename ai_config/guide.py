@@ -39,7 +39,7 @@ project, status, pull, push, and sync.
 | `deploy --remove [dir]` | take back everything deploy put into that project |
 | `list` | managed tools, file counts, backup snapshot count |
 | `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send> [tool]` | anchor this machine's usage window for claude, codex or agy; off by default, settings stay local |
-| `autoupdate <status\\|enable [hour]\\|disable\\|run>` | update acg, Claude Code, Codex and Antigravity nightly, before the memory push; off by default |
+| `autoupdate <status\\|enable [hour]\\|disable\\|run>` | update acg, Claude Code, Codex, Antigravity and herdr nightly, before the memory push; off by default |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `gui [--shortcut\\|--browser\\|--port <n>]` | open the desktop app: a window on Windows, the same page in the browser on Linux and macOS or without a display; `--port` only prints the URL, for `ssh -L`; `--shortcut` puts acg on the desktop and in the app menu (Windows, Linux; the Windows installer does it on first install) |
 | `setup` | configure the data repo remote and verify push access |
@@ -251,7 +251,12 @@ independent: turning on updates never turns on the memory push, the schedule
 stays while either is on, and its time is the autopush slot (change it with
 `memory autopush enable <hour>` or the desktop app). Each run asks every CLI on the
 machine to update itself — `claude update`, `codex update`, `agy update` — and
-then `acg update`, which also refreshes the /acg plugin. A tool that is not
+then `acg update`, which also refreshes the /acg plugin. herdr, when installed
+(acg never installs it), is updated with `herdr update` only while no herdr
+session is running, because that command restarts the server and ends the
+agents in its panes; with one running and a newer version out
+(`herdr.dev/latest.json`), the step is marked ⚠ for the user to update by hand.
+A herdr from Homebrew, mise or Nix is left to that package manager. A tool that is not
 installed is skipped; a Codex installed through npm is reported, not updated,
 because its directory usually needs sudo. One failure does not stop the rest.
 `autoupdate run` does the same thing now.
@@ -375,7 +380,14 @@ listens on a named pipe; listing and sending work the same way.
   types the message into the pane (`herdr agent prompt`). That is how an
   Antigravity conversation receives, and a Codex there needs no `--remote`.
   An agent stopped at a question or approval screen is shown ○: answer it in
-  herdr first. `--wait` reads the reply back from the pane.
+  herdr first. `--wait` reads the reply back from the pane, without the
+  thinking and tool calls the agent showed before answering.
+- An agent in a herdr pane that its own tool also lists (Claude by its
+  session record, Antigravity by its presence lock) is listed once on Linux,
+  where the process's `HERDR_PANE_ID` tells which pane it is in: the entry
+  that can receive stays. Elsewhere it may appear twice. When an Antigravity
+  runs outside herdr, `msg list` says to open it inside herdr, with herdr's
+  install command if herdr is missing; acg does not install herdr.
 
 A message to Codex carries the exact reply command, with `--from` set to
 the recipient's name, when the sender can receive. A failed delivery or

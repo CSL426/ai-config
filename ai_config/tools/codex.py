@@ -363,7 +363,7 @@ def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
                 )
                 _write_config(target, merged, source_stat)
                 log_success(
-                    "config.toml (merged, preserved [projects.*] and Codex-managed plugins)"
+                    "config.toml (merged, preserved [projects.*], [windows] and Codex-managed plugins)"
                 )
             else:
                 filtered = filter_codex_config(source.read_text(encoding="utf-8"))
