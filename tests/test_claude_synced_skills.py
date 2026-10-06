@@ -14,6 +14,8 @@ def _skills(root: Path) -> Path:
     write(root / "mine/SKILL.md", "user skill\n")
     # Claude Code downloads these itself and refreshes them on its own.
     write(root / "synced/abc-123/pdf/SKILL.md", "first-party skill\n")
+    # 它換掉的舊版搬進自己的回收桶
+    write(root / ".trash/1791256041835-224080-9KVZoc/pdf/SKILL.md", "replaced\n")
     return root
 
 
@@ -25,6 +27,7 @@ def test_mirror_leaves_the_vendor_cache_out_of_the_repo(tmp_path: Path) -> None:
 
     assert (repo / "mine/SKILL.md").is_file()
     assert not (repo / "synced").exists()
+    assert not (repo / ".trash").exists()
 
 
 def test_mirror_never_deletes_the_live_cache(tmp_path: Path) -> None:
@@ -36,6 +39,7 @@ def test_mirror_never_deletes_the_live_cache(tmp_path: Path) -> None:
     mirror_dir(repo, live, exclude_dir_names=CLAUDE_VENDOR_SKILL_DIRS)
 
     assert (live / "synced/abc-123/pdf/SKILL.md").is_file()
+    assert (live / ".trash/1791256041835-224080-9KVZoc/pdf/SKILL.md").is_file()
 
 
 def test_stage_overlay_skips_it_too(tmp_path: Path) -> None:
@@ -61,7 +65,9 @@ def test_status_does_not_offer_to_remove_it(
 
     removals = command._planned_removals("claude", stage, live)
 
-    assert all("synced" not in path.as_posix() for path in removals), removals
+    assert all(
+        "synced" not in path.as_posix() and ".trash" not in path.as_posix() for path in removals
+    ), removals
 
 
 def test_an_unknown_live_skill_dir_is_named(tmp_path: Path) -> None:
@@ -72,6 +78,7 @@ def test_an_unknown_live_skill_dir_is_named(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     write(live / "mine/SKILL.md", "user skill\n")
     write(live / "synced/abc/pdf/SKILL.md", "first-party\n")
+    write(live / ".trash/1791256041835-224080-9KVZoc/pdf/SKILL.md", "replaced\n")
     write(live / "some-other-vendor/cache/SKILL.md", "not ours\n")
     write(repo / "mine/SKILL.md", "user skill\n")
 
