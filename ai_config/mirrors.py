@@ -4,7 +4,7 @@ import hashlib
 import re
 from pathlib import Path
 
-from .console import CYAN, NC, log_success, log_warn
+from .console import CYAN, NC, log_info, log_success, log_warn
 from .paths import HOME, SCRIPT_DIR, tilde
 
 
@@ -46,6 +46,8 @@ def _content_hash(path: Path) -> str:
 def check_shared_mirrors() -> None:
     shared_root = SCRIPT_DIR / "claude" / "shared"
     if not shared_root.is_dir():
+        # 標題底下什麼都沒有,看起來像檢查沒跑
+        log_info("No shared skill mirrors")
         return
 
     checked = 0
@@ -83,5 +85,7 @@ def check_shared_mirrors() -> None:
             )
             stale += 1
 
-    if checked > 0 and stale == 0:
+    if checked == 0:
+        log_info("No shared skill mirrors")
+    elif stale == 0:
         log_success(f"All {checked} mirrored shared skills up to date")
