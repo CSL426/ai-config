@@ -52,12 +52,7 @@ def _project_shared_hooks(tools: list[str]) -> None:
     """Codex and Antigravity keep hooks outside what apply mirrors; Claude's ride in settings.json."""
     from .. import shared_hooks
 
-    changed = []
-    if "codex" in tools:
-        changed += shared_hooks.project_codex()
-    if "agy" in tools:
-        changed += shared_hooks.project_agy()
-    for path in changed:
+    for path in shared_hooks.project_tools(tools):
         log_success(f"shared hooks → {tilde(path)}")
 
 

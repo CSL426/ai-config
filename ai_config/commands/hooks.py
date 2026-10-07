@@ -61,11 +61,14 @@ def _list_shared() -> None:
     from .. import shared_hooks
 
     log_header("Shared hooks(Claude Code 寫一次,同步給 Codex 與 Antigravity)")
-    defined = shared_hooks.load_all()
-    if not defined:
+    defined, broken = shared_hooks.load_readable()
+    for reason in broken:
+        # 壞掉的定義會讓 apply 停下來,不會默默把它從各工具移除
+        log_error(f"{reason};修好之前 apply 會停在這裡")
+    if not defined and not broken:
         log_info(f"還沒有共用的 hook;分享 Claude Code 的 hook:{ENTRYPOINT} hooks share")
         return
-    untrusted = []
+    untrusted = set()
     for hook in defined:
         matcher = f" [{hook.matcher}]" if hook.matcher else ""
         print(f"  {hook.name}  {hook.event}{matcher}")
@@ -74,27 +77,39 @@ def _list_shared() -> None:
             reason = hook.unsupported(tool)
             print(f"      {label}:{'—  ' + reason if reason else '✓'}")
         if not hook.unsupported("codex"):
-            untrusted += [
+            untrusted.update(
                 home for home in shared_hooks.codex_homes()
                 if (home / "hooks.json").is_file() and not shared_hooks.codex_trusted(home, hook)
-            ]
-    log_info(f"apply 時寫進各工具;改了定義或分享新的之後跑一次 {ENTRYPOINT} apply")
-    for home in sorted(set(untrusted)):
+            )
+    if defined:
+        log_info(f"apply 時寫進各工具;改了定義或分享新的之後跑一次 {ENTRYPOINT} apply")
+    for home in sorted(untrusted):
         # 信任是 Codex 自己的安全關卡,acg 不替使用者按
         log_warn(f"Codex({home.name})還沒信任這些 hook:在那個帳號的 Codex 裡打 /hooks 檢視並信任")
 
 
+def _save(document: dict) -> None:
+    """Write Claude Code's settings; the caller already holds the apply lock."""
+    import json
+
+    from .. import hooks, memory_paths
+
+    memory_paths._write_text_atomic(
+        hooks.settings_path(), json.dumps(document, ensure_ascii=False, indent=2) + "\n",
+    )
+
+
 def _share(rest: list[str]) -> int:
     from .. import hooks, shared_hooks
+    from ..locking import apply_lock
 
-    document = hooks.read_settings()
-    candidates = shared_hooks.user_hooks(document)
     if not rest:
+        candidates = shared_hooks.user_hooks(hooks.read_settings())
         log_header("Claude Code 自己的 hook(可以分享的)")
         if not candidates:
             log_info("Claude Code 的 settings.json 裡沒有自訂的 command hook")
             return 0
-        for index, (event, row, entry) in enumerate(candidates, 1):
+        for index, (event, _row_index, _entry_index, row, entry) in enumerate(candidates, 1):
             matcher = f" [{row.get('matcher')}]" if row.get("matcher") else ""
             print(f"  {index}. {event}{matcher}  {entry.get('command')}")
         log_info(f"分享第 n 個:{ENTRYPOINT} hooks share <n> --name <名稱> [--to both|codex|agy]")
@@ -103,27 +118,45 @@ def _share(rest: list[str]) -> int:
     if options is None or not rest[0].isdigit() or "name" not in options:
         log_error(USAGE)
         return 1
-    number = int(rest[0])
-    if not 1 <= number <= len(candidates):
-        log_error(f"沒有第 {number} 個 hook;先跑 {ENTRYPOINT} hooks share 看清單")
-        return 1
     to = options.get("to", "both")
     if to not in shared_hooks.TARGETS:
         log_error(f"--to 只能是 {'|'.join(shared_hooks.TARGETS)}")
         return 1
-    event, row, entry = candidates[number - 1]
-    timeout = entry.get("timeout")
-    hook = shared_hooks.SharedHook(
-        name=options["name"], event=event, command=str(entry["command"]),
-        matcher=str(row.get("matcher") or ""),
-        timeout=timeout if isinstance(timeout, int) and timeout > 0 else 60, to=to,
-    )
-    if (shared_hooks.definitions_dir() / f"{hook.name}.json").exists():
-        log_error(f"已經有叫 {hook.name} 的共用 hook;換個名字,或先 unshare")
-        return 1
-    path = shared_hooks.write_definition(hook)
-    # 從此由 acg 投影回 Claude Code;原本那份留著會變成兩個一樣的 hook
-    hooks.write_settings(shared_hooks.project_claude(shared_hooks.without_entry(document, entry)))
+    # 讀、改、寫都在同一把鎖裡:跟 apply 或另一個 share 交錯時,不會拿舊的內容蓋回去
+    with apply_lock():
+        document = hooks.read_settings()
+        candidates = shared_hooks.user_hooks(document)
+        number = int(rest[0])
+        if not 1 <= number <= len(candidates):
+            log_error(f"沒有第 {number} 個 hook;先跑 {ENTRYPOINT} hooks share 看清單")
+            return 1
+        event, row_index, entry_index, row, entry = candidates[number - 1]
+        extra = set(entry) - {"type", "command", "timeout", "statusMessage"} - shared_hooks.CARRIED_OPTIONS
+        if "args" in entry or extra:
+            # 共用 hook 存不下的欄位,分享出去行為就變了,收回來也還原不了
+            log_error(f"這個 hook 用了共用 hook 還不支援的欄位:{', '.join(sorted(extra | ({'args'} & set(entry))))}")
+            return 1
+        timeout = entry.get("timeout")
+        hook = shared_hooks.SharedHook(
+            name=options["name"], event=event, command=str(entry["command"]),
+            matcher=str(row.get("matcher") or ""),
+            timeout=timeout if isinstance(timeout, int) and timeout > 0 else 60, to=to,
+            label=str(entry.get("statusMessage") or ""),
+            options={key: entry[key] for key in shared_hooks.CARRIED_OPTIONS if key in entry},
+        )
+        path = shared_hooks.definition_path(hook.name)
+        if path.exists():
+            log_error(f"已經有叫 {hook.name} 的共用 hook;換個名字,或先 unshare")
+            return 1
+        shared_hooks.write_definition(hook)
+        try:
+            # 從此由 acg 投影回 Claude Code;原本那份留著會變成兩個一樣的 hook
+            _save(shared_hooks.project_claude(
+                shared_hooks.without_position(document, event, row_index, entry_index)
+            ))
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
     log_success(f"已分享 {hook.name} → {path}")
     for tool, label in (("codex", "Codex"), ("agy", "Antigravity")):
         reason = hook.unsupported(tool)
@@ -135,20 +168,17 @@ def _share(rest: list[str]) -> int:
 
 def _unshare(name: str) -> int:
     from .. import hooks, shared_hooks
+    from ..locking import apply_lock
 
-    hook = next((h for h in shared_hooks.load_all() if h.name == name), None)
-    if hook is None:
-        log_error(f"沒有叫 {name} 的共用 hook")
-        return 1
-    shared_hooks.delete_definition(name)
-    # 放回 Claude Code 自己的 settings.json,變回只屬於 Claude Code 的 hook
-    document = shared_hooks.project_claude(hooks.read_settings())
-    entry = {"type": "command", "command": hook.command, "timeout": hook.timeout}
-    row: dict = {"hooks": [entry]}
-    if hook.matcher:
-        row["matcher"] = hook.matcher
-    document.setdefault("hooks", {}).setdefault(hook.event, []).append(row)
-    hooks.write_settings(document)
+    with apply_lock():
+        defined, _broken = shared_hooks.load_readable()
+        hook = next((h for h in defined if h.name == name), None)
+        if hook is None:
+            log_error(f"沒有叫 {name} 的共用 hook")
+            return 1
+        # 先把它放回 Claude Code,再刪定義:中途失敗時定義還在,不會兩邊都沒有
+        _save(shared_hooks.with_plain(hooks.read_settings(), hook))
+        shared_hooks.delete_definition(name)
     log_success(f"已取消分享 {name};它回到 Claude Code 的 settings.json")
     log_info(f"跑 {ENTRYPOINT} apply 從 Codex 與 Antigravity 移除,再 {ENTRYPOINT} push")
     return 0

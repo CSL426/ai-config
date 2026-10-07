@@ -42,8 +42,11 @@ def test_a_definition_round_trips_and_odd_names_are_refused(world: Path) -> None
     shared_hooks.write_definition(PUSH)
 
     assert shared_hooks.load_all() == [PUSH]
-    with pytest.raises(ValueError, match="名稱"):
-        shared_hooks.write_definition(shared_hooks.SharedHook("../escape", "PostToolUse", "x"))
+    for name in ("../escape", "inject"):
+        with pytest.raises(ValueError, match="名稱"):
+            shared_hooks.write_definition(shared_hooks.SharedHook(name, "PostToolUse", "x"))
+    # 拒絕之前不能先寫出任何東西
+    assert sorted(p.name for p in world.rglob("*.json")) == ["after-push.json"]
 
 
 def test_claude_gets_one_marked_copy_and_keeps_everything_else(world: Path) -> None:
@@ -57,9 +60,9 @@ def test_claude_gets_one_marked_copy_and_keeps_everything_else(world: Path) -> N
 
     entries = _entries(once, "PostToolUse")
     assert mine in entries and acg_own in entries and stale not in entries
-    assert [e["statusMessage"] for e in entries if e.get("statusMessage", "").startswith("acg：共用")] == [
-        "acg：共用 after-push"
-    ]
+    shared = [e for e in entries if e.get("statusMessage", "").startswith("acg：共用")]
+    assert shared == [{"type": "command", "command": PUSH.command, "timeout": 5,
+                       "statusMessage": "acg：共用 after-push"}]
     assert shared_hooks.project_claude(once) == once
 
 
@@ -76,9 +79,7 @@ def test_apply_writes_it_and_gathering_never_takes_it_back(world: Path) -> None:
     assert any(e.get("statusMessage") == "acg：共用 after-push" for e in _entries(applied, "PostToolUse"))
     gathered = json.loads(filter_claude_settings(json.dumps(applied)))
     # 資料庫只存定義;投影出去的那份不能被收回去,否則每台機器各多一份
-    assert all(
-        not e.get("statusMessage", "").startswith("acg：") for e in _entries(gathered, "PostToolUse")
-    )
+    assert all(e["command"] != PUSH.command for e in _entries(gathered, "PostToolUse"))
 
 
 def test_every_codex_home_gets_it_and_its_other_hooks_stay(world: Path) -> None:
@@ -125,12 +126,17 @@ def test_antigravity_gets_its_own_shape_through_the_adapter(world: Path) -> None
     shared_hooks.write_definition(shared_hooks.SharedHook("start", "SessionStart", "echo hi"))
     shared_hooks.write_definition(shared_hooks.SharedHook("edits", "PostToolUse", "x", matcher="Edit|Write"))
     remember_hosts.AGY_HOOKS.parent.mkdir(parents=True)
-    remember_hosts.AGY_HOOKS.write_text(json.dumps({"remember": {"enabled": True}}), encoding="utf-8")
+    remember_hosts.AGY_HOOKS.write_text(json.dumps({
+        "remember": {"enabled": True},
+        # 別人取的 acg- 開頭的項目不是我們的
+        "acg-someone-else": {"enabled": True, "Stop": [{"type": "command", "command": "x"}]},
+    }), encoding="utf-8")
 
     shared_hooks.project_agy()
 
     agy = json.loads(remember_hosts.AGY_HOOKS.read_text(encoding="utf-8"))
     assert agy["remember"] == {"enabled": True}
+    assert "acg-someone-else" in agy
     group = agy["acg-after-push"]["PostToolUse"][0]
     assert group["matcher"] == "run_command"
     assert shlex.split(group["hooks"][0]["command"]) == ["/opt/acg/ai-config", "__agy-hook", "after-push"]
@@ -146,8 +152,12 @@ def test_what_a_tool_cannot_run_is_said() -> None:
     edits = shared_hooks.SharedHook("e", "PostToolUse", "x", matcher="Edit")
     only_codex = shared_hooks.SharedHook("c", "PostToolUse", "x", to="codex")
 
-    assert "Edit" in edits.unsupported("agy")
+    assert "Bash" in edits.unsupported("agy")
     assert edits.unsupported("codex") == ""
+    # 沒限定工具的 hook 在 Antigravity 會收到沒轉換過的 payload
+    assert shared_hooks.SharedHook("all", "PostToolUse", "x", matcher="*").unsupported("agy")
+    # 擋工具的格式沒有文件,投過去會擋不住
+    assert shared_hooks.SharedHook("p", "PreToolUse", "x", matcher="Bash").unsupported("agy")
     assert only_codex.unsupported("agy") and not only_codex.unsupported("codex")
     assert shared_hooks.SharedHook("s", "Stop", "x").unsupported("codex")
 
@@ -190,6 +200,9 @@ def test_the_adapter_hands_the_reply_to_the_next_step(
     shared_hooks.write_definition(shared_hooks.SharedHook("probe", "PostToolUse", command, matcher="Bash"))
     agy = {"conversationId": "c-9", "workspacePaths": [str(world)],
            "toolCall": {"name": "run_command", "args": {"CommandLine": "git push"}}}
+    shared_hooks.project_agy()
+    # apply 之後才改的定義,不 apply 就不會在 Antigravity 跑
+    shared_hooks.write_definition(shared_hooks.SharedHook("probe", "PostToolUse", "echo changed", matcher="Bash"))
 
     # PostToolUse 只能回 {};提醒要等下一步開始前才送得進去
     assert _call(monkeypatch, capsys, ["probe"], agy) == {}
@@ -241,6 +254,12 @@ def test_sharing_refuses_a_taken_name_and_a_bad_number(world: Path) -> None:
 
 def test_codex_trust_is_read_never_written(world: Path) -> None:
     home = world / ".codex"
+    shared_hooks.write_definition(PUSH)
+    shared_hooks.project_codex()
+    assert not shared_hooks.codex_trusted(home, PUSH)
+    other = f"{home / 'hooks.json'}:post_tool_use:5:0"
+    (home / "config.toml").write_text(f"[hooks.state.'{other}']\ntrusted_hash = 'sha256:x'\n", encoding="utf-8")
+    # 同事件別的位置有信任紀錄,不代表這個 hook 被看過
     assert not shared_hooks.codex_trusted(home, PUSH)
     key = f"{home / 'hooks.json'}:post_tool_use:0:0"
     # 單引號是 TOML 的字面字串:Windows 路徑的反斜線不會被當成跳脫字元
@@ -248,7 +267,9 @@ def test_codex_trust_is_read_never_written(world: Path) -> None:
         f"[hooks.state.'{key}']\ntrusted_hash = 'sha256:abc'\n", encoding="utf-8",
     )
 
+    before = (home / "config.toml").read_bytes()
     assert shared_hooks.codex_trusted(home, PUSH)
+    assert (home / "config.toml").read_bytes() == before
 
 
 def test_the_desktop_app_sees_what_each_tool_gets(world: Path) -> None:
@@ -263,3 +284,69 @@ def test_the_desktop_app_sees_what_each_tool_gets(world: Path) -> None:
     assert state["after-push"]["codex"] == "" and state["after-push"]["agy"] == ""
     assert state["after-push"]["codex_untrusted"] == [".codex", ".codex-work"]
     assert "Codex" in state["on-stop"]["codex"]
+
+
+@pytest.mark.parametrize("content", [
+    "not json", '{"event": "PostToolUse"}', '{"event": "PostToolUse", "command": "x", "to": "everyone"}',
+    '{"event": "PostToolUse", "command": "x", "options": {"args": []}}',
+])
+def test_a_broken_definition_stops_apply_instead_of_removing_the_hook(world: Path, content: str) -> None:
+    shared_hooks.write_definition(PUSH)
+    shared_hooks.project_codex()
+    before = (world / ".codex" / "hooks.json").read_text(encoding="utf-8")
+    (shared_hooks.definitions_dir() / "broken.json").write_text(content, encoding="utf-8")
+
+    with pytest.raises(shared_hooks.DefinitionError):
+        shared_hooks.project_tools(["codex", "agy"])
+    with pytest.raises(shared_hooks.DefinitionError):
+        shared_hooks.project_claude({})
+    assert (world / ".codex" / "hooks.json").read_text(encoding="utf-8") == before
+    loaded, broken = shared_hooks.load_readable()
+    assert loaded == [PUSH] and len(broken) == 1
+
+
+def test_sharing_keeps_options_and_takes_only_the_chosen_copy(world: Path) -> None:
+    from ai_config.commands.hooks import run_hooks
+
+    chosen = {"type": "command", "command": "a", "timeout": 7, "async": True, "statusMessage": "mine"}
+    twin = {"type": "command", "command": "a", "timeout": 7, "async": True, "statusMessage": "mine"}
+    hooks.write_settings({"hooks": {
+        "PostToolUse": [{"matcher": "Bash", "hooks": [chosen]}],
+        "PreToolUse": [{"matcher": "Bash", "hooks": [twin]}],
+    }})
+
+    assert run_hooks(["share", "1", "--name", "keep"]) == 0
+
+    settings = hooks.read_settings()
+    # 別的事件裡一模一樣的那個不能跟著不見
+    assert _entries(settings, "PreToolUse") == [twin]
+    projected = _entries(settings, "PostToolUse")
+    assert projected == [{"type": "command", "command": "a", "timeout": 7, "async": True,
+                          "statusMessage": "acg：共用 keep"}]
+    assert run_hooks(["unshare", "keep"]) == 0
+    assert _entries(hooks.read_settings(), "PostToolUse") == [chosen]
+
+
+def test_a_hook_with_fields_sharing_cannot_carry_is_refused(world: Path) -> None:
+    from ai_config.commands.hooks import run_hooks
+
+    hooks.write_settings({"hooks": {"PostToolUse": [{"hooks": [
+        {"type": "command", "command": "a", "args": ["x"]}]}]}})
+
+    assert run_hooks(["share", "1", "--name", "nope"]) == 1
+    assert shared_hooks.load_all() == []
+
+
+def test_a_failed_settings_write_leaves_no_definition(world: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config.commands import hooks as command
+
+    hooks.write_settings({"hooks": {"PostToolUse": [{"hooks": [{"type": "command", "command": "a"}]}]}})
+
+    def broken(document: dict) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(command, "_save", broken)
+
+    assert command.run_hooks(["share", "1", "--name", "half"]) == 1
+    assert shared_hooks.load_all() == []
+    assert [e["command"] for e in _entries(hooks.read_settings(), "PostToolUse")] == ["a"]

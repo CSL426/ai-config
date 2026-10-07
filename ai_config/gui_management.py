@@ -163,7 +163,7 @@ def _shared_hooks_state() -> list:
 
     result = []
     try:
-        defined = shared_hooks.load_all()
+        defined, _broken = shared_hooks.load_readable()
         homes = shared_hooks.codex_homes()
     except (OSError, RuntimeError, ValueError):
         return result
@@ -640,6 +640,11 @@ class ManagementApi:
                     from .applyplan import execute
 
                     backup = execute(candidate)
+                    if candidate.category in ("all", "settings"):
+                        # Codex 與 Antigravity 的 hooks.json 不在預覽的檔案清單裡,跟 CLI 的 apply 一樣另外投影
+                        from . import shared_hooks
+
+                        shared_hooks.project_tools(candidate.tools)
                     if candidate.category == "all":
                         # 跟 CLI 的 apply 一樣:記下這台現在對齊資料庫的哪個 commit
                         from . import applied_state

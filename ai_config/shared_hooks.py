@@ -19,7 +19,7 @@ import shlex
 import subprocess
 import sys
 import tomllib
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import memory_paths
@@ -28,18 +28,27 @@ from .hooks import PREFIX, _strip
 MARKER = f"{PREFIX}共用 "
 TARGETS = ("both", "codex", "agy")
 _NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+# command/timeout/statusMessage 另外存;這些選項照原樣帶著走,其他的不接受
+CARRIED_OPTIONS = frozenset({"async", "once", "if", "shell"})
 
 CODEX_EVENTS = frozenset({
     "PreToolUse", "PermissionRequest", "PostToolUse", "PreCompact", "PostCompact",
     "SessionStart", "SessionEnd", "UserPromptSubmit", "SubagentStart", "SubagentStop",
 })
-AGY_TOOL_EVENTS = frozenset({"PreToolUse", "PostToolUse"})
-AGY_EVENTS = AGY_TOOL_EVENTS | {"SessionStart"}
-# Claude Code 的工具名 → Antigravity 的;沒有對應的就不投影,免得 matcher 對不到東西
+# Antigravity 擋工具的回應格式沒有文件,PreToolUse 投過去會擋不住,所以不接
+AGY_EVENTS = frozenset({"PostToolUse", "SessionStart"})
+AGY_TOOL_EVENTS = frozenset({"PostToolUse"})
+# Claude Code 的工具名 → Antigravity 的;只轉接 shell,其他工具的 payload 沒有對應
 AGY_TOOLS = {"Bash": "run_command"}
 AGY_PREFIX = "acg-"
 AGY_INJECT = "acg-inject"
+_RESERVED = frozenset({"inject"})
+_ADAPTER = "__agy-hook"
 _AGY_ADAPTER_SECONDS = 10
+
+
+class DefinitionError(ValueError):
+    """A definition in the data repository that cannot be projected as written."""
 
 
 @dataclass(frozen=True)
@@ -50,15 +59,16 @@ class SharedHook:
     matcher: str = ""
     timeout: int = 60
     to: str = "both"
+    # 原本的 statusMessage(unshare 時還原)與 async、once 這類選項
+    label: str = ""
+    options: dict = field(default_factory=dict, compare=False, hash=False)
 
     def reaches(self, tool: str) -> bool:
         return tool == "claude" or self.to in ("both", tool)
 
     def agy_matcher(self) -> "str | None":
-        if self.matcher in ("", "*"):
-            return "*"
-        parts = self.matcher.split("|")
-        if not all(part in AGY_TOOLS for part in parts):
+        parts = self.matcher.split("|") if self.matcher else []
+        if not parts or not all(part in AGY_TOOLS for part in parts):
             return None
         return "|".join(AGY_TOOLS[part] for part in parts)
 
@@ -72,7 +82,9 @@ class SharedHook:
             if self.event not in AGY_EVENTS:
                 return f"Antigravity 這裡只接 {', '.join(sorted(AGY_EVENTS))}"
             if self.event in AGY_TOOL_EVENTS and self.agy_matcher() is None:
-                return f"Antigravity 沒有對應 {self.matcher} 的工具"
+                return "Antigravity 只轉接 matcher 為 Bash 的 hook"
+            if self.options:
+                return f"Antigravity 不支援 {', '.join(sorted(self.options))}"
         return ""
 
 
@@ -85,56 +97,91 @@ def definitions_dir() -> Path:
 
 
 def valid_name(name: str) -> bool:
-    return bool(_NAME.match(name))
+    return bool(_NAME.match(name)) and name not in _RESERVED
 
 
-def _parse(path: Path) -> "SharedHook | None":
+def _parse(path: Path) -> SharedHook:
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        return None
+    except (OSError, ValueError) as exc:
+        raise DefinitionError(f"共用 hook 定義讀不了:{path}({exc})") from exc
     if not isinstance(data, dict):
-        return None
+        raise DefinitionError(f"共用 hook 定義不是物件:{path}")
     event, command = data.get("event"), data.get("command")
-    if not isinstance(event, str) or not isinstance(command, str) or not command:
-        return None
+    if not isinstance(event, str) or not event or not isinstance(command, str) or not command:
+        raise DefinitionError(f"共用 hook 定義缺 event 或 command:{path}")
     timeout = data.get("timeout", 60)
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+        raise DefinitionError(f"共用 hook 定義的 timeout 不是正整數:{path}")
     to = data.get("to", "both")
+    if to not in TARGETS:
+        # 默默當成 both 會投到使用者沒選的工具
+        raise DefinitionError(f"共用 hook 定義的 to 只能是 {'|'.join(TARGETS)}:{path}")
+    options = data.get("options", {})
+    if not isinstance(options, dict) or set(options) - CARRIED_OPTIONS:
+        allowed = ", ".join(sorted(CARRIED_OPTIONS))
+        raise DefinitionError(f"共用 hook 定義的 options 只能有 {allowed}:{path}")
     return SharedHook(
         name=path.stem, event=event, command=command,
-        matcher=str(data.get("matcher") or ""),
-        timeout=timeout if isinstance(timeout, int) and timeout > 0 else 60,
-        to=to if to in TARGETS else "both",
+        matcher=str(data.get("matcher") or ""), timeout=timeout, to=to,
+        label=str(data.get("label") or ""), options=options,
     )
 
 
-def load_all() -> list[SharedHook]:
+def _definition_paths() -> list[Path]:
     root = definitions_dir()
     if not root.is_dir():
         return []
-    found = []
-    for path in sorted(root.glob("*.json")):
-        if not valid_name(path.stem) or path.is_symlink():
-            continue
-        hook = _parse(path)
-        if hook is not None:
-            found.append(hook)
-    return found
+    return [
+        path for path in sorted(root.glob("*.json"))
+        if valid_name(path.stem) and not path.is_symlink()
+    ]
+
+
+def load_all() -> list[SharedHook]:
+    """Every definition; a broken one stops projection rather than unprojecting it.
+
+    Skipping it would strip the copies already in each tool and project
+    the rest, removing that hook everywhere without a word.
+    """
+    return [_parse(path) for path in _definition_paths()]
+
+
+def load_readable() -> "tuple[list[SharedHook], list[str]]":
+    """For listings: what loads, and why each of the others does not."""
+    found, broken = [], []
+    for path in _definition_paths():
+        try:
+            found.append(_parse(path))
+        except DefinitionError as exc:
+            broken.append(str(exc))
+    return found, broken
+
+
+def definition_path(name: str) -> Path:
+    if not valid_name(name):
+        reserved = ", ".join(sorted(_RESERVED))
+        raise ValueError(f"名稱只能用小寫英數與 . _ -,且不能是 {reserved}:{name}")
+    path = definitions_dir() / f"{name}.json"
+    memory_paths.assert_plain_path(path, directory=False)
+    return path
 
 
 def write_definition(hook: SharedHook) -> Path:
-    if not valid_name(hook.name):
-        raise ValueError(f"名稱只能用小寫英數與 . _ -:{hook.name}")
-    path = definitions_dir() / f"{hook.name}.json"
-    memory_paths.assert_plain_path(path, directory=False)
+    path = definition_path(hook.name)
+    data: dict = {"event": hook.event, "command": hook.command, "matcher": hook.matcher,
+                  "timeout": hook.timeout, "to": hook.to}
+    if hook.label:
+        data["label"] = hook.label
+    if hook.options:
+        data["options"] = hook.options
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = {key: value for key, value in asdict(hook).items() if key != "name"}
     memory_paths._write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     return path
 
 
 def delete_definition(name: str) -> bool:
-    path = definitions_dir() / f"{name}.json"
+    path = definition_path(name)
     if not path.is_file():
         return False
     path.unlink()
@@ -143,21 +190,32 @@ def delete_definition(name: str) -> bool:
 
 # ─── Claude Code ─────────────────────────────────────────────
 
-def _is_shared(entry: object) -> bool:
-    return isinstance(entry, dict) and str(entry.get("statusMessage", "")).startswith(MARKER)
+def _is_shared(entry: object, name: str = "") -> bool:
+    if not isinstance(entry, dict):
+        return False
+    message = str(entry.get("statusMessage", ""))
+    return message == f"{MARKER}{name}" if name else message.startswith(MARKER)
 
 
 def handler(hook: SharedHook) -> dict:
     return {
         "type": "command", "command": hook.command, "timeout": hook.timeout,
-        "statusMessage": f"{MARKER}{hook.name}",
+        **hook.options, "statusMessage": f"{MARKER}{hook.name}",
     }
 
 
-def _row(hook: SharedHook) -> dict:
-    row: dict = {"hooks": [handler(hook)]}
-    if hook.matcher:
-        row["matcher"] = hook.matcher
+def plain_handler(hook: SharedHook) -> dict:
+    """The hook as it was before it was shared, for unshare."""
+    entry = {"type": "command", "command": hook.command, "timeout": hook.timeout, **hook.options}
+    if hook.label:
+        entry["statusMessage"] = hook.label
+    return entry
+
+
+def _row(entry: dict, matcher: str) -> dict:
+    row: dict = {"hooks": [entry]}
+    if matcher:
+        row["matcher"] = matcher
     return row
 
 
@@ -173,7 +231,7 @@ def _with_hooks(document: dict, hooks: list[SharedHook], tool: str) -> dict:
         rows = events.setdefault(hook.event, [])
         if not isinstance(rows, list):
             raise ValueError(f"{hook.event} hooks 必須是陣列")  # noqa: TRY004
-        rows.append(_row(hook))
+        rows.append(_row(handler(hook), hook.matcher))
     return result
 
 
@@ -181,25 +239,43 @@ def project_claude(document: dict) -> dict:
     return _with_hooks(document, load_all(), "claude")
 
 
-def user_hooks(document: dict) -> list[tuple[str, dict, dict]]:
-    """Claude Code's own hooks, the ones nobody projected: (event, row, entry)."""
+def user_hooks(document: dict) -> list[tuple[str, int, int, dict, dict]]:
+    """Claude Code's own command hooks: (event, row index, entry index, row, entry)."""
     found = []
     events = document.get("hooks")
     for event, rows in (events.items() if isinstance(events, dict) else []):
-        for row in rows if isinstance(rows, list) else []:
-            if not isinstance(row, dict):
-                continue
-            for entry in row.get("hooks", []) if isinstance(row.get("hooks"), list) else []:
+        for row_index, row in enumerate(rows if isinstance(rows, list) else []):
+            entries = row.get("hooks") if isinstance(row, dict) else None
+            for entry_index, entry in enumerate(entries if isinstance(entries, list) else []):
                 if not isinstance(entry, dict) or entry.get("type") != "command":
                     continue
                 if str(entry.get("statusMessage", "")).startswith(PREFIX):
                     continue
-                found.append((event, row, entry))
+                found.append((event, row_index, entry_index, row, entry))
     return found
 
 
-def without_entry(document: dict, target: dict) -> dict:
-    return _strip(document, lambda entry: entry is not target and entry != target)
+def without_position(document: dict, event: str, row_index: int, entry_index: int) -> dict:
+    """The document without that one entry; equal entries elsewhere stay."""
+    result = json.loads(json.dumps(document))
+    rows = result["hooks"][event]
+    entries = rows[row_index]["hooks"]
+    del entries[entry_index]
+    if not entries:
+        del rows[row_index]
+    if not rows:
+        del result["hooks"][event]
+    if not result["hooks"]:
+        del result["hooks"]
+    return result
+
+
+def with_plain(document: dict, hook: SharedHook) -> dict:
+    """The document with this hook back as Claude Code's own, its projected copy gone."""
+    result = _strip(document, lambda entry: not _is_shared(entry, hook.name))
+    events = result.setdefault("hooks", {})
+    events.setdefault(hook.event, []).append(_row(plain_handler(hook), hook.matcher))
+    return result
 
 
 # ─── Codex ───────────────────────────────────────────────────
@@ -215,6 +291,7 @@ def codex_document(existing: dict, hooks: list[SharedHook]) -> dict:
 
 
 def _read_json(path: Path) -> dict:
+    memory_paths.assert_plain_path(path, directory=False)
     if not path.is_file():
         return {}
     data = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -223,20 +300,28 @@ def _read_json(path: Path) -> dict:
     return data
 
 
-def project_codex(homes: "list[Path] | None" = None) -> list[str]:
-    hooks = load_all()
-    changed = []
-    for home in homes if homes is not None else codex_homes():
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    memory_paths._write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+
+
+def _codex_plan(hooks: list[SharedHook], homes: list[Path]) -> list[tuple[Path, dict]]:
+    plan = []
+    for home in homes:
         path = home / "hooks.json"
-        memory_paths.assert_plain_path(path, directory=False)
         existing = _read_json(path)
         wanted = codex_document(existing, hooks)
         if wanted == existing or (not path.exists() and not wanted.get("hooks")):
             continue
-        path.parent.mkdir(parents=True, exist_ok=True)
-        memory_paths._write_text_atomic(path, json.dumps(wanted, ensure_ascii=False, indent=2) + "\n")
-        changed.append(str(path))
-    return changed
+        plan.append((path, wanted))
+    return plan
+
+
+def project_codex(homes: "list[Path] | None" = None) -> list[str]:
+    plan = _codex_plan(load_all(), homes if homes is not None else codex_homes())
+    for path, data in plan:
+        _write_json(path, data)
+    return [str(path) for path, _ in plan]
 
 
 def _snake(event: str) -> str:
@@ -244,21 +329,26 @@ def _snake(event: str) -> str:
 
 
 def codex_trusted(home: Path, hook: SharedHook) -> bool:
-    """Whether this home's config holds any trust record for the event's hooks.
+    """Whether Codex holds a trust record at this hook's own place in that home.
 
-    Codex hashes the hook it reviewed; acg cannot recompute that, so a
-    record means "reviewed once", not "reviewed in this exact form".
+    Codex keys trust by file, event, group and handler, and stores a hash
+    of the hook it reviewed. acg cannot recompute that hash, so a record
+    means this position was reviewed once, not in its current form.
     """
+    path = home / "hooks.json"
     try:
+        rows = _read_json(path).get("hooks", {}).get(hook.event, [])
         config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
+    group = next((index for index, row in enumerate(rows if isinstance(rows, list) else [])
+                  if isinstance(row, dict)
+                  and any(_is_shared(entry, hook.name) for entry in row.get("hooks", []))), None)
+    if group is None:
+        return False
     state = config.get("hooks", {}).get("state", {})
-    prefix = f"{home / 'hooks.json'}:{_snake(hook.event)}:"
-    return any(
-        key.startswith(prefix) and isinstance(value, dict) and value.get("trusted_hash")
-        for key, value in (state.items() if isinstance(state, dict) else [])
-    )
+    record = state.get(f"{path}:{_snake(hook.event)}:{group}:0") if isinstance(state, dict) else None
+    return isinstance(record, dict) and bool(record.get("trusted_hash"))
 
 
 # ─── Antigravity ─────────────────────────────────────────────
@@ -277,12 +367,20 @@ def _acg_command(*args: str) -> str:
     return " ".join(shlex.quote(word) for word in words)
 
 
+def _owned(value: object) -> bool:
+    """An Antigravity entry acg wrote: it calls the adapter. Other acg- keys are not ours."""
+    return _ADAPTER in json.dumps(value)
+
+
 def agy_document(existing: dict, hooks: list[SharedHook]) -> dict:
-    result = {key: value for key, value in existing.items() if not key.startswith(AGY_PREFIX)}
+    result = {
+        key: value for key, value in existing.items()
+        if not (key.startswith(AGY_PREFIX) and _owned(value))
+    }
     reached = [hook for hook in hooks if not hook.unsupported("agy")]
     for hook in reached:
         call = {
-            "type": "command", "command": _acg_command("__agy-hook", hook.name),
+            "type": "command", "command": _acg_command(_ADAPTER, hook.name),
             # 轉接要先啟動 acg 才輪到腳本;Windows 上光啟動就要一兩秒
             "timeout": hook.timeout + _AGY_ADAPTER_SECONDS,
         }
@@ -293,20 +391,66 @@ def agy_document(existing: dict, hooks: list[SharedHook]) -> dict:
         result[f"{AGY_PREFIX}{hook.name}"] = {"enabled": True, hook.event: handlers}
     if reached:
         result[AGY_INJECT] = {"enabled": True, "PreInvocation": [{
-            "type": "command", "command": _acg_command("__agy-hook", "--inject"), "timeout": 10,
+            "type": "command", "command": _acg_command(_ADAPTER, "--inject"), "timeout": 10,
         }]}
     return result
+
+
+def _snapshot_dir() -> Path:
+    from .autoupdate import state_dir
+
+    return state_dir() / "agy-hooks"
+
+
+def _snapshots(hooks: list[SharedHook]) -> dict[Path, dict]:
+    """What the adapter runs: fixed at apply, like the copies Claude Code and Codex get.
+
+    Reading the data repository at run time would let a changed
+    definition run in Antigravity before anyone applied it.
+    """
+    return {
+        _snapshot_dir() / f"{hook.name}.json": {
+            "event": hook.event, "command": hook.command, "timeout": hook.timeout,
+        }
+        for hook in hooks if not hook.unsupported("agy")
+    }
 
 
 def project_agy() -> list[str]:
     from .remember_hosts import _load_agy_hooks, _write_agy_hooks
 
+    hooks = load_all()
     existing = _load_agy_hooks()
-    wanted = agy_document(existing, load_all())
+    wanted = agy_document(existing, hooks)
+    snapshots = _snapshots(hooks)
+    root = _snapshot_dir()
+    stale = [path for path in root.glob("*.json") if path not in snapshots] if root.is_dir() else []
+    for path, data in snapshots.items():
+        if not path.is_file() or _read_json(path) != data:
+            _write_json(path, data)
+    for path in stale:
+        path.unlink()
     if wanted == existing:
         return []
     _write_agy_hooks(wanted)
     return [str(agy_hooks_path())]
+
+
+def project_tools(tools: list[str]) -> list[str]:
+    """Codex and Antigravity keep hooks outside what apply mirrors; Claude's ride in settings.json.
+
+    Every Codex home is read and checked before the first write, so one
+    that cannot be read stops the projection instead of leaving it half done.
+    """
+    hooks = load_all()
+    codex_plan = _codex_plan(hooks, codex_homes()) if "codex" in tools else []
+    changed = []
+    for path, data in codex_plan:
+        _write_json(path, data)
+        changed.append(str(path))
+    if "agy" in tools:
+        changed += project_agy()
+    return changed
 
 
 # ─── the Antigravity adapter (`__agy-hook`) ──────────────────
@@ -390,14 +534,19 @@ def run_agy_hook(args: list[str]) -> int:
 
 
 def _relay(names: list[str], payload: dict) -> dict:
-    hook = next((h for h in load_all() if names and h.name == names[0]), None)
-    if hook is None:
+    if not names or not valid_name(names[0]):
         return {}
-    converted = claude_payload(payload, hook.event)
+    snapshot = _read_json(_snapshot_dir() / f"{names[0]}.json")
+    command, event = snapshot.get("command"), snapshot.get("event")
+    if not isinstance(command, str) or not isinstance(event, str):
+        return {}
+    timeout = snapshot.get("timeout") if isinstance(snapshot.get("timeout"), int) else 60
+    converted = claude_payload(payload, event)
+    # 跑的是 apply 當時定案的指令,跟 Claude Code、Codex 拿到的那份一樣
     done = subprocess.run(
-        _shell(hook.command), input=json.dumps(converted, ensure_ascii=False),
+        _shell(command), input=json.dumps(converted, ensure_ascii=False),
         capture_output=True, text=True, encoding="utf-8", errors="replace",
-        timeout=hook.timeout, check=False, cwd=converted["cwd"] or None,
+        timeout=timeout, check=False, cwd=converted["cwd"] or None,
     )
     text = _additional_context(done.stdout)
     if text and converted["session_id"]:
@@ -413,16 +562,14 @@ def _inject(payload: dict) -> dict:
     if not conversation:
         return {}
     path = _context_file(conversation)
+    # 先搬開再讀:搬開之後才追加的提醒進新檔留給下一步;兩個同時搬只有一個成功
+    taken = path.with_name(f"{path.stem}.{os.getpid()}.taking")
     try:
-        text = path.read_text(encoding="utf-8").strip()
-        path.unlink()
+        os.replace(path, taken)
     except OSError:
         return {}
+    try:
+        text = taken.read_text(encoding="utf-8").strip()
+    finally:
+        taken.unlink(missing_ok=True)
     return {"injectSteps": [{"ephemeralMessage": text}]} if text else {}
-
-
-def project_all() -> list[str]:
-    """Write every tool's projection on this machine; what changed, for the log."""
-    changed = project_codex()
-    changed += project_agy()
-    return changed
