@@ -567,6 +567,12 @@ A piped install has no terminal to ask in, so it skips first-run setup; run
 binary. A shell that was already open has not loaded tab completion: open a
 new one, or `hash -r && source
 ~/.local/share/bash-completion/completions/ai-config.bash`.
+In WSL, `acg` is the Windows install's Git Bash launcher, reached through the
+Windows PATH. It tells the Windows program it was started from WSL (through
+`WSLENV`), so it neither waits for Enter as after a double-click nor forgets
+it is called `acg`, and on its first run adds a marked block to WSL's
+`~/.bashrc` sourcing the Windows completion file; a terminal opened after
+that completes `acg <Tab>`.
 The installer also puts `/acg` into Claude Code unless `AI_CONFIG_NO_PLUGIN=1`
 is set.
 

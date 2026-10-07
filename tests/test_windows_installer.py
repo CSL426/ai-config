@@ -57,14 +57,15 @@ def test_powershell_installer_places_standalone_binary(tmp_path: Path) -> None:
     # 沒在執行的舊檔換掉後當場刪除,不留 .old
     assert not list(bin_dir.glob("ai-config.exe.old-*"))
     # 啟動器要帶上自己的名字,提示訊息才會叫人打 acg 而不是 ai-config
-    assert launcher.read_bytes() == (
-        b'#!/usr/bin/env bash\n'
-        b'AI_CONFIG_ENTRYPOINT=ai-config exec "$(dirname -- "$0")/ai-config.exe" "$@"\n'
-    )
-    assert acg_launcher.read_bytes() == (
-        b'#!/usr/bin/env bash\n'
-        b'AI_CONFIG_ENTRYPOINT=acg exec "$(dirname -- "$0")/ai-config.exe" "$@"\n'
-    )
+    for path, name in ((launcher, b"ai-config"), (acg_launcher, b"acg")):
+        script = path.read_bytes()
+        assert script.startswith(b"#!/usr/bin/env bash\n")
+        assert b"\r" not in script
+        assert script.endswith(
+            b"AI_CONFIG_ENTRYPOINT=" + name + b' exec "$dir/ai-config.exe" "$@"\n'
+        )
+        # WSL 的行為在 test_wsl_launcher.py 實際執行驗證
+        assert b"WSLENV" in script
     assert acg_command.read_bytes() == (
         b'@echo off\r\nsetlocal\r\nset "AI_CONFIG_ENTRYPOINT=acg"\r\n'
         b'"%~dp0ai-config.exe" %*\r\n'
@@ -120,6 +121,47 @@ def test_completion_profile_is_idempotent_and_unicode_safe(tmp_path: Path) -> No
     assert "# 使用者設定" in profile_text
     assert profile_text.count("# >>> ai-config completion >>>") == 1
     assert str(completion) in profile_text
+
+
+def test_git_bash_gets_a_bashrc_that_loads_the_completion(tmp_path: Path) -> None:
+    """Git Bash never loads ~/.local/share/bash-completion by itself.
+
+    The installer said it installed Bash completion; on a real Windows
+    machine `complete -p acg` found nothing, and there was no ~/.bashrc.
+    """
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+
+    standalone = tmp_path / "ai-config-source.exe"
+    standalone.write_bytes(b"standalone-binary")
+    home = tmp_path / "使用者 家"
+    home.mkdir()
+    (home / ".bashrc").write_bytes(b"alias ll='ls -l'\r\n")
+
+    env = os.environ.copy()
+    env["AI_CONFIG_BINARY_PATH"] = str(standalone)
+    env["AI_CONFIG_BIN_DIR"] = str(tmp_path / "bin")
+    env["AI_CONFIG_SKIP_PATH_UPDATE"] = "1"
+    env["AI_CONFIG_SKIP_COMPLETION"] = "1"
+    installer = _powershell_literal(REPO_ROOT / "install.ps1")
+    home_literal = _powershell_literal(home)
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-Command",
+         f". {installer}; Update-GitBashRc {home_literal}; Update-GitBashRc {home_literal}"],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, env=env, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    bashrc = (home / ".bashrc").read_bytes()
+    assert bashrc.startswith(b"alias ll='ls -l'")
+    assert not bashrc.startswith(b"\xef\xbb\xbf")
+    assert bashrc.count(b"# >>> ai-config completion >>>") == 1
+    block = bashrc[bashrc.index(b"# >>> ai-config"):]
+    assert b"\r" not in block
+    assert b"completions/acg.bash" in block
+    # 沒有 login 設定檔時 Git Bash 會警告一次;先替它寫好
+    assert (home / ".bash_profile").read_bytes() == b"test -f ~/.bashrc && . ~/.bashrc\n"
 
 
 def test_powershell_installer_builds_the_version_layout(tmp_path: Path) -> None:

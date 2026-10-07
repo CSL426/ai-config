@@ -39,6 +39,10 @@ def launched_by_double_click() -> bool:
         return False
     if os.environ.get("AI_CONFIG_FORCE_DOUBLE_CLICK") == "1":
         return True
+    # WSL 給 Windows 程式一個只有它自己的主控台,看起來跟雙擊一樣;
+    # 啟動腳本透過 WSLENV 說明來處(見 install.ps1 的 Git Bash 啟動器)
+    if os.environ.get("AI_CONFIG_WSL") == "1":
+        return False
     return owns_console()
 
 
