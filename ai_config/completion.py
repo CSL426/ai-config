@@ -16,6 +16,7 @@ COMMANDS = (
     "share",
     "config",
     "memory",
+    "hooks",
     "msg",
     "autoupdate",
     "gui",
@@ -42,6 +43,7 @@ TOOLS = (
 TOOL_COMMANDS = ("init", "apply", "project", "status", "pull", "push", "sync")
 SETUP_OPTIONS = ("--data-dir", "--repo-url", "--remote-name", "--replace-remote")
 DEPLOY_OPTIONS = ("--profile", "--save-as", "--remove")
+HOOKS_COMMANDS = ("list", "enable", "disable", "share", "unshare")
 MEMORY_COMMANDS = (
     "status", "enable", "disable", "adopt", "release", "path", "push",
     "handoff", "autopush",
@@ -56,6 +58,7 @@ def bash_completion() -> str:
     setup_options = " ".join(SETUP_OPTIONS)
     deploy_options = " ".join(DEPLOY_OPTIONS)
     memory_commands = " ".join(MEMORY_COMMANDS)
+    hooks_commands = " ".join(HOOKS_COMMANDS)
     shells = " ".join(SHELLS)
     return f"""_ai_config_completion() {{
     local current command previous
@@ -90,6 +93,11 @@ def bash_completion() -> str:
                 COMPREPLY=( $(compgen -W '{deploy_options}' -- "$current") )
             fi
             ;;
+        hooks)
+            if (( COMP_CWORD == 2 )); then
+                COMPREPLY=( $(compgen -W '{hooks_commands}' -- "$current") )
+            fi
+            ;;
         memory)
             if (( COMP_CWORD == 2 )); then
                 COMPREPLY=( $(compgen -W '{memory_commands}' -- "$current") )
@@ -119,6 +127,7 @@ def powershell_completion() -> str:
     setup_options = ", ".join(f"'{value}'" for value in SETUP_OPTIONS)
     deploy_options = ", ".join(f"'{value}'" for value in DEPLOY_OPTIONS)
     memory_commands = ", ".join(f"'{value}'" for value in MEMORY_COMMANDS)
+    hooks_commands = ", ".join(f"'{value}'" for value in HOOKS_COMMANDS)
     shells = ", ".join(f"'{value}'" for value in SHELLS)
     return f"""Register-ArgumentCompleter -CommandName @('ai-config', 'acg') -ScriptBlock {{
     param($wordToComplete, $commandAst, $cursorPosition)
@@ -128,6 +137,7 @@ def powershell_completion() -> str:
     $setupOptions = @({setup_options})
     $deployOptions = @({deploy_options})
     $memoryCommands = @({memory_commands})
+    $hooksCommands = @({hooks_commands})
     $shells = @({shells})
     $arguments = @(
         $commandAst.CommandElements |
@@ -181,6 +191,17 @@ def powershell_completion() -> str:
         }}
         elseif ($command -eq 'deploy') {{
             $candidates = $deployOptions
+        }}
+        elseif ($command -eq 'hooks') {{
+            if (
+                $arguments.Count -eq 1 -or
+                ($arguments.Count -eq 2 -and $arguments[-1] -eq $wordToComplete)
+            ) {{
+                $candidates = $hooksCommands
+            }}
+            else {{
+                $candidates = @()
+            }}
         }}
         elseif ($command -eq 'memory') {{
             if (

@@ -188,6 +188,16 @@ def read_settings() -> dict:
     return document
 
 
+def write_settings(document: dict) -> None:
+    """Replace Claude Code's settings.json, under the same lock apply takes."""
+    from .locking import apply_lock
+
+    with apply_lock():
+        memory_paths._write_text_atomic(
+            settings_path(), json.dumps(document, ensure_ascii=False, indent=2) + "\n",
+        )
+
+
 def hook_entry(hook: Hook) -> dict:
     # sys.executable 可能是 versions/<版號>/ 裡的實體檔;那個目錄會被清掉,
     # hook 就指向不存在的檔案。固定入口每次更新都會換成新版。

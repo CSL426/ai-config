@@ -51,6 +51,7 @@ project, status, pull, push, and sync.
 | `share <name> [--to both\\|codex\\|agy]` | copy an existing Claude/plugin skill into shared sources |
 | `unshare <name> [--from both\\|codex\\|agy]` | remove shared sources only; apply updates mirrors |
 | `completion` | print the Bash or PowerShell completion script |
+| `hooks <list\\|enable\\|disable\\|share\\|unshare>` | machine-local hooks, and Claude Code hooks shared with Codex and Antigravity |
 | `reset` | wipe configs to an empty skeleton; always confirms, and `--force` does NOT pass it |
 | `--force` / `-f` | global: answer every [y/N] with yes (push, deploy, skill remove). Not reset. |
 
@@ -464,6 +465,32 @@ Registered today: `commit-style` refuses a `git commit` subject that is not
 it. `memory-entry` and `handoff-reminder` are installed by their own
 features (`memory enable`, `memory handoff remind enable`) and appear here
 for visibility.
+
+### Shared hooks
+
+A skill in `claude/skills/` reaches all three tools; a hook in Claude Code's
+`settings.json` reaches only Claude Code. `{entrypoint} hooks share` lists
+Claude Code's own command hooks; `hooks share <n> --name <name> [--to
+both|codex|agy]` moves one into `claude/shared-hooks/<name>.json` in the
+database, and from then on `apply` writes it into every tool: Claude Code's
+`settings.json`, each Codex home's `hooks.json`, and an `acg-<name>` entry in
+Antigravity's `~/.gemini/config/hooks.json`. `hooks unshare <name>` puts it
+back into Claude Code only. The projected copies are acg-owned, so gather
+never takes them back and a removed definition leaves every tool.
+
+Write the hook for Claude Code: Codex takes the same format and payload
+(`tool_name` `Bash`, the output in `tool_response`, context back through
+`hookSpecificOutput.additionalContext`). Antigravity runs it through `acg
+__agy-hook <name>`, which rewrites its payload into that shape and keeps the
+returned context for its next step, since Antigravity cannot take context
+from PostToolUse. Antigravity sends no tool output, so a hook that needs to
+know what a command did should fall back on `cwd`. Only `Bash` matchers and
+PreToolUse, PostToolUse and SessionStart reach Antigravity; Codex has no
+`Stop`. `hooks list` says which tool misses which hook.
+
+Codex runs a new or changed hook only after it is reviewed in `/hooks`, in
+each Codex home; acg never writes that trust, and `hooks list` and the
+desktop app's automation page say which homes still need it.
 
 ### The journal on every host
 

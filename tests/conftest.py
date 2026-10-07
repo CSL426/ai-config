@@ -175,3 +175,26 @@ def _no_real_codex_pruning(tmp_path_factory, monkeypatch):
     from ai_config import autoupdate
 
     monkeypatch.setattr(autoupdate, "HOME", tmp_path_factory.mktemp("codex-home"))
+
+
+@pytest.fixture(autouse=True)
+def _shared_hooks_stay_out_of_the_real_notebook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """apply projects shared hooks from paths.SCRIPT_DIR, this machine's data repository.
+
+    A Claude settings merge test failed on a machine whose repository had
+    a shared hook, and passed in CI, which has none. A test that points
+    SCRIPT_DIR somewhere of its own still reads its own definitions.
+    """
+    from ai_config import paths, shared_hooks
+
+    real = paths.SCRIPT_DIR
+    empty = tmp_path / "no-shared-hooks"
+
+    def definitions_dir() -> Path:
+        if paths.SCRIPT_DIR == real:
+            return empty
+        return paths.SCRIPT_DIR / "claude" / "shared-hooks"
+
+    monkeypatch.setattr(shared_hooks, "definitions_dir", definitions_dir)

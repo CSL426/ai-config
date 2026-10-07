@@ -3,11 +3,11 @@
 from .. import applied_state
 from ..backup import create_backup
 from ..categories import validate_category
-from ..console import log_error, log_warn
+from ..console import log_error, log_success, log_warn
 from ..instructionblocks import prepare_instruction_blocks
 from ..links import preflight_windows_links
 from ..locking import apply_lock
-from ..paths import ALL_TOOLS, tool_home
+from ..paths import ALL_TOOLS, tilde, tool_home
 from ..safety import assert_tool_destinations_safe
 from ..staging import staged_projections
 from ..tools import agy, claude, codex
@@ -32,6 +32,8 @@ def apply_tools(tools: list[str], *, category: str = "all") -> bool:
                     home_dir = tool_home(tool)
                     home_dir.mkdir(parents=True, exist_ok=True)
                     _TOOLS[tool].apply_internal(stages[tool], home_dir, category=category)
+                if category in ("all", "settings"):
+                    _project_shared_hooks(tools)
     except Exception as exc:  # noqa: BLE001 - top-level guard must not crash
         log_error(f"Failed to apply config: {exc}")
         if snapshot is not None:
@@ -44,6 +46,19 @@ def apply_tools(tools: list[str], *, category: str = "all") -> bool:
         # 只套一部分時,其餘部分可能還是舊的,不算跟資料庫一致
         applied_state.record(tools)
     return True
+
+
+def _project_shared_hooks(tools: list[str]) -> None:
+    """Codex and Antigravity keep hooks outside what apply mirrors; Claude's ride in settings.json."""
+    from .. import shared_hooks
+
+    changed = []
+    if "codex" in tools:
+        changed += shared_hooks.project_codex()
+    if "agy" in tools:
+        changed += shared_hooks.project_agy()
+    for path in changed:
+        log_success(f"shared hooks → {tilde(path)}")
 
 
 def apply_tool(tool: str, *, category: str = "all") -> bool:

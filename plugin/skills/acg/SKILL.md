@@ -1,8 +1,8 @@
 ---
 name: acg
 description: 用 acg 管理跨機器、跨工具(Claude Code、Codex、Antigravity)的 AI 設定、技能、共用記憶與工作線交接。使用者打 /acg 或 /acg <子指令> 時使用;也在使用者說「交接」「收工」「context 快滿了」「要 clear 了」「接手」「接著做」「上次做到哪」「同步設定」「把設定存起來」「分享技能給 Codex」「傳話給 Codex」「昨晚排程有沒有跑成功」時使用。
-argument-hint: '[status|sync|save|share|memory|keepalive|autoupdate|msg|handoff|handoffs|pickup]'
-allowed-tools: Read(~/.claude/plugins/cache/acg/**), Bash(acg status:*), Bash(ai-config status:*), Bash(acg pull:*), Bash(ai-config pull:*), Bash(acg push:*), Bash(ai-config push:*), Bash(acg share:*), Bash(ai-config share:*), Bash(acg unshare:*), Bash(ai-config unshare:*), Bash(acg memory status), Bash(ai-config memory status), Bash(acg memory handoff:*), Bash(ai-config memory handoff:*), Bash(acg keepalive status), Bash(ai-config keepalive status), Bash(acg autoupdate status), Bash(ai-config autoupdate status), Bash(acg memory autopush status), Bash(ai-config memory autopush status), Bash(acg msg list), Bash(ai-config msg list), Bash(acg skill), Bash(ai-config skill)
+argument-hint: '[status|sync|save|share|hooks|memory|keepalive|autoupdate|msg|handoff|handoffs|pickup]'
+allowed-tools: Read(~/.claude/plugins/cache/acg/**), Bash(acg status:*), Bash(ai-config status:*), Bash(acg pull:*), Bash(ai-config pull:*), Bash(acg push:*), Bash(ai-config push:*), Bash(acg share:*), Bash(ai-config share:*), Bash(acg unshare:*), Bash(ai-config unshare:*), Bash(acg hooks list), Bash(ai-config hooks list), Bash(acg memory status), Bash(ai-config memory status), Bash(acg memory handoff:*), Bash(ai-config memory handoff:*), Bash(acg keepalive status), Bash(ai-config keepalive status), Bash(acg autoupdate status), Bash(ai-config autoupdate status), Bash(acg memory autopush status), Bash(ai-config memory autopush status), Bash(acg msg list), Bash(ai-config msg list), Bash(acg skill), Bash(ai-config skill)
 ---
 
 # acg
@@ -22,6 +22,7 @@ acg 是跨機器、跨工具的 AI 設定管理 CLI。私人資料庫是設定�
 | `sync` | `../sync/SKILL.md` | 把資料庫的更新拉下來 |
 | `save` | `../save/SKILL.md` | 收集這台的設定,審閱後提交並上傳 |
 | `share` | `../share/SKILL.md` | 把 Claude 技能分享給 Codex 與 Antigravity |
+| `hooks` | `../hooks/SKILL.md` | 本機 hook,以及把 Claude Code 的 hook 分享給 Codex 與 Antigravity |
 | `memory` | `../memory/SKILL.md` | 看共用記憶的狀態 |
 | `keepalive` | `../keepalive/SKILL.md` | 查用量視窗錨定設定 |
 | `autoupdate` | `../autoupdate/SKILL.md` | 查每晚排程:自動更新與記憶上傳的設定與昨晚結果 |

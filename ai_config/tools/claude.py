@@ -5,7 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .. import handoff_reminder
+from .. import handoff_reminder, shared_hooks
 from ..categories import selected_paths
 from ..claude_plugin import preserve_release_ref, without_release_ref
 from ..console import log_error, log_header, log_info, log_success
@@ -63,10 +63,10 @@ def merge_claude_settings(source_text: str, target_text: str) -> str:
     )
     document = json.loads(merged)
     target = json.loads(target_text.lstrip("\ufeff"))
-    preserved = preserve_release_ref(
+    preserved = shared_hooks.project_claude(preserve_release_ref(
         handoff_reminder.preserve_settings(preserve_hooks(document, target), target),
         target,
-    )
+    ))
     return (
         merged if preserved == document
         else json.dumps(preserved, ensure_ascii=False, indent=2) + "\n"
@@ -176,10 +176,14 @@ def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
                     "settings.json (merged, preserved machine-local settings)"
                 )
             else:
+                filtered = filter_claude_settings(read_settings(source))
+                document = json.loads(filtered)
+                fresh = shared_hooks.project_claude(document)
                 write_settings(
                     source,
                     destination,
-                    filter_claude_settings(read_settings(source)),
+                    filtered if fresh == document
+                    else json.dumps(fresh, ensure_ascii=False, indent=2) + "\n",
                 )
                 log_success(
                     "settings.json (fresh copy, machine-local settings excluded)"
