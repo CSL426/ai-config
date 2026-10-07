@@ -87,6 +87,19 @@ def test_not_double_click_outside_windows(monkeypatch: pytest.MonkeyPatch) -> No
     assert cli.launched_by_double_click() is False
 
 
+def test_a_console_wsl_gave_is_not_a_double_click(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WSL gives a Windows program a console of its own, which reads as a double-click.
+
+    A WSL user had to press Enter after every acg command.
+    """
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.delenv("AI_CONFIG_FORCE_DOUBLE_CLICK", raising=False)
+    monkeypatch.setenv("AI_CONFIG_WSL", "1")
+    monkeypatch.setattr(cli, "owns_console", lambda: True)
+
+    assert cli.launched_by_double_click() is False
+
+
 def test_double_click_opens_gui_when_bundled(monkeypatch: pytest.MonkeyPatch) -> None:
     from ai_config import desktop as gui_module
 

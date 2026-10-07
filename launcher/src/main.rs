@@ -169,6 +169,10 @@ mod windows {
     /// A double-click gives us a console of our own that closes with us;
     /// without a pause the error would flash and vanish.
     pub fn pause_if_console_is_ours() {
+        // WSL 給的主控台也只有我們一個行程,但那是使用者的終端機
+        if std::env::var_os("AI_CONFIG_WSL").is_some() {
+            return;
+        }
         let mut list = [0u32; 4];
         let count = unsafe { GetConsoleProcessList(list.as_mut_ptr(), list.len() as u32) };
         if count == 1 {

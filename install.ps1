@@ -41,10 +41,25 @@ function Write-Utf8NoBom([string]$Path, [string]$Content) {
 function Install-GitBashLauncher([string]$Name, [string]$Executable) {
     $Launcher = Join-Path $BinDir $Name
     $ExecutableName = Split-Path -Leaf $Executable
-    $Content = (
-        '#!/usr/bin/env bash' + "`n" +
-        'AI_CONFIG_ENTRYPOINT=' + $Name + ' exec "$(dirname -- "$0")/' + $ExecutableName + '" "$@"' + "`n"
+    # WSL runs this script too, since it appends the Windows PATH. WSL hands a
+    # Windows program only the variables WSLENV names: without it the
+    # entrypoint name is lost, and the console WSL gives the program looks
+    # like a double-click, which waits for Enter. WSL's bash also never loads
+    # the completion installed for Git Bash, so its ~/.bashrc sources it once.
+    $Lines = @(
+        '#!/usr/bin/env bash',
+        'dir=$(dirname -- "$0")',
+        'if [ -n "$WSL_DISTRO_NAME" ]; then',
+        '    export AI_CONFIG_WSL=1 WSLENV="${WSLENV:+$WSLENV:}AI_CONFIG_ENTRYPOINT:AI_CONFIG_WSL"',
+        '    completion=$(cd -- "$dir/../share/bash-completion/completions" 2>/dev/null && pwd)/acg.bash',
+        '    if [ -f "$completion" ] && ! grep -qsF ''# >>> ai-config completion >>>'' ~/.bashrc; then',
+        '        printf ''\n# >>> ai-config completion >>>\n[ -f %q ] && . %q\n# <<< ai-config completion <<<\n'' "$completion" "$completion" >> ~/.bashrc',
+        '        echo "Added acg tab completion to ~/.bashrc in WSL; it works in new terminals." >&2',
+        '    fi',
+        'fi',
+        'AI_CONFIG_ENTRYPOINT=__NAME__ exec "$dir/__EXE__" "$@"'
     )
+    $Content = (($Lines -join "`n") + "`n").Replace('__NAME__', $Name).Replace('__EXE__', $ExecutableName)
     Write-Utf8NoBom $Launcher $Content
 }
 
@@ -421,6 +436,40 @@ function Update-CompletionProfile([string]$ProfilePath, [string]$CompletionPath)
     [IO.File]::WriteAllText($ProfilePath, $UpdatedProfile, $Encoding)
 }
 
+function Find-GitBash {
+    # git.exe sits in <Git>\cmd or <Git>\mingw64\bin; bash.exe in <Git>\bin
+    $Git = Get-Command git.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $Git) { return $null }
+    $Dir = Split-Path -Parent $Git.Source
+    for ($Level = 0; $Level -lt 3 -and $Dir; $Level++) {
+        $Bash = Join-Path $Dir 'bin\bash.exe'
+        if (Test-Path -LiteralPath $Bash -PathType Leaf) { return $Bash }
+        $Dir = Split-Path -Parent $Dir
+    }
+    return $null
+}
+
+function Update-GitBashRc([string]$HomeDir) {
+    # Git Bash never looks in ~/.local/share/bash-completion by itself, so the
+    # completion written there did nothing until ~/.bashrc sourced it. bash
+    # wants LF and no BOM here.
+    $BashRc = Join-Path $HomeDir '.bashrc'
+    $MarkerStart = '# >>> ai-config completion >>>'
+    $Source = '"$HOME/.local/share/bash-completion/completions/acg.bash"'
+    $Block = $MarkerStart + "`n" + "[ -f $Source ] && . $Source" + "`n" + '# <<< ai-config completion <<<'
+    $Text = Read-ProfileText $BashRc
+    if (-not $Text.Contains($MarkerStart)) {
+        $Separator = if ($Text -and -not $Text.EndsWith("`n")) { "`n" } else { '' }
+        Write-Utf8NoBom $BashRc ($Text + $Separator + $Block + "`n")
+    }
+    # A ~/.bashrc with no login file makes Git Bash warn once and write this
+    # same line itself; writing it here spares the warning.
+    $Logins = @('.bash_profile', '.bash_login', '.profile') | ForEach-Object { Join-Path $HomeDir $_ }
+    if (-not ($Logins | Where-Object { Test-Path -LiteralPath $_ })) {
+        Write-Utf8NoBom $Logins[0] "test -f ~/.bashrc && . ~/.bashrc`n"
+    }
+}
+
 function Install-Completions([string]$Executable) {
     if ($SkipCompletion) { return }
     try {
@@ -448,6 +497,9 @@ function Install-Completions([string]$Executable) {
     Write-Utf8NoBom $PowerShellCompletionPath (($PowerShellCompletion -join "`r`n") + "`r`n")
 
     Update-CompletionProfile $PROFILE.CurrentUserAllHosts $PowerShellCompletionPath
+    if ((Test-Path -LiteralPath (Join-Path $UserHome '.bashrc') -PathType Leaf) -or (Find-GitBash)) {
+        Update-GitBashRc $UserHome
+    }
     Write-Step 'Installed Bash and PowerShell completions; restart the terminal to load them.'
 }
 

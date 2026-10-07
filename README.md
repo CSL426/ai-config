@@ -77,6 +77,10 @@ curl -fsSL https://github.com/CSL426/ai-config/releases/latest/download/install.
 On Windows, the shell installer delegates to the native PowerShell installer
 automatically. The native installer also installs `acg.cmd` for PowerShell and
 extensionless `ai-config`/`acg` launchers beside `ai-config.exe` for Git Bash.
+WSL reaches the same launchers through the Windows PATH it appends: run there,
+they pass the command name to the Windows program through `WSLENV`, so it
+does not wait for Enter as if double-clicked, and the first run adds a marked
+block to WSL's `~/.bashrc` that loads the Windows install's tab completion.
 
 Windows PowerShell:
 
