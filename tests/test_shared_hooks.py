@@ -350,3 +350,27 @@ def test_a_failed_settings_write_leaves_no_definition(world: Path, monkeypatch: 
     assert command.run_hooks(["share", "1", "--name", "half"]) == 1
     assert shared_hooks.load_all() == []
     assert [e["command"] for e in _entries(hooks.read_settings(), "PostToolUse")] == ["a"]
+
+
+def test_a_plain_copy_left_in_the_database_does_not_double_the_hook(world: Path) -> None:
+    """2026-10-09: shared after it had been pushed, the hook ran twice on every push.
+
+    Sharing removed it from this machine; the database's settings.json
+    still had it, and apply put it back beside the projected copy.
+    """
+    shared_hooks.write_definition(PUSH)
+    plain = {"type": "command", "command": PUSH.command, "timeout": 5}
+    other_matcher = {"type": "command", "command": PUSH.command}
+    mine = {"type": "command", "command": "echo mine"}
+    document = {"hooks": {"PostToolUse": [
+        {"matcher": "Bash", "hooks": [plain, mine]},
+        {"matcher": "Edit", "hooks": [other_matcher]},
+    ]}}
+
+    projected = shared_hooks.project_claude(document)
+
+    entries = _entries(projected, "PostToolUse")
+    assert plain not in entries
+    # 只去掉同事件、同 matcher、同指令的那份;其他照留
+    assert mine in entries and other_matcher in entries
+    assert sum(1 for e in entries if e["command"] == PUSH.command and e.get("statusMessage")) == 1

@@ -220,11 +220,34 @@ def _row(entry: dict, matcher: str) -> dict:
 
 
 def _with_hooks(document: dict, hooks: list[SharedHook], tool: str) -> dict:
-    """Claude Code's hooks shape, this tool's shared entries replaced by the current set."""
+    """Claude Code's hooks shape, this tool's shared entries replaced by the current set.
+
+    A plain copy of a shared hook goes too. Sharing removes it from this
+    machine, but a copy already pushed into the database's settings.json
+    came back on the next apply beside the projected one, and every push
+    was reported twice.
+    """
+    reached = [hook for hook in hooks if not hook.unsupported(tool)]
     result = _strip(document, lambda entry: not _is_shared(entry))
-    for hook in hooks:
-        if hook.unsupported(tool):
-            continue
+    for event, rows in list((result.get("hooks") or {}).items()):
+        twins = {hook.command for hook in reached if hook.event == event}
+        for row in rows if isinstance(rows, list) and twins else []:
+            if not isinstance(row, dict) or not isinstance(row.get("hooks"), list):
+                continue
+            matcher = str(row.get("matcher") or "")
+            row["hooks"] = [
+                entry for entry in row["hooks"]
+                if not (isinstance(entry, dict) and entry.get("command") in twins
+                        and any(h.command == entry.get("command") and h.matcher == matcher
+                                for h in reached if h.event == event))
+            ]
+        if isinstance(rows, list):
+            result["hooks"][event] = [
+                row for row in rows if not (isinstance(row, dict) and row.get("hooks") == [])
+            ]
+            if not result["hooks"][event]:
+                del result["hooks"][event]
+    for hook in reached:
         events = result.setdefault("hooks", {})
         if not isinstance(events, dict):
             raise ValueError("hooks 必須是物件")  # noqa: TRY004
