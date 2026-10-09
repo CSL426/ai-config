@@ -183,7 +183,8 @@ def test_hosts_without_the_cli_are_neither_reported_nor_offered(
 def test_old_codex_without_plugins_is_explained(homes: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(hosts, "_codex_plugin_commands", lambda: frozenset())
     monkeypatch.setattr(hosts, "codex_version", lambda: "codex-cli 0.77.0")
-    with pytest.raises(RuntimeError, match="0.77.0.*沒有 plugin"):
+    monkeypatch.setattr(hosts, "_codex_from_npm", lambda: False)
+    with pytest.raises(RuntimeError, match="0.77.0.*升級 Codex"):
         hosts.install_codex()
 
 
@@ -219,3 +220,21 @@ def test_a_failure_says_why_not_just_the_usage(monkeypatch: pytest.MonkeyPatch) 
 
     with pytest.raises(RuntimeError, match="unrecognized subcommand 'add'"):
         hosts._run_codex("add", "remember@remember-dev")
+
+
+def test_a_codex_whose_plugin_only_manages_marketplaces_is_stopped_first(
+    homes: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex 0.125 (npm, on a Windows machine): `plugin` had only `marketplace`.
+
+    acg added the marketplace and then failed on the install, leaving half a setup.
+    """
+    calls = []
+    monkeypatch.setattr(hosts, "_codex_plugin_commands", lambda: frozenset({"marketplace", "help"}))
+    monkeypatch.setattr(hosts, "codex_version", lambda: "codex-cli 0.125.0")
+    monkeypatch.setattr(hosts, "_codex_from_npm", lambda: True)
+    monkeypatch.setattr(hosts, "_run_codex", lambda *args: calls.append(args))
+
+    with pytest.raises(RuntimeError, match="0.125.0.*升級 Codex.*npm"):
+        hosts.install_codex()
+    assert calls == []

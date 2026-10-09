@@ -193,6 +193,13 @@ def _verb(commands: frozenset, *choices: str) -> str:
     return found
 
 
+def _codex_from_npm() -> bool:
+    from .autoupdate import _is_npm_install
+
+    binary = shutil.which("codex")
+    return bool(binary) and _is_npm_install(binary)
+
+
 def codex_version() -> str:
     binary = shutil.which("codex")
     if binary is None:
@@ -207,10 +214,12 @@ def codex_version() -> str:
 def install_codex() -> list[str]:
     """Add the author's marketplace once, then the plugin; both idempotent."""
     commands = _codex_plugin_commands()
-    if not commands:
+    # 0.125 的 plugin 只有 marketplace:先檢查,免得加了 marketplace 才發現裝不了
+    if not commands & {"add", "install"}:
         raise RuntimeError(
-            f"這台的 Codex({codex_version() or '版本不明'})沒有 plugin 子指令,"
-            "要先把 Codex 升級到有 plugin 的版本才裝得了 remember"
+            f"這台的 Codex({codex_version() or '版本不明'})還不能安裝 plugin,"
+            "要先升級 Codex 才裝得了 remember"
+            + ("(這台是 npm 安裝的,建議改用官方獨立安裝版)" if _codex_from_npm() else "")
         )
     lines = []
     marketplaces = codex_config().get("marketplaces", {})
@@ -218,7 +227,7 @@ def install_codex() -> list[str]:
         _run_codex("marketplace", "add", CODEX_MARKETPLACE_REPO)
         lines.append(f"Codex 加入 marketplace {CODEX_MARKETPLACE}")
     if not codex_state().installed:
-        _run_codex(_verb(commands, "add", "install"), CODEX_PLUGIN_REF)
+        _run_codex("add" if "add" in commands else "install", CODEX_PLUGIN_REF)
         lines.append(f"Codex 安裝 remember({CODEX_PLUGIN_REF})")
     state = codex_state()
     if state.installed and not state.trusted:
