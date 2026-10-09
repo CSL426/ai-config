@@ -19,7 +19,9 @@ def homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(memory_journal, "REMEMBER_PLUGIN_CACHE", cache)
     # CI 上沒有 codex / agy 指令;測試談的是 acg 的行為,不是那台有什麼
     monkeypatch.setattr(hosts, "available", lambda host: True)
-    monkeypatch.setattr(hosts, "_codex_has_plugins", lambda: True)
+    monkeypatch.setattr(
+        hosts, "_codex_plugin_commands", lambda: frozenset({"add", "list", "marketplace", "remove"}),
+    )
     for version in ("0.9.0", "0.32.0", "0.10.0"):
         scripts = cache / version / "scripts"
         scripts.mkdir(parents=True)
@@ -179,7 +181,41 @@ def test_hosts_without_the_cli_are_neither_reported_nor_offered(
 
 
 def test_old_codex_without_plugins_is_explained(homes: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(hosts, "_codex_has_plugins", lambda: False)
+    monkeypatch.setattr(hosts, "_codex_plugin_commands", lambda: frozenset())
     monkeypatch.setattr(hosts, "codex_version", lambda: "codex-cli 0.77.0")
     with pytest.raises(RuntimeError, match="0.77.0.*沒有 plugin"):
         hosts.install_codex()
+
+
+def test_a_codex_that_still_says_install_gets_install(homes: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Windows machine one Codex release behind refused `plugin add`."""
+    calls = []
+    monkeypatch.setattr(hosts, "_codex_plugin_commands", lambda: frozenset({"install", "marketplace", "uninstall"}))
+    monkeypatch.setattr(hosts, "_run_codex", lambda *args: calls.append(args))
+
+    hosts.install_codex()
+
+    assert ("install", "remember@remember-dev") in calls
+
+
+def test_plugin_verbs_are_read_from_the_help() -> None:
+    text = (
+        "Manage Codex plugins\n\nUsage: codex plugin [OPTIONS] <COMMAND>\n\nCommands:\n"
+        "  add          Install a plugin\n  marketplace  Manage\n  remove       Uninstall\n"
+        "  help         Print this message\n\nOptions:\n  -c, --config <key=value>\n"
+    )
+
+    assert hosts._help_commands(text) == frozenset({"add", "marketplace", "remove", "help"})
+
+
+def test_a_failure_says_why_not_just_the_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+
+    monkeypatch.setattr(hosts.shutil, "which", lambda name: "/bin/codex")
+    monkeypatch.setattr(hosts.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a, 2, "", "error: unrecognized subcommand 'add'\n\nUsage: codex plugin [OPTIONS] <COMMAND>\n\n"
+        "For more information, try '--help'.\n",
+    ))
+
+    with pytest.raises(RuntimeError, match="unrecognized subcommand 'add'"):
+        hosts._run_codex("add", "remember@remember-dev")
