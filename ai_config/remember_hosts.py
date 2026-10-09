@@ -146,15 +146,21 @@ def _run_codex(*args: str) -> subprocess.CompletedProcess:
         check=False, timeout=300,
     )
     if result.returncode != 0:
-        tail = (result.stderr or result.stdout).strip().splitlines()[-3:]
+        lines = [line.strip() for line in (result.stderr or result.stdout).splitlines() if line.strip()]
+        # clap 把原因印在 Usage 前面;只取最後幾行會剩下用法說明,看不出哪裡錯
+        reason = [line for line in lines if line.lower().startswith("error")] or lines[-3:]
         raise RuntimeError(
-            f"codex plugin {' '.join(args)} 失敗:" + " / ".join(tail)
+            f"codex plugin {' '.join(args)} 失敗:" + " / ".join(reason)
         )
     return result
 
 
-def _codex_has_plugins() -> bool:
-    """Codex grew its plugin system around 0.15x; 0.77 has no such subcommand."""
+def _codex_plugin_commands() -> frozenset:
+    """The verbs this Codex's `plugin` takes; empty when it has no plugins at all.
+
+    Codex grew plugins around 0.15x (0.77 has none) and renamed install to
+    add along the way, so a machine one version behind refused `add`.
+    """
     binary = shutil.which("codex")
     if binary is None:
         raise RuntimeError("找不到 codex 指令,Codex 這邊先跳過")
@@ -162,7 +168,36 @@ def _codex_has_plugins() -> bool:
         [binary, "plugin", "--help"], capture_output=True, text=True,
         encoding="utf-8", errors="replace", check=False, timeout=60,
     )
-    return probe.returncode == 0
+    if probe.returncode != 0:
+        return frozenset()
+    return _help_commands(probe.stdout)
+
+
+def _help_commands(text: str) -> frozenset:
+    commands, inside = set(), False
+    for line in text.splitlines():
+        if line.strip() == "Commands:":
+            inside = True
+            continue
+        if inside:
+            if not line.startswith(" ") or not line.strip():
+                break
+            commands.add(line.split()[0])
+    return frozenset(commands)
+
+
+def _verb(commands: frozenset, *choices: str) -> str:
+    found = next((verb for verb in choices if verb in commands), None)
+    if found is None:
+        raise RuntimeError(f"這台 Codex 的 plugin 沒有 {' 或 '.join(choices)} 子指令:{', '.join(sorted(commands))}")
+    return found
+
+
+def _codex_from_npm() -> bool:
+    from .autoupdate import _is_npm_install
+
+    binary = shutil.which("codex")
+    return bool(binary) and _is_npm_install(binary)
 
 
 def codex_version() -> str:
@@ -178,10 +213,13 @@ def codex_version() -> str:
 
 def install_codex() -> list[str]:
     """Add the author's marketplace once, then the plugin; both idempotent."""
-    if not _codex_has_plugins():
+    commands = _codex_plugin_commands()
+    # 0.125 的 plugin 只有 marketplace:先檢查,免得加了 marketplace 才發現裝不了
+    if not commands & {"add", "install"}:
         raise RuntimeError(
-            f"這台的 Codex({codex_version() or '版本不明'})沒有 plugin 子指令,"
-            "要先把 Codex 升級到有 plugin 的版本才裝得了 remember"
+            f"這台的 Codex({codex_version() or '版本不明'})還不能安裝 plugin,"
+            "要先升級 Codex 才裝得了 remember"
+            + ("(這台是 npm 安裝的,建議改用官方獨立安裝版)" if _codex_from_npm() else "")
         )
     lines = []
     marketplaces = codex_config().get("marketplaces", {})
@@ -189,8 +227,7 @@ def install_codex() -> list[str]:
         _run_codex("marketplace", "add", CODEX_MARKETPLACE_REPO)
         lines.append(f"Codex 加入 marketplace {CODEX_MARKETPLACE}")
     if not codex_state().installed:
-        # 這版 Codex 的動詞是 add;remember 文件寫的 install 已經不存在
-        _run_codex("add", CODEX_PLUGIN_REF)
+        _run_codex("add" if "add" in commands else "install", CODEX_PLUGIN_REF)
         lines.append(f"Codex 安裝 remember({CODEX_PLUGIN_REF})")
     state = codex_state()
     if state.installed and not state.trusted:
@@ -203,7 +240,7 @@ def install_codex() -> list[str]:
 def remove_codex() -> list[str]:
     lines = []
     if codex_state().installed or codex_plugin_dir() is not None:
-        _run_codex("remove", CODEX_PLUGIN_REF)
+        _run_codex(_verb(_codex_plugin_commands(), "remove", "uninstall"), CODEX_PLUGIN_REF)
         lines.append("Codex 移除 remember")
     marketplaces = codex_config().get("marketplaces", {})
     if isinstance(marketplaces, dict) and CODEX_MARKETPLACE in marketplaces:
