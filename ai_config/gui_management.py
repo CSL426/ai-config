@@ -157,6 +157,27 @@ def _remember_hosts_state() -> dict:
     return result
 
 
+def _shared_hooks_state() -> list:
+    """Each shared hook and whether Codex and Antigravity get it; read-only."""
+    from . import shared_hooks
+
+    result = []
+    try:
+        defined, _broken = shared_hooks.load_readable()
+        homes = shared_hooks.codex_homes()
+    except (OSError, RuntimeError, ValueError):
+        return result
+    for hook in defined:
+        untrusted = [] if hook.unsupported("codex") else [
+            home.name for home in homes
+            if (home / "hooks.json").is_file() and not shared_hooks.codex_trusted(home, hook)
+        ]
+        result.append({"name": hook.name, "event": hook.event, "matcher": hook.matcher,
+                       "codex": hook.unsupported("codex"), "agy": hook.unsupported("agy"),
+                       "codex_untrusted": untrusted})
+    return result
+
+
 def failure(exc):
     recovery = getattr(exc, "recovery_required", False)
     if recovery:
@@ -321,7 +342,7 @@ class ManagementApi:
                  "autopush": {"installed": False, "last_push": "", "reason": "",
                               "slot": "", "host": "", "others": []},
                  "autoupdate": {"installed": False, "time": "", "last_run": "", "steps": []},
-                 "handoff_reminder": None, "remember_hosts": None,
+                 "handoff_reminder": None, "remember_hosts": None, "shared_hooks": [],
                  "changed_paths": [], "entries": [], "project": None, "locations": [],
                  "actions": {action: {"allowed": False, "reason": "請先設定資料庫"}
                              for action in ("enable", "disable", "adopt", "release", "push")}}
@@ -378,6 +399,7 @@ class ManagementApi:
                     "handoffs": _handoff_threads(),
                     "handoff_reminder": _handoff_reminder_state(),
                     "remember_hosts": _remember_hosts_state(),
+                    "shared_hooks": _shared_hooks_state(),
                     "locations": locations,
                     "project": {"root": str(project), "key": state.project.key,
                                 "stable": state.project.stable, "memory_path": str(state.project_dir),
@@ -618,6 +640,11 @@ class ManagementApi:
                     from .applyplan import execute
 
                     backup = execute(candidate)
+                    if candidate.category in ("all", "settings"):
+                        # Codex 與 Antigravity 的 hooks.json 不在預覽的檔案清單裡,跟 CLI 的 apply 一樣另外投影
+                        from . import shared_hooks
+
+                        shared_hooks.project_tools(candidate.tools)
                     if candidate.category == "all":
                         # 跟 CLI 的 apply 一樣:記下這台現在對齊資料庫的哪個 commit
                         from . import applied_state

@@ -83,6 +83,29 @@ function renderRememberHosts(info: MemoryInfo): void {
   }
 }
 
+function renderSharedHooks(info: MemoryInfo): void {
+  const hooks = info.shared_hooks ?? [];
+  const list = $("#shared-hooks-list");
+  list.replaceChildren();
+  $("#shared-hooks-hint").textContent = hooks.length
+    ? "在 Claude Code 寫一次，apply 時也寫進 Codex 與 Antigravity。"
+    : "還沒有。在終端機執行 acg hooks share，把 Claude Code 的 hook 分享給另外兩個工具。";
+  for (const hook of hooks) {
+    const item = document.createElement("li");
+    const label = document.createElement("code");
+    label.textContent = hook.name;
+    const where = [
+      `Codex ${hook.codex ? `不會收到（${hook.codex}）` : "✓"}`,
+      `Antigravity ${hook.agy ? `不會收到（${hook.agy}）` : "✓"}`,
+    ];
+    if (hook.codex_untrusted.length) {
+      where.push(`Codex（${hook.codex_untrusted.join("、")}）還沒信任：在 Codex 輸入 /hooks`);
+    }
+    item.append(label, `：${hook.event}${hook.matcher ? ` [${hook.matcher}]` : ""}；${where.join("；")}`);
+    list.append(item);
+  }
+}
+
 function renderKeepalive(info: MemoryInfo): void {
   const toggle = $<HTMLInputElement>("#keepalive-toggle");
   const state = info.keepalive ?? {
@@ -389,6 +412,7 @@ onMemoryInfo((info) => {
   renderKeepalive(info);
   renderHandoffReminder(info);
   renderRememberHosts(info);
+  renderSharedHooks(info);
 });
 
 $("#automation-open").addEventListener("click", () => { showView("automation"); void refreshMemory(); });

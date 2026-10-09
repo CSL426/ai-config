@@ -103,6 +103,8 @@ export interface MemoryInfo extends RunResult {
     enabled: boolean; threshold: number; installed: boolean; reason?: string;
   } | null;
   remember_hosts: Record<RememberHost, RememberHostState> | null;
+  /** Claude Code 寫一次、apply 投影給 Codex 與 Antigravity 的 hook;codex/agy 是收不到的原因,空字串表示收得到。 */
+  shared_hooks?: { name: string; event: string; matcher: string; codex: string; agy: string; codex_untrusted: string[] }[];
   entries: {
     tool: Exclude<ToolScope, "all">;
     status: "missing" | "installed" | "blocked";

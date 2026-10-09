@@ -63,6 +63,11 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         from .channel import run as run_channel
 
         return run_channel()
+    if args and args[0] == "__agy-hook":
+        # Antigravity 的 hook:stdout 只能是它讀得懂的 JSON
+        from .shared_hooks import run_agy_hook
+
+        return run_agy_hook(args[1:])
     if args and args[0] == "__commit-style":
         from .commit_style import run_hook
 
