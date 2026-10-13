@@ -374,3 +374,76 @@ def test_a_plain_copy_left_in_the_database_does_not_double_the_hook(world: Path)
     # 只去掉同事件、同 matcher、同指令的那份;其他照留
     assert mine in entries and other_matcher in entries
     assert sum(1 for e in entries if e["command"] == PUSH.command and e.get("statusMessage")) == 1
+
+
+def test_codex_on_windows_goes_through_acg_and_its_snapshot(
+    world: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex on Windows ran `bash` through PowerShell, which found WSL's bash."""
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+    shared_hooks.write_definition(PUSH)
+
+    shared_hooks.project_tools(["codex"])
+
+    for home in (world / ".codex", world / ".codex-work"):
+        entry = _entries(json.loads((home / "hooks.json").read_text(encoding="utf-8")), "PostToolUse")[0]
+        assert entry["command"] == "/opt/acg/ai-config __agy-hook --run after-push"
+        assert entry["timeout"] == 5 + 10
+        assert entry["statusMessage"] == "acg：共用 after-push"
+    # 只 apply codex 也要有轉接器要跑的那份
+    snapshot = world / "state" / "acg" / "agy-hooks" / "after-push.json"
+    assert json.loads(snapshot.read_text(encoding="utf-8"))["command"] == PUSH.command
+
+
+def test_codex_elsewhere_keeps_the_command_as_written(world: Path) -> None:
+    shared_hooks.write_definition(PUSH)
+    shared_hooks.project_tools(["codex"])
+
+    entry = _entries(json.loads((world / ".codex" / "hooks.json").read_text(encoding="utf-8")), "PostToolUse")[0]
+    assert entry["command"] == PUSH.command and entry["timeout"] == 5
+
+
+def test_a_leading_bash_becomes_git_bash_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    git_bash = "C:\\Program Files\\Git\\bin\\bash.exe"
+    monkeypatch.setattr(shared_hooks, "_bash", lambda: git_bash)
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+
+    assert shared_hooks._shell('bash "$HOME/x.sh"') == [
+        git_bash, "-c", "'C:/Program Files/Git/bin/bash.exe' \"$HOME/x.sh\"",
+    ]
+    # bashful 不是 bash;只換開頭那個字
+    assert shared_hooks._shell("bashful x")[2] == "bashful x"
+
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: False)
+    assert shared_hooks._shell('bash "$HOME/x.sh"')[2] == 'bash "$HOME/x.sh"'
+
+
+def test_the_codex_runner_passes_the_hook_through_and_logs_a_failure(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    script = world / "hook.py"
+    script.write_text(
+        "import json, sys\n"
+        "p = json.load(sys.stdin)\n"
+        "print(json.dumps({'hookSpecificOutput': {'additionalContext': 'saw ' + p['cwd']}}))\n",
+        encoding="utf-8",
+    )
+    command = f"{shlex.quote(Path(sys.executable).as_posix())} {shlex.quote(script.as_posix())}"
+    broken = f"{shlex.quote(Path(sys.executable).as_posix())} -c 'import sys; sys.exit(\"boom\")'"
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+    shared_hooks.write_definition(shared_hooks.SharedHook("probe", "PostToolUse", command, matcher="Bash"))
+    shared_hooks.write_definition(shared_hooks.SharedHook("broken", "PostToolUse", broken, matcher="Bash"))
+    shared_hooks.project_tools(["codex"])
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"cwd": str(world)})))
+    assert shared_hooks.run_agy_hook(["--run", "probe"]) == 0
+    # Codex 收到的就是腳本自己的輸出,不經轉換
+    assert json.loads(capsys.readouterr().out) == {"hookSpecificOutput": {"additionalContext": f"saw {world}"}}
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    assert shared_hooks.run_agy_hook(["--run", "broken"]) == 1
+    log = (world / "state" / "acg" / "hook-errors.log").read_text(encoding="utf-8")
+    assert "broken exit 1: boom" in log
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("not json"))
+    assert shared_hooks.run_agy_hook(["--run", "missing"]) == 0

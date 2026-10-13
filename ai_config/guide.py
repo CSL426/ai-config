@@ -74,6 +74,15 @@ Claude agents, tool-specific skills, Claude skills, shared/both, shared/tool
 Projection copies the whole skill directory, `SKILL.md` rewritten for the
 tool; credential files are left out and a symlink is refused.
 
+Claude Code mods (and any plugin) can live in the data repo too, e.g.
+`claude/mods/` with a `.claude-plugin/marketplace.json`, registered in
+Claude's `settings.json` as a `directory` marketplace and enabled in
+`enabledPlugins`. `apply` never copies that folder; Claude Code reads it in
+place, so a `pull` updates the mod without a version bump. The repo stores a
+directory-marketplace path inside the data repo as `<acg-data>/...`, and
+`apply` writes it as this machine's repo (`~/ai-config/data/...` here,
+`~/.acg-data/...` there), since machines keep the repo in different places.
+
 `status` also lists skill directories that exist in a tool's live skills
 directory but were never deployed by ai-config (hand-installed skills, or
 leftovers from an earlier migration). They are reported only: `apply` never
@@ -487,6 +496,13 @@ from PostToolUse. Antigravity sends no tool output, so a hook that needs to
 know what a command did should fall back on `cwd`. Only `Bash` matchers and
 PreToolUse, PostToolUse and SessionStart reach Antigravity; Codex has no
 `Stop`. `hooks list` says which tool misses which hook.
+
+On Windows, `bash` on PATH can be WSL's launcher, which gets Windows paths
+wrong and fails silently. There Codex's copy calls `acg __agy-hook --run
+<name>` instead of the command itself, and both adapters run the command in
+Git Bash (found next to `git`), so a leading `bash` is Git Bash too. A hook
+that exits non-zero under an adapter is logged to
+`~/.local/state/acg/hook-errors.log`.
 
 Codex runs a new or changed hook only after it is reviewed in `/hooks`, in
 each Codex home; acg never writes that trust, and `hooks list` and the

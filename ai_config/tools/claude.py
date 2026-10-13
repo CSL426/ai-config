@@ -5,7 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .. import handoff_reminder, shared_hooks
+from .. import data_marketplaces, handoff_reminder, shared_hooks
 from ..categories import selected_paths
 from ..claude_plugin import preserve_release_ref, without_release_ref
 from ..console import log_error, log_header, log_info, log_success
@@ -48,9 +48,9 @@ _SETTINGS_LABEL = "Claude settings.json"
 def filter_claude_settings(text: str) -> str:
     filtered = filter_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL)
     document = json.loads(filtered)
-    cleaned = without_release_ref(
+    cleaned = data_marketplaces.portable(without_release_ref(
         handoff_reminder.without_settings(without_hooks(document))
-    )
+    ))
     return (
         filtered if cleaned == document
         else json.dumps(cleaned, ensure_ascii=False, indent=2) + "\n"
@@ -63,10 +63,10 @@ def merge_claude_settings(source_text: str, target_text: str) -> str:
     )
     document = json.loads(merged)
     target = json.loads(target_text.lstrip("\ufeff"))
-    preserved = shared_hooks.project_claude(preserve_release_ref(
+    preserved = data_marketplaces.local(shared_hooks.project_claude(preserve_release_ref(
         handoff_reminder.preserve_settings(preserve_hooks(document, target), target),
         target,
-    ))
+    )))
     return (
         merged if preserved == document
         else json.dumps(preserved, ensure_ascii=False, indent=2) + "\n"
@@ -74,9 +74,9 @@ def merge_claude_settings(source_text: str, target_text: str) -> str:
 
 
 def shared_claude_settings(text: str) -> dict[str, object]:
-    return without_release_ref(handoff_reminder.without_settings(
+    return data_marketplaces.portable(without_release_ref(handoff_reminder.without_settings(
         without_hooks(shared_settings(text, _MACHINE_LOCAL_SETTINGS, _SETTINGS_LABEL))
-    ))
+    )))
 
 
 def _stage_filtered_settings(source: Path, destination: Path) -> None:
@@ -178,7 +178,7 @@ def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
             else:
                 filtered = filter_claude_settings(read_settings(source))
                 document = json.loads(filtered)
-                fresh = shared_hooks.project_claude(document)
+                fresh = data_marketplaces.local(shared_hooks.project_claude(document))
                 write_settings(
                     source,
                     destination,
