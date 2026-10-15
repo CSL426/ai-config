@@ -114,7 +114,7 @@ def test_agy_hooks_that_apply_would_change_are_pending(
 
     monkeypatch.setattr(remember_hosts, "AGY_HOOKS", tmp_path / ".gemini" / "config" / "hooks.json")
 
-    assert shared_hooks.pending_projection("agy")
+    assert remember_hosts.AGY_HOOKS in shared_hooks.pending_projection("agy")
     shared_hooks.project_tools(["agy"])
     assert shared_hooks.pending_projection("agy") == []
 
@@ -122,3 +122,28 @@ def test_agy_hooks_that_apply_would_change_are_pending(
 def test_claude_has_no_separate_hook_projection(codex_home: Path) -> None:
     # Claude 的共用 hook 寫在 settings.json 裡,由上面的重新渲染比對涵蓋
     assert not status_cmd._report_shared_hook_projection("claude")
+
+
+def test_a_hook_check_that_could_not_run_is_not_called_consistent(
+    machine: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unreadable(tool: str) -> list:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(shared_hooks, "pending_projection", unreadable)
+    assert status_cmd._report_shared_hook_projection("codex")
+
+
+def test_a_broken_hook_definition_is_reported_not_swallowed(
+    machine: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    def broken(*args, **kwargs):
+        raise shared_hooks.DefinitionError("bad.json: no command")
+
+    current = _settings("~/.acg-data/claude/mods")
+    monkeypatch.setattr(claude, "merge_claude_settings", broken)
+    _status_claude(tmp_path, monkeypatch, current, current)
+
+    out = capsys.readouterr()
+    assert "No differences found" not in out.out
+    assert "bad.json" in out.out + out.err

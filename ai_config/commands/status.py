@@ -71,12 +71,18 @@ def _report_rerender(merge, ai_file: Path, live_text: str, rel: str) -> bool:
     a file from it (a portable path resolved per machine, a new hook
     format); comparing shared content alone calls that already applied.
     """
+    from ..shared_hooks import DefinitionError
+
     ai_text = ai_file.read_text(encoding="utf-8-sig", errors="replace")
     try:
         rendered = merge(ai_text, live_text)
+        # 只差格式不算:手改過排版的設定檔不該一直被報有差異
         if json.loads(rendered) == json.loads(live_text.lstrip("\ufeff")):
             return False
-    except ValueError:
+    except DefinitionError as error:
+        log_warn(f"{rel}:共用 hook 定義有誤,apply 會失敗:{error}")
+        return True
+    except json.JSONDecodeError:
         return False
     print(f"  {YELLOW}~ {rel}{NC} (this acg writes it differently; apply updates it)")
     for line in list(difflib.unified_diff(
@@ -95,9 +101,10 @@ def _report_shared_hook_projection(tool: str) -> bool:
 
     try:
         pending = shared_hooks.pending_projection(tool)
-    except (shared_hooks.DefinitionError, RuntimeError, ValueError) as error:
+    except (OSError, RuntimeError, ValueError) as error:
+        # 沒比對成就不能說一致
         log_warn(f"共用 hook 無法比對:{error}")
-        return False
+        return True
     for path in pending:
         print(f"  {YELLOW}~ {path}{NC} (shared hooks; apply updates it)")
     return bool(pending)
@@ -284,6 +291,7 @@ def status_tool(tool: str) -> None:
 
         if not dir_has_files(stage_dir):
             log_warn(f"No config in ai-config/{tool}/")
+            _report_shared_hook_projection(tool)
             return
         if not home_dir.is_dir() and not (
             tool == "codex" and codex_live_skills().is_dir()

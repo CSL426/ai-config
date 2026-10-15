@@ -134,3 +134,15 @@ def test_gathering_a_path_an_older_acg_stored_makes_it_portable(machine) -> None
     (repo / "claude" / "mods").mkdir(parents=True)
 
     assert _path(data_marketplaces.portable(_settings("~/ai-config/data/claude/mods"))) == "<acg-data>/claude/mods"
+
+
+def test_a_missing_marketplace_outside_any_data_repo_is_left_alone(machine) -> None:
+    home, at = machine
+    repo = home / ".acg-data"
+    at(repo)
+    (repo / "claude" / "mods").mkdir(parents=True)
+
+    # 結尾剛好跟資料庫裡的資料夾同名,但不在 acg 放資料庫的位置
+    elsewhere = "/srv/team/claude/mods"
+    assert _path(data_marketplaces.local(_settings(elsewhere))) == elsewhere
+    assert _path(data_marketplaces.portable(_settings(elsewhere))) == elsewhere
