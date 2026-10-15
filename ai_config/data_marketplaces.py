@@ -83,7 +83,10 @@ def portable(document: dict) -> dict:
     for source in _directory_sources(document):
         if source["path"].startswith(PLACEHOLDER):
             continue
+        # 舊版存成別台路徑的,這台 apply 會換成本機的,存回去也該是同一份
         relative = _inside_repo(source["path"])
+        if relative is None:
+            relative = _legacy(source["path"])
         if relative is not None:
             portable_path = PLACEHOLDER if relative == "." else f"{PLACEHOLDER}/{relative}"
             changes.append((source["path"], portable_path))

@@ -125,3 +125,12 @@ def test_a_path_an_older_acg_stored_for_another_machine_lands_in_this_repo(machi
     assert _path(applied, "elsewhere") == "/srv/plugins"
     (home / "ai-config" / "data" / "claude" / "mods").mkdir(parents=True)
     assert _path(data_marketplaces.local(_settings("~/ai-config/data/claude/mods"))) == "~/ai-config/data/claude/mods"
+
+
+def test_gathering_a_path_an_older_acg_stored_makes_it_portable(machine) -> None:
+    home, at = machine
+    repo = home / ".acg-data"
+    at(repo)
+    (repo / "claude" / "mods").mkdir(parents=True)
+
+    assert _path(data_marketplaces.portable(_settings("~/ai-config/data/claude/mods"))) == "<acg-data>/claude/mods"

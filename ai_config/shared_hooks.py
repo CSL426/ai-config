@@ -524,6 +524,36 @@ def project_tools(tools: list[str]) -> list[str]:
     return changed
 
 
+def pending_projection(tool: str) -> list[Path]:
+    """What project_tools would write for this tool, without writing it.
+
+    Status compares the repository with live files, and these live
+    outside what apply mirrors; a newer acg that writes them differently
+    from the same commit would otherwise look already applied.
+    """
+    hooks = load_all()
+    pending: list[Path] = []
+    if tool == "codex":
+        pending += [path for path, _ in _codex_plan(hooks, codex_homes())]
+    if tool == "agy":
+        from .remember_hosts import _load_agy_hooks
+
+        existing = _load_agy_hooks()
+        if agy_document(existing, hooks) != existing:
+            pending.append(agy_hooks_path())
+    if tool == "agy" or (tool == "codex" and _windows()):
+        pending += _stale_snapshots(hooks)
+    return pending
+
+
+def _stale_snapshots(hooks: list[SharedHook]) -> list[Path]:
+    snapshots = _snapshots(hooks)
+    root = _snapshot_dir()
+    stale = [path for path in root.glob("*.json") if path not in snapshots] if root.is_dir() else []
+    changed = [path for path, data in snapshots.items() if not path.is_file() or _read_json(path) != data]
+    return sorted(changed + stale)
+
+
 # ─── the Antigravity adapter (`__agy-hook`) ──────────────────
 
 def _context_dir() -> Path:
