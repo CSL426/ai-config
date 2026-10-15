@@ -68,9 +68,8 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     # 只提到參數名、後面沒有值:2026-10-14、15 兩晚的自動上傳都被這種寫法擋下
     "- 取消用 `?token=` 網址參數傳 token",
     "唯讀調查 `?token=` 經 log 外洩風險",
-    "password:",
-    'secret = ""',
     "api_key=, token=)",
+    "?token=&page=2",
     "- 取消用 ?token= 網址參數傳 token(app/auth.py)",
 ])
 def test_a_shell_reference_is_not_a_credential(line: str) -> None:
@@ -90,6 +89,12 @@ def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     '"token": "' + "abc123" + '"',  # JSON 的值以引號開頭,不能當成空值
     "token = " + "abc123",
     "`token=" + "abc123`",
+    # 只有 URL/shell 的 key= 才看值是不是空的;JSON、YAML 的值可能在下一行或是區塊
+    '"token":\n  "' + "abc123" + '"',
+    "token: |\n  " + "abc123",
+    'token=""' + "abc123",
+    "token=" + "中文abc123",
+    "password: " + "中文密碼",
 ])
 def test_a_literal_value_is_still_a_credential(line: str) -> None:
     from ai_config.safety import looks_like_secret
