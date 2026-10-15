@@ -33,6 +33,11 @@ Codex 對新的或改過的 hook,要使用者在 Codex 裡打 `/hooks` 檢視並
 CODEX_HOME(例如不同帳號)各一次。列表會指出哪個 home 還沒信任。**不要替使用者去改
 config.toml 的信任紀錄**,這是 Codex 的安全關卡,告訴使用者怎麼做就好。
 
+Windows 上 Codex 拿到的是 `acg __agy-hook --run <名稱> <hash>`,由 acg 用 Git Bash 跑。
+定義一改 hash 就變,一樣要重新 `/hooks` 信任。hook 沒反應時看
+`~/.local/state/acg/hook-errors.log`:失敗、逾時,或「snapshot changed since this
+tool was applied」(只 apply 了另一個工具)都記在那裡,後者重新 apply 那個工具就好。
+
 ## 取消分享
 
 `acg hooks unshare <名稱>` 把它放回 Claude Code 自己的 settings.json,再 `acg apply`
