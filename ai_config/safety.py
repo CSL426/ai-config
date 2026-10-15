@@ -233,8 +233,13 @@ SECRET_PATTERN = re.compile(
     rb"stripe_(?:secret_key|api_key))[\"']?\s*[:=]"
     # 值是 shell 的變數或指令替換($(...)、${...}、$NAME)或成對的短 <佔位符> 時不是
     # 寫死的憑證:交接裡的 GH_TOKEN=$(gh auth token --user X)、日誌裡的
-    # OPENAI_API_KEY=<金鑰> 都曾擋下一整晚的自動上傳
-    rb"(?!\s*[\"']?(?:\$[({A-Za-z_]|<[^<>\s][^<>\n]{0,39}>)))|"
+    # OPENAI_API_KEY=<金鑰> 都曾擋下一整晚的自動上傳。
+    # 只提到參數名、後面沒有值的也不是:日誌寫「`?token=` 網址參數會外洩」擋了兩晚。
+    # 只認 URL/shell 寫法(沒加引號的 key 緊接著 =):= 後面直接收尾,或空白後接著
+    # 中文說明(shell 裡 `token= x` 本來就是空值)。用 : 的 JSON、YAML 一律照舊檢查,
+    # 值寫在下一行或是 | 區塊都可能是真的憑證
+    rb"(?!\s*[\"']?(?:\$[({A-Za-z_]|<[^<>\s][^<>\n]{0,39}>))"
+    rb"(?!(?<=[A-Za-z0-9_]=)(?:[`&)\],;]|\r?\n|$|[ \t]+[\x80-\xff])))|"
     rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
     rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
     rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
