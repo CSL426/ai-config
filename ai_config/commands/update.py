@@ -365,8 +365,10 @@ def run_update(requested_version: "str | None" = None) -> int:
     # Two updates writing the same binary is a corrupted executable on
     # Windows, where the loser cannot even replace the file it is racing for.
     # The handoff gives no progress bar, so running it twice looks reasonable.
+    # 從原始碼執行時,update 會拿著鎖轉交給 standalone 版;那個子程序拿不到鎖是因為父程序拿著
+    delegated_by_holder = os.environ.get(_DELEGATED_UPDATE) == "1"
     with update_lock() as acquired:
-        if not acquired:
+        if not acquired and not delegated_by_holder:
             log_error("已經有一個更新正在進行")
             log_info("等它結束後再試一次;同時更新會寫壞執行檔")
             return 1
