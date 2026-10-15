@@ -43,25 +43,37 @@ from ..skills import (
 from ..tools import agy, claude, codex
 from .apply import _TOOLS
 
+_DIFF_LINES = 20
+
 
 def _print_diff(ai_file: Path, home_text: str, rel: str) -> None:
     ai_text = ai_file.read_text(encoding="utf-8", errors="replace")
-    diff_lines = list(
-        difflib.unified_diff(
-            ai_text.splitlines(),
-            home_text.splitlines(),
-            fromfile=f"ai-config/{rel}",
-            tofile=f"live/{rel}",
-            lineterm="",
-        )
-    )
-    for line in diff_lines[:20]:
+    _print_text_diff(ai_text, home_text, f"ai-config/{rel}", f"live/{rel}")
+
+
+def _print_text_diff(old: str, new: str, old_label: str, new_label: str) -> None:
+    diff_lines = list(difflib.unified_diff(
+        old.splitlines(), new.splitlines(),
+        fromfile=old_label, tofile=new_label, lineterm="",
+    ))
+    for line in diff_lines[:_DIFF_LINES]:
         if line.startswith("-"):
             print(f"{RED}{line}{NC}")
         elif line.startswith("+"):
             print(f"{GREEN}{line}{NC}")
         else:
             print(line)
+    if len(diff_lines) > _DIFF_LINES:
+        # 截斷要說出來,不然看的人會以為後面沒有差異
+        print(f"  … 還有 {len(diff_lines) - _DIFF_LINES} 行差異沒有列出")
+
+
+def _print_settings_diff(repo: object, live: object, rel: str) -> None:
+    """Only what differs in value: key order changes whenever a tool rewrites the file."""
+    def dump(value: object) -> str:
+        return json.dumps(_hooks_unordered(value), ensure_ascii=False, indent=2, sort_keys=True)
+
+    _print_text_diff(dump(repo), dump(live), f"ai-config/{rel}", f"live/{rel}")
 
 
 def _report_rerender(merge, ai_file: Path, live_text: str, rel: str) -> bool:
@@ -77,7 +89,9 @@ def _report_rerender(merge, ai_file: Path, live_text: str, rel: str) -> bool:
     try:
         rendered = merge(ai_text, live_text)
         # 只差格式不算:手改過排版的設定檔不該一直被報有差異
-        if json.loads(rendered) == json.loads(live_text.lstrip("\ufeff")):
+        if _hooks_unordered(json.loads(rendered)) == _hooks_unordered(
+            json.loads(live_text.lstrip("\ufeff"))
+        ):
             return False
     except DefinitionError as error:
         log_warn(f"{rel}:共用 hook 定義有誤,apply 會失敗:{error}")
@@ -85,13 +99,29 @@ def _report_rerender(merge, ai_file: Path, live_text: str, rel: str) -> bool:
     except json.JSONDecodeError:
         return False
     print(f"  {YELLOW}~ {rel}{NC} (this acg writes it differently; apply updates it)")
-    for line in list(difflib.unified_diff(
-        live_text.splitlines(), rendered.splitlines(),
-        fromfile=f"live/{rel}", tofile=f"apply/{rel}", lineterm="",
-    ))[:20]:
-        color = RED if line.startswith("-") else GREEN if line.startswith("+") else ""
-        print(f"{color}{line}{NC if color else ''}")
+    def dump(text: str) -> str:
+        value = _hooks_unordered(json.loads(text.lstrip("\ufeff")))
+        return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+
+    _print_text_diff(dump(live_text), dump(rendered), f"live/{rel}", f"apply/{rel}")
     return True
+
+
+def _hooks_unordered(document: object) -> object:
+    """The settings with each event's hook rows in a fixed order.
+
+    Claude Code runs every matching hook of an event in parallel, so the
+    order of the rows means nothing; apply and the handoff reminder each
+    append their own rows and leave them in a different order.
+    """
+    if not isinstance(document, dict) or not isinstance(document.get("hooks"), dict):
+        return document
+    events = {
+        event: sorted(rows, key=lambda row: json.dumps(row, sort_keys=True, ensure_ascii=False))
+        if isinstance(rows, list) else rows
+        for event, rows in document["hooks"].items()
+    }
+    return {**document, "hooks": events}
 
 
 def _report_shared_hook_projection(tool: str) -> bool:
@@ -352,12 +382,11 @@ def status_tool(tool: str) -> None:
                         claude.merge_claude_settings, ai_file, live_text, rel_text,
                     )
                     continue
-                filtered = claude.filter_claude_settings(live_text)
                 print(
                     f"  {YELLOW}~ {rel_text}{NC} "
                     "(differs, shared settings only)"
                 )
-                _print_diff(ai_file, filtered, rel_text)
+                _print_settings_diff(repo_settings, live_settings, rel_text)
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
             elif tool == "agy" and rel_text == "settings.json":
@@ -371,14 +400,11 @@ def status_tool(tool: str) -> None:
                         agy.merge_agy_settings, ai_file, live_text, rel_text,
                     )
                     continue
-                filtered = agy.filter_agy_settings(
-                    live_text
-                )
                 print(
                     f"  {YELLOW}~ {rel_text}{NC} "
                     "(differs, shared settings only)"
                 )
-                _print_diff(ai_file, filtered, rel_text)
+                _print_settings_diff(repo_settings, live_settings, rel_text)
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
             else:

@@ -345,6 +345,25 @@ def test_status_shows_the_window_and_its_drift(
     assert f"不是從排程的 {anchor:%H:%M} 開始" in out
 
 
+def test_without_a_schedule_there_is_no_drift_to_report(
+    state: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """DESKTOP-CAO4ENQ: 「未啟用」 above a warning about a scheduled time that does not exist."""
+    from datetime import datetime, timedelta
+
+    from ai_config.commands import keepalive as command
+
+    late = datetime.now().astimezone() + timedelta(hours=3)
+    keepalive_window.record_window({"rate_limits": {"five_hour": {"resets_at": int(late.timestamp())}}})
+    monkeypatch.setattr(keepalive_scheduler, "installed", lambda tool="claude": False)
+
+    command._report("claude")
+
+    out = capsys.readouterr().out
+    assert "未啟用" in out and "目前視窗" in out
+    assert "不是從排程" not in out
+
+
 @pytest.fixture
 def homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A home with codex accounts laid out the way the shell function switches them."""
