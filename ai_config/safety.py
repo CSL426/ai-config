@@ -233,8 +233,11 @@ SECRET_PATTERN = re.compile(
     rb"stripe_(?:secret_key|api_key))[\"']?\s*[:=]"
     # 值是 shell 的變數或指令替換($(...)、${...}、$NAME)或成對的短 <佔位符> 時不是
     # 寫死的憑證:交接裡的 GH_TOKEN=$(gh auth token --user X)、日誌裡的
-    # OPENAI_API_KEY=<金鑰> 都曾擋下一整晚的自動上傳
-    rb"(?!\s*[\"']?(?:\$[({A-Za-z_]|<[^<>\s][^<>\n]{0,39}>)))|"
+    # OPENAI_API_KEY=<金鑰> 都曾擋下一整晚的自動上傳。
+    # 後面根本沒有值的也不是:日誌寫「`?token=` 網址參數會外洩」擋了兩晚。
+    # 接著是中文說明的也一樣;金鑰與 token 都是 ASCII
+    rb"(?!\s*[\"']?(?:\$[({A-Za-z_]|<[^<>\s][^<>\n]{0,39}>))"
+    rb"(?![ \t]*(?:[`,;)\]}>|]|\"\"|''|\r?\n|$|[\x80-\xff])))|"
     rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
     rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
     rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"

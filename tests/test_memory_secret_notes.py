@@ -65,6 +65,13 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     "api_key = $API_KEY",
     "指令:`OPENAI_API_KEY=<金鑰> python3 probe.py`",
     'token: "<your token here>"',
+    # 只提到參數名、後面沒有值:2026-10-14、15 兩晚的自動上傳都被這種寫法擋下
+    "- 取消用 `?token=` 網址參數傳 token",
+    "唯讀調查 `?token=` 經 log 外洩風險",
+    "password:",
+    'secret = ""',
+    "api_key=, token=)",
+    "- 取消用 ?token= 網址參數傳 token(app/auth.py)",
 ])
 def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     """A handoff quoting a command blocked a night's autopush on 2026-09-30."""
@@ -80,6 +87,9 @@ def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     "api_key = " + '"' + "sk-live-abc" + '"',
     "token=" + "$",  # 字面上的 $ 結尾不是變數
     "GH_TOKEN=$(gh auth token) ghp_" + "a" * 30,
+    '"token": "' + "abc123" + '"',  # JSON 的值以引號開頭,不能當成空值
+    "token = " + "abc123",
+    "`token=" + "abc123`",
 ])
 def test_a_literal_value_is_still_a_credential(line: str) -> None:
     from ai_config.safety import looks_like_secret
