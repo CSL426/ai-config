@@ -147,3 +147,82 @@ def test_a_broken_hook_definition_is_reported_not_swallowed(
     out = capsys.readouterr()
     assert "No differences found" not in out.out
     assert "bad.json" in out.out + out.err
+
+
+def test_hook_rows_in_another_order_are_no_difference(
+    machine: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """gb10: apply and the handoff reminder appended their rows in a different order."""
+    current = json.loads(_settings("~/.acg-data/claude/mods"))
+    rows = [
+        {"hooks": [{"type": "command", "command": "bash after-push.sh"}]},
+        {"hooks": [{"type": "command", "command": "acg", "args": ["__handoff-reminder"]}]},
+    ]
+    repo = json.dumps(current) + "\n"
+    live = json.dumps({**current, "hooks": {"PostToolUse": rows}}) + "\n"
+
+    def merge(source: str, target: str) -> str:
+        document = json.loads(target)
+        document["hooks"]["PostToolUse"] = list(reversed(document["hooks"]["PostToolUse"]))
+        return json.dumps(document)
+
+    monkeypatch.setattr(claude, "merge_claude_settings", merge)
+    monkeypatch.setattr(claude, "shared_claude_settings", lambda text: {})
+    _status_claude(tmp_path, monkeypatch, repo, live)
+
+    assert "No differences found" in capsys.readouterr().out
+
+
+def test_a_settings_difference_shows_values_not_key_order(
+    machine: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """DESKTOP-CAO4ENQ: acg update reordered keys, and the real difference was cut off."""
+    repo = {
+        "enabledPlugins": {"a@x": True, "b@x": True},
+        **{f"key{index:02d}": index for index in range(30)},
+        "zzz": "repo",
+    }
+    live = {"zzz": "live", **{f"key{index:02d}": index for index in reversed(range(30))},
+            "enabledPlugins": {"b@x": True, "a@x": True}}
+
+    _status_claude(tmp_path, monkeypatch, json.dumps(repo, indent=2), json.dumps(live, indent=2))
+
+    out = capsys.readouterr().out
+    changed = [line for line in out.splitlines() if line.startswith(("-  ", "+  ", "- ", "+ "))
+               and not line.startswith(("---", "+++"))]
+    assert any('"zzz": "repo"' in line for line in changed)
+    assert any('"zzz": "live"' in line for line in changed)
+    assert not any("a@x" in line or "key0" in line for line in changed)
+
+
+def test_a_cut_off_diff_says_so(capsys: pytest.CaptureFixture) -> None:
+    status_cmd._print_text_diff(
+        "\n".join(f"a{index}" for index in range(40)),
+        "\n".join(f"b{index}" for index in range(40)), "old", "new",
+    )
+
+    assert "還有" in capsys.readouterr().out
+
+
+def test_the_advisor_model_is_this_machines_own(machine: Path) -> None:
+    repo = json.loads(_settings("~/.acg-data/claude/mods"))
+    live = {**repo, "advisorModel": "opus"}
+
+    assert claude.shared_claude_settings(json.dumps(repo)) == claude.shared_claude_settings(json.dumps(live))
+    merged = json.loads(claude.merge_claude_settings(json.dumps(repo), json.dumps(live)))
+    assert merged["advisorModel"] == "opus"
+
+
+def test_hook_order_still_counts_outside_claude(
+    machine: Path, tmp_path: Path, capsys: pytest.CaptureFixture,
+) -> None:
+    rows = [{"command": "a"}, {"command": "b"}]
+    ai_file = tmp_path / "settings.json"
+    ai_file.write_text(json.dumps({"hooks": {"Stop": rows}}), encoding="utf-8")
+    live = json.dumps({"hooks": {"Stop": list(reversed(rows))}})
+
+    def merge(source: str, target: str) -> str:
+        return source
+
+    assert status_cmd._report_rerender(merge, ai_file, live, "settings.json", claude_hooks=False)
+    assert not status_cmd._report_rerender(merge, ai_file, live, "settings.json", claude_hooks=True)

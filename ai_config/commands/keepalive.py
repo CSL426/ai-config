@@ -28,7 +28,8 @@ def _split_tool(args: list) -> tuple:
 
 def _report(tool: str) -> None:
     settings = keepalive_settings.load(tool)
-    if keepalive_scheduler.installed(tool):
+    enabled = keepalive_scheduler.installed(tool)
+    if enabled:
         log_success(f"{tool}:已啟用 {', '.join(settings.times)}")
     else:
         log_info(f"{tool}:未啟用")
@@ -42,7 +43,8 @@ def _report(tool: str) -> None:
         if recent:
             print(f"    {recent[-1]}")
     if tool == keepalive_settings.DEFAULT_TOOL:
-        _report_window(settings.times)
+        # 沒排程就沒有「該從幾點開始」;拿預設時間比只會報出不存在的偏移
+        _report_window(settings.times if enabled else ())
 
 
 def _report_window(times) -> None:
@@ -54,7 +56,7 @@ def _report_window(times) -> None:
         return
     start, reset = window
     print(f"    目前視窗 {start:%H:%M}–{reset:%H:%M}")
-    expected = keepalive_window.drift(start, times, datetime.now().astimezone())
+    expected = keepalive_window.drift(start, times, datetime.now().astimezone()) if times else ""
     if expected:
         # 起點不是排程時間,代表那一次呼叫沒錨定到;通常是更早有別的用量
         # (別台機器、網頁、手機)先開了視窗
