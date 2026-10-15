@@ -211,3 +211,18 @@ def test_the_advisor_model_is_this_machines_own(machine: Path) -> None:
     assert claude.shared_claude_settings(json.dumps(repo)) == claude.shared_claude_settings(json.dumps(live))
     merged = json.loads(claude.merge_claude_settings(json.dumps(repo), json.dumps(live)))
     assert merged["advisorModel"] == "opus"
+
+
+def test_hook_order_still_counts_outside_claude(
+    machine: Path, tmp_path: Path, capsys: pytest.CaptureFixture,
+) -> None:
+    rows = [{"command": "a"}, {"command": "b"}]
+    ai_file = tmp_path / "settings.json"
+    ai_file.write_text(json.dumps({"hooks": {"Stop": rows}}), encoding="utf-8")
+    live = json.dumps({"hooks": {"Stop": list(reversed(rows))}})
+
+    def merge(source: str, target: str) -> str:
+        return source
+
+    assert status_cmd._report_rerender(merge, ai_file, live, "settings.json", claude_hooks=False)
+    assert not status_cmd._report_rerender(merge, ai_file, live, "settings.json", claude_hooks=True)

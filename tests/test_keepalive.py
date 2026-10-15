@@ -356,6 +356,8 @@ def test_without_a_schedule_there_is_no_drift_to_report(
     late = datetime.now().astimezone() + timedelta(hours=3)
     keepalive_window.record_window({"rate_limits": {"five_hour": {"resets_at": int(late.timestamp())}}})
     monkeypatch.setattr(keepalive_scheduler, "installed", lambda tool="claude": False)
+    # 不管現在幾點:只要拿預設時間去比,就會報出偏移
+    monkeypatch.setattr(keepalive_window, "drift", lambda start, times, now: "12:05" if times else "")
 
     command._report("claude")
 

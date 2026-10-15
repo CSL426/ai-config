@@ -68,15 +68,16 @@ def _print_text_diff(old: str, new: str, old_label: str, new_label: str) -> None
         print(f"  … 還有 {len(diff_lines) - _DIFF_LINES} 行差異沒有列出")
 
 
-def _print_settings_diff(repo: object, live: object, rel: str) -> None:
+def _print_settings_diff(repo: object, live: object, rel: str, *, claude_hooks: bool) -> None:
     """Only what differs in value: key order changes whenever a tool rewrites the file."""
     def dump(value: object) -> str:
-        return json.dumps(_hooks_unordered(value), ensure_ascii=False, indent=2, sort_keys=True)
+        value = _hooks_unordered(value) if claude_hooks else value
+        return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
 
     _print_text_diff(dump(repo), dump(live), f"ai-config/{rel}", f"live/{rel}")
 
 
-def _report_rerender(merge, ai_file: Path, live_text: str, rel: str) -> bool:
+def _report_rerender(merge, ai_file: Path, live_text: str, rel: str, *, claude_hooks: bool) -> bool:
     """Same shared content, but apply would still rewrite the file.
 
     The repository can stay at one commit while acg changes how it writes
@@ -85,13 +86,13 @@ def _report_rerender(merge, ai_file: Path, live_text: str, rel: str) -> bool:
     """
     from ..shared_hooks import DefinitionError
 
+    # hook 列順序不算差異只對 Claude Code 成立(同一事件的 hook 並行跑)
+    normalize = _hooks_unordered if claude_hooks else (lambda value: value)
     ai_text = ai_file.read_text(encoding="utf-8-sig", errors="replace")
     try:
         rendered = merge(ai_text, live_text)
         # 只差格式不算:手改過排版的設定檔不該一直被報有差異
-        if _hooks_unordered(json.loads(rendered)) == _hooks_unordered(
-            json.loads(live_text.lstrip("\ufeff"))
-        ):
+        if normalize(json.loads(rendered)) == normalize(json.loads(live_text.lstrip("\ufeff"))):
             return False
     except DefinitionError as error:
         log_warn(f"{rel}:共用 hook 定義有誤,apply 會失敗:{error}")
@@ -100,7 +101,7 @@ def _report_rerender(merge, ai_file: Path, live_text: str, rel: str) -> bool:
         return False
     print(f"  {YELLOW}~ {rel}{NC} (this acg writes it differently; apply updates it)")
     def dump(text: str) -> str:
-        value = _hooks_unordered(json.loads(text.lstrip("\ufeff")))
+        value = normalize(json.loads(text.lstrip("\ufeff")))
         return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
 
     _print_text_diff(dump(live_text), dump(rendered), f"live/{rel}", f"apply/{rel}")
@@ -380,13 +381,14 @@ def status_tool(tool: str) -> None:
                 if repo_settings == live_settings:
                     has_diff |= _report_rerender(
                         claude.merge_claude_settings, ai_file, live_text, rel_text,
+                        claude_hooks=True,
                     )
                     continue
                 print(
                     f"  {YELLOW}~ {rel_text}{NC} "
                     "(differs, shared settings only)"
                 )
-                _print_settings_diff(repo_settings, live_settings, rel_text)
+                _print_settings_diff(repo_settings, live_settings, rel_text, claude_hooks=True)
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
             elif tool == "agy" and rel_text == "settings.json":
@@ -398,13 +400,14 @@ def status_tool(tool: str) -> None:
                 if repo_settings == live_settings:
                     has_diff |= _report_rerender(
                         agy.merge_agy_settings, ai_file, live_text, rel_text,
+                        claude_hooks=False,
                     )
                     continue
                 print(
                     f"  {YELLOW}~ {rel_text}{NC} "
                     "(differs, shared settings only)"
                 )
-                _print_settings_diff(repo_settings, live_settings, rel_text)
+                _print_settings_diff(repo_settings, live_settings, rel_text, claude_hooks=False)
                 _print_mtime_hint(ai_file, home_file)
                 has_diff = True
             else:
