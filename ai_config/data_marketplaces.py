@@ -41,9 +41,30 @@ def _inside_repo(path: str) -> "str | None":
     candidate = _expand(path)
     for base, target in ((repo, candidate), (repo.resolve(), candidate.resolve())):
         try:
-            return target.relative_to(base).as_posix()
+            relative = target.relative_to(base)
         except ValueError:
             continue
+        # 字面上在裡面、靠 .. 跳出去的不算
+        if ".." not in relative.parts:
+            return relative.as_posix()
+    return None
+
+
+def _legacy(path: str) -> "str | None":
+    """A path an older acg stored as the writing machine's own, mapped onto this one.
+
+    Only a folder missing here is remapped, and only onto the longest
+    trailing part (two folders or more) this data repository has.
+    """
+    expanded = _expand(path)
+    if expanded.exists():
+        return None
+    parts = [part for part in expanded.parts if part not in (expanded.anchor, "")]
+    repo = Path(paths.SCRIPT_DIR)
+    for size in range(len(parts) - 1, 1, -1):
+        tail = parts[-size:]
+        if ".." not in tail and (repo.joinpath(*tail)).is_dir():
+            return "/".join(tail)
     return None
 
 
@@ -77,11 +98,17 @@ def portable(document: dict) -> dict:
 
 def local(document: dict) -> dict:
     """For this machine: <acg-data>/... becomes where this machine keeps the repo."""
-    if not any(s["path"].startswith(PLACEHOLDER) for s in _directory_sources(document)):
+    repo = _local_repo()
+    changes = {}
+    for source in _directory_sources(document):
+        path = source["path"]
+        if path.startswith(PLACEHOLDER):
+            changes[path] = repo + path[len(PLACEHOLDER):]
+        elif (tail := _legacy(path)) is not None:
+            changes[path] = f"{repo}/{tail}"
+    if not changes:
         return document
     result = copy.deepcopy(document)
-    repo = _local_repo()
     for source in _directory_sources(result):
-        if source["path"].startswith(PLACEHOLDER):
-            source["path"] = repo + source["path"][len(PLACEHOLDER):]
+        source["path"] = changes.get(source["path"], source["path"])
     return result

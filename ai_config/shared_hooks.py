@@ -12,6 +12,7 @@ entries go through `__agy-hook`, which adapts both directions. See
 docs/shared-hooks-spec.md.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -20,7 +21,7 @@ import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from . import memory_paths
 from .hooks import PREFIX, _strip
@@ -215,7 +216,10 @@ def codex_handler(hook: SharedHook) -> dict:
     the snapshot in Git Bash, the way Antigravity's adapter already does."""
     entry = handler(hook)
     if _windows():
-        entry["command"] = _acg_command(_ADAPTER, "--run", hook.name)
+        # 指令帶著快照的 hash:定義一改,Codex 看到的指令跟著變,會要求重新信任
+        entry["command"] = _acg_command(
+            _ADAPTER, "--run", hook.name, _digest(hook), windows=True,
+        )
         entry["timeout"] = hook.timeout + _AGY_ADAPTER_SECONDS
     return entry
 
@@ -401,11 +405,14 @@ def agy_hooks_path() -> Path:
     return AGY_HOOKS
 
 
-def _acg_command(*args: str) -> str:
+def _acg_command(*args: str, windows: bool = False) -> str:
     from .paths import scheduled_command
 
     # Antigravity 用 sh -c 跑;正斜線在每個平台的 shell 都認得
     words = [part.replace("\\", "/") for part in scheduled_command()] + list(args)
+    if windows:
+        # Codex 在 Windows 交給 cmd/PowerShell,單引號在那裡不是引號
+        return subprocess.list2cmdline(words)
     return " ".join(shlex.quote(word) for word in words)
 
 
@@ -422,7 +429,7 @@ def agy_document(existing: dict, hooks: list[SharedHook]) -> dict:
     reached = [hook for hook in hooks if not hook.unsupported("agy")]
     for hook in reached:
         call = {
-            "type": "command", "command": _acg_command(_ADAPTER, hook.name),
+            "type": "command", "command": _acg_command(_ADAPTER, hook.name, _digest(hook)),
             # 轉接要先啟動 acg 才輪到腳本;Windows 上光啟動就要一兩秒
             "timeout": hook.timeout + _AGY_ADAPTER_SECONDS,
         }
@@ -451,12 +458,26 @@ def _snapshots(hooks: list[SharedHook]) -> dict[Path, dict]:
     definition run in Antigravity before anyone applied it.
     """
     return {
-        _snapshot_dir() / f"{hook.name}.json": {
-            "event": hook.event, "command": hook.command, "timeout": hook.timeout,
-        }
+        _snapshot_dir() / f"{hook.name}.json": _snapshot(hook)
         for hook in hooks
         if not hook.unsupported("agy") or (_windows() and not hook.unsupported("codex"))
     }
+
+
+def _snapshot(hook: SharedHook) -> dict:
+    return {"event": hook.event, "command": hook.command, "timeout": hook.timeout}
+
+
+def _digest(hook_or_snapshot: "SharedHook | dict") -> str:
+    """Pins a tool's hook entry to the snapshot it was applied with.
+
+    Codex and Antigravity share one snapshot per hook; applying one tool
+    rewrites what the other's entry would run. The adapter refuses a
+    snapshot whose digest is not the one its entry carries.
+    """
+    data = _snapshot(hook_or_snapshot) if isinstance(hook_or_snapshot, SharedHook) else hook_or_snapshot
+    text = json.dumps(data, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _write_snapshots(hooks: list[SharedHook]) -> None:
@@ -551,6 +572,7 @@ def _bash() -> "str | None":
     """Git Bash on Windows, where `bash` on PATH may be WSL's launcher instead."""
     import shutil
 
+    found = shutil.which("bash")
     if os.name == "nt":
         git = shutil.which("git")
         folder = Path(git).resolve().parent if git else None
@@ -561,7 +583,15 @@ def _bash() -> "str | None":
             if candidate.is_file():
                 return str(candidate)
             folder = folder.parent if folder.parent != folder else None
-    return shutil.which("bash")
+        if found and _wsl_launcher(found):
+            return None
+    return found
+
+
+def _wsl_launcher(path: str) -> bool:
+    """System32's bash.exe and the WindowsApps alias start WSL, not a Windows bash."""
+    parts = {part.lower() for part in PureWindowsPath(path).parts}
+    return "system32" in parts or "windowsapps" in parts
 
 
 def _shell(command: str) -> list[str]:
@@ -573,15 +603,19 @@ def _shell(command: str) -> list[str]:
 
 
 def _log_failure(name: str, done: "subprocess.CompletedProcess[str]") -> None:
-    """A hook that fails must leave a trace: the tools show nothing on Windows."""
     if done.returncode == 0:
         return
+    tail = " | ".join((done.stderr or "").strip().splitlines()[-5:])
+    _log(name, f"exit {done.returncode}: {tail}")
+
+
+def _log(name: str, message: str) -> None:
+    """A hook that fails must leave a trace: the tools show nothing on Windows."""
     from datetime import datetime
 
     from .autoupdate import state_dir
 
-    tail = " | ".join((done.stderr or "").strip().splitlines()[-5:])
-    line = f"{datetime.now().astimezone().isoformat(timespec='seconds')} {name} exit {done.returncode}: {tail}\n"
+    line = f"{datetime.now().astimezone().isoformat(timespec='seconds')} {name} {message}\n"
     path = state_dir() / "hook-errors.log"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -591,32 +625,66 @@ def _log_failure(name: str, done: "subprocess.CompletedProcess[str]") -> None:
         pass
 
 
-def _run_snapshot(name: str, stdin: str, cwd: "str | None") -> "subprocess.CompletedProcess[str] | None":
+def _load_snapshot(args: list[str]) -> "tuple[str, dict] | None":
+    """The snapshot an entry names, if it is still the one that entry was applied with.
+
+    An entry written before entries carried a digest has none; it runs
+    whatever snapshot is there, as it always did.
+    """
+    name = args[0] if args else ""
     if not valid_name(name):
+        _log(name or "-", "invalid hook name")
         return None
     snapshot = _read_json(_snapshot_dir() / f"{name}.json")
-    command = snapshot.get("command")
-    if not isinstance(command, str):
+    if not isinstance(snapshot.get("command"), str) or not isinstance(snapshot.get("event"), str):
+        _log(name, "no snapshot; run acg apply")
         return None
+    if len(args) > 1 and args[1] != _digest(snapshot):
+        _log(name, "snapshot changed since this tool was applied; run acg apply")
+        return None
+    return name, snapshot
+
+
+def _run_snapshot(
+    name: str, snapshot: dict, stdin: str, cwd: "str | None",
+) -> "subprocess.CompletedProcess[str] | None":
     timeout = snapshot.get("timeout") if isinstance(snapshot.get("timeout"), int) else 60
-    done = subprocess.run(
-        _shell(command), input=stdin, capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=timeout, check=False, cwd=cwd or None,
-    )
+    try:
+        done = subprocess.run(
+            _shell(snapshot["command"]), input=stdin, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout, check=False, cwd=cwd or None,
+        )
+    except subprocess.TimeoutExpired:
+        _log(name, f"timed out after {timeout}s")
+        return None
+    except OSError as error:
+        _log(name, f"could not start: {error}")
+        return None
     _log_failure(name, done)
     return done
 
 
-def _passthrough(names: list[str], raw: str) -> int:
-    """Codex on Windows calls this: the hook's own stdin, stdout and exit code."""
+def _payload_cwd(raw: str) -> "str | None":
     try:
         payload = json.loads(raw) if raw.strip() else {}
-        cwd = payload.get("cwd") if isinstance(payload, dict) else None
-        done = _run_snapshot(names[0] if names else "", raw, cwd if isinstance(cwd, str) else None)
-    except Exception:  # noqa: BLE001 — 轉接器壞掉不能卡住 Codex 的回合
-        return 0
+    except ValueError:
+        return None
+    cwd = payload.get("cwd") if isinstance(payload, dict) else None
+    return cwd if isinstance(cwd, str) else None
+
+
+def _passthrough(args: list[str], raw: str) -> int:
+    """Codex on Windows calls this: the hook's own stdin, stdout and exit code."""
+    try:
+        loaded = _load_snapshot(args)
+        if loaded is None:
+            return 1
+        done = _run_snapshot(*loaded, raw, _payload_cwd(raw))
+    except Exception as error:  # noqa: BLE001 — 轉接器壞掉不能卡住 Codex 的回合
+        _log(args[0] if args else "-", f"adapter error: {error!r}")
+        return 1
     if done is None:
-        return 0
+        return 1
     sys.stdout.write(done.stdout)
     return done.returncode
 
@@ -624,28 +692,27 @@ def _passthrough(names: list[str], raw: str) -> int:
 def run_agy_hook(args: list[str]) -> int:
     """Antigravity calls this; it must answer JSON and never fail the turn."""
     if args[:1] == ["--run"]:
-        return _passthrough(args[1:2], sys.stdin.read())
+        return _passthrough(args[1:3], sys.stdin.read())
     try:
         raw = sys.stdin.read()
         payload = json.loads(raw) if raw.strip() else {}
         if not isinstance(payload, dict):
             payload = {}
-        reply = _inject(payload) if args[:1] == ["--inject"] else _relay(args[:1], payload)
+        reply = _inject(payload) if args[:1] == ["--inject"] else _relay(args[:2], payload)
     except Exception:  # noqa: BLE001 — hook 壞掉不能卡住 Antigravity 的對話
         reply = {}
     print(json.dumps(reply, ensure_ascii=False))
     return 0
 
 
-def _relay(names: list[str], payload: dict) -> dict:
-    if not names or not valid_name(names[0]):
+def _relay(args: list[str], payload: dict) -> dict:
+    loaded = _load_snapshot(args)
+    if loaded is None:
         return {}
-    event = _read_json(_snapshot_dir() / f"{names[0]}.json").get("event")
-    if not isinstance(event, str):
-        return {}
-    converted = claude_payload(payload, event)
+    name, snapshot = loaded
+    converted = claude_payload(payload, snapshot["event"])
     # 跑的是 apply 當時定案的指令,跟 Claude Code、Codex 拿到的那份一樣
-    done = _run_snapshot(names[0], json.dumps(converted, ensure_ascii=False), converted["cwd"])
+    done = _run_snapshot(name, snapshot, json.dumps(converted, ensure_ascii=False), converted["cwd"])
     if done is None:
         return {}
     text = _additional_context(done.stdout)

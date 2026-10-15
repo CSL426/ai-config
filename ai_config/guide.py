@@ -499,9 +499,13 @@ PreToolUse, PostToolUse and SessionStart reach Antigravity; Codex has no
 
 On Windows, `bash` on PATH can be WSL's launcher, which gets Windows paths
 wrong and fails silently. There Codex's copy calls `acg __agy-hook --run
-<name>` instead of the command itself, and both adapters run the command in
-Git Bash (found next to `git`), so a leading `bash` is Git Bash too. A hook
-that exits non-zero under an adapter is logged to
+<name> <digest>` instead of the command itself, and both adapters run the
+command in Git Bash (found next to `git`, never WSL's), so a leading `bash`
+is Git Bash too. The digest pins each entry to the snapshot it was applied
+with: a changed definition changes the command, so Codex asks for `/hooks`
+trust again, and an entry whose snapshot moved on (another tool applied
+alone) refuses to run until that tool is applied. A hook that fails, times
+out or is refused under an adapter is logged to
 `~/.local/state/acg/hook-errors.log`.
 
 Codex runs a new or changed hook only after it is reviewed in `/hooks`, in

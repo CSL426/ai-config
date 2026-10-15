@@ -103,3 +103,25 @@ def test_a_fresh_settings_file_gets_this_machines_path(machine, tmp_path) -> Non
 
     written = json.loads((live / "settings.json").read_text(encoding="utf-8"))
     assert _path(written) == "~/.acg-data/claude/mods"
+
+
+def test_a_path_that_climbs_out_of_the_repo_is_not_stored_relative(machine) -> None:
+    home, at = machine
+    at(home / "ai-config" / "data")
+
+    stored = data_marketplaces.portable(_settings("~/ai-config/data/../plugins"))
+    assert _path(stored) == "~/ai-config/data/../plugins"
+
+
+def test_a_path_an_older_acg_stored_for_another_machine_lands_in_this_repo(machine) -> None:
+    home, at = machine
+    repo = home / ".acg-data"
+    at(repo)
+    (repo / "claude" / "mods").mkdir(parents=True)
+
+    applied = data_marketplaces.local(_settings("~/ai-config/data/claude/mods"))
+    assert _path(applied) == "~/.acg-data/claude/mods"
+    # 本機沒有對應資料夾、或路徑本來就存在的,照舊
+    assert _path(applied, "elsewhere") == "/srv/plugins"
+    (home / "ai-config" / "data" / "claude" / "mods").mkdir(parents=True)
+    assert _path(data_marketplaces.local(_settings("~/ai-config/data/claude/mods"))) == "~/ai-config/data/claude/mods"
