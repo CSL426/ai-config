@@ -140,13 +140,19 @@ def _call(args: list, tool: str, label: str, env: "dict | None") -> int:
     except (OSError, subprocess.SubprocessError) as exc:
         _append_log(f"failed to start {label}: {exc}", tool)
         return 1
-    _append_log(f"exit {result.returncode}: {_outcome(result)}", tool)
+    reason = _outcome(result)
+    _append_log(f"exit {result.returncode}: {reason}", tool)
+    if result.returncode and _USAGE_LIMIT.search(reason):
+        # 額度用完代表這個帳號的視窗本來就在跑,喚醒的目的已經達成
+        _append_log(f"{label}: usage limit reached, its window is already running", tool)
+        return 0
     return result.returncode
 
 
 _ERROR_HINT = re.compile(
     r"error|fail|limit|not supported|denied|invalid", re.IGNORECASE,
 )
+_USAGE_LIMIT = re.compile(r"usage limit|hit your limit|limit reached", re.IGNORECASE)
 
 
 def _outcome(result: "subprocess.CompletedProcess") -> str:
