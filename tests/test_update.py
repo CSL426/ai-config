@@ -554,6 +554,27 @@ def test_a_second_update_refuses_while_one_is_running(tmp_path, monkeypatch, cap
     assert "已經有一個更新" in capsys.readouterr().err
 
 
+def test_the_standalone_an_update_hands_off_to_is_not_refused(tmp_path, monkeypatch, capsys):
+    """Run from source, update holds the lock and hands off to the standalone.
+
+    The standalone then took the same lock, found it held by its own
+    parent, and refused: `acg update` from a checkout never updated.
+    """
+    from ai_config import locking
+    from ai_config.commands import update
+
+    monkeypatch.setattr(locking, "BACKUP_BASE", tmp_path)
+    monkeypatch.setattr(update, "_run_update", lambda requested=None: 0)
+    monkeypatch.setattr(update, "_update_plugin", lambda: None)
+    monkeypatch.setattr(update, "_refresh_after_update", lambda: None)
+    monkeypatch.setenv(update._DELEGATED_UPDATE, "1")
+
+    with update.update_lock():
+        assert update.run_update() == 0
+
+    assert "已經有一個更新" not in capsys.readouterr().err
+
+
 def test_the_update_lock_is_released_for_the_next_run(tmp_path, monkeypatch):
     """A refusal must not leave the lock held, or no update runs again."""
     from ai_config import locking

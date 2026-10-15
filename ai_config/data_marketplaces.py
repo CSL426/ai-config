@@ -14,6 +14,8 @@ from pathlib import Path
 from . import paths
 
 PLACEHOLDER = "<acg-data>"
+# 各版 acg 放資料庫的位置;舊版把這些路徑原樣存進資料庫
+_REPO_LOCATIONS = (("ai-config", "data"), (".acg-data",))
 
 
 def _directory_sources(document: dict):
@@ -53,18 +55,22 @@ def _inside_repo(path: str) -> "str | None":
 def _legacy(path: str) -> "str | None":
     """A path an older acg stored as the writing machine's own, mapped onto this one.
 
-    Only a folder missing here is remapped, and only onto the longest
-    trailing part (two folders or more) this data repository has.
+    Only a folder missing here is remapped, only when it sits in one of
+    the places acg keeps a data repository, and only onto a folder this
+    repository has; any other missing path is someone else's marketplace.
     """
     expanded = _expand(path)
     if expanded.exists():
         return None
-    parts = [part for part in expanded.parts if part not in (expanded.anchor, "")]
+    parts = list(expanded.parts)
     repo = Path(paths.SCRIPT_DIR)
-    for size in range(len(parts) - 1, 1, -1):
-        tail = parts[-size:]
-        if ".." not in tail and (repo.joinpath(*tail)).is_dir():
-            return "/".join(tail)
+    for marker in _REPO_LOCATIONS:
+        for start in range(len(parts) - len(marker) + 1):
+            if tuple(parts[start:start + len(marker)]) != marker:
+                continue
+            tail = parts[start + len(marker):]
+            if tail and ".." not in tail and repo.joinpath(*tail).is_dir():
+                return "/".join(tail)
     return None
 
 
@@ -83,7 +89,10 @@ def portable(document: dict) -> dict:
     for source in _directory_sources(document):
         if source["path"].startswith(PLACEHOLDER):
             continue
+        # 舊版存成別台路徑的,這台 apply 會換成本機的,存回去也該是同一份
         relative = _inside_repo(source["path"])
+        if relative is None:
+            relative = _legacy(source["path"])
         if relative is not None:
             portable_path = PLACEHOLDER if relative == "." else f"{PLACEHOLDER}/{relative}"
             changes.append((source["path"], portable_path))

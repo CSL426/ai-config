@@ -83,6 +83,13 @@ directory-marketplace path inside the data repo as `<acg-data>/...`, and
 `apply` writes it as this machine's repo (`~/ai-config/data/...` here,
 `~/.acg-data/...` there), since machines keep the repo in different places.
 
+`status` compares what this acg would write, not only the repo's content:
+after an acg update, the same commit can render differently (a portable path
+resolved per machine, a new shared-hook command), and `status` then reports
+`settings.json (this acg writes it differently; apply updates it)` or a
+Codex/Antigravity `hooks.json` / adapter snapshot that `apply` would update.
+Run `apply` once on each machine after updating acg when that appears.
+
 `status` also lists skill directories that exist in a tool's live skills
 directory but were never deployed by ai-config (hand-installed skills, or
 leftovers from an earlier migration). They are reported only: `apply` never
@@ -432,7 +439,9 @@ claude when left out.
 A failed call logs the tool's own error line, such as an exhausted
 usage limit, rather than just its exit code. A failed call also anchors
 nothing: the next real use starts the window instead, which is how the
-boundaries drift off the chosen times.
+boundaries drift off the chosen times. An exhausted usage limit is the
+exception that is not a failure: it means that account's window is already
+running, so the run is logged as such and the scheduled job still succeeds.
 For claude, `status` also shows the window Claude Code last reported
 (`目前視窗 09:50–14:50`) and warns when it did not start at a scheduled
 time: the call then landed inside a window something else on the account

@@ -220,11 +220,23 @@ def test_a_failure_logs_why(state: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         "try again at 12:45 PM.\n",
     ))
 
-    assert keepalive_runner.send() == 1
+    # 額度用完代表視窗已經在跑,不算排程失敗
+    assert keepalive_runner.send() == 0
 
     logged = keepalive_settings.log_path().read_text(encoding="utf-8")
     assert "usage limit" in logged
     assert "12:45" in logged
+    assert "its window is already running" in logged
+
+
+def test_a_failure_other_than_the_usage_limit_still_fails(
+    state: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(keepalive_runner.subprocess, "run", _finished(
+        1, stderr="ERROR: not logged in\n",
+    ))
+
+    assert keepalive_runner.send() == 1
 
 
 def test_the_error_line_wins_over_trailing_noise(
@@ -399,7 +411,7 @@ def test_one_account_failing_is_reported_but_the_others_still_run(
         home = (kwargs.get("env") or {}).get("CODEX_HOME", "")
         calls.append(home)
         code = 1 if home.endswith("-csl") else 0
-        return subprocess.CompletedProcess(argv, code, "hi\n", "ERROR: usage limit\n")
+        return subprocess.CompletedProcess(argv, code, "hi\n", "ERROR: not logged in\n")
 
     monkeypatch.setattr(keepalive_runner.subprocess, "run", run)
 

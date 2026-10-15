@@ -64,6 +64,52 @@ def _print_diff(ai_file: Path, home_text: str, rel: str) -> None:
             print(line)
 
 
+def _report_rerender(merge, ai_file: Path, live_text: str, rel: str) -> bool:
+    """Same shared content, but apply would still rewrite the file.
+
+    The repository can stay at one commit while acg changes how it writes
+    a file from it (a portable path resolved per machine, a new hook
+    format); comparing shared content alone calls that already applied.
+    """
+    from ..shared_hooks import DefinitionError
+
+    ai_text = ai_file.read_text(encoding="utf-8-sig", errors="replace")
+    try:
+        rendered = merge(ai_text, live_text)
+        # 只差格式不算:手改過排版的設定檔不該一直被報有差異
+        if json.loads(rendered) == json.loads(live_text.lstrip("\ufeff")):
+            return False
+    except DefinitionError as error:
+        log_warn(f"{rel}:共用 hook 定義有誤,apply 會失敗:{error}")
+        return True
+    except json.JSONDecodeError:
+        return False
+    print(f"  {YELLOW}~ {rel}{NC} (this acg writes it differently; apply updates it)")
+    for line in list(difflib.unified_diff(
+        live_text.splitlines(), rendered.splitlines(),
+        fromfile=f"live/{rel}", tofile=f"apply/{rel}", lineterm="",
+    ))[:20]:
+        color = RED if line.startswith("-") else GREEN if line.startswith("+") else ""
+        print(f"{color}{line}{NC if color else ''}")
+    return True
+
+
+def _report_shared_hook_projection(tool: str) -> bool:
+    if tool not in ("codex", "agy"):
+        return False
+    from .. import shared_hooks
+
+    try:
+        pending = shared_hooks.pending_projection(tool)
+    except (OSError, RuntimeError, ValueError) as error:
+        # 沒比對成就不能說一致
+        log_warn(f"共用 hook 無法比對:{error}")
+        return True
+    for path in pending:
+        print(f"  {YELLOW}~ {path}{NC} (shared hooks; apply updates it)")
+    return bool(pending)
+
+
 def _latest_mtime_ns(path: Path) -> "int | None":
     try:
         latest = path.stat().st_mtime_ns
@@ -245,6 +291,7 @@ def status_tool(tool: str) -> None:
 
         if not dir_has_files(stage_dir):
             log_warn(f"No config in ai-config/{tool}/")
+            _report_shared_hook_projection(tool)
             return
         if not home_dir.is_dir() and not (
             tool == "codex" and codex_live_skills().is_dir()
@@ -273,7 +320,9 @@ def status_tool(tool: str) -> None:
 
             ai_bytes = ai_file.read_bytes()
             home_bytes = home_file.read_bytes()
-            if ai_bytes == home_bytes:
+            # settings.json 一字不差也可能被這版 acg 寫成別的樣子,要往下比
+            rendered = tool in ("claude", "agy") and rel_text == "settings.json"
+            if ai_bytes == home_bytes and not rendered:
                 continue
 
             if tool == "codex" and rel_text == "config.toml":
@@ -299,6 +348,9 @@ def status_tool(tool: str) -> None:
                 live_text = home_bytes.decode("utf-8-sig", errors="replace")
                 live_settings = claude.shared_claude_settings(live_text)
                 if repo_settings == live_settings:
+                    has_diff |= _report_rerender(
+                        claude.merge_claude_settings, ai_file, live_text, rel_text,
+                    )
                     continue
                 filtered = claude.filter_claude_settings(live_text)
                 print(
@@ -315,6 +367,9 @@ def status_tool(tool: str) -> None:
                 live_text = home_bytes.decode("utf-8-sig", errors="replace")
                 live_settings = agy.shared_agy_settings(live_text)
                 if repo_settings == live_settings:
+                    has_diff |= _report_rerender(
+                        agy.merge_agy_settings, ai_file, live_text, rel_text,
+                    )
                     continue
                 filtered = agy.filter_agy_settings(
                     live_text
@@ -342,6 +397,8 @@ def status_tool(tool: str) -> None:
         if removals:
             _print_removal_entries(removals, home_dir)
             has_diff = True
+
+        has_diff |= _report_shared_hook_projection(tool)
 
         if has_diff:
             log_info(
