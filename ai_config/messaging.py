@@ -4,12 +4,12 @@ Claude sessions can already reach each other; Codex and Antigravity
 sessions could not be reached at all. acg acts as the post office: it
 lists who is on line across tools and delivers a message by name.
 
-Codex: a TUI started with `--remote unix://` attaches to the account's
-app-server daemon, which speaks JSON-RPC over a WebSocket on a unix
-socket. The daemon lists loaded threads and queues a message into one
-(`thread/queue/add`, the call `codex queue` makes). Everything here is
-Codex's own internal protocol, so failures are reported plainly rather
-than papered over.
+Codex: a TUI attached to the account's app-server daemon (started with
+`--remote unix://`) can be listed and queued into (`thread/queue/add`, the
+call `codex queue` makes). acg no longer starts TUIs that way: messages go
+through herdr or a one-off `-p`/`exec` run, so this path only reaches a TUI
+someone attached by hand. It is Codex's own internal protocol, so failures
+are reported plainly rather than papered over.
 
 Windows: the daemon's socket is a real AF_UNIX socket there too, but
 CPython on Windows has no AF_UNIX, so acg talks through
@@ -930,88 +930,21 @@ CLAUDE_MSG_FUNCTION = """claude-msg() {{
 
 # 開 TUI 才掛上 daemon,exec、queue 這類子指令照原樣跑。daemon 的工作目錄是它
 # 啟動時的目錄,新對話沒帶 --cd 會跑到那裡去;resume/fork 沿用舊對話的目錄,不帶
-CODEX_FUNCTION = """codex() {{
-  local attach=""
-  case "${{1:-}}" in
-    -h|--help|-V|--version) ;;
-    ""|-*|resume|fork) attach=1 ;;
-    {subcommands}) ;;
-    *) attach=1 ;;
-  esac
-  case " $* " in *" --remote "*|*" --remote="*) attach="" ;; esac
-  if [ -n "$attach" ]; then
-    local home="${{CODEX_HOME:-$HOME/.codex}}"
-    if [ ! -S "$home/{socket}" ]; then
-      CODEX_HOME="$home" command codex app-server daemon start >/dev/null 2>&1
-    fi
-    if [ "${{1:-}}" = resume ] || [ "${{1:-}}" = fork ]; then
-      local sub="$1"; shift
-      set -- "$sub" --remote unix:// "$@"
-    else
-      case " $* " in
-        *" -C "*|*" --cd "*|*" --cd="*) set -- --remote unix:// "$@" ;;
-        *) set -- --remote unix:// --cd "$PWD" "$@" ;;
-      esac
-    fi
-  fi
-  command codex "$@"
-}}"""
-
-# codex 0.159 不開 TUI 的子指令;codex 新增子指令時要跟著加,否則會被當成提示文字、多帶上 --remote
-CODEX_SUBCOMMANDS = (
-    "agents", "exec", "e", "review", "login", "logout", "mcp", "plugin", "app-server",
-    "remote-control", "completion", "update", "doctor", "sandbox", "debug", "apply", "a",
-    "queue", "archive", "delete", "migrate-rollouts", "unarchive", "cloud", "exec-server",
-    "features", "help",
-)
-
-
 # PowerShell 版:同樣的判斷。比對一律分大小寫,codex 的 -c 是設定、-C 才是目錄。
 # 只用 ASCII:Windows PowerShell 5.1 把沒有 BOM 的 profile 當系統碼頁讀
 POWERSHELL_CLAUDE_MSG = """function claude-msg {{
   $exe = (Get-Command claude -CommandType Application -ErrorAction Stop)[0].Source
   & $exe --mcp-config {config} --dangerously-load-development-channels server:acg @args
 }}"""
-POWERSHELL_CODEX = """function codex {{
-  $exe = (Get-Command codex -CommandType Application -ErrorAction Stop)[0].Source
-  $first = if ($args.Count) {{ [string]$args[0] }} else {{ '' }}
-  $attach = -not ($first -cin @('-h', '--help', '-V', '--version', {codex_plain}))
-  if ($args -ccontains '--remote' -or @($args | Where-Object {{ "$_" -clike '--remote=*' }}).Count) {{
-    $attach = $false
-  }}
-  if (-not $attach) {{ & $exe @args; return }}
-  $codexHome = if ($env:CODEX_HOME) {{ $env:CODEX_HOME }} else {{ Join-Path $HOME '.codex' }}
-  if (-not (Test-Path -LiteralPath (Join-Path $codexHome '{socket}'))) {{
-    $saved = $env:CODEX_HOME
-    $env:CODEX_HOME = $codexHome
-    & $exe app-server daemon start *> $null
-    $env:CODEX_HOME = $saved
-  }}
-  if ($first -cin @('resume', 'fork')) {{
-    $rest = @($args | Select-Object -Skip 1)
-    & $exe $first --remote unix:// @rest; return
-  }}
-  if ($args -ccontains '-C' -or $args -ccontains '--cd' -or @($args | Where-Object {{ "$_" -clike '--cd=*' }}).Count) {{
-    & $exe --remote unix:// @args; return
-  }}
-  & $exe --remote unix:// --cd $PWD.ProviderPath @args
-}}"""
+
 
 BLOCK_BEGIN = "# >>> acg msg >>>"
 BLOCK_END = "# <<< acg msg <<<"
 _BLOCK_NOTE = "# Written by acg msg setup; run it again to update this block."
 
 
-def _ps_list(words) -> str:
-    return ", ".join(f"'{word}'" for word in words)
-
-
 def claude_msg_function() -> str:
     return CLAUDE_MSG_FUNCTION.format(config=shlex.quote(str(channel_config_path())))
-
-
-def codex_function() -> str:
-    return CODEX_FUNCTION.format(subcommands="|".join(CODEX_SUBCOMMANDS), socket=SOCKET.as_posix())
 
 
 def _powershell_quoted(path: Path) -> str:
@@ -1022,25 +955,16 @@ def powershell_claude_msg() -> str:
     return POWERSHELL_CLAUDE_MSG.format(config=_powershell_quoted(channel_config_path()))
 
 
-def powershell_codex() -> str:
-    return POWERSHELL_CODEX.format(
-        codex_plain=_ps_list(CODEX_SUBCOMMANDS), socket=str(SOCKET).replace("/", "\\"),
-    )
-
-
-def shell_block(windows: "bool | None" = None, skip: "frozenset | set" = frozenset()) -> str:
+def shell_block(windows: "bool | None" = None) -> str:
     """The block `acg msg setup` keeps in ~/.bashrc, or on Windows in $PROFILE.
 
-    `skip` names functions the file already defines itself (say a codex()
-    that switches accounts): defining ours after it would replace it.
+    It used to define a codex() that attached every TUI to the daemon with
+    `--remote unix://`; messages go through herdr now, and rewriting the
+    block drops that function on the machines that got it.
     """
     windows = os.name == "nt" if windows is None else windows
-    parts = [BLOCK_BEGIN, _BLOCK_NOTE]
-    parts.append(powershell_claude_msg() if windows else claude_msg_function())
-    if "codex" not in skip:
-        parts.append(powershell_codex() if windows else codex_function())
-    parts.append(BLOCK_END)
-    return "\n".join(parts)
+    function = powershell_claude_msg() if windows else claude_msg_function()
+    return f"{BLOCK_BEGIN}\n{_BLOCK_NOTE}\n{function}\n{BLOCK_END}"
 
 
 def shell_functions() -> str:
@@ -1077,39 +1001,84 @@ def _outside_block(text: str) -> str:
     return "".join(kept)
 
 
-def _defines(text: str, name: str, windows: bool) -> bool:
-    pattern = (
-        rf"^\s*function\s+{re.escape(name)}\b" if windows
-        else rf"^\s*(?:function\s+{re.escape(name)}\b|{re.escape(name)}\s*\(\s*\))"
-    )
-    return re.search(pattern, text, re.MULTILINE | (re.IGNORECASE if windows else 0)) is not None
+def install_shell_block(path: "Path | None" = None, windows: "bool | None" = None) -> "tuple[Path, bool]":
+    """Write or refresh the block in the shell's startup file: (file, changed).
 
-
-def install_shell_block(path: "Path | None" = None, windows: "bool | None" = None) -> "tuple[Path, set, bool]":
-    """Write or refresh the block in the shell's startup file: (file, skipped, changed).
-
-    Everything outside the markers is left byte for byte, including a BOM.
-    A file that is not UTF-8 is refused rather than rewritten in the wrong
-    encoding; the caller then prints the block for the user to add.
+    Everything outside the markers is left byte for byte, including a BOM,
+    and the file keeps its permissions. A symlinked file (dotfiles) is
+    written through the link. A file that is not UTF-8, or whose block has
+    a begin marker without its end, is refused rather than rewritten; the
+    caller then prints the block for the user to add.
     """
     windows = os.name == "nt" if windows is None else windows
     path = path or rc_path()
-    raw = path.read_bytes() if path.exists() else b""
+    target = path.resolve() if path.is_symlink() else path
+    raw = target.read_bytes() if target.exists() else b""
     bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
     try:
         text = raw[len(bom):].decode("utf-8")
     except UnicodeDecodeError as exc:
         raise MessagingError(f"{path} 不是 UTF-8,沒有改它") from exc
-    outside = _outside_block(text)
-    skipped = {name for name in ("codex",) if _defines(outside, name, windows)}
-    head = outside.rstrip("\n")
-    updated = (head + "\n\n" if head else "") + shell_block(windows, skipped) + "\n"
+    if not _block_closed(text):
+        # 少了結尾標記時,開頭之後的每一行都會被當成區塊丟掉
+        raise MessagingError(f"{path} 的 acg msg 區塊少了結尾標記 {BLOCK_END},沒有改它")
+    head = _outside_block(text).rstrip("\n")
+    updated = (head + "\n\n" if head else "") + shell_block(windows) + "\n"
     if updated == text:
-        return path, skipped, False
-    path.parent.mkdir(parents=True, exist_ok=True)
+        return path, False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    mode = target.stat().st_mode & 0o7777 if raw else None
     if raw:
-        path.with_name(path.name + ".acg-bak").write_bytes(raw)
-    staged = path.with_name(f".{path.name}.acg-new")
+        backup = target.with_name(target.name + ".acg-bak")
+        backup.write_bytes(raw)
+        os.chmod(backup, mode)
+    staged = target.with_name(f".{target.name}.acg-new")
     staged.write_bytes(bom + updated.encode("utf-8"))
-    os.replace(staged, path)
-    return path, skipped, True
+    if mode is not None:
+        os.chmod(staged, mode)
+    os.replace(staged, target)
+    return path, True
+
+
+def _block_closed(text: str) -> bool:
+    inside = False
+    for line in text.splitlines():
+        if line.strip() == BLOCK_BEGIN:
+            inside = True
+        elif inside and line.strip() == BLOCK_END:
+            inside = False
+    return not inside
+
+
+def rc_paths() -> list:
+    """Every startup file setup may have written: the shell can change after setup."""
+    if os.name == "nt":
+        return [rc_path()]
+    return list(dict.fromkeys([rc_path(), HOME / ".bashrc", HOME / ".zshrc"]))
+
+
+def refresh_shell_block() -> "tuple[list, list]":
+    """After apply or update: rewrite the block where setup already put one.
+
+    Only `acg msg setup` writes the block, so a fix to it reached no machine
+    until someone ran setup again. A file without the block is left alone;
+    one that has it but cannot be rewritten is reported, not skipped quietly.
+    Returns (files rewritten, (file, reason) left as they were).
+    """
+    changed, failed = [], []
+    for path in rc_paths():
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            failed.append((path, str(exc)))
+            continue
+        if BLOCK_BEGIN.encode("utf-8") not in raw:
+            continue
+        try:
+            if install_shell_block(path)[1]:
+                changed.append(path)
+        except (OSError, MessagingError) as exc:
+            failed.append((path, str(exc)))
+    return changed, failed

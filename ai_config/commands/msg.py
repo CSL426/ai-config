@@ -17,7 +17,7 @@ def _list() -> int:
     peers = messaging.list_peers()
     if not peers:
         log_info("沒有找到在線上的 session")
-        log_info("Codex 要用 codex --remote unix:// 開,才會掛上 daemon")
+        log_info("Codex 與 Antigravity 要在 herdr 的窗格裡開才收得到")
         return 0
     shared = messaging.shared_ids(peers)
     for peer in peers:
@@ -89,7 +89,7 @@ def _setup(print_only: bool = False) -> int:
         print(messaging.shell_block())
         return 0
     try:
-        rc, skipped, changed = messaging.install_shell_block()
+        rc, changed = messaging.install_shell_block()
     except (OSError, messaging.MessagingError) as exc:
         log_error(f"沒辦法寫入 shell 設定:{exc};請自己把下面這段加進去")
         print(messaging.shell_block())
@@ -97,9 +97,7 @@ def _setup(print_only: bool = False) -> int:
     log_success(f"{'已寫入' if changed else '已經是最新的'} {rc} 裡的 acg msg 區塊;開新的終端機後生效")
     log_info("平常照打 claude、codex。要讓 Codex 等其他 session 傳話給 Claude,就用 claude-msg 開;")
     log_info("它每次啟動會問一次 development channel,按 Enter 即可(Claude Code 的規定,關不掉)")
-    if "codex" in skipped:
-        log_info("你已經有自己的 codex 函式,沒有加 acg 的;要讓 Codex 收得到訊息,")
-        log_info('它開 TUI 時要帶 --remote unix:// --cd "$PWD"(resume/fork 不帶 --cd)')
+    log_info("Codex 與 Antigravity 要在 herdr 的窗格裡開才收得到;不在 herdr 裡的,用 -p/exec 另開一輪")
     if os.name == "nt" and _profile_blocked():
         # Windows 用戶端預設執行原則是 Restricted,$PROFILE 根本不會載入
         log_info("PowerShell 目前不載入 $PROFILE;要讓函式生效,執行一次:")

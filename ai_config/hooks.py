@@ -347,6 +347,8 @@ def refresh_all() -> None:
     from . import handoff_reminder
     from .console import log_info, log_warn
 
+    # 跟 hook 無關,前面失敗也要照做:舊版 codex 函式靠這裡拿掉
+    _refresh_shell_block()
     try:
         changed = refresh_detail()
         handoff_reminder.refresh()
@@ -359,6 +361,21 @@ def refresh_all() -> None:
         grouped.setdefault(frozenset(parts), []).append(name)
     for parts, names in grouped.items():
         log_info(f"{_REFRESH_MESSAGES[parts]}:{', '.join(names)}")
+
+
+def _refresh_shell_block() -> None:
+    from . import messaging
+    from .console import log_info, log_warn
+
+    try:
+        changed, failed = messaging.refresh_shell_block()
+    except Exception as exc:  # noqa: BLE001 — 順手的修正不能讓 apply/update 失敗
+        log_warn(f"acg msg 區塊沒有更新:{exc}")
+        return
+    for path in changed:
+        log_info(f"已更新 {path} 裡的 acg msg 區塊;開新的終端機後生效")
+    for path, reason in failed:
+        log_warn(f"{path} 裡的 acg msg 區塊沒有更新({reason});舊的 codex 函式可能還在,請手動刪掉")
 
 
 def states() -> list[tuple[Hook, bool]]:

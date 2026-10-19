@@ -2,6 +2,11 @@
 
 狀態:**Done**(2026-09-30 使用者確認)。
 
+> 2026-10-19 變更:Codex 的 TUI 不再自動以 `--remote unix://` 掛上 daemon。使用者決定
+> 傳話只走 herdr(或另開一輪 `-p`/`exec`),所以 `acg msg setup` 的區塊只剩 `claude-msg`,
+> 舊的 `codex` 函式在 apply/update 時隨區塊重寫一起拿掉。daemon 的列出與送達程式碼仍在,
+> 只對手動掛上的 TUI 有作用。下面是當初的設計紀錄,未改寫。
+
 ## 目標
 
 讓 Claude Code、Codex、Antigravity 正在跑的 session 能像 Claude 的

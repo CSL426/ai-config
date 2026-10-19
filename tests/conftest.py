@@ -25,7 +25,11 @@ def _real_data_git_config() -> Path:
     return paths.SCRIPT_DIR / ".git" / "config"
 
 
-_GUARDED = (_REAL_SETTINGS, _real_data_git_config())
+_REAL_HOME = Path(os.environ.get("HOME", str(Path.home())))
+# acg msg 的區塊在 apply/update 時會重寫;測試寫到真的 shell 設定檔就要變紅
+_GUARDED = (
+    _REAL_SETTINGS, _real_data_git_config(), _REAL_HOME / ".bashrc", _REAL_HOME / ".zshrc",
+)
 
 
 def _settings_fingerprint() -> "tuple[str | None, ...]":
@@ -71,6 +75,15 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
 
 _SETTINGS_KEY = pytest.StashKey["tuple[str | None, ...]"]()
+
+
+@pytest.fixture(autouse=True)
+def _shell_block_stays_out_of_the_real_rc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """apply and update rewrite the acg msg block in the shell's startup file."""
+    from ai_config import messaging
+
+    monkeypatch.setattr(messaging, "rc_path", lambda: tmp_path / "shell-rc")
+    monkeypatch.setattr(messaging, "rc_paths", lambda: [tmp_path / "shell-rc"])
 
 
 @pytest.fixture(autouse=True)
