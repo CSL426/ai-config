@@ -83,6 +83,7 @@ def _shell_block_stays_out_of_the_real_rc(tmp_path: Path, monkeypatch: pytest.Mo
     from ai_config import messaging
 
     monkeypatch.setattr(messaging, "rc_path", lambda: tmp_path / "shell-rc")
+    monkeypatch.setattr(messaging, "rc_paths", lambda: [tmp_path / "shell-rc"])
 
 
 @pytest.fixture(autouse=True)

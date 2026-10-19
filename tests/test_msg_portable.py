@@ -218,23 +218,58 @@ def test_the_old_codex_function_goes_with_the_old_block(tmp_path: Path) -> None:
 
     text = rc.read_text(encoding="utf-8")
     assert changed and "--remote" not in text and "codex() {" not in text and "export A=1" in text
+    assert "claude-msg() {" in text, "換掉舊區塊,不是整段刪掉"
 
 
 def test_apply_and_update_refresh_a_block_that_is_there(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from ai_config import hooks
+
+    bash, zsh, plain = tmp_path / ".bashrc", tmp_path / ".zshrc", tmp_path / ".profile"
+    monkeypatch.setattr(messaging, "rc_paths", lambda: [bash, zsh, plain])
+    # 前面的 hook 更新壞掉也要照做
+    monkeypatch.setattr(hooks, "refresh_detail", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    old = "# >>> acg msg >>>\ncodex() { :; }\n# <<< acg msg <<<\n"
+    bash.write_text(old, encoding="utf-8")
+    zsh.write_text(old, encoding="utf-8")
+    plain.write_text("export A=1\n", encoding="utf-8")
+
+    hooks.refresh_all()
+
+    for rc in (bash, zsh):
+        text = rc.read_text(encoding="utf-8")
+        assert "codex() {" not in text and "claude-msg" in text
+    assert plain.read_text(encoding="utf-8") == "export A=1\n", "沒裝過 setup 的不替它加"
+    assert messaging.refresh_shell_block() == ([], []), "已經是最新的就不再寫"
+
+
+def test_a_block_without_its_end_marker_is_left_alone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     rc = tmp_path / ".bashrc"
-    monkeypatch.setattr(messaging, "rc_path", lambda: rc)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setattr(messaging, "rc_paths", lambda: [rc])
+    original = "# >>> acg msg >>>\ncodex() { :; }\nexport KEEP_ME=1\n"
+    rc.write_text(original, encoding="utf-8")
 
-    rc.write_text("export A=1\n", encoding="utf-8")
-    assert messaging.refresh_shell_block() is None
-    assert rc.read_text(encoding="utf-8") == "export A=1\n", "沒裝過 setup 的不替它加"
+    changed, failed = messaging.refresh_shell_block()
 
-    rc.write_text("# >>> acg msg >>>\ncodex() { :; }\n# <<< acg msg <<<\n", encoding="utf-8")
-    assert messaging.refresh_shell_block() == rc
-    assert "codex() {" not in rc.read_text(encoding="utf-8")
-    assert messaging.refresh_shell_block() is None, "已經是最新的就不再寫"
+    assert changed == [] and failed and "結尾標記" in failed[0][1]
+    assert rc.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+def test_a_private_rc_stays_private_and_a_symlink_stays_a_link(tmp_path: Path) -> None:
+    dotfiles = tmp_path / "dotfiles" / "bashrc"
+    dotfiles.parent.mkdir()
+    dotfiles.write_text("# >>> acg msg >>>\ncodex() { :; }\n# <<< acg msg <<<\n", encoding="utf-8")
+    dotfiles.chmod(0o600)
+    rc = tmp_path / ".bashrc"
+    rc.symlink_to(dotfiles)
+
+    messaging.install_shell_block(rc, windows=False)
+
+    assert rc.is_symlink() and "claude-msg" in dotfiles.read_text(encoding="utf-8")
+    assert dotfiles.stat().st_mode & 0o777 == 0o600
+    assert (dotfiles.parent / "bashrc.acg-bak").stat().st_mode & 0o777 == 0o600
 
 
 def test_setup_keeps_a_powershell_profile_bom_and_stays_ascii(tmp_path: Path) -> None:

@@ -1004,42 +1004,81 @@ def _outside_block(text: str) -> str:
 def install_shell_block(path: "Path | None" = None, windows: "bool | None" = None) -> "tuple[Path, bool]":
     """Write or refresh the block in the shell's startup file: (file, changed).
 
-    Everything outside the markers is left byte for byte, including a BOM.
-    A file that is not UTF-8 is refused rather than rewritten in the wrong
-    encoding; the caller then prints the block for the user to add.
+    Everything outside the markers is left byte for byte, including a BOM,
+    and the file keeps its permissions. A symlinked file (dotfiles) is
+    written through the link. A file that is not UTF-8, or whose block has
+    a begin marker without its end, is refused rather than rewritten; the
+    caller then prints the block for the user to add.
     """
     windows = os.name == "nt" if windows is None else windows
     path = path or rc_path()
-    raw = path.read_bytes() if path.exists() else b""
+    target = path.resolve() if path.is_symlink() else path
+    raw = target.read_bytes() if target.exists() else b""
     bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
     try:
         text = raw[len(bom):].decode("utf-8")
     except UnicodeDecodeError as exc:
         raise MessagingError(f"{path} 不是 UTF-8,沒有改它") from exc
+    if not _block_closed(text):
+        # 少了結尾標記時,開頭之後的每一行都會被當成區塊丟掉
+        raise MessagingError(f"{path} 的 acg msg 區塊少了結尾標記 {BLOCK_END},沒有改它")
     head = _outside_block(text).rstrip("\n")
     updated = (head + "\n\n" if head else "") + shell_block(windows) + "\n"
     if updated == text:
         return path, False
-    path.parent.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    mode = target.stat().st_mode & 0o7777 if raw else None
     if raw:
-        path.with_name(path.name + ".acg-bak").write_bytes(raw)
-    staged = path.with_name(f".{path.name}.acg-new")
+        backup = target.with_name(target.name + ".acg-bak")
+        backup.write_bytes(raw)
+        os.chmod(backup, mode)
+    staged = target.with_name(f".{target.name}.acg-new")
     staged.write_bytes(bom + updated.encode("utf-8"))
-    os.replace(staged, path)
+    if mode is not None:
+        os.chmod(staged, mode)
+    os.replace(staged, target)
     return path, True
 
 
-def refresh_shell_block() -> "Path | None":
+def _block_closed(text: str) -> bool:
+    inside = False
+    for line in text.splitlines():
+        if line.strip() == BLOCK_BEGIN:
+            inside = True
+        elif inside and line.strip() == BLOCK_END:
+            inside = False
+    return not inside
+
+
+def rc_paths() -> list:
+    """Every startup file setup may have written: the shell can change after setup."""
+    if os.name == "nt":
+        return [rc_path()]
+    return list(dict.fromkeys([rc_path(), HOME / ".bashrc", HOME / ".zshrc"]))
+
+
+def refresh_shell_block() -> "tuple[list, list]":
     """After apply or update: rewrite the block where setup already put one.
 
     Only `acg msg setup` writes the block, so a fix to it reached no machine
-    until someone ran setup again. A file without the block is left alone.
+    until someone ran setup again. A file without the block is left alone;
+    one that has it but cannot be rewritten is reported, not skipped quietly.
+    Returns (files rewritten, (file, reason) left as they were).
     """
-    path = rc_path()
-    try:
-        if BLOCK_BEGIN not in path.read_text(encoding="utf-8-sig"):
-            return None
-    except (OSError, UnicodeDecodeError):
-        return None
-    _path, changed = install_shell_block(path)
-    return path if changed else None
+    changed, failed = [], []
+    for path in rc_paths():
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            failed.append((path, str(exc)))
+            continue
+        if BLOCK_BEGIN.encode("utf-8") not in raw:
+            continue
+        try:
+            if install_shell_block(path)[1]:
+                changed.append(path)
+        except (OSError, MessagingError) as exc:
+            failed.append((path, str(exc)))
+    return changed, failed
