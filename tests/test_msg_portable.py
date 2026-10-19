@@ -145,7 +145,7 @@ def test_a_pipe_name_file_pointing_elsewhere_is_refused(
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="the PowerShell functions are for Windows")
-def test_the_powershell_functions_attach_like_the_bash_ones(
+def test_the_powershell_block_defines_only_claude_msg(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import shutil
@@ -170,20 +170,9 @@ def test_the_powershell_functions_attach_like_the_bash_ones(
         )
         return [row.strip() for row in log.read_text().splitlines()] if log.exists() else []
 
-    start, tui = run("codex", {"CODEX_HOME": str(codex_home)})
-    assert start == f"codex CODEX_HOME={codex_home} app-server daemon start"
-    assert tui == f"codex CODEX_HOME={codex_home} --remote unix:// --cd {work}"
-    # -c 是設定,不是 -C 目錄
-    assert run("codex -c model=o3")[-1].endswith(f"--remote unix:// --cd {work} -c model=o3")
-    assert run("codex -C D:\\x")[-1].endswith("--remote unix:// -C D:\\x")
-    assert run("codex resume --last")[-1].endswith("resume --remote unix:// --last")
-    assert run("codex exec hi") == ["codex CODEX_HOME= exec hi"]
-
-    sock = codex_home / messaging.SOCKET
-    sock.parent.mkdir(parents=True)
-    sock.write_bytes(b"")
-    assert run("codex", {"CODEX_HOME": str(codex_home)}) == [
-        f"codex CODEX_HOME={codex_home} --remote unix:// --cd {work}"]
+    # 不再包 codex:照打的指令原樣執行,不加 --remote、不起 daemon
+    assert run("codex", {"CODEX_HOME": str(codex_home)}) == [f"codex CODEX_HOME={codex_home}"]
+    assert run("codex resume --last") == ["codex CODEX_HOME= resume --last"]
 
     config = messaging.channel_config_path()
     assert run("claude-msg") == [
@@ -196,39 +185,69 @@ def test_setup_writes_the_block_once_and_keeps_the_rest_of_the_file(tmp_path: Pa
     mine = "export PATH=$HOME/bin:$PATH\n# 中文註解\n"
     rc.write_text(mine + "\n" + old_block + "alias ll='ls -l'\n", encoding="utf-8")
 
-    path, skipped, changed = messaging.install_shell_block(rc, windows=False)
+    path, changed = messaging.install_shell_block(rc, windows=False)
 
     text = rc.read_text(encoding="utf-8")
-    assert changed and skipped == set() and path == rc
+    assert changed and path == rc
     assert text.startswith(mine) and "alias ll='ls -l'" in text
     assert "claude() {" not in text, "舊區塊整段換掉"
-    assert text.count("# >>> acg msg >>>") == 1 and "claude-msg() {" in text and "codex() {" in text
+    assert text.count("# >>> acg msg >>>") == 1 and "claude-msg() {" in text and "codex() {" not in text
     assert (tmp_path / ".bashrc.acg-bak").read_text(encoding="utf-8").endswith("alias ll='ls -l'\n")
-    assert messaging.install_shell_block(rc, windows=False)[2] is False
+    assert messaging.install_shell_block(rc, windows=False)[1] is False
 
 
-def test_setup_does_not_override_a_codex_function_of_your_own(tmp_path: Path) -> None:
-    """A4000's codex() switches accounts; ours defined after it would replace it."""
+def test_setup_leaves_a_codex_function_of_your_own_alone(tmp_path: Path) -> None:
+    """A4000's codex() switches accounts; the block defines nothing that competes with it."""
     rc = tmp_path / ".bashrc"
-    rc.write_text('codex() {\n  CODEX_HOME="$HOME/.codex-set" command codex "$@"\n}\n', encoding="utf-8")
+    mine = 'codex() {\n  CODEX_HOME="$HOME/.codex-set" command codex "$@"\n}\n'
+    rc.write_text(mine, encoding="utf-8")
 
-    _path, skipped, _changed = messaging.install_shell_block(rc, windows=False)
+    messaging.install_shell_block(rc, windows=False)
 
-    assert skipped == {"codex"}
-    assert rc.read_text(encoding="utf-8").count("codex() {") == 1
+    text = rc.read_text(encoding="utf-8")
+    assert text.startswith(mine) and text.count("codex() {") == 1
+
+
+def test_the_old_codex_function_goes_with_the_old_block(tmp_path: Path) -> None:
+    """gb10 and Windows got acg's codex() that attached every TUI with --remote unix://."""
+    rc = tmp_path / ".bashrc"
+    old = "# >>> acg msg >>>\nclaude-msg() { :; }\ncodex() {\n  command codex --remote unix:// \"$@\"\n}\n# <<< acg msg <<<\n"
+    rc.write_text("export A=1\n\n" + old, encoding="utf-8")
+
+    _path, changed = messaging.install_shell_block(rc, windows=False)
+
+    text = rc.read_text(encoding="utf-8")
+    assert changed and "--remote" not in text and "codex() {" not in text and "export A=1" in text
+
+
+def test_apply_and_update_refresh_a_block_that_is_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rc = tmp_path / ".bashrc"
+    monkeypatch.setattr(messaging, "rc_path", lambda: rc)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+
+    rc.write_text("export A=1\n", encoding="utf-8")
+    assert messaging.refresh_shell_block() is None
+    assert rc.read_text(encoding="utf-8") == "export A=1\n", "沒裝過 setup 的不替它加"
+
+    rc.write_text("# >>> acg msg >>>\ncodex() { :; }\n# <<< acg msg <<<\n", encoding="utf-8")
+    assert messaging.refresh_shell_block() == rc
+    assert "codex() {" not in rc.read_text(encoding="utf-8")
+    assert messaging.refresh_shell_block() is None, "已經是最新的就不再寫"
 
 
 def test_setup_keeps_a_powershell_profile_bom_and_stays_ascii(tmp_path: Path) -> None:
     profile = tmp_path / "Microsoft.PowerShell_profile.ps1"
     profile.write_bytes(b"\xef\xbb\xbfSet-Alias g git\r\nfunction Codex { codex.cmd @args }\r\n")
 
-    _path, skipped, _changed = messaging.install_shell_block(profile, windows=True)
+    messaging.install_shell_block(profile, windows=True)
 
     raw = profile.read_bytes()
     assert raw.startswith(b"\xef\xbb\xbfSet-Alias g git")
     # Windows PowerShell 5.1 讀沒有 BOM 的檔案用系統碼頁;區塊本身只用 ASCII
     assert messaging.shell_block(windows=True).isascii()
-    assert skipped == {"codex"} and b"function claude-msg" in raw
+    assert b"function Codex { codex.cmd @args }" in raw and b"function claude-msg" in raw
 
 
 def test_setup_refuses_a_file_it_cannot_read_back(tmp_path: Path) -> None:

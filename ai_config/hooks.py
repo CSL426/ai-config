@@ -354,11 +354,25 @@ def refresh_all() -> None:
         log_warn(f"hook 路徑沒有更新:{exc}")
         return
     _refresh_credential_binding()
+    _refresh_shell_block()
     grouped: dict[frozenset, list[str]] = {}
     for name, parts in changed.items():
         grouped.setdefault(frozenset(parts), []).append(name)
     for parts, names in grouped.items():
         log_info(f"{_REFRESH_MESSAGES[parts]}:{', '.join(names)}")
+
+
+def _refresh_shell_block() -> None:
+    from . import messaging
+    from .console import log_info, log_warn
+
+    try:
+        path = messaging.refresh_shell_block()
+    except (OSError, messaging.MessagingError) as exc:
+        log_warn(f"acg msg 區塊沒有更新:{exc}")
+        return
+    if path is not None:
+        log_info(f"已更新 {path} 裡的 acg msg 區塊;開新的終端機後生效")
 
 
 def states() -> list[tuple[Hook, bool]]:

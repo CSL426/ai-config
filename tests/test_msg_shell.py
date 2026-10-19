@@ -1,10 +1,8 @@
-"""The claude/codex shell functions `acg msg setup` prints, run in real bash."""
+"""The shell function `acg msg setup` prints, run in real bash."""
 
 import shutil
-import socket
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -46,43 +44,12 @@ def shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return run
 
 
-def test_a_new_codex_conversation_opens_in_this_directory(shell) -> None:
-    home, work = shell.home, shell.work
-    start, tui = shell("codex")
-    assert start == f"codex CODEX_HOME={home}/.codex app-server daemon start"
-    # daemon 的工作目錄是它啟動時的;沒帶 --cd 的話,新對話會跑到那裡
-    assert tui == f"codex CODEX_HOME= --remote unix:// --cd {work}"
-    assert shell("codex 修這個 bug")[-1].endswith(f"--remote unix:// --cd {work} 修這個 bug")
-
-
-def test_codex_keeps_a_directory_the_user_gave(shell) -> None:
-    assert shell("codex -C /elsewhere")[-1].endswith("--remote unix:// -C /elsewhere")
-    assert shell("codex --cd=/elsewhere")[-1].endswith("--remote unix:// --cd=/elsewhere")
-
-
-def test_resuming_codex_keeps_the_old_conversations_directory(shell) -> None:
-    assert shell("codex resume --last")[-1].endswith("codex CODEX_HOME= resume --remote unix:// --last")
-    assert shell("codex fork abc")[-1].endswith("fork --remote unix:// abc")
-
-
-def test_codex_subcommands_and_explicit_remotes_run_as_typed(shell) -> None:
-    assert shell("codex exec hi") == ["codex CODEX_HOME= exec hi"]
-    assert shell("codex queue --thread t") == ["codex CODEX_HOME= queue --thread t"]
-    assert shell("codex --version") == ["codex CODEX_HOME= --version"]
-    assert shell("codex --remote ws://h:1")[-1] == "codex CODEX_HOME= --remote ws://h:1"
-
-
-def test_codex_attaches_to_the_daemon_of_its_own_home(shell) -> None:
-    # unix socket 路徑有長度上限,pytest 的 tmp_path 太深
-    other = Path(tempfile.mkdtemp(prefix="acg-sh-", dir="/tmp"))
-    sock = other / messaging.SOCKET
-    sock.parent.mkdir(parents=True)
-    with socket.socket(socket.AF_UNIX) as server:
-        server.bind(str(sock))
-        # daemon 已經在跑就不再啟動一次
-        calls = shell("codex", env={"CODEX_HOME": str(other)})
-    shutil.rmtree(other)
-    assert calls == [f"codex CODEX_HOME={other} --remote unix:// --cd {shell.work}"]
+def test_codex_runs_as_typed_without_the_daemon(shell) -> None:
+    """Messages reach Codex through herdr now; the block no longer wraps codex."""
+    block = messaging.shell_functions()
+    assert "codex()" not in block and "--remote" not in block
+    assert shell("codex") == ["codex CODEX_HOME= "]
+    assert shell("codex resume --last") == ["codex CODEX_HOME= resume --last"]
 
 
 def test_plain_claude_is_left_alone_and_claude_msg_loads_the_channel(shell) -> None:
