@@ -377,3 +377,10 @@ def test_the_review_lists_what_is_staged_with_names_unquoted(
     listed = review.split("diff --git", 1)[0]
     assert "A  memory/topics/部署.md" in listed
     assert "today-2026-10-19" not in listed.split("These notes look like", 1)[0]
+
+
+def test_a_control_character_in_a_name_cannot_forge_the_review() -> None:
+    shown = push_preflight._shown_path("memory/a\nM  memory/innocent.md\x1b[2K")
+
+    assert "\n" not in shown and "\x1b" not in shown
+    assert push_preflight._shown_path("memory/topics/部署.md") == "memory/topics/部署.md"

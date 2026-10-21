@@ -145,3 +145,16 @@ def test_only_a_short_closed_placeholder_is_let_through(line: str) -> None:
     from ai_config.safety import looks_like_secret
 
     assert looks_like_secret(line)
+
+
+def test_when_git_cannot_answer_every_note_is_scanned(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A git timeout must not turn into "no credentials"; only the root journal stays out."""
+    (notebook / memory_paths.TOPICS_NAME / "deploy.md").write_text("token=" + "abc123\n", encoding="utf-8")
+    journal = notebook / memory_paths.JOURNAL_DIR_NAME
+    journal.mkdir()
+    (journal / "today.md").write_text("token=" + "abc123\n", encoding="utf-8")
+    monkeypatch.setattr(memory_index, "_synced_files", lambda root: None)
+
+    assert memory_index.secret_notes() == [f"{memory_paths.TOPICS_NAME}/deploy.md"]

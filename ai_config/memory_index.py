@@ -1,5 +1,6 @@
 """The notebook's index, its drift and secret scans, and memory status."""
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -70,9 +71,17 @@ def secret_notes() -> list[str]:
     it is ever staged.
     """
     root = memory_paths.memory_dir()
+    if not root.is_dir():
+        return []
     synced = _synced_files(root)
     if synced is None:
-        return []
+        # git 答不出來時寧可多報:少報一則,真的憑證就可能沒人看到
+        synced = [
+            path.relative_to(root).as_posix()
+            for path in root.rglob("*")
+            if path.relative_to(root).parts[0]
+            not in (memory_paths.JOURNAL_DIR_NAME, ".git")
+        ]
     return sorted(path for path in synced if carries_secret(root / path))
 
 
@@ -82,10 +91,9 @@ def _synced_files(root: Path) -> "list[str] | None":
     Git decides, not a list of folders: memory/.gitignore keeps only the
     root journal on this machine, while project journals and handoffs sync.
     A hand-kept list once skipped every journal and missed the very note
-    that kept DESKTOP-CAO4ENQ's notebook local.
+    that kept DESKTOP-CAO4ENQ's notebook local. Outside any repository
+    nothing syncs; None means git could not say.
     """
-    if not root.is_dir():
-        return None
     try:
         result = subprocess.run(
             ["git", "-C", str(root), "ls-files", "-z", "--cached", "--others",
@@ -96,11 +104,12 @@ def _synced_files(root: Path) -> "list[str] | None":
             errors="surrogateescape",
             check=False,
             timeout=20,
+            env={**os.environ, "LC_ALL": "C"},
         )
     except (OSError, subprocess.SubprocessError):
         return None
     if result.returncode != 0:
-        return None
+        return [] if "not a git repository" in result.stderr else None
     return [path for path in result.stdout.split("\0") if path]
 
 

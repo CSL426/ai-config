@@ -319,11 +319,19 @@ def _staged_status() -> "list[str] | None":
     for status in fields:
         if not status:
             continue
-        path = next(fields, "")
+        path = _shown_path(next(fields, ""))
         if status[0] in "RC":
-            path = f"{path} -> {next(fields, '')}"
+            path = f"{path} -> {_shown_path(next(fields, ''))}"
         lines.append(f"{status[0]}  {path}")
     return lines
+
+
+def _shown_path(path: str) -> str:
+    # -z 不跳脫任何字元;檔名裡的換行或終端控制碼會偽造確認清單
+    return "".join(
+        char if char.isprintable() else char.encode("unicode_escape").decode("ascii")
+        for char in path
+    )
 
 
 def _working_paths() -> "list[str] | None":
