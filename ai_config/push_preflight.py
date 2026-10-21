@@ -17,6 +17,7 @@ from .commands.sync import (
 )
 from .config import configured_remote_provider
 from .console import log_error, log_info, log_warn
+from .memory_paths import INDEX_NAME
 from .paths import (
     ENTRYPOINT,
     EXCLUDED_FILES,
@@ -26,8 +27,6 @@ from .paths import (
 from .safety import SECRET_PATTERN as _SECRET_PATTERN
 
 _ALLOW_SECRET_PATHS = False
-# 這次記憶推送留在本機的筆記;同一次 push 會驗證兩次(確認前、commit 前),要記得
-_HELD_BACK: set = set()
 
 
 @dataclass(frozen=True)
@@ -303,6 +302,36 @@ def _staged_paths(*, diff_filter: "str | None" = None) -> "list[str] | None":
         _git_failure("Scanning staged paths", result)
         return None
     return [relative for relative in result.stdout.split("\0") if relative]
+
+
+def _staged_status() -> "list[str] | None":
+    """What will be committed, one ``git status`` style line per path.
+
+    Read from the index after staging, so a note left out of a memory push
+    is not listed, and from ``-z`` output, so a non-ASCII name is not quoted.
+    """
+    result = _run_repo_git("diff", "--cached", "--name-status", "-z")
+    if result.returncode != 0:
+        _git_failure("Scanning staged paths", result)
+        return None
+    lines = []
+    fields = iter(result.stdout.split("\0"))
+    for status in fields:
+        if not status:
+            continue
+        path = _shown_path(next(fields, ""))
+        if status[0] in "RC":
+            path = f"{path} -> {_shown_path(next(fields, ''))}"
+        lines.append(f"{status[0]}  {path}")
+    return lines
+
+
+def _shown_path(path: str) -> str:
+    # -z 不跳脫任何字元;檔名裡的換行或終端控制碼會偽造確認清單
+    return "".join(
+        char if char.isprintable() else char.encode("unicode_escape").decode("ascii")
+        for char in path
+    )
 
 
 def _working_paths() -> "list[str] | None":
@@ -689,7 +718,15 @@ def _ahead_push_matches(
     return _validate_ahead_push(selected, commits, snapshot)
 
 
-def _validate_staged_push(selected: list[str]) -> bool:
+def _validate_staged_push(
+    selected: list[str], held: "set[str] | None" = None,
+) -> bool:
+    """Whether what is staged may be committed.
+
+    A memory-only push may leave notes out instead of stopping; it records
+    them in ``held``, which the caller passes again to the check before the
+    commit. Without ``held`` nothing is left out.
+    """
     if MEMORY_SCOPE in selected:
         staged = _staged_paths()
         if staged is None or not _memory_root_available(selected, staged):
@@ -718,7 +755,7 @@ def _validate_staged_push(selected: list[str]) -> bool:
             log_warn("Credential-content check skipped (--allow-secrets):")
             for path in secret_paths:
                 print(f"  {path}")
-        elif not _hold_back_notes(selected, secret_paths):
+        elif held is None or not _hold_back_notes(selected, secret_paths, held):
             log_error(
                 "Potential credential content would be committed; push cancelled:"
             )
@@ -740,7 +777,7 @@ def _validate_staged_push(selected: list[str]) -> bool:
     )
     left = {
         path for path in (unstaged.stdout + untracked.stdout).split("\0") if path
-    } - _HELD_BACK  # 刻意留下的筆記不算意外
+    } - (held or set())  # 刻意留下的筆記不算意外
     if unstaged.returncode != 0 or untracked.returncode != 0 or left:
         log_error("Unexpected repository changes remain after staging; push cancelled.")
         return False
@@ -750,7 +787,7 @@ def _validate_staged_push(selected: list[str]) -> bool:
     return True
 
 
-def _hold_back_notes(selected: list[str], paths: list[str]) -> bool:
+def _hold_back_notes(selected: list[str], paths: list[str], held: "set[str]") -> bool:
     """A memory-only push leaves out notes that look like they carry a credential.
 
     One journal line quoting a token used to cancel the whole notebook, night
@@ -758,27 +795,23 @@ def _hold_back_notes(selected: list[str], paths: list[str]) -> bool:
     the others. Notes are independent of each other, so the rest can go; a
     tool's settings are not, and a push that names a tool still stops.
     """
-    if selected != [MEMORY_SCOPE] or not all(
-        path.startswith(f"{MEMORY_SCOPE}/") for path in paths
-    ):
+    if selected != [MEMORY_SCOPE] or _paths_outside(paths, selected):
         return False
     # 索引留下、它連到的筆記卻推出去,別台就找不到那些筆記;索引被判定就整次停
-    if any(path.rsplit("/", 1)[-1] == "MEMORY.md" for path in paths):
+    if any(path.rsplit("/", 1)[-1] == INDEX_NAME for path in paths):
         return False
     paths = paths + _rename_sources(paths)
     reset = _run_repo_git("reset", "-q", "--", *(f":(literal){path}" for path in paths))
     if reset.returncode != 0:
         _git_failure("Leaving out notes with credential content", reset)
         return False
-    _HELD_BACK.update(paths)
-    if paths:
-        log_warn("These notes look like they carry a credential; left out of this push, the rest goes as usual:")
-        for path in paths:
-            print(f"  {path}")
-        log_info(
-            "Remove the value from the note (and replace the credential if it is real); "
-            f"a false positive goes with {ENTRYPOINT} memory push --allow-secrets"
-        )
+    held.update(paths)
+    log_warn("These notes look like they carry a credential; left out of this push, the rest goes as usual:")
+    push_review._print_capped(paths)
+    log_info(
+        "Remove the value from the note (and replace the credential if it is real); "
+        f"a false positive goes with {ENTRYPOINT} memory push --allow-secrets"
+    )
     return True
 
 
@@ -788,24 +821,24 @@ def _rename_sources(paths: list[str]) -> list[str]:
     Holding back only the new name would leave the deletion of the old one
     staged: the note would vanish from the remote while its copy stays here.
     """
-    renames = _run_repo_git("diff", "--cached", "--name-status", "-M", "-z")
+    renames = _run_repo_git(
+        "diff", "--cached", "--name-status", "-M", "-z", "--", f"{MEMORY_SCOPE}/"
+    )
     if renames.returncode != 0:
         return []
-    fields = renames.stdout.split("\0")
+    targets = set(paths)
     names = {path.rsplit("/", 1)[-1] for path in paths}
-    sources, index = [], 0
-    while index < len(fields) - 1:
-        status = fields[index]
-        if status.startswith(("R", "C")) and index + 2 < len(fields):
-            source, target = fields[index + 1], fields[index + 2]
-            if target in paths and status.startswith("R"):
-                sources.append(source)
-            index += 3
-            continue
+    sources = []
+    fields = iter(renames.stdout.split("\0"))
+    # -M 沒帶 -C,不會有 C;R 後面跟舊名、新名兩欄,其他狀態只跟一欄
+    for status in fields:
+        path = next(fields, "")
+        if status.startswith("R"):
+            if next(fields, "") in targets:
+                sources.append(path)
         # 小檔案改了內容再搬,git 認不出是改名;歸檔是同名搬進 archive/,用檔名對
-        if status == "D" and fields[index + 1].rsplit("/", 1)[-1] in names:
-            sources.append(fields[index + 1])
-        index += 2
+        elif status == "D" and path.rsplit("/", 1)[-1] in names:
+            sources.append(path)
     return sources
 
 

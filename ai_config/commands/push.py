@@ -18,8 +18,6 @@ def do_push(
     # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
     # 才會為 True(GUI 走不到,維持硬擋)。
     push_preflight._ALLOW_SECRET_PATHS = allow_secrets
-    # GUI 的程序會連續推好幾次;上一次留下的筆記不能算到這一次
-    push_preflight._HELD_BACK.clear()
     log_header("Push local configuration")
     provider = configured_remote_provider()
     if provider == "git" and _remote_is_read_only():
@@ -61,39 +59,37 @@ def do_push(
     if status.returncode != 0:
         _git_failure("Reading collected configuration changes", status)
         return 1
-    pending = status.stdout
-    if not pending.strip():
+    if not status.stdout.strip():
         log_success("No local configuration changes to push")
         return 0
 
-    reviewed_diff = push_publish._stage_push_changes(selected)
+    # 記憶推送留在本機的筆記;commit 前的第二次檢查也要知道是哪些
+    held: set[str] = set()
+    reviewed_diff = push_publish._stage_push_changes(selected, held)
     if reviewed_diff is push_publish.NOTHING_TO_PUSH:
         return 0
     if reviewed_diff is None:
         return 1
     staged_paths = push_preflight._staged_paths()
-    if staged_paths is None:
+    pending = push_preflight._staged_status()
+    if staged_paths is None or pending is None:
         push_publish._unstage_tools(selected)
         return 1
     commit_message = push_review._proposed_push_commit_message(staged_paths, scheduled)
-    if push_preflight._HELD_BACK:
-        # 確認時列的是會 commit 的;留在本機的筆記不能出現在這裡
-        pending = "\n".join(
-            line for line in pending.splitlines()
-            if line[3:].strip('"') not in push_preflight._HELD_BACK
-        )
 
     confirmed = False
     ready_to_commit = False
     cleanup_succeeded = True
     try:
         confirmed = push_review._review_and_confirm_push(
-            pending,
+            "\n".join(pending),
             reviewed_diff,
             commit_message,
         )
         if confirmed:
-            ready_to_commit = push_publish._staged_push_matches(selected, reviewed_diff)
+            ready_to_commit = push_publish._staged_push_matches(
+                selected, reviewed_diff, held
+            )
     finally:
         if not ready_to_commit:
             cleanup_succeeded = push_publish._unstage_tools(selected)

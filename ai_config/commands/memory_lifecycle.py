@@ -11,7 +11,14 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import memory_hooks, memory_index, memory_journal, memory_paths, safety
+from .. import (
+    autopush,
+    memory_hooks,
+    memory_index,
+    memory_journal,
+    memory_paths,
+    safety,
+)
 from ..console import log_error, log_header, log_info, log_success, log_warn
 from ..locking import apply_lock
 from ..paths import BACKUP_BASE, ENTRYPOINT, MEMORY_LINK, tilde
@@ -54,11 +61,14 @@ def _status() -> int:
             print(f"  {memory_paths.TOPICS_NAME}/{name}")
 
     if state.secret_notes:
-        log_error(f"有 {len(state.secret_notes)} 則筆記像是含有憑證,記憶上傳時會留在本機,其他筆記照常同步:")
+        log_error(
+            f"有 {len(state.secret_notes)} 則會同步的筆記像是含有憑證;"
+            "還沒上傳的會留在本機,其他筆記照常同步:"
+        )
         for name in state.secret_notes:
             print(f"  {name}")
         log_info(
-            "真的是金鑰就刪掉那個值並換一組新的;誤判才用 memory push --allow-secrets。"
+            f"{autopush.HELD_NOTE_ADVICE}。"
             "索引 MEMORY.md 被判定時整次上傳都會停下;本機日誌不同步,不在此列"
         )
 

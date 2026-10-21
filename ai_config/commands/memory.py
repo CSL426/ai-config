@@ -145,14 +145,11 @@ def _autopush(rest: list[str]) -> int:
                 for path in failure["paths"]:
                     print(f"  {path}")
                 log_info(f"處理後執行 {ENTRYPOINT} memory push;成功就會清掉這筆紀錄")
-            held = state.get("held_back")
-            if held:
+            if state["held_back"]:
                 log_warn("這些筆記疑似含憑證,沒有上傳(其他筆記照常同步):")
-                for path in held["paths"]:
+                for path in state["held_back"]:
                     print(f"  {path}")
-                log_info(
-                    f"真的有金鑰就刪掉那個值並換一組;誤判就執行 {ENTRYPOINT} memory push --allow-secrets"
-                )
+                log_info(auto.HELD_NOTE_ADVICE)
             log_info(f"現在執行的話:{state['reason']}")
             return 0
         if action == "enable" and len(args) <= 1:

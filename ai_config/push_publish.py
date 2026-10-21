@@ -98,7 +98,9 @@ def _push_existing_commits(selected: list[str], ahead: int) -> int:
 NOTHING_TO_PUSH = "\0nothing-to-push"
 
 
-def _stage_push_changes(selected: list[str]) -> "str | None":
+def _stage_push_changes(
+    selected: list[str], held: "set[str] | None" = None,
+) -> "str | None":
     working = push_preflight._working_paths()
     if working is None or not push_preflight._memory_root_available(selected, working):
         return None
@@ -111,7 +113,7 @@ def _stage_push_changes(selected: list[str]) -> "str | None":
             _git_failure("Staging collected configuration", stage)
             return None
 
-    if not push_preflight._validate_staged_push(selected):
+    if not push_preflight._validate_staged_push(selected, held):
         _unstage_tools(selected)
         return None
 
@@ -126,8 +128,10 @@ def _stage_push_changes(selected: list[str]) -> "str | None":
     return staged_diff
 
 
-def _staged_push_matches(selected: list[str], reviewed_diff: str) -> bool:
-    if not push_preflight._validate_staged_push(selected):
+def _staged_push_matches(
+    selected: list[str], reviewed_diff: str, held: "set[str] | None" = None,
+) -> bool:
+    if not push_preflight._validate_staged_push(selected, held):
         return False
     current_diff = push_preflight._staged_diff()
     if current_diff is None:

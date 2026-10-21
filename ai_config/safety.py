@@ -224,10 +224,8 @@ def assert_tool_destinations_safe(
                     _assert_expected_agy_link()
 
 
-# 憑證樣式:push 的最後一道關卡與記憶寫入的第一道關卡共用同一份定義,
-# 兩邊分頭維護遲早會漂移
-SECRET_PATTERN = re.compile(
-    rb"(?:[\"']?(?:password|secret|token|api[_-]?key|api[_-]?secret|"
+_SECRET_KEYS = (
+    rb"[\"']?(?:password|secret|token|api[_-]?key|api[_-]?secret|"
     rb"auth[_-]?token|access[_-]?token|private[_-]?key|database_url|"
     rb"github_token|aws_(?:access_key_id|secret_access_key|session_token)|"
     rb"stripe_(?:secret_key|api_key))[\"']?\s*[:=]"
@@ -239,7 +237,18 @@ SECRET_PATTERN = re.compile(
     # 中文說明(shell 裡 `token= x` 本來就是空值)。用 : 的 JSON、YAML 一律照舊檢查,
     # 值寫在下一行或是 | 區塊都可能是真的憑證
     rb"(?!\s*[\"']?(?:\$[({A-Za-z_]|<[^<>\s][^<>\n]{0,39}>))"
-    rb"(?!(?<=[A-Za-z0-9_]=)(?:[`&)\],;]|\r?\n|$|[ \t]+[\x80-\xff])))|"
+    rb"(?!(?<=[A-Za-z0-9_]=)(?:[`&)\],;]|\r?\n|$|[ \t]+[\x80-\xff]))"
+)
+# 中文句子裡提到 key、後面接的也是中文,是在講這個東西,不是設定值:交接寫
+# 「確認日誌的 token:真的就刪值」被當成憑證,整份交接留在本機。行首的
+# password: 中文密碼 前面沒有中文,照舊算憑證
+_IN_PROSE = rb"(?:(?<=[\x80-\xff])|(?<=[\x80-\xff][ \t]))"
+
+# 憑證樣式:push 的最後一道關卡與記憶寫入的第一道關卡共用同一份定義,
+# 兩邊分頭維護遲早會漂移
+SECRET_PATTERN = re.compile(
+    rb"(?:(?<![\x80-\xff])(?<![\x80-\xff][ \t])" + _SECRET_KEYS + rb")|"
+    rb"(?:" + _IN_PROSE + _SECRET_KEYS + rb"(?![ \t]*[\x80-\xff]))|"
     rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
     rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
     rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"

@@ -216,7 +216,7 @@ def _announce_held_notes(value: dict) -> None:
     """Notes left out of the memory push stay here until someone looks at them."""
     if value.get("hook_event_name") != "SessionStart":
         return
-    from .autopush import held_notes
+    from .autopush import HELD_NOTE_ADVICE, held_notes
 
     held = held_notes()
     if not held:
@@ -225,8 +225,7 @@ def _announce_held_notes(value: dict) -> None:
     more = f" 等 {len(held)} 個" if len(held) > 3 else ""
     print(
         f"acg:共用記憶有筆記疑似含憑證,沒有上傳,其他筆記照常同步({paths}{more})。"
-        "請告訴使用者打開確認:真的是金鑰就刪掉那個值並換一組新的;是誤判就執行 "
-        "acg memory push --allow-secrets。處理後這則提醒就不會再出現。"
+        f"請告訴使用者打開確認:{HELD_NOTE_ADVICE}。處理後這則提醒就不會再出現。"
     )
 
 

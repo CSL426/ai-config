@@ -26,7 +26,7 @@ from pathlib import Path
 
 from .console import log_info
 from .memory_paths import memory_dir
-from .paths import HOME, SCRIPT_DIR, WINDOWS_MODE
+from .paths import ENTRYPOINT, HOME, SCRIPT_DIR, WINDOWS_MODE
 from .subproc import NATIVE, UTF8
 from .systemd_timer import forget_missed_runs
 
@@ -77,6 +77,13 @@ def failure_path() -> Path:
     return state_path().with_name("autopush-failure.json")
 
 
+# 疑似含憑證的筆記怎麼處理;status、session 提醒、memory status 共用一句
+HELD_NOTE_ADVICE = (
+    "真的是金鑰就刪掉那個值並換一組新的;是誤判就執行 "
+    f"{ENTRYPOINT} memory push --allow-secrets"
+)
+
+
 def held_notes() -> "list[str]":
     """Notes still waiting to be pushed whose content looks like a credential.
 
@@ -85,23 +92,12 @@ def held_notes() -> "list[str]":
     deleted since, two pushes at once), so the answer is read from it each
     time, which also makes it right after a push that names a tool.
     """
-    from .safety import SECRET_PATTERN
+    from .memory_index import carries_secret
 
-    result = _git("status", "--porcelain=v1", "-z", "--untracked-files=all", "--",
-                  memory_dir().name)
-    if result is None or result.returncode != 0:
-        return []
-    held = []
-    for entry in result.stdout.split("\0"):
-        path = entry[3:]
-        if not path or entry[:2] in (" D", "D "):
-            continue
-        try:
-            if SECRET_PATTERN.search((SCRIPT_DIR / path).read_bytes()):
-                held.append(path)
-        except OSError:
-            continue
-    return sorted(held)
+    return sorted(
+        entry[3:] for entry in _memory_status() or []
+        if entry[:2] not in (" D", "D ") and carries_secret(SCRIPT_DIR / entry[3:])
+    )
 
 
 def last_failure() -> "dict | None":
@@ -180,17 +176,20 @@ def _memory_has_changes() -> "bool | None":
     Milliseconds, against seconds for a real push. Every scheduled run
     starts here so a quiet day costs nothing.
     """
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(SCRIPT_DIR), "status", "--porcelain=v1",
-             "--untracked-files=all", "--", memory_dir().name],
-            capture_output=True, text=True, **UTF8, check=False, timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
+    entries = _memory_status()
+    return None if entries is None else bool(entries)
+
+
+def _memory_status() -> "list[str] | None":
+    """The notebook's ``git status`` entries; None when git could not say.
+
+    Session start reads this too, so a stuck git gives up after 30 seconds.
+    """
+    result = _git("status", "--porcelain=v1", "-z", "--untracked-files=all", "--",
+                  memory_dir().name, timeout=30)
+    if result is None or result.returncode != 0:
         return None
-    if result.returncode != 0:
-        return None
-    return bool(result.stdout.strip())
+    return [entry for entry in result.stdout.split("\0") if entry]
 
 
 def _provider() -> str:
@@ -735,7 +734,7 @@ def status() -> dict:
         "scheduled": schedule_installed(),
         "last_push": last.isoformat() if last else "",
         "last_failure": last_failure(),
-        "held_back": {"paths": held} if (held := held_notes()) else None,
+        "held_back": held_notes(),
         "would_push": decision.push,
         "reason": decision.reason,
     }

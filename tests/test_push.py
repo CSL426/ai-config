@@ -787,7 +787,7 @@ def test_push_unstages_selected_tools_when_confirmation_is_interrupted(
     patch_push(monkeypatch, "_run_repo_git", lambda *args: status)
     patch_push(monkeypatch, "_selected_tools", lambda tool: ["claude"])
     patch_push(monkeypatch, "_stage_push_changes",
-        lambda selected: "reviewed diff\n",
+        lambda selected, held=None: "reviewed diff\n",
     )
 
     def interrupt_review(*args: object) -> bool:
@@ -818,7 +818,7 @@ def test_push_reports_failed_unstage_on_cancel(
     patch_push(monkeypatch, "_run_repo_git", lambda *args: status)
     patch_push(monkeypatch, "_selected_tools", lambda tool: ["claude"])
     patch_push(monkeypatch, "_stage_push_changes",
-        lambda selected: "reviewed diff\n",
+        lambda selected, held=None: "reviewed diff\n",
     )
     patch_push(monkeypatch, "_review_and_confirm_push",
         lambda *args: False,
