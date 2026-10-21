@@ -54,10 +54,13 @@ def _status() -> int:
             print(f"  {memory_paths.TOPICS_NAME}/{name}")
 
     if state.secret_notes:
-        log_error(f"有 {len(state.secret_notes)} 則筆記像是含有憑證,push 會擋下:")
+        log_error(f"有 {len(state.secret_notes)} 則筆記像是含有憑證,記憶上傳時會留在本機,其他筆記照常同步:")
         for name in state.secret_notes:
             print(f"  {name}")
-        log_info("請先移除內容;本機日誌不同步,不在此列")
+        log_info(
+            "真的是金鑰就刪掉那個值並換一組新的;誤判才用 memory push --allow-secrets。"
+            "索引 MEMORY.md 被判定時整次上傳都會停下;本機日誌不同步,不在此列"
+        )
 
     if state.changes is None:
         log_info("記憶目錄不在 git 管理之下")

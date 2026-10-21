@@ -77,6 +77,33 @@ def failure_path() -> Path:
     return state_path().with_name("autopush-failure.json")
 
 
+def held_notes() -> "list[str]":
+    """Notes still waiting to be pushed whose content looks like a credential.
+
+    A memory push leaves these out and sends the rest. Nothing records that:
+    a record could disagree with the repository (a cancelled push, a note
+    deleted since, two pushes at once), so the answer is read from it each
+    time, which also makes it right after a push that names a tool.
+    """
+    from .safety import SECRET_PATTERN
+
+    result = _git("status", "--porcelain=v1", "-z", "--untracked-files=all", "--",
+                  memory_dir().name)
+    if result is None or result.returncode != 0:
+        return []
+    held = []
+    for entry in result.stdout.split("\0"):
+        path = entry[3:]
+        if not path or entry[:2] in (" D", "D "):
+            continue
+        try:
+            if SECRET_PATTERN.search((SCRIPT_DIR / path).read_bytes()):
+                held.append(path)
+        except OSError:
+            continue
+    return sorted(held)
+
+
 def last_failure() -> "dict | None":
     try:
         record = json.loads(failure_path().read_text(encoding="utf-8"))
@@ -708,6 +735,7 @@ def status() -> dict:
         "scheduled": schedule_installed(),
         "last_push": last.isoformat() if last else "",
         "last_failure": last_failure(),
+        "held_back": {"paths": held} if (held := held_notes()) else None,
         "would_push": decision.push,
         "reason": decision.reason,
     }

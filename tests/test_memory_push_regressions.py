@@ -226,3 +226,139 @@ def test_another_tools_change_still_cancels_a_hand_picked_scope(
 
     assert push.do_push("claude") == 1
     assert "outside the selected tools" in capsys.readouterr().err
+
+
+SECRET_NOTE = "memory/projects/o--r/journal/today-2026-10-19.done.md"
+
+
+def _token_line() -> str:
+    # 在執行時才組出來:原始碼裡的假憑證字面值會被 gitleaks 擋下
+    return "UPDATE_TOKEN=" + "abc123def456" + "\n"
+
+
+def test_a_memory_push_leaves_out_a_note_with_a_token_and_sends_the_rest(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """DESKTOP-CAO4ENQ: one journal line with a token kept the whole notebook local."""
+    from ai_config import autopush
+
+    monkeypatch.setattr(autopush, "SCRIPT_DIR", data_repo)
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n\na new handoff pointer\n", encoding="utf-8")
+    secret = data_repo / SECRET_NOTE
+    secret.parent.mkdir(parents=True)
+    secret.write_text("## 10:00\n.env 缺 " + _token_line(), encoding="utf-8")
+    shown = []
+
+    def accept(prompt: str) -> bool:
+        shown.append(git(data_repo, "diff", "--cached", "--name-only"))
+        return True
+
+    patch_push(monkeypatch, "confirm_prompt", accept)
+
+    assert push.do_push("memory") == 0
+
+    out = capsys.readouterr()
+    assert SECRET_NOTE in out.out + out.err
+    assert shown == ["memory/MEMORY.md"], "確認時看到的清單裡就沒有它"
+    assert git(data_repo, "rev-list", "--count", "@{upstream}..HEAD") == "0"
+    assert "a new handoff pointer" in git(data_repo, "show", "origin/main:memory/MEMORY.md")
+    assert git(data_repo, "ls-files", "--others", "--exclude-standard") == SECRET_NOTE
+    assert autopush.held_notes() == [SECRET_NOTE]
+
+    # 值拿掉之後下一次上傳就帶上它,也不再算留下的
+    secret.write_text("## 10:00\n.env 缺 UPDATE_TOKEN(值已移除)\n", encoding="utf-8")
+    assert push.do_push("memory") == 0
+    assert SECRET_NOTE in git(data_repo, "ls-tree", "-r", "--name-only", "origin/main")
+    assert autopush.held_notes() == []
+
+
+def test_only_a_note_with_a_token_changed_leaves_nothing_to_push(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import autopush
+
+    monkeypatch.setattr(autopush, "SCRIPT_DIR", data_repo)
+    tracked_memory(data_repo)
+    secret = data_repo / SECRET_NOTE
+    secret.parent.mkdir(parents=True)
+    secret.write_text(_token_line(), encoding="utf-8")
+    head = git(data_repo, "rev-parse", "HEAD")
+
+    assert push.do_push("memory") == 0
+    assert git(data_repo, "rev-parse", "HEAD") == head
+    assert autopush.held_notes() == [SECRET_NOTE]
+
+
+def test_a_push_that_names_a_tool_still_stops_on_a_token(
+    data_repo: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A tool's settings go together, so leaving one file out could break the rest."""
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text(_token_line(), encoding="utf-8")
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+
+    assert push_publish._stage_push_changes(push_preflight._push_scopes("all")) is None
+    assert "push cancelled" in capsys.readouterr().err
+
+
+
+def test_an_index_with_a_token_stops_the_whole_push(
+    data_repo: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Pushing notes without the index that links them would hide them from other machines."""
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n" + _token_line(), encoding="utf-8")
+    (root / "topics").mkdir()
+    (root / "topics/new.md").write_text("a new note\n", encoding="utf-8")
+
+    assert push.do_push("memory") == 1
+    assert "push cancelled" in capsys.readouterr().err
+    assert git(data_repo, "diff", "--cached", "--name-only") == ""
+
+
+@pytest.mark.parametrize("target", ["memory/topics/archive/deploy.md", "memory/topics/renamed.md"])
+def test_a_moved_note_with_a_token_keeps_its_old_copy_on_the_remote(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch, target: str,
+) -> None:
+    """Holding back only the new name would push the deletion of the old one."""
+    root = tracked_memory(data_repo)
+    (root / "topics").mkdir()
+    body = "deploy notes, with enough lines to look like the same file\n" * 8
+    (root / "topics/deploy.md").write_text(body, encoding="utf-8")
+    git(data_repo, "add", "memory")
+    git(data_repo, "commit", "-m", "note")
+    git(data_repo, "push")
+    moved = data_repo / target
+    moved.parent.mkdir(parents=True, exist_ok=True)
+    (root / "topics/deploy.md").rename(moved)
+    moved.write_text(body + _token_line(), encoding="utf-8")
+    (root / "MEMORY.md").write_text("# Notes\n- updated\n", encoding="utf-8")
+    shown = []
+
+    def accept(prompt: str) -> bool:
+        shown.append(git(data_repo, "diff", "--cached", "--name-only"))
+        return True
+
+    patch_push(monkeypatch, "confirm_prompt", accept)
+
+    assert push.do_push("memory") == 0
+    assert shown == ["memory/MEMORY.md"]
+    assert "memory/topics/deploy.md" in git(data_repo, "ls-tree", "-r", "--name-only", "origin/main")
+
+
+def test_the_review_does_not_list_a_left_out_note(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n- updated\n", encoding="utf-8")
+    secret = data_repo / SECRET_NOTE
+    secret.parent.mkdir(parents=True)
+    secret.write_text(_token_line(), encoding="utf-8")
+    patch_push(monkeypatch, "confirm_prompt", lambda prompt: False)
+
+    push.do_push("memory")
+
+    review = capsys.readouterr().out.split("Configuration changes to commit:", 1)[1]
+    review = review.split("These notes look like", 1)[0]
+    assert "today-2026-10-19" not in review.split("diff --git", 1)[0]

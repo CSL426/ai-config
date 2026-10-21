@@ -18,6 +18,8 @@ def do_push(
     # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
     # 才會為 True(GUI 走不到,維持硬擋)。
     push_preflight._ALLOW_SECRET_PATHS = allow_secrets
+    # GUI 的程序會連續推好幾次;上一次留下的筆記不能算到這一次
+    push_preflight._HELD_BACK.clear()
     log_header("Push local configuration")
     provider = configured_remote_provider()
     if provider == "git" and _remote_is_read_only():
@@ -74,6 +76,12 @@ def do_push(
         push_publish._unstage_tools(selected)
         return 1
     commit_message = push_review._proposed_push_commit_message(staged_paths, scheduled)
+    if push_preflight._HELD_BACK:
+        # 確認時列的是會 commit 的;留在本機的筆記不能出現在這裡
+        pending = "\n".join(
+            line for line in pending.splitlines()
+            if line[3:].strip('"') not in push_preflight._HELD_BACK
+        )
 
     confirmed = False
     ready_to_commit = False

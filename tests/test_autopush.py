@@ -566,3 +566,30 @@ def test_status_previews_without_rebasing_or_clearing_the_failure(
     assert caught == []
     assert report["reason"] == "記憶沒有變更"
     assert autopush.last_failure() is not None
+
+
+def test_left_out_notes_are_told_at_session_start_until_they_are_handled(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A note left out of the push stays local; nobody would know without this."""
+    import io
+    import json
+    import sys
+
+    from ai_config import memory_hooks, memory_paths
+
+    held = ["memory/projects/o--r/journal/today-2026-10-19.done.md"]
+    monkeypatch.setattr(autopush, "held_notes", lambda: list(held))
+
+    def hook(event: str) -> str:
+        payload = {"hook_event_name": event, "cwd": str(notebook)}
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+        memory_hooks.run([str(memory_paths.SCRIPT_DIR)])
+        return capsys.readouterr().out
+
+    said = hook("SessionStart")
+    assert "today-2026-10-19.done.md" in said and "--allow-secrets" in said
+    # 只在 session 開頭說,每個 prompt 都說會洗版
+    assert "today-2026-10-19" not in hook("UserPromptSubmit")
+    held.clear()
+    assert "疑似含憑證" not in hook("SessionStart")

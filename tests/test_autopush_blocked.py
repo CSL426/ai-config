@@ -1,8 +1,11 @@
-"""A scheduled memory push blocked by the credential check, end to end.
+"""A scheduled memory push that meets the credential check, end to end.
 
 2026-09-30: the nightly push stopped at 04:18 on a false positive and the
 only trace was a journal line; status still showed the previous success.
-This drives the real push path in a scratch data repository.
+2026-10-21: one journal line with a token kept a whole machine's notebook
+local. Now the note is left out, the rest goes, and the left-out note is
+reported until it is handled. This drives the real push path in a scratch
+data repository.
 """
 
 import os
@@ -42,33 +45,26 @@ def _acg(data: Path, home: Path, *args: str) -> subprocess.CompletedProcess[str]
                           capture_output=True, text=True, env=env, check=False)
 
 
-def test_a_blocked_scheduled_push_is_reported_until_resolved(tmp_path: Path) -> None:
+def test_a_note_with_a_token_is_left_out_and_reported_until_resolved(tmp_path: Path) -> None:
     data = _data_repo(tmp_path)
     home = tmp_path / "home"
     home.mkdir()
     note = data / "memory" / "topics" / "deploy.md"
     note.write_text("# deploy\n\nghp_" + "a" * 30 + "\n", encoding="utf-8")
+    index = data / "memory" / "MEMORY.md"
+    index.write_text("# index\n- [deploy](topics/deploy.md)\n", encoding="utf-8")
 
-    blocked = _acg(data, home, "memory", "push", "--if-stale", "0")
+    pushed = _acg(data, home, "memory", "push", "--if-stale", "0")
 
-    assert blocked.returncode == 1
+    assert pushed.returncode == 0, pushed.stdout + pushed.stderr
+    assert "deploy.md" in run_git(data, "show", "@{upstream}:memory/MEMORY.md")
+    assert "memory/topics/deploy.md" not in run_git(data, "ls-tree", "-r", "--name-only", "@{upstream}")
     status = _acg(data, home, "memory", "autopush", "status").stdout
-    assert "上次自動推送失敗" in status
-    assert "credential" in status
-    assert "memory/topics/deploy.md" in status
+    assert "上次自動推送失敗" not in status
+    assert "疑似含憑證" in status and "memory/topics/deploy.md" in status
 
-    # 手動推成功也會清掉提醒(換成一則乾淨的筆記)
+    # 拿掉內容之後下一次上傳就帶上它,提醒也消失
     note.write_text("# deploy\n\nnothing secret\n", encoding="utf-8")
-    assert _acg(data, home, "memory", "push", "--force").returncode == 0
-    assert "上次自動推送失敗" not in _acg(data, home, "memory", "autopush", "status").stdout
-
-    # 再被擋一次,接著用「拿掉內容」的方式解決
-    note.write_text("# deploy\n\nghp_" + "b" * 30 + "\n", encoding="utf-8")
-    assert _acg(data, home, "memory", "push", "--if-stale", "0").returncode == 1
-    assert "上次自動推送失敗" in _acg(data, home, "memory", "autopush", "status").stdout
-
-    # 把內容拿掉之後沒有東西要推,失敗就不再回報
-    note.unlink()
-    run_git(data, "reset", "-q")
     assert _acg(data, home, "memory", "push", "--if-stale", "0").returncode == 0
-    assert "上次自動推送失敗" not in _acg(data, home, "memory", "autopush", "status").stdout
+    assert "memory/topics/deploy.md" in run_git(data, "ls-tree", "-r", "--name-only", "@{upstream}")
+    assert "疑似含憑證" not in _acg(data, home, "memory", "autopush", "status").stdout

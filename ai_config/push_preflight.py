@@ -26,6 +26,8 @@ from .paths import (
 from .safety import SECRET_PATTERN as _SECRET_PATTERN
 
 _ALLOW_SECRET_PATHS = False
+# 這次記憶推送留在本機的筆記;同一次 push 會驗證兩次(確認前、commit 前),要記得
+_HELD_BACK: set = set()
 
 
 @dataclass(frozen=True)
@@ -716,7 +718,7 @@ def _validate_staged_push(selected: list[str]) -> bool:
             log_warn("Credential-content check skipped (--allow-secrets):")
             for path in secret_paths:
                 print(f"  {path}")
-        else:
+        elif not _hold_back_notes(selected, secret_paths):
             log_error(
                 "Potential credential content would be committed; push cancelled:"
             )
@@ -732,22 +734,79 @@ def _validate_staged_push(selected: list[str]) -> bool:
     # 要不要提交的改動,不該讓沒人看著的排程整晚推不出去。其他範圍維持原樣,
     # 連 repo 根目錄的檔案都要算進去 —— 那是人在選,漏掉一塊值得停下來說。
     scope = [f"{MEMORY_SCOPE}/"] if selected == [MEMORY_SCOPE] else []
-    unstaged = _run_repo_git("diff", "--quiet", "--", *scope)
+    unstaged = _run_repo_git("diff", "--name-only", "-z", "--", *scope)
     untracked = _run_repo_git(
-        "ls-files", "--others", "--exclude-standard", "--", *scope
+        "ls-files", "-z", "--others", "--exclude-standard", "--", *scope
     )
-    if (
-        unstaged.returncode not in (0, 1)
-        or untracked.returncode != 0
-        or unstaged.returncode == 1
-        or untracked.stdout.strip()
-    ):
+    left = {
+        path for path in (unstaged.stdout + untracked.stdout).split("\0") if path
+    } - _HELD_BACK  # 刻意留下的筆記不算意外
+    if unstaged.returncode != 0 or untracked.returncode != 0 or left:
         log_error("Unexpected repository changes remain after staging; push cancelled.")
         return False
 
     check = _run_repo_git("diff", "--cached", "--check")
     _warn_whitespace_issues(check)
     return True
+
+
+def _hold_back_notes(selected: list[str], paths: list[str]) -> bool:
+    """A memory-only push leaves out notes that look like they carry a credential.
+
+    One journal line quoting a token used to cancel the whole notebook, night
+    after night, on DESKTOP-CAO4ENQ: none of that machine's handoffs reached
+    the others. Notes are independent of each other, so the rest can go; a
+    tool's settings are not, and a push that names a tool still stops.
+    """
+    if selected != [MEMORY_SCOPE] or not all(
+        path.startswith(f"{MEMORY_SCOPE}/") for path in paths
+    ):
+        return False
+    # 索引留下、它連到的筆記卻推出去,別台就找不到那些筆記;索引被判定就整次停
+    if any(path.rsplit("/", 1)[-1] == "MEMORY.md" for path in paths):
+        return False
+    paths = paths + _rename_sources(paths)
+    reset = _run_repo_git("reset", "-q", "--", *(f":(literal){path}" for path in paths))
+    if reset.returncode != 0:
+        _git_failure("Leaving out notes with credential content", reset)
+        return False
+    _HELD_BACK.update(paths)
+    if paths:
+        log_warn("These notes look like they carry a credential; left out of this push, the rest goes as usual:")
+        for path in paths:
+            print(f"  {path}")
+        log_info(
+            "Remove the value from the note (and replace the credential if it is real); "
+            f"a false positive goes with {ENTRYPOINT} memory push --allow-secrets"
+        )
+    return True
+
+
+def _rename_sources(paths: list[str]) -> list[str]:
+    """The old names of staged renames into these paths.
+
+    Holding back only the new name would leave the deletion of the old one
+    staged: the note would vanish from the remote while its copy stays here.
+    """
+    renames = _run_repo_git("diff", "--cached", "--name-status", "-M", "-z")
+    if renames.returncode != 0:
+        return []
+    fields = renames.stdout.split("\0")
+    names = {path.rsplit("/", 1)[-1] for path in paths}
+    sources, index = [], 0
+    while index < len(fields) - 1:
+        status = fields[index]
+        if status.startswith(("R", "C")) and index + 2 < len(fields):
+            source, target = fields[index + 1], fields[index + 2]
+            if target in paths and status.startswith("R"):
+                sources.append(source)
+            index += 3
+            continue
+        # 小檔案改了內容再搬,git 認不出是改名;歸檔是同名搬進 archive/,用檔名對
+        if status == "D" and fields[index + 1].rsplit("/", 1)[-1] in names:
+            sources.append(fields[index + 1])
+        index += 2
+    return sources
 
 
 def _warn_whitespace_issues(check: subprocess.CompletedProcess) -> None:
