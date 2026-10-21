@@ -135,6 +135,8 @@ def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     # 反引號包著的值照樣是值
     "token: `" + "abc123`",
     "`token:" + "abc123`",
+    "token:`" + "abc123`",
+    "GitHub token:`" + "abc123`",
 ])
 def test_a_literal_value_is_still_a_credential(line: str) -> None:
     from ai_config.safety import looks_like_secret
