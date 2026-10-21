@@ -215,9 +215,9 @@ def test_a_clean_filter_is_never_run_to_compare(machines, tmp_path: Path) -> Non
     marker = tmp_path / "filter-ran"
     _git(mine, "config", "filter.spy.clean", f"touch {marker}; cat")
     (mine / ".git/info").mkdir(exist_ok=True)
-    (mine / ".git/info/attributes").write_text("*.md filter=spy\n", encoding="utf-8")
+    # 只罩住遠端帶來、本機還沒追蹤的那個路徑:已追蹤檔案在 status 時跑 filter 是 git 自己的事
+    (mine / ".git/info/attributes").write_text("memory/handoff/archive/* filter=spy\n", encoding="utf-8")
     _both_archive_the_same_handoff(mine, other)
-    _git(mine, "status", "--porcelain")  # 已追蹤檔案的 filter 是 git 自己的事,先讓它跑完
     marker.unlink(missing_ok=True)
 
     aside = step_aside_identical(mine, _upstream(mine))
