@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from push_helpers import patch_push
 
-from ai_config import push_preflight, push_publish
+from ai_config import autopush, push_preflight, push_publish
 from ai_config.commands import push, sync
 
 
@@ -46,6 +46,7 @@ def data_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     patch_push(monkeypatch, "configured_remote_provider", lambda: "git")
     patch_push(monkeypatch, "_remote_is_read_only", lambda: False)
     patch_push(monkeypatch, "_ALLOW_SECRET_PATHS", False)
+    monkeypatch.setattr(autopush, "SCRIPT_DIR", repo)
     return repo
 
 
@@ -236,25 +237,33 @@ def _token_line() -> str:
     return "UPDATE_TOKEN=" + "abc123def456" + "\n"
 
 
+def _write_secret_note(repo: Path, text: str) -> Path:
+    secret = repo / SECRET_NOTE
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_text(text, encoding="utf-8")
+    return secret
+
+
+def _record_review(monkeypatch: pytest.MonkeyPatch, repo: Path) -> "list[str]":
+    """Accept the push and keep what was staged when the question was asked."""
+    shown: list[str] = []
+
+    def accept(prompt: str) -> bool:
+        shown.append(git(repo, "diff", "--cached", "--name-only"))
+        return True
+
+    patch_push(monkeypatch, "confirm_prompt", accept)
+    return shown
+
+
 def test_a_memory_push_leaves_out_a_note_with_a_token_and_sends_the_rest(
     data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     """DESKTOP-CAO4ENQ: one journal line with a token kept the whole notebook local."""
-    from ai_config import autopush
-
-    monkeypatch.setattr(autopush, "SCRIPT_DIR", data_repo)
     root = tracked_memory(data_repo)
     (root / "MEMORY.md").write_text("# Notes\n\na new handoff pointer\n", encoding="utf-8")
-    secret = data_repo / SECRET_NOTE
-    secret.parent.mkdir(parents=True)
-    secret.write_text("## 10:00\n.env 缺 " + _token_line(), encoding="utf-8")
-    shown = []
-
-    def accept(prompt: str) -> bool:
-        shown.append(git(data_repo, "diff", "--cached", "--name-only"))
-        return True
-
-    patch_push(monkeypatch, "confirm_prompt", accept)
+    secret = _write_secret_note(data_repo, "## 10:00\n.env 缺 " + _token_line())
+    shown = _record_review(monkeypatch, data_repo)
 
     assert push.do_push("memory") == 0
 
@@ -274,15 +283,10 @@ def test_a_memory_push_leaves_out_a_note_with_a_token_and_sends_the_rest(
 
 
 def test_only_a_note_with_a_token_changed_leaves_nothing_to_push(
-    data_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    data_repo: Path,
 ) -> None:
-    from ai_config import autopush
-
-    monkeypatch.setattr(autopush, "SCRIPT_DIR", data_repo)
     tracked_memory(data_repo)
-    secret = data_repo / SECRET_NOTE
-    secret.parent.mkdir(parents=True)
-    secret.write_text(_token_line(), encoding="utf-8")
+    _write_secret_note(data_repo, _token_line())
     head = git(data_repo, "rev-parse", "HEAD")
 
     assert push.do_push("memory") == 0
@@ -294,13 +298,14 @@ def test_a_push_that_names_a_tool_still_stops_on_a_token(
     data_repo: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A tool's settings go together, so leaving one file out could break the rest."""
-    root = tracked_memory(data_repo)
-    (root / "MEMORY.md").write_text(_token_line(), encoding="utf-8")
+    tracked_memory(data_repo)
+    _write_secret_note(data_repo, _token_line())
     (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+    held: set[str] = set()
 
-    assert push_publish._stage_push_changes(push_preflight._push_scopes("all")) is None
+    assert push_publish._stage_push_changes(push_preflight._push_scopes("all"), held) is None
     assert "push cancelled" in capsys.readouterr().err
-
+    assert held == set()
 
 
 def test_an_index_with_a_token_stops_the_whole_push(
@@ -334,13 +339,7 @@ def test_a_moved_note_with_a_token_keeps_its_old_copy_on_the_remote(
     (root / "topics/deploy.md").rename(moved)
     moved.write_text(body + _token_line(), encoding="utf-8")
     (root / "MEMORY.md").write_text("# Notes\n- updated\n", encoding="utf-8")
-    shown = []
-
-    def accept(prompt: str) -> bool:
-        shown.append(git(data_repo, "diff", "--cached", "--name-only"))
-        return True
-
-    patch_push(monkeypatch, "confirm_prompt", accept)
+    shown = _record_review(monkeypatch, data_repo)
 
     assert push.do_push("memory") == 0
     assert shown == ["memory/MEMORY.md"]
@@ -352,9 +351,7 @@ def test_the_review_does_not_list_a_left_out_note(
 ) -> None:
     root = tracked_memory(data_repo)
     (root / "MEMORY.md").write_text("# Notes\n- updated\n", encoding="utf-8")
-    secret = data_repo / SECRET_NOTE
-    secret.parent.mkdir(parents=True)
-    secret.write_text(_token_line(), encoding="utf-8")
+    _write_secret_note(data_repo, _token_line())
     patch_push(monkeypatch, "confirm_prompt", lambda prompt: False)
 
     push.do_push("memory")
@@ -362,3 +359,21 @@ def test_the_review_does_not_list_a_left_out_note(
     review = capsys.readouterr().out.split("Configuration changes to commit:", 1)[1]
     review = review.split("These notes look like", 1)[0]
     assert "today-2026-10-19" not in review.split("diff --git", 1)[0]
+
+
+def test_the_review_lists_what_is_staged_with_names_unquoted(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """git status quotes a non-ASCII name; the review reads the index with -z instead."""
+    root = tracked_memory(data_repo)
+    (root / "topics").mkdir()
+    (root / "topics/部署.md").write_text("a note\n", encoding="utf-8")
+    _write_secret_note(data_repo, _token_line())
+    patch_push(monkeypatch, "confirm_prompt", lambda prompt: False)
+
+    push.do_push("memory")
+
+    review = capsys.readouterr().out.split("Configuration changes to commit:", 1)[1]
+    listed = review.split("diff --git", 1)[0]
+    assert "A  memory/topics/部署.md" in listed
+    assert "today-2026-10-19" not in listed.split("These notes look like", 1)[0]
