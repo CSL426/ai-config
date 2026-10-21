@@ -16,8 +16,10 @@ def gdrive_pull(repo_dir: Path, tool: str) -> int:
         _run_repo_git,
         explain_merge_refusal,
         report_dirty_tracked,
+        report_stepped_aside,
     )
     from .console import log_header, log_success
+    from .identical_incoming import step_aside_identical
 
     log_header("Sync repository changes (Google Drive)")
 
@@ -125,13 +127,16 @@ def gdrive_pull(repo_dir: Path, tool: str) -> int:
             )
             return 1
 
+        # 跟 git provider 一樣:本機那份跟 Drive 帶來的一模一樣就讓開,合併失敗再放回去
+        aside = step_aside_identical(repo_dir, remote_commit)
         merge_ff = _run_repo_git(
             "merge",
             "--ff-only",
-            "FETCH_HEAD",
+            remote_commit,
             repo_dir=repo_dir,
         )
         if merge_ff.returncode != 0:
+            aside.undo()
             if not explain_merge_refusal(merge_ff):
                 log_error(
                     "Data repository is not safe to fast-forward; pull cancelled. "
@@ -139,6 +144,7 @@ def gdrive_pull(repo_dir: Path, tool: str) -> int:
                 )
             return 1
 
+        report_stepped_aside(aside.paths)
         log_success("Data repository fast-forwarded from Google Drive")
     finally:
         tmp_path.unlink(missing_ok=True)

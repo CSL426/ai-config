@@ -217,7 +217,14 @@ def _catch_up() -> bool:
     head = _git("rev-parse", "HEAD")
     before = head.stdout.strip() if head is not None and head.returncode == 0 else ""
     stashes = _stash_count()
-    result = _git("rebase", "--autostash", "@{upstream}")
+    from .identical_incoming import step_aside_identical
+
+    target = _git("rev-parse", "--verify", "@{upstream}")
+    if target is None or target.returncode != 0:
+        return False
+    upstream = target.stdout.strip()
+    aside = step_aside_identical(SCRIPT_DIR, upstream)
+    result = _git("rebase", "--autostash", upstream)
     if (result is not None and result.returncode == 0
             and not _unmerged() and _stash_count() == stashes):
         return True
@@ -228,6 +235,7 @@ def _catch_up() -> bool:
     if before and stashes is not None and (_stash_count() or 0) > stashes:
         _git("reset", "-q", "--hard", before)
         _git("stash", "pop", "-q")
+    aside.undo()
     return False
 
 

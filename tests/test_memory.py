@@ -126,7 +126,8 @@ def test_only_memory_changes_detection(monkeypatch: pytest.MonkeyPatch) -> None:
     assert push_preflight._only_memory_changes() is False
 
 
-def test_pull_blocked_by_unsaved_memory_points_at_memory_push(tmp_path: Path) -> None:
+def test_pull_blocked_by_unsaved_memory_points_at_a_way_out(tmp_path: Path) -> None:
+    """It used to say memory push first; push refuses a branch that is behind (2026-10-21)."""
     from data_repo_helpers import (
         configure_git_identity,
         create_data_remote,
@@ -157,7 +158,7 @@ def test_pull_blocked_by_unsaved_memory_points_at_memory_push(tmp_path: Path) ->
 
     result = run_data_cli(data_repo, home, "pull")
     assert result.returncode == 1
-    assert "memory push" in result.stdout
+    assert "git pull --rebase" in result.stdout and "memory push" not in result.stdout
 
 
 @pytest.mark.parametrize(
