@@ -102,6 +102,8 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     # 中文句子裡提到 key、後面也接中文:2026-10-21 一份交接因此整份留在本機
     "使用者確認 CAO4ENQ 那份 10/19 日誌的 token:真的就刪值並撤換",
     "改用環境變數的password: 不再寫進設定檔",
+    # markdown 行內程式碼裡的 key:冒號後面就是收尾的反引號
+    "loosen cred rule (`token:` after 中文 desc not cred; line-start `password:` still blocked)",
 ])
 def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     """A handoff quoting a command blocked a night's autopush on 2026-09-30."""
@@ -130,6 +132,9 @@ def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     "日誌的 token: " + "abc123",
     "見設定 password=" + "hunter2",
     "說明\n" + "token: 中文密碼",
+    # 反引號包著的值照樣是值
+    "token: `" + "abc123`",
+    "`token:" + "abc123`",
 ])
 def test_a_literal_value_is_still_a_credential(line: str) -> None:
     from ai_config.safety import looks_like_secret
