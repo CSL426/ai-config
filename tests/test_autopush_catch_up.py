@@ -173,20 +173,23 @@ def test_a_failed_merge_puts_every_stepped_aside_file_back(machines) -> None:
 
 
 def test_a_wildcard_in_a_remote_path_touches_only_that_file(machines) -> None:
-    """git checkout reads a path as a pattern unless told it is literal."""
+    """git checkout reads a path as a pattern unless told it is literal: a[b].md matches ab.md.
+
+    Windows allows [ in a file name but not *, so the bracket is the wildcard here.
+    """
     from ai_config.identical_incoming import step_aside_identical
 
     mine, other = machines
-    for name in ("memory/a*.md", "memory/ab.md"):
+    for name in ("memory/a[b].md", "memory/ab.md"):
         (other / name).write_text("base\n", encoding="utf-8")
     _git(other, "add", ".")
     _git(other, "commit", "-qm", "files")
     _git(other, "push", "-q", "origin", "HEAD")
     _git(mine, "pull", "-q")
-    (other / "memory/a*.md").unlink()
+    (other / "memory/a[b].md").unlink()
     _git(other, "commit", "-qam", "drop the starred one")
     _git(other, "push", "-q", "origin", "HEAD")
-    (mine / "memory/a*.md").unlink()
+    (mine / "memory/a[b].md").unlink()
     (mine / "memory/ab.md").write_text("my unsaved edit\n", encoding="utf-8")
     _git(mine, "fetch", "-q")
 
