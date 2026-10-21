@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from ..console import log_error, log_header, log_info, log_success
+from ..identical_incoming import printable, step_aside_identical
 from ..paths import ENTRYPOINT, SCRIPT_DIR
 from .status import show_status
 
@@ -132,12 +133,16 @@ def do_sync(tool: str) -> int:
         return 1
 
     if behind:
-        _step_aside_identical()
-        fast_forward = _run_repo_git("merge", "--ff-only", "@{upstream}")
+        # 同一個 commit 比對、也同一個 commit 合併:中途有人 fetch 也不會比錯對象
+        target = _run_repo_git("rev-parse", "--verify", "@{upstream}").stdout.strip()
+        aside = step_aside_identical(SCRIPT_DIR, target)
+        fast_forward = _run_repo_git("merge", "--ff-only", target)
         if fast_forward.returncode != 0:
+            aside.undo()
             if not explain_merge_refusal(fast_forward):
                 _git_failure("Fast-forwarding repository updates", fast_forward)
             return 1
+        report_stepped_aside(aside.paths)
         log_success(
             f"Data repository fast-forwarded by {behind} "
             f"{'commit' if behind == 1 else 'commits'}"
@@ -215,14 +220,12 @@ def _hint_remote_access(result: subprocess.CompletedProcess[str]) -> None:
     )
 
 
-def _step_aside_identical() -> None:
-    from ..identical_incoming import clear_identical_incoming
-
-    cleared = clear_identical_incoming(_run_repo_git, SCRIPT_DIR)
-    if cleared:
-        log_info(f"有 {len(cleared)} 個尚未保存的修改跟遠端的一模一樣(例如兩台都歸檔了同一份交接),改用遠端那份:")
-        for path in cleared:
-            print(f"  {path}")
+def report_stepped_aside(paths: list) -> None:
+    if not paths:
+        return
+    log_info(f"有 {len(paths)} 個尚未保存的修改跟遠端的一模一樣(例如兩台都歸檔了同一份交接),改用遠端那份:")
+    for path in paths:
+        print(f"  {printable(path)}")
 
 
 def clear_phantom_changes(porcelain: str) -> str:

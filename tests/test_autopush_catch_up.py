@@ -1,6 +1,7 @@
 """Catching up with the remote before an unattended push, on real repositories."""
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -143,9 +144,90 @@ def test_a_different_local_copy_is_never_thrown_away(machines) -> None:
     _both_archive_the_same_handoff(mine, other)
     (mine / ARCHIVED).write_text("## Goal\n本機改過\n", encoding="utf-8")
 
-    from ai_config.identical_incoming import clear_identical_incoming
+    from ai_config.identical_incoming import step_aside_identical
 
-    assert clear_identical_incoming(autopush._git, mine) == []
+    assert step_aside_identical(mine, _git(mine, "rev-parse", "@{upstream}")).paths == []
     assert (mine / ARCHIVED).read_text(encoding="utf-8") == "## Goal\n本機改過\n"
     assert not (mine / HANDOFF).exists(), "合併還是會被擋,工作區一個字都不動"
     assert autopush._catch_up() is False
+
+
+
+def _upstream(repo: Path) -> str:
+    return _git(repo, "rev-parse", "@{upstream}")
+
+
+def test_a_failed_merge_puts_every_stepped_aside_file_back(machines) -> None:
+    from ai_config.identical_incoming import step_aside_identical
+
+    mine, other = machines
+    _both_archive_the_same_handoff(mine, other, crlf=True)
+    before = (mine / ARCHIVED).read_bytes()
+
+    aside = step_aside_identical(mine, _upstream(mine))
+    assert sorted(aside.paths) == sorted([HANDOFF, ARCHIVED])
+    aside.undo()
+
+    assert (mine / ARCHIVED).read_bytes() == before, "連 CRLF 都放回原樣"
+    assert not (mine / HANDOFF).exists()
+
+
+def test_a_wildcard_in_a_remote_path_touches_only_that_file(machines) -> None:
+    """git checkout reads a path as a pattern unless told it is literal."""
+    from ai_config.identical_incoming import step_aside_identical
+
+    mine, other = machines
+    for name in ("memory/a*.md", "memory/ab.md"):
+        (other / name).write_text("base\n", encoding="utf-8")
+    _git(other, "add", ".")
+    _git(other, "commit", "-qm", "files")
+    _git(other, "push", "-q", "origin", "HEAD")
+    _git(mine, "pull", "-q")
+    (other / "memory/a*.md").unlink()
+    _git(other, "commit", "-qam", "drop the starred one")
+    _git(other, "push", "-q", "origin", "HEAD")
+    (mine / "memory/a*.md").unlink()
+    (mine / "memory/ab.md").write_text("my unsaved edit\n", encoding="utf-8")
+    _git(mine, "fetch", "-q")
+
+    step_aside_identical(mine, _upstream(mine))
+
+    assert (mine / "memory/ab.md").read_text(encoding="utf-8") == "my unsaved edit\n"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX executable bit")
+def test_a_different_executable_bit_is_not_the_same_file(machines) -> None:
+    from ai_config.identical_incoming import step_aside_identical
+
+    mine, other = machines
+    _both_archive_the_same_handoff(mine, other)
+    (mine / ARCHIVED).chmod(0o755)
+
+    assert step_aside_identical(mine, _upstream(mine)).paths == []
+    assert (mine / ARCHIVED).is_file()
+
+
+def test_a_clean_filter_is_never_run_to_compare(machines, tmp_path: Path) -> None:
+    """The path comes from the remote; comparing must not run a configured command."""
+    from ai_config.identical_incoming import step_aside_identical
+
+    mine, other = machines
+    marker = tmp_path / "filter-ran"
+    _git(mine, "config", "filter.spy.clean", f"touch {marker}; cat")
+    (mine / ".git/info").mkdir(exist_ok=True)
+    (mine / ".git/info/attributes").write_text("*.md filter=spy\n", encoding="utf-8")
+    _both_archive_the_same_handoff(mine, other)
+    _git(mine, "status", "--porcelain")  # 已追蹤檔案的 filter 是 git 自己的事,先讓它跑完
+    marker.unlink(missing_ok=True)
+
+    aside = step_aside_identical(mine, _upstream(mine))
+
+    assert ARCHIVED in aside.paths
+    assert not marker.exists()
+
+
+def test_a_remote_path_is_printed_without_its_control_characters() -> None:
+    from ai_config.identical_incoming import printable
+
+    assert printable("memory/a\x1b[31mred.md") == "memory/a\\x1b[31mred.md"
+    assert printable("memory/中文.md") == "memory/中文.md"
