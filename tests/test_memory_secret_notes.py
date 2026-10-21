@@ -99,6 +99,9 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     "api_key=, token=)",
     "?token=&page=2",
     "- 取消用 ?token= 網址參數傳 token(app/auth.py)",
+    # 中文句子裡提到 key、後面也接中文:2026-10-21 一份交接因此整份留在本機
+    "使用者確認 CAO4ENQ 那份 10/19 日誌的 token:真的就刪值並撤換",
+    "改用環境變數的password: 不再寫進設定檔",
 ])
 def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     """A handoff quoting a command blocked a night's autopush on 2026-09-30."""
@@ -123,6 +126,10 @@ def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     'token=""' + "abc123",
     "token=" + "中文abc123",
     "password: " + "中文密碼",
+    # 句子裡的 key 後面接的是英數,照樣是值
+    "日誌的 token: " + "abc123",
+    "見設定 password=" + "hunter2",
+    "說明\n" + "token: 中文密碼",
 ])
 def test_a_literal_value_is_still_a_credential(line: str) -> None:
     from ai_config.safety import looks_like_secret
