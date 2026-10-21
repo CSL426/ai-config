@@ -77,6 +77,38 @@ def failure_path() -> Path:
     return state_path().with_name("autopush-failure.json")
 
 
+def held_path() -> Path:
+    """Notes a memory push left out because they looked like they carried a credential.
+
+    The rest of the notebook still goes out; this record is what keeps the
+    left-out ones from staying local unnoticed. It lasts until a memory
+    push stages none of them.
+    """
+    return state_path().with_name("autopush-held.json")
+
+
+def record_held(paths: "list[str]") -> None:
+    path = held_path()
+    if not paths:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "when": datetime.now(UTC).isoformat(), "paths": sorted(paths),
+    }, ensure_ascii=False), encoding="utf-8")
+
+
+def last_held() -> "dict | None":
+    try:
+        record = json.loads(held_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    paths = record.get("paths") if isinstance(record, dict) else None
+    if not isinstance(paths, list) or not paths:
+        return None
+    return {"when": str(record.get("when", "")), "paths": [p for p in paths if isinstance(p, str)]}
+
+
 def last_failure() -> "dict | None":
     try:
         record = json.loads(failure_path().read_text(encoding="utf-8"))
@@ -708,6 +740,7 @@ def status() -> dict:
         "scheduled": schedule_installed(),
         "last_push": last.isoformat() if last else "",
         "last_failure": last_failure(),
+        "held_back": last_held(),
         "would_push": decision.push,
         "reason": decision.reason,
     }

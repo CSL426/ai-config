@@ -212,6 +212,24 @@ def _announce_failed_autopush(value: dict) -> None:
     )
 
 
+def _announce_held_notes(value: dict) -> None:
+    """Notes left out of the memory push stay here until someone looks at them."""
+    if value.get("hook_event_name") != "SessionStart":
+        return
+    from .autopush import last_held
+
+    held = last_held()
+    if not held:
+        return
+    paths = "、".join(held["paths"][:3])
+    more = f" 等 {len(held['paths'])} 個" if len(held["paths"]) > 3 else ""
+    print(
+        f"acg:共用記憶有筆記疑似含憑證,沒有上傳,其他筆記照常同步({paths}{more})。"
+        "請告訴使用者打開確認:真的是金鑰就刪掉那個值並換一組新的;是誤判就執行 "
+        "acg memory push --allow-secrets。處理後下一次上傳就會清掉這筆紀錄。"
+    )
+
+
 def _announce_failed_autoupdate(value: dict) -> None:
     """Same for the daily update: a tool left behind is silent otherwise."""
     if value.get("hook_event_name") != "SessionStart":
@@ -247,6 +265,7 @@ def run(args: list[str]) -> int:
         if not isinstance(value, dict) or not isinstance(value.get("cwd"), str):
             return 0
         _announce_failed_autopush(value)
+        _announce_held_notes(value)
         _announce_failed_autoupdate(value)
         root = Path(value["cwd"])
         if not root.is_absolute() or not root.is_dir():

@@ -252,7 +252,12 @@ there. The push stops before touching git when
 the notebook has not changed or when a push happened within the last 12 hours.
 Machines with no schedule get the same thing opportunistically at the end of any
 acg command; set `AI_CONFIG_NO_AUTOPUSH=1` to suppress that. Both paths skip the
-confirmation but keep the credential check, so a secret still blocks the push.
+confirmation but keep the credential check. A note that looks like it carries
+a credential is left out and the rest of the notebook still goes; the left-out
+notes are listed by `memory autopush status` and told to a new Claude session
+until a memory push includes none of them (the value removed, or a false
+positive pushed with `memory push --allow-secrets`). `push` with a tool keeps
+stopping the whole push, since a tool's settings go together.
 A push nobody confirms (the schedule, or `--force`) prints the files and the
 diffstat but not the diff itself, which would only copy the notebook into the
 nightly log.

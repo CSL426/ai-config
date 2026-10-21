@@ -26,6 +26,8 @@ from .paths import (
 from .safety import SECRET_PATTERN as _SECRET_PATTERN
 
 _ALLOW_SECRET_PATHS = False
+# 這次記憶推送留在本機的筆記;同一次 push 會驗證兩次(確認前、commit 前),要記得
+_HELD_BACK: set = set()
 
 
 @dataclass(frozen=True)
@@ -716,7 +718,7 @@ def _validate_staged_push(selected: list[str]) -> bool:
             log_warn("Credential-content check skipped (--allow-secrets):")
             for path in secret_paths:
                 print(f"  {path}")
-        else:
+        elif not _hold_back_notes(selected, secret_paths):
             log_error(
                 "Potential credential content would be committed; push cancelled:"
             )
@@ -728,26 +730,65 @@ def _validate_staged_push(selected: list[str]) -> bool:
             )
             return False
 
+    if selected == [MEMORY_SCOPE]:
+        _record_held()
+
     # 只推記憶時(排程走的就是這條)才把檢查縮到那個目錄:設定目錄裡還沒決定
     # 要不要提交的改動,不該讓沒人看著的排程整晚推不出去。其他範圍維持原樣,
     # 連 repo 根目錄的檔案都要算進去 —— 那是人在選,漏掉一塊值得停下來說。
     scope = [f"{MEMORY_SCOPE}/"] if selected == [MEMORY_SCOPE] else []
-    unstaged = _run_repo_git("diff", "--quiet", "--", *scope)
+    unstaged = _run_repo_git("diff", "--name-only", "-z", "--", *scope)
     untracked = _run_repo_git(
-        "ls-files", "--others", "--exclude-standard", "--", *scope
+        "ls-files", "-z", "--others", "--exclude-standard", "--", *scope
     )
-    if (
-        unstaged.returncode not in (0, 1)
-        or untracked.returncode != 0
-        or unstaged.returncode == 1
-        or untracked.stdout.strip()
-    ):
+    left = {
+        path for path in (unstaged.stdout + untracked.stdout).split("\0") if path
+    } - _HELD_BACK  # 刻意留下的筆記不算意外
+    if unstaged.returncode != 0 or untracked.returncode != 0 or left:
         log_error("Unexpected repository changes remain after staging; push cancelled.")
         return False
 
     check = _run_repo_git("diff", "--cached", "--check")
     _warn_whitespace_issues(check)
     return True
+
+
+def _hold_back_notes(selected: list[str], paths: list[str]) -> bool:
+    """A memory-only push leaves out notes that look like they carry a credential.
+
+    One journal line quoting a token used to cancel the whole notebook, night
+    after night, on DESKTOP-CAO4ENQ: none of that machine's handoffs reached
+    the others. Notes are independent of each other, so the rest can go; a
+    tool's settings are not, and a push that names a tool still stops.
+    """
+    if selected != [MEMORY_SCOPE] or not all(
+        path.startswith(f"{MEMORY_SCOPE}/") for path in paths
+    ):
+        return False
+    reset = _run_repo_git("reset", "-q", "--", *(f":(literal){path}" for path in paths))
+    if reset.returncode != 0:
+        _git_failure("Leaving out notes with credential content", reset)
+        return False
+    _HELD_BACK.update(paths)
+    if paths:
+        log_warn("These notes look like they carry a credential; left out of this push, the rest goes as usual:")
+        for path in paths:
+            print(f"  {path}")
+        log_info(
+            "Remove the value from the note (and replace the credential if it is real); "
+            f"a false positive goes with {ENTRYPOINT} memory push --allow-secrets"
+        )
+    return True
+
+
+def _record_held() -> None:
+    # 這次沒留下任何一份就清掉紀錄:值刪了、或用 --allow-secrets 推上去了
+    from .autopush import record_held
+
+    try:
+        record_held(sorted(_HELD_BACK))
+    except OSError:
+        pass
 
 
 def _warn_whitespace_issues(check: subprocess.CompletedProcess) -> None:

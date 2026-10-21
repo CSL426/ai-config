@@ -226,3 +226,75 @@ def test_another_tools_change_still_cancels_a_hand_picked_scope(
 
     assert push.do_push("claude") == 1
     assert "outside the selected tools" in capsys.readouterr().err
+
+
+SECRET_NOTE = "memory/projects/o--r/journal/today-2026-10-19.done.md"
+
+
+def _token_line() -> str:
+    # 在執行時才組出來:原始碼裡的假憑證字面值會被 gitleaks 擋下
+    return "UPDATE_TOKEN=" + "abc123def456" + "\n"
+
+
+def test_a_memory_push_leaves_out_a_note_with_a_token_and_sends_the_rest(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """DESKTOP-CAO4ENQ: one journal line with a token kept the whole notebook local."""
+    from ai_config import autopush
+
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n\na new handoff pointer\n", encoding="utf-8")
+    secret = data_repo / SECRET_NOTE
+    secret.parent.mkdir(parents=True)
+    secret.write_text("## 10:00\n.env 缺 " + _token_line(), encoding="utf-8")
+    shown = []
+
+    def accept(prompt: str) -> bool:
+        shown.append(git(data_repo, "diff", "--cached", "--name-only"))
+        return True
+
+    patch_push(monkeypatch, "confirm_prompt", accept)
+
+    assert push.do_push("memory") == 0
+
+    out = capsys.readouterr()
+    assert SECRET_NOTE in out.out + out.err
+    assert shown == ["memory/MEMORY.md"], "確認時看到的清單裡就沒有它"
+    assert git(data_repo, "rev-list", "--count", "@{upstream}..HEAD") == "0"
+    assert "a new handoff pointer" in git(data_repo, "show", "origin/main:memory/MEMORY.md")
+    assert git(data_repo, "ls-files", "--others", "--exclude-standard") == SECRET_NOTE
+    assert autopush.last_held()["paths"] == [SECRET_NOTE]
+
+    # 值拿掉之後下一次上傳就帶上它,紀錄也清掉
+    secret.write_text("## 10:00\n.env 缺 UPDATE_TOKEN(值已移除)\n", encoding="utf-8")
+    assert push.do_push("memory") == 0
+    assert SECRET_NOTE in git(data_repo, "ls-tree", "-r", "--name-only", "origin/main")
+    assert autopush.last_held() is None
+
+
+def test_only_a_note_with_a_token_changed_leaves_nothing_to_push(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config import autopush
+
+    tracked_memory(data_repo)
+    secret = data_repo / SECRET_NOTE
+    secret.parent.mkdir(parents=True)
+    secret.write_text(_token_line(), encoding="utf-8")
+    head = git(data_repo, "rev-parse", "HEAD")
+
+    assert push.do_push("memory") == 0
+    assert git(data_repo, "rev-parse", "HEAD") == head
+    assert autopush.last_held()["paths"] == [SECRET_NOTE]
+
+
+def test_a_push_that_names_a_tool_still_stops_on_a_token(
+    data_repo: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A tool's settings go together, so leaving one file out could break the rest."""
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text(_token_line(), encoding="utf-8")
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+
+    assert push_publish._stage_push_changes(push_preflight._push_scopes("all")) is None
+    assert "push cancelled" in capsys.readouterr().err

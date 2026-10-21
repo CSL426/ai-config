@@ -566,3 +566,27 @@ def test_status_previews_without_rebasing_or_clearing_the_failure(
     assert caught == []
     assert report["reason"] == "記憶沒有變更"
     assert autopush.last_failure() is not None
+
+
+def test_left_out_notes_are_told_at_session_start_until_they_are_handled(
+    notebook: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A note left out of the push stays local; nobody would know without this."""
+    from ai_config import memory_hooks
+
+    start = {"hook_event_name": "SessionStart", "cwd": str(notebook)}
+    autopush.record_held(["memory/projects/o--r/journal/today-2026-10-19.done.md"])
+
+    memory_hooks._announce_held_notes(start)
+    said = capsys.readouterr().out
+    assert "today-2026-10-19.done.md" in said and "--allow-secrets" in said
+    assert autopush.status()["held_back"]["paths"] == [
+        "memory/projects/o--r/journal/today-2026-10-19.done.md"]
+
+    # 只在 session 開頭說,每個 prompt 都說會洗版
+    memory_hooks._announce_held_notes({**start, "hook_event_name": "UserPromptSubmit"})
+    assert capsys.readouterr().out == ""
+
+    autopush.record_held([])
+    memory_hooks._announce_held_notes(start)
+    assert capsys.readouterr().out == "" and autopush.last_held() is None
