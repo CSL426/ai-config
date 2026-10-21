@@ -121,7 +121,12 @@ def managed_destinations(
             if relative == "skills" and tool in _SKILLS_PATHS:
                 canonical, legacy = _SKILLS_PATHS[tool]
                 result.append((tool, "canonical-skills", canonical))
-                if legacy.is_dir() and not is_reparse_point(legacy):
+                # 新位置還不存在時,_skills_source 已經把舊目錄當成 skills 備份
+                if (
+                    canonical.is_dir()
+                    and legacy.is_dir()
+                    and not is_reparse_point(legacy)
+                ):
                     result.append((tool, "legacy-skills", legacy))
                 if tool == "agy":
                     result.append((tool, "skills", home / "skills"))

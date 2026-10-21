@@ -109,7 +109,8 @@ def legacy_managed_skills(legacy: Path) -> list[str]:
     if not legacy.is_dir() or is_reparse_point(legacy):
         return []
     manifest = legacy / MANIFEST_NAME
-    if not manifest.is_file():
+    # 連到別處的 manifest 不是這個目錄的紀錄,不能拿來授權刪除
+    if is_reparse_point(manifest) or not manifest.is_file():
         return []
     # 點開頭的是工具自己的(Codex 的 .system),舊版 acg 曾經碰過它
     return sorted(
@@ -122,6 +123,12 @@ def legacy_managed_skills(legacy: Path) -> list[str]:
     )
 
 
+def _holds_credential_files(skill: Path) -> bool:
+    from .paths import EXCLUDED_FILES
+
+    return any(path.name in EXCLUDED_FILES for path in skill.rglob("*"))
+
+
 def retire_legacy_skills(legacy: Path, label: str) -> list[str]:
     """Remove the skills acg wrote to a tool's old folder once they are migrated.
 
@@ -130,24 +137,49 @@ def retire_legacy_skills(legacy: Path, label: str) -> list[str]:
     copies still carrying July's descriptions. Only names in the old manifest
     go, since that is acg's own record of what it wrote; a hand-installed
     skill and Codex's .system stay. apply has backed the folder up by now.
+
+    The manifest stopped changing when the folder moved, so a name missing
+    from the new folder was pruned there as an orphan or deleted by the user;
+    the old copy goes too. A copy holding a credential-named file stays,
+    because the backup leaves such files out.
     """
     from .safety import is_reparse_point
 
     # 連到別處的舊目錄就是那個目錄,動它的 manifest 等於動新位置的
     if not legacy.is_dir() or is_reparse_point(legacy):
         return []
-    names = legacy_managed_skills(legacy)
+    listed = legacy_managed_skills(legacy)
+    kept = [name for name in listed if _holds_credential_files(legacy / name)]
+    names = [name for name in listed if name not in kept]
     for name in names:
         shutil.rmtree(legacy / name)
     manifest = legacy / MANIFEST_NAME
-    if manifest.is_file():
-        manifest.unlink()
+    if manifest.is_file() and not is_reparse_point(manifest):
+        # 還留著的(連結、含憑證檔的)繼續記著,status 才認得出是 acg 寫的
+        remaining = [
+            name
+            for name in manifest.read_text(encoding="utf-8").splitlines()
+            if _safe_skill_name(name) and os.path.lexists(legacy / name)
+        ]
+        if remaining:
+            manifest.write_text(
+                "".join(f"{name}\n" for name in remaining), encoding="utf-8", newline="\n"
+            )
+        else:
+            manifest.unlink()
     if names:
         log_warn(
             f"Removed {len(names)} old {label} skill copies from {tilde(legacy)} "
             "(migrated earlier; the apply backup has them):"
         )
         for name in names:
+            print(f"  {name}")
+    if kept:
+        log_warn(
+            f"Left old {label} skill copies in {tilde(legacy)}: they hold "
+            "credential-named files the backup would leave out; move those, then delete the copies"
+        )
+        for name in kept:
             print(f"  {name}")
     return names
 

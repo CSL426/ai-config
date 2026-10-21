@@ -102,7 +102,8 @@ to `~/.agents/skills`, so a skill acg wrote there before the move loads twice.
 `status` lists those old copies, and `apply` for codex or agy removes the ones
 named in the old folder's `.ai-config-managed` (acg's record of what it wrote)
 after migrating them, keeping them in that apply's backup. Hand-installed
-skills and Codex's own `.system` there stay.
+skills, Codex's own `.system`, and a copy holding a credential-named file
+(which the backup leaves out) stay.
 
 ## Installing and removing skills
 

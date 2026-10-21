@@ -72,12 +72,17 @@ def test_apply_migrates_then_retires_and_keeps_a_backup(tmp_path: Path) -> None:
     copy_runtime_files(repo_dir)
     write(repo_dir / "codex/config.toml", 'model = "x"\n')
     write(repo_dir / "agy/settings.json", '{"theme":"neon"}\n')
+    write(repo_dir / "claude/skills/commit/SKILL.md", "---\nname: commit\ndescription: current\n---\nnew\n")
     codex_legacy = _legacy(home_dir / ".codex/skills", ["commit", "design-md"])
     write(codex_legacy / ".system/imagegen/SKILL.md", "vendor\n")
     agy_legacy = _legacy(home_dir / ".gemini/antigravity/skills", ["commit"])
+    # 新位置已經在了:舊目錄才會以 legacy-skills 單獨備份
+    (home_dir / ".agents/skills").mkdir(parents=True)
+    (home_dir / ".gemini/config/skills").mkdir(parents=True)
 
-    before = run_ai_config(repo_dir, home_dir, "status", "all")
-    assert "old skill copies acg wrote" in before.stdout, before.stdout + before.stderr
+    before = run_ai_config(repo_dir, home_dir, "status", "all").stdout
+    assert "codex: 2 old skill copies" in before, before
+    assert "agy: 1 old skill copies" in before, before
 
     for tool in ("codex", "agy"):
         result = run_ai_config(repo_dir, home_dir, "apply", tool)
@@ -85,9 +90,36 @@ def test_apply_migrates_then_retires_and_keeps_a_backup(tmp_path: Path) -> None:
         assert "Removed" in result.stdout
     assert sorted(entry.name for entry in codex_legacy.iterdir()) == [".system"]
     assert list(agy_legacy.iterdir()) == []
-    backups = list((home_dir / ".ai-config-backup").glob("*/codex/legacy-skills/commit/SKILL.md"))
-    assert backups, "the apply snapshot keeps the old copies"
-    assert list((home_dir / ".ai-config-backup").glob("*/agy/legacy-skills/commit/SKILL.md"))
+    # 工具讀到的是新位置那份,不是被刪掉
+    for canonical in (home_dir / ".agents/skills", home_dir / ".gemini/config/skills"):
+        assert (canonical / "commit/SKILL.md").read_text(encoding="utf-8").endswith("---\nnew\n")
+    for tool in ("codex", "agy"):
+        backups = list((home_dir / ".ai-config-backup").glob(f"*/{tool}/legacy-skills/commit/SKILL.md"))
+        assert len(backups) == 1, f"{tool}: the apply snapshot keeps the old copy once"
+        assert "old copy" in backups[0].read_text(encoding="utf-8")
 
     after = run_ai_config(repo_dir, home_dir, "status", "all")
     assert "old skill copies acg wrote" not in after.stdout
+
+
+def test_a_copy_holding_a_credential_file_stays_and_stays_listed(tmp_path: Path) -> None:
+    """The backup leaves credential-named files out, so deleting would lose them."""
+    legacy = _legacy(tmp_path / "skills", ["commit", "gdrive"])
+    write(legacy / "gdrive/auth.json", "{}\n")
+
+    assert retire_legacy_skills(legacy, "Codex") == ["commit"]
+
+    assert (legacy / "gdrive/auth.json").is_file()
+    assert legacy_managed_skills(legacy) == ["gdrive"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix symlink")
+def test_a_linked_manifest_authorizes_nothing(tmp_path: Path) -> None:
+    elsewhere = tmp_path / "list"
+    elsewhere.write_text("mine\n", encoding="utf-8")
+    legacy = tmp_path / "skills"
+    write(legacy / "mine/SKILL.md", "hand installed\n")
+    os.symlink(elsewhere, legacy / MANIFEST_NAME)
+
+    assert retire_legacy_skills(legacy, "Codex") == []
+    assert (legacy / "mine/SKILL.md").is_file()
