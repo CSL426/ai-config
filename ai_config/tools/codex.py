@@ -33,6 +33,7 @@ from ..skills import (
     apply_managed_skills,
     project_agents_to_skills,
     reconcile_managed_skills,
+    retire_legacy_skills,
     sync_shared_skills,
     sync_skills,
 )
@@ -315,20 +316,23 @@ def prepare_codex_canonical_skills() -> None:
     legacy = CODEX_LEGACY_SKILLS
     marker = canonical / CODEX_SKILLS_MIGRATION_MARKER
     canonical.mkdir(parents=True, exist_ok=True)
-    if marker.is_file() or not legacy.is_dir() or is_reparse_point(legacy):
+    if not legacy.is_dir() or is_reparse_point(legacy):
         return
-    # Codex installs .system itself and version-checks it against a marker, so
-    # migrating that tree only strands a stale copy where Codex never reads.
-    migrated = merge_missing_tree(
-        legacy,
-        canonical,
-        "legacy Codex skills",
-        exclude_dir_names=CODEX_VENDOR_SKILL_DIRS,
-    )
-    assert_safe_write_target(marker)
-    marker.write_text("migrated\n", encoding="utf-8", newline="\n")
-    if migrated:
-        log_warn(f"Migrated legacy Codex skills into: {canonical}")
+    if not marker.is_file():
+        # Codex installs .system itself and version-checks it against a marker, so
+        # migrating that tree only strands a stale copy where Codex never reads.
+        migrated = merge_missing_tree(
+            legacy,
+            canonical,
+            "legacy Codex skills",
+            exclude_dir_names=CODEX_VENDOR_SKILL_DIRS,
+        )
+        assert_safe_write_target(marker)
+        marker.write_text("migrated\n", encoding="utf-8", newline="\n")
+        if migrated:
+            log_warn(f"Migrated legacy Codex skills into: {canonical}")
+    # Codex 新舊兩個目錄都會讀,搬完不收掉舊的,同一個技能就載入兩份
+    retire_legacy_skills(legacy, "Codex")
 
 
 def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:

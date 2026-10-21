@@ -292,15 +292,20 @@ def prepare_agy_canonical_skills() -> None:
     legacy = AGY_LEGACY_SKILLS
     marker = canonical / AGY_SKILLS_MIGRATION_MARKER
     canonical.mkdir(parents=True, exist_ok=True)
+    if not legacy.is_dir() or is_reparse_point(legacy):
+        return
     # Without the marker every apply re-merges the legacy tree, so skills the
     # user deleted on purpose reappear on the next run.
-    if marker.is_file() or not legacy.is_dir() or is_reparse_point(legacy):
-        return
-    migrated = merge_missing_tree(legacy, canonical, "legacy Antigravity")
-    assert_safe_write_target(marker)
-    marker.write_text("migrated\n", encoding="utf-8", newline="\n")
-    if migrated:
-        log_warn(f"Migrated legacy Antigravity skills into: {canonical}")
+    if not marker.is_file():
+        migrated = merge_missing_tree(legacy, canonical, "legacy Antigravity")
+        assert_safe_write_target(marker)
+        marker.write_text("migrated\n", encoding="utf-8", newline="\n")
+        if migrated:
+            log_warn(f"Migrated legacy Antigravity skills into: {canonical}")
+    # Antigravity IDE 可能還讀舊目錄;搬完不收掉,同一個技能就有兩份
+    from .skills import retire_legacy_skills
+
+    retire_legacy_skills(legacy, "Antigravity")
 
 
 def _try_create_junction(source: Path, destination: Path) -> bool:

@@ -110,16 +110,24 @@ def managed_destinations(
     """Affected live roots, including absent paths, links, and ownership state.
 
     Labels are stable snapshot-relative names. Canonical skill directories own
-    their manifest, migration and unmanaged-baseline markers. Legacy skill roots
-    are read for migration but never changed, so they are not write destinations.
+    their manifest, migration and unmanaged-baseline markers. A legacy skill
+    root that is a real folder loses the skills acg once wrote there, so it is
+    backed up too; one that links to the canonical folder is that folder.
     """
     result = []
     for tool in tools:
         home = tool_home(tool)
         for relative in selected_paths(_BACKUP_PATHS[tool], category):
             if relative == "skills" and tool in _SKILLS_PATHS:
-                canonical, _ = _SKILLS_PATHS[tool]
+                canonical, legacy = _SKILLS_PATHS[tool]
                 result.append((tool, "canonical-skills", canonical))
+                # 新位置還不存在時,_skills_source 已經把舊目錄當成 skills 備份
+                if (
+                    canonical.is_dir()
+                    and legacy.is_dir()
+                    and not is_reparse_point(legacy)
+                ):
+                    result.append((tool, "legacy-skills", legacy))
                 if tool == "agy":
                     result.append((tool, "skills", home / "skills"))
                 continue

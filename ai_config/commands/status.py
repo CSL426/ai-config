@@ -22,11 +22,13 @@ from ..console import (
 from ..fsops import dir_has_files, is_excluded
 from ..mirrors import check_shared_mirrors
 from ..paths import (
+    AGY_LEGACY_SKILLS,
     ALL_TOOLS,
     CLAUDE_HOME,
     CLAUDE_MANAGED_DIRS,
     CLAUDE_VENDOR_SKILL_DIRS,
     CODEX_CANONICAL_SKILLS,
+    CODEX_LEGACY_SKILLS,
     ENTRYPOINT,
     claude_source_dir,
     codex_live_skills,
@@ -36,6 +38,7 @@ from ..paths import (
 from ..plugins import check_plugin_drift
 from ..safety import is_reparse_point
 from ..skills import (
+    legacy_managed_skills,
     managed_skill_orphans,
     unmanaged_skills,
     vendor_skill_candidates,
@@ -545,10 +548,29 @@ def check_unmanaged_skills(tool: str) -> bool:
     return found
 
 
+def check_legacy_skills(tool: str) -> bool:
+    """Old copies acg wrote before the skills folder moved; the tool loads both."""
+    found = False
+    for label, legacy in (("codex", CODEX_LEGACY_SKILLS), ("agy", AGY_LEGACY_SKILLS)):
+        if tool not in ("all", label):
+            continue
+        names = legacy_managed_skills(legacy)
+        if not names:
+            continue
+        found = True
+        log_warn(f"{label}: {len(names)} old skill copies acg wrote before the folder moved")
+        print(f"    {_shown_dir(legacy)}")
+        print(f"    {', '.join(names)}")
+    if found:
+        log_info(f"The tool loads these next to the current ones; {ENTRYPOINT} apply backs them up and removes them")
+    return found
+
+
 def check_skills_on_disk(tool: str) -> None:
-    """Both checks, then one verdict: each used to print its own, and they contradicted."""
+    """Every check, then one verdict: each used to print its own, and they contradicted."""
     found = check_unmanaged_skills(tool)
     found = check_vendor_skill_candidates(tool) or found
+    found = check_legacy_skills(tool) or found
     if not found:
         log_success("No unmanaged skill directories")
 

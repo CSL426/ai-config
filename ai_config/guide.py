@@ -97,6 +97,14 @@ prunes them, because deleting a skill the user installed themselves would be
 worse than leaving a stale one. Explicitly remove an unwanted standalone skill
 with `skill remove <name>` after reviewing its listed paths.
 
+The old skills folders are different: Codex still reads `~/.codex/skills` next
+to `~/.agents/skills`, so a skill acg wrote there before the move loads twice.
+`status` lists those old copies, and `apply` for codex or agy removes the ones
+named in the old folder's `.ai-config-managed` (acg's record of what it wrote)
+after migrating them, keeping them in that apply's backup. Hand-installed
+skills, Codex's own `.system`, and a copy holding a credential-named file
+(which the backup leaves out) stay.
+
 ## Installing and removing skills
 
 `{entrypoint} skill add ./my-skill` accepts a local directory containing
