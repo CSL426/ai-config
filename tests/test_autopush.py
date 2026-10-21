@@ -569,24 +569,27 @@ def test_status_previews_without_rebasing_or_clearing_the_failure(
 
 
 def test_left_out_notes_are_told_at_session_start_until_they_are_handled(
-    notebook: Path, capsys: pytest.CaptureFixture[str],
+    notebook: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A note left out of the push stays local; nobody would know without this."""
-    from ai_config import memory_hooks
+    import io
+    import json
+    import sys
 
-    start = {"hook_event_name": "SessionStart", "cwd": str(notebook)}
-    autopush.record_held(["memory/projects/o--r/journal/today-2026-10-19.done.md"])
+    from ai_config import memory_hooks, memory_paths
 
-    memory_hooks._announce_held_notes(start)
-    said = capsys.readouterr().out
+    held = ["memory/projects/o--r/journal/today-2026-10-19.done.md"]
+    monkeypatch.setattr(autopush, "held_notes", lambda: list(held))
+
+    def hook(event: str) -> str:
+        payload = {"hook_event_name": event, "cwd": str(notebook)}
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+        memory_hooks.run([str(memory_paths.SCRIPT_DIR)])
+        return capsys.readouterr().out
+
+    said = hook("SessionStart")
     assert "today-2026-10-19.done.md" in said and "--allow-secrets" in said
-    assert autopush.status()["held_back"]["paths"] == [
-        "memory/projects/o--r/journal/today-2026-10-19.done.md"]
-
     # 只在 session 開頭說,每個 prompt 都說會洗版
-    memory_hooks._announce_held_notes({**start, "hook_event_name": "UserPromptSubmit"})
-    assert capsys.readouterr().out == ""
-
-    autopush.record_held([])
-    memory_hooks._announce_held_notes(start)
-    assert capsys.readouterr().out == "" and autopush.last_held() is None
+    assert "today-2026-10-19" not in hook("UserPromptSubmit")
+    held.clear()
+    assert "疑似含憑證" not in hook("SessionStart")

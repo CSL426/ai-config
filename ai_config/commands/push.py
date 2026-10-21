@@ -76,6 +76,12 @@ def do_push(
         push_publish._unstage_tools(selected)
         return 1
     commit_message = push_review._proposed_push_commit_message(staged_paths, scheduled)
+    if push_preflight._HELD_BACK:
+        # 確認時列的是會 commit 的;留在本機的筆記不能出現在這裡
+        pending = "\n".join(
+            line for line in pending.splitlines()
+            if line[3:].strip('"') not in push_preflight._HELD_BACK
+        )
 
     confirmed = False
     ready_to_commit = False

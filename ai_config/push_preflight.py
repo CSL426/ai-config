@@ -730,9 +730,6 @@ def _validate_staged_push(selected: list[str]) -> bool:
             )
             return False
 
-    if selected == [MEMORY_SCOPE]:
-        _record_held()
-
     # 只推記憶時(排程走的就是這條)才把檢查縮到那個目錄:設定目錄裡還沒決定
     # 要不要提交的改動,不該讓沒人看著的排程整晚推不出去。其他範圍維持原樣,
     # 連 repo 根目錄的檔案都要算進去 —— 那是人在選,漏掉一塊值得停下來說。
@@ -765,6 +762,10 @@ def _hold_back_notes(selected: list[str], paths: list[str]) -> bool:
         path.startswith(f"{MEMORY_SCOPE}/") for path in paths
     ):
         return False
+    # 索引留下、它連到的筆記卻推出去,別台就找不到那些筆記;索引被判定就整次停
+    if any(path.rsplit("/", 1)[-1] == "MEMORY.md" for path in paths):
+        return False
+    paths = paths + _rename_sources(paths)
     reset = _run_repo_git("reset", "-q", "--", *(f":(literal){path}" for path in paths))
     if reset.returncode != 0:
         _git_failure("Leaving out notes with credential content", reset)
@@ -781,14 +782,31 @@ def _hold_back_notes(selected: list[str], paths: list[str]) -> bool:
     return True
 
 
-def _record_held() -> None:
-    # 這次沒留下任何一份就清掉紀錄:值刪了、或用 --allow-secrets 推上去了
-    from .autopush import record_held
+def _rename_sources(paths: list[str]) -> list[str]:
+    """The old names of staged renames into these paths.
 
-    try:
-        record_held(sorted(_HELD_BACK))
-    except OSError:
-        pass
+    Holding back only the new name would leave the deletion of the old one
+    staged: the note would vanish from the remote while its copy stays here.
+    """
+    renames = _run_repo_git("diff", "--cached", "--name-status", "-M", "-z")
+    if renames.returncode != 0:
+        return []
+    fields = renames.stdout.split("\0")
+    names = {path.rsplit("/", 1)[-1] for path in paths}
+    sources, index = [], 0
+    while index < len(fields) - 1:
+        status = fields[index]
+        if status.startswith(("R", "C")) and index + 2 < len(fields):
+            source, target = fields[index + 1], fields[index + 2]
+            if target in paths and status.startswith("R"):
+                sources.append(source)
+            index += 3
+            continue
+        # 小檔案改了內容再搬,git 認不出是改名;歸檔是同名搬進 archive/,用檔名對
+        if status == "D" and fields[index + 1].rsplit("/", 1)[-1] in names:
+            sources.append(fields[index + 1])
+        index += 2
+    return sources
 
 
 def _warn_whitespace_issues(check: subprocess.CompletedProcess) -> None:
