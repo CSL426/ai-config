@@ -92,19 +92,12 @@ def held_notes() -> "list[str]":
     deleted since, two pushes at once), so the answer is read from it each
     time, which also makes it right after a push that names a tool.
     """
-    from .safety import SECRET_PATTERN
+    from .memory_index import carries_secret
 
-    held = []
-    for entry in _memory_status() or []:
-        path = entry[3:]
-        if not path or entry[:2] in (" D", "D "):
-            continue
-        try:
-            if SECRET_PATTERN.search((SCRIPT_DIR / path).read_bytes()):
-                held.append(path)
-        except OSError:
-            continue
-    return sorted(held)
+    return sorted(
+        entry[3:] for entry in _memory_status() or []
+        if entry[:2] not in (" D", "D ") and carries_secret(SCRIPT_DIR / entry[3:])
+    )
 
 
 def last_failure() -> "dict | None":

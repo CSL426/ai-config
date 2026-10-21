@@ -61,7 +61,10 @@ def _status() -> int:
             print(f"  {memory_paths.TOPICS_NAME}/{name}")
 
     if state.secret_notes:
-        log_error(f"有 {len(state.secret_notes)} 則筆記像是含有憑證,記憶上傳時會留在本機,其他筆記照常同步:")
+        log_error(
+            f"有 {len(state.secret_notes)} 則會同步的筆記像是含有憑證;"
+            "還沒上傳的會留在本機,其他筆記照常同步:"
+        )
         for name in state.secret_notes:
             print(f"  {name}")
         log_info(

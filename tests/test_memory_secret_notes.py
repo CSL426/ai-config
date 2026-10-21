@@ -1,5 +1,6 @@
 """憑證檢查從 push 前移到 status:筆記還沒被暫存就該說。"""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -9,8 +10,11 @@ from ai_config import memory_index, memory_paths
 
 @pytest.fixture
 def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # 掃描範圍由 git 決定,所以要真的 repo 和資料庫那份 .gitignore
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     root = tmp_path / "memory"
     (root / memory_paths.TOPICS_NAME).mkdir(parents=True)
+    (root / ".gitignore").write_text(f"/{memory_paths.JOURNAL_DIR_NAME}/\n", encoding="utf-8")
     monkeypatch.setattr(memory_paths, "memory_dir", lambda: root)
     return root
 
@@ -38,10 +42,34 @@ def test_the_local_journal_is_not_scanned(notebook: Path) -> None:
     assert memory_index.secret_notes() == []
 
 
-def test_a_project_journal_is_also_skipped(notebook: Path) -> None:
+def test_a_project_journal_is_scanned(notebook: Path) -> None:
+    """Project journals sync; skipping them hid DESKTOP-CAO4ENQ's held note from status."""
     journal = notebook / memory_paths.PROJECTS_NAME / "o--r" / memory_paths.JOURNAL_DIR_NAME
     journal.mkdir(parents=True)
-    (journal / "recent.md").write_text("password=hunter2\n", encoding="utf-8")
+    (journal / "recent.md").write_text("password=" + "hunter2\n", encoding="utf-8")
+
+    assert memory_index.secret_notes() == [
+        f"{memory_paths.PROJECTS_NAME}/o--r/{memory_paths.JOURNAL_DIR_NAME}/recent.md"
+    ]
+
+
+def test_a_handoff_is_scanned(notebook: Path) -> None:
+    handoff = notebook / "handoff"
+    handoff.mkdir()
+    (handoff / "acg 收尾.md").write_text("token=" + "abc123\n", encoding="utf-8")
+
+    assert memory_index.secret_notes() == ["handoff/acg 收尾.md"]
+
+
+def test_without_git_nothing_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 不在 git 底下就不會同步,也就沒有東西會外洩
+    root = tmp_path / "memory"
+    root.mkdir()
+    (root / memory_paths.INDEX_NAME).write_text("token=" + "abc123\n", encoding="utf-8")
+    monkeypatch.setattr(memory_paths, "memory_dir", lambda: root)
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
 
     assert memory_index.secret_notes() == []
 

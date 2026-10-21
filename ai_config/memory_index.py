@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import memory_journal, memory_paths
 from .links import _path_identity
-from .safety import is_reparse_point, looks_like_secret
+from .safety import SECRET_PATTERN, is_reparse_point
 
 INDEX_TEMPLATE = """# 共用記憶
 
@@ -62,7 +62,7 @@ def index_drift(index: Path, subdir: str) -> tuple[list[str], list[str]]:
 
 
 def secret_notes() -> list[str]:
-    """Notes carrying something that must not be committed.
+    """Notes that sync and look like they carry a credential.
 
     acg never writes the notes itself — an AI session does, straight to
     disk. push already refuses to commit a secret, but that is the last
@@ -70,29 +70,48 @@ def secret_notes() -> list[str]:
     it is ever staged.
     """
     root = memory_paths.memory_dir()
-    if not root.is_dir():
+    synced = _synced_files(root)
+    if synced is None:
         return []
-    found = []
-    # 只看會同步出去的部分。本機日誌被 memory/.gitignore 排除,永遠不會
-    # 離開這台機器,把它報成外洩風險只會製造假警報
-    scanned = [root / memory_paths.INDEX_NAME, root / memory_paths.TOPICS_NAME, root / memory_paths.PROJECTS_NAME]
-    candidates = sorted(
-        path
-        for base in scanned
-        for path in ([base] if base.is_file() else base.rglob("*.md"))
-    )
-    for path in candidates:
-        if is_reparse_point(path) or not path.is_file():
-            continue
-        if memory_paths.JOURNAL_DIR_NAME in path.relative_to(root).parts:
-            continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        if looks_like_secret(text):
-            found.append(path.relative_to(root).as_posix())
-    return found
+    return sorted(path for path in synced if carries_secret(root / path))
+
+
+def _synced_files(root: Path) -> "list[str] | None":
+    """Files under the notebook that git would carry, relative to it.
+
+    Git decides, not a list of folders: memory/.gitignore keeps only the
+    root journal on this machine, while project journals and handoffs sync.
+    A hand-kept list once skipped every journal and missed the very note
+    that kept DESKTOP-CAO4ENQ's notebook local.
+    """
+    if not root.is_dir():
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", "--cached", "--others",
+             "--exclude-standard"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            check=False,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def carries_secret(path: Path) -> bool:
+    """The check push makes on staged content, made on a file on disk."""
+    if is_reparse_point(path) or not path.is_file():
+        return False
+    try:
+        return bool(SECRET_PATTERN.search(path.read_bytes()))
+    except OSError:
+        return False
 
 
 def git_changes() -> "list[str] | None":
