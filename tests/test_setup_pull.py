@@ -608,10 +608,33 @@ def test_pull_refuses_when_remote_touches_a_locally_modified_file(
     assert result.returncode != 0
     assert "本機修改保留" in result.stderr
     assert "claude/settings.json" in result.stdout
-    assert "commit 或 stash" in result.stdout
+    # 不再叫人先 push:落後遠端時 push 一定被拒絕,那是死路
+    assert "git pull --rebase" in result.stdout and "memory push" not in result.stdout
     # git 拒絕時什麼都沒動
     assert local.read_text(encoding="utf-8") == '{"changed": true}\n'
     assert run_git(data_repo, "rev-parse", "HEAD") == head_before
+
+
+def test_pull_takes_the_remote_copy_of_a_change_made_identically_here(tmp_path: Path) -> None:
+    """DESKTOP-CAO4ENQ, 2026-10-21: pull said push first, push said pull first."""
+    remote, data_repo = create_data_remote(tmp_path)
+    _push_from_another_clone(tmp_path, remote, "memory/handoff/archive/old.md", "## Goal\n收尾\n")
+    same = data_repo / "memory/handoff/archive/old.md"
+    same.parent.mkdir(parents=True)
+    same.write_text("## Goal\n收尾\n", encoding="utf-8")
+    mine = data_repo / "memory/topics/mine.md"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("still mine\n", encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = run_data_cli(data_repo, home, "pull", "claude")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "跟遠端的一模一樣" in result.stdout
+    assert same.read_text(encoding="utf-8") == "## Goal\n收尾\n"
+    assert mine.read_text(encoding="utf-8") == "still mine\n"
+    assert run_git(data_repo, "rev-list", "--count", "HEAD..@{upstream}") == "0"
 
 
 def test_pull_refuses_local_ahead_branch(tmp_path: Path) -> None:

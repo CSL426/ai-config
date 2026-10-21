@@ -94,3 +94,58 @@ def test_a_stalled_push_is_reported_not_just_skipped(
 
     failure = autopush.last_failure()
     assert failure is not None and "無法自動接上" in failure["reason"]
+
+
+HANDOFF = "memory/handoff/acg 1.0.45 收尾.md"
+ARCHIVED = "memory/handoff/archive/acg 1.0.45 收尾.md"
+
+
+def _both_archive_the_same_handoff(mine: Path, other: Path, *, crlf: bool = False) -> None:
+    """DESKTOP-CAO4ENQ, 2026-10-21: two machines archived one stale handoff each."""
+    body = "## Goal\n收尾\n"
+    for repo in (other,):
+        (repo / HANDOFF).parent.mkdir(parents=True, exist_ok=True)
+        (repo / HANDOFF).write_text(body, encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-qm", "handoff")
+        _git(repo, "push", "-q", "origin", "HEAD")
+    _git(mine, "pull", "-q")
+    (other / ARCHIVED).parent.mkdir(parents=True)
+    _git(other, "mv", HANDOFF, ARCHIVED)
+    _git(other, "commit", "-qm", "archive")
+    _git(other, "push", "-q", "origin", "HEAD")
+    # 這台自己也歸檔了同一份,還沒保存;Windows 的工作區是 CRLF
+    if crlf:
+        _git(mine, "config", "core.autocrlf", "true")
+    (mine / ARCHIVED).parent.mkdir(parents=True)
+    (mine / ARCHIVED).write_bytes(body.replace("\n", "\r\n" if crlf else "\n").encode("utf-8"))
+    (mine / HANDOFF).unlink()
+    _git(mine, "fetch", "-q")
+
+
+@pytest.mark.parametrize("crlf", [False, True])
+def test_the_same_archive_on_both_machines_is_no_deadlock(machines, crlf: bool) -> None:
+    mine, other = machines
+    _both_archive_the_same_handoff(mine, other, crlf=crlf)
+    note = mine / "memory/topics/new.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("a local note\n", encoding="utf-8")
+
+    assert autopush._catch_up() is True
+
+    assert _git(mine, "rev-list", "--count", "HEAD..@{upstream}") == "0"
+    assert (mine / ARCHIVED).is_file() and not (mine / HANDOFF).exists()
+    assert note.read_text(encoding="utf-8") == "a local note\n"
+
+
+def test_a_different_local_copy_is_never_thrown_away(machines) -> None:
+    mine, other = machines
+    _both_archive_the_same_handoff(mine, other)
+    (mine / ARCHIVED).write_text("## Goal\n本機改過\n", encoding="utf-8")
+
+    from ai_config.identical_incoming import clear_identical_incoming
+
+    assert clear_identical_incoming(autopush._git, mine) == []
+    assert (mine / ARCHIVED).read_text(encoding="utf-8") == "## Goal\n本機改過\n"
+    assert not (mine / HANDOFF).exists(), "合併還是會被擋,工作區一個字都不動"
+    assert autopush._catch_up() is False

@@ -562,9 +562,14 @@ agy. Codex's own AGENTS.md also receives the block; an existing link to
 Claude's rules is preserved. The notebook has a global
 layer (`MEMORY.md`, `topics/`) and a per-project layer under
 `projects/<owner--repo>/`, keyed by the project's `origin` URL so the key is
-the same on every machine. Save with `{entrypoint} memory push`; `pull` refuses
-while tracked memory has uncommitted edits and says so. Pull updates the
-notebook immediately; tool settings and skills still require apply.
+the same on every machine. Save with `{entrypoint} memory push`. `pull` only refuses when the remote
+changed a file that also has unsaved edits here, and says which. An unsaved
+edit that already matches what the remote brings (two machines archiving
+the same handoff, line endings aside) steps aside by itself, in `pull` and
+in the nightly catch-up alike. Edits that really differ cannot be pushed
+first either, since push refuses a branch that is behind: commit them in
+the data repo and `git pull --rebase`. Pull updates the notebook
+immediately; tool settings and skills still require apply.
 `{entrypoint} memory disable` removes the
 link and blocks but keeps the notes.
 

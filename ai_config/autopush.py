@@ -217,6 +217,9 @@ def _catch_up() -> bool:
     head = _git("rev-parse", "HEAD")
     before = head.stdout.strip() if head is not None and head.returncode == 0 else ""
     stashes = _stash_count()
+    from .identical_incoming import clear_identical_incoming
+
+    clear_identical_incoming(_git, SCRIPT_DIR)
     result = _git("rebase", "--autostash", "@{upstream}")
     if (result is not None and result.returncode == 0
             and not _unmerged() and _stash_count() == stashes):

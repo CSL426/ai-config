@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from ..console import log_error, log_header, log_info, log_success
-from ..paths import ENTRYPOINT, MEMORY_DIR_NAME, SCRIPT_DIR
+from ..paths import ENTRYPOINT, SCRIPT_DIR
 from .status import show_status
 
 _GIT_URL_CREDENTIALS = re.compile(r"(https?://)[^/@\s]+@")
@@ -132,6 +132,7 @@ def do_sync(tool: str) -> int:
         return 1
 
     if behind:
+        _step_aside_identical()
         fast_forward = _run_repo_git("merge", "--ff-only", "@{upstream}")
         if fast_forward.returncode != 0:
             if not explain_merge_refusal(fast_forward):
@@ -214,6 +215,16 @@ def _hint_remote_access(result: subprocess.CompletedProcess[str]) -> None:
     )
 
 
+def _step_aside_identical() -> None:
+    from ..identical_incoming import clear_identical_incoming
+
+    cleared = clear_identical_incoming(_run_repo_git, SCRIPT_DIR)
+    if cleared:
+        log_info(f"有 {len(cleared)} 個尚未保存的修改跟遠端的一模一樣(例如兩台都歸檔了同一份交接),改用遠端那份:")
+        for path in cleared:
+            print(f"  {path}")
+
+
 def clear_phantom_changes(porcelain: str) -> str:
     """Drop worktree edits that have no content, returning the rest of the status.
 
@@ -282,14 +293,13 @@ def explain_merge_refusal(result: subprocess.CompletedProcess[str]) -> bool:
     log_error("遠端也改了這些本機尚未保存的檔案,pull 取消,本機修改保留:")
     for path in files:
         print(f"  {path}")
-    if files and all(path.startswith(f"{MEMORY_DIR_NAME}/") for path in files):
-        log_info(f"先執行 {ENTRYPOINT} memory push 保存記憶,再 pull")
-    else:
-        # 走到這裡代表落後遠端,push 會拒絕;建議一條真的走得通的路
-        log_info(
-            "這些檔案本機與遠端都改了,push 會因落後遠端而拒絕;"
-            "請先在資料庫 commit 或 stash 本機修改再 pull,或放棄修改後重試"
-        )
+    # 走到這裡代表落後遠端,push 會拒絕,叫人先 push 就是死路(記憶檔也一樣);
+    # 一模一樣的改動已經先讓開了,剩下的是兩邊內容真的不同
+    log_info(
+        "這些檔案本機與遠端改得不一樣,push 會因落後遠端而拒絕;"
+        f"請在資料庫({SCRIPT_DIR})commit 本機修改後執行 git pull --rebase 解決衝突,"
+        "或放棄本機修改後重試"
+    )
     return True
 
 
