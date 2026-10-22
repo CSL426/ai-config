@@ -561,3 +561,69 @@ def test_keepalive_tasks_run_without_a_window(state: Path) -> None:
     """They fire during the day, where a terminal popping up is most visible."""
     for argv in keepalive_scheduler.schtasks_argv(("07:00",)):
         assert argv[argv.index("/TR") + 1].startswith("conhost.exe --headless cmd /c ")
+
+
+def _agy(monkeypatch: pytest.MonkeyPatch, replies: list) -> list:
+    """Fake agy: each call takes the next (exit code, conversation id) and is recorded."""
+    import json
+    import subprocess
+
+    calls = []
+    monkeypatch.setattr(keepalive_runner, "_agy_listing", lambda: "gemini-3.8-flash-low\tFlash\n")
+
+    def run(argv, **kwargs):
+        calls.append({"argv": list(argv), "cwd": kwargs.get("cwd")})
+        code, conversation = replies.pop(0)
+        stdout = json.dumps({"conversation_id": conversation, "response": "hi\n"}) if code == 0 else ""
+        return subprocess.CompletedProcess(argv, code, stdout, "" if code == 0 else "conversation not found")
+
+    monkeypatch.setattr(keepalive_runner.subprocess, "run", run)
+    return calls
+
+
+def test_agy_keeps_one_conversation_instead_of_a_new_one_each_call(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A4000 had 123 "reply with only the word: hi" conversations in agy's resume list."""
+    calls = _agy(monkeypatch, [(0, "first"), (0, "first")])
+
+    assert keepalive_runner.send("agy") == 0
+    assert keepalive_runner.send("agy") == 0
+
+    assert "--conversation" not in calls[0]["argv"]
+    second = calls[1]["argv"]
+    assert second[second.index("--conversation") + 1] == "first"
+    # 不掛在家目錄這個 workspace 底下
+    assert all(call["cwd"] == state / "keepalive-agy" for call in calls)
+    assert "exit 0: hi" in keepalive_settings.log_path("agy").read_text(encoding="utf-8")
+
+
+def test_agy_starts_over_when_its_conversation_is_gone(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _agy(monkeypatch, [(0, "first"), (1, ""), (0, "second"), (0, "second")])
+
+    keepalive_runner.send("agy")
+    assert keepalive_runner.send("agy") == 0, "a lost conversation must not cost the wake-up"
+    keepalive_runner.send("agy")
+
+    assert "--conversation" not in calls[2]["argv"]
+    assert calls[3]["argv"][calls[3]["argv"].index("--conversation") + 1] == "second"
+
+
+def test_agy_opens_a_new_conversation_each_month(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "keepalive-agy-conversation.json").write_text(
+        json.dumps({"id": "old", "month": "2000-01"}), encoding="utf-8"
+    )
+    calls = _agy(monkeypatch, [(0, "new")])
+
+    keepalive_runner.send("agy")
+
+    assert "--conversation" not in calls[0]["argv"]
+    saved = json.loads((state / "keepalive-agy-conversation.json").read_text(encoding="utf-8"))
+    assert saved["id"] == "new"
