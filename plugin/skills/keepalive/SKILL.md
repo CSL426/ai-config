@@ -17,6 +17,10 @@ claude 用程式裡設定的 Haiku;agy 與 codex 從工具自己的清單挑:agy
 flash low,codex 每個帳號從自己的 `models_cache.json` 挑排序最後的那個(快取沒有價格,這是
 推測)。日誌會記下挑了哪個。
 
+agy 每次 `-p` 都會存成一個對話,而且沒有刪除指令,所以 keepalive 每台每個月只開一個
+對話,之後都接著它,並在 `~/.local/state/acg/keepalive-agy` 執行,不會混進使用者在各專案
+`/resume` 看到的清單。使用者說 agy 的對話清單裡有一堆「hi」,那是舊版留下的。
+
 codex 有好幾個帳號時(`~/.codex-work`、`~/.codex-personal` 這類各自有 `auth.json` 的目錄),每個
 帳號各自喚醒,status 會各列一行。帳號是自動找的,新增一個 `~/.codex-xxx` 不用改任何設定。
 

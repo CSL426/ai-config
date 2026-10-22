@@ -110,10 +110,7 @@ def send(tool: str = keepalive_settings.DEFAULT_TOOL) -> int:
     keepalive_settings._check_tool(tool)
     args = keepalive_settings.run_args(keepalive_settings.load(tool), tool)
     if tool == "agy":
-        model = cheapest_agy_model(_agy_listing())
-        if model:
-            args = [args[0], "--model", model, *args[1:]]
-        return _call(args, tool, f"{tool} {model}" if model else tool, None)
+        return _send_agy(args, tool)
     homes = codex_homes() if tool == "codex" else []
     if not homes:
         return _call(args, tool, tool, None)
@@ -130,23 +127,98 @@ def send(tool: str = keepalive_settings.DEFAULT_TOOL) -> int:
     return worst
 
 
+def _send_agy(args: list, tool: str) -> int:
+    """One conversation a month, resumed every call, run from acg's own folder.
+
+    agy keeps every print-mode call as a conversation of the folder it ran
+    in, and has no way to delete one. Three calls a day from the home
+    folder left 123 "reply with only the word: hi" conversations, 46 MB, in
+    the list a person resumes from (A4000, 2026-10-22). Monthly, so the
+    resumed conversation never grows long.
+    """
+    model = cheapest_agy_model(_agy_listing())
+    label = f"{tool} {model}" if model else tool
+    flags = [*(["--model", model] if model else []), "--output-format", "json"]
+    workdir = keepalive_settings._state_dir() / "keepalive-agy"
+    try:
+        workdir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        workdir = None
+    month = datetime.now().astimezone().strftime("%Y-%m")
+    record = _read_agy_conversation()
+    resumed = record.get("id") if record.get("month") == month else None
+    if resumed:
+        code, result = _run(
+            [args[0], *flags, "--conversation", resumed, *args[1:]], tool, label, None, workdir
+        )
+        if code == 0 or result is None:
+            return code
+        # 對話被刪了或壞了:開一個新的,不讓這次喚醒落空
+        _append_log(f"could not resume conversation {resumed}; starting a new one", tool)
+    code, result = _run([args[0], *flags, *args[1:]], tool, label, None, workdir)
+    started = _agy_conversation_id(result)
+    if code == 0 and started:
+        _write_agy_conversation({"id": started, "month": month})
+    return code
+
+
+def _agy_conversation_path() -> Path:
+    return keepalive_settings._state_dir() / "keepalive-agy-conversation.json"
+
+
+def _read_agy_conversation() -> dict:
+    try:
+        record = json.loads(_agy_conversation_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def _write_agy_conversation(record: dict) -> None:
+    try:
+        _agy_conversation_path().write_text(json.dumps(record), encoding="utf-8")
+    except OSError:
+        # 記不住只代表下次多開一個對話,不該讓喚醒算失敗
+        pass
+
+
+def _agy_conversation_id(result: "subprocess.CompletedProcess | None") -> "str | None":
+    document = _json_reply(result.stdout if result else "")
+    found = document.get("conversation_id") if document else None
+    return found if isinstance(found, str) and found else None
+
+
+def _json_reply(stdout: str) -> "dict | None":
+    try:
+        document = json.loads(stdout or "")
+    except ValueError:
+        return None
+    return document if isinstance(document, dict) else None
+
+
 def _call(args: list, tool: str, label: str, env: "dict | None") -> int:
+    return _run(args, tool, label, env)[0]
+
+
+def _run(
+    args: list, tool: str, label: str, env: "dict | None", cwd: "Path | None" = None,
+) -> "tuple[int, subprocess.CompletedProcess | None]":
     _append_log(f"calling {label}", tool)
     try:
         result = subprocess.run(
             args, capture_output=True, text=True, **UTF8,
-            timeout=120, check=False, env=env,
+            timeout=120, check=False, env=env, cwd=cwd,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         _append_log(f"failed to start {label}: {exc}", tool)
-        return 1
+        return 1, None
     reason = _outcome(result)
     _append_log(f"exit {result.returncode}: {reason}", tool)
     if result.returncode and _USAGE_LIMIT.search(reason):
         # 額度用完代表這個帳號的視窗本來就在跑,喚醒的目的已經達成
         _append_log(f"{label}: usage limit reached, its window is already running", tool)
-        return 0
-    return result.returncode
+        return 0, result
+    return result.returncode, result
 
 
 _ERROR_HINT = re.compile(
@@ -162,7 +234,12 @@ def _outcome(result: "subprocess.CompletedProcess") -> str:
     stderr the whole time -- an exhausted usage limit ran for two days
     as "exit 1: (no output)" -- and finding it meant rerunning by hand.
     """
-    reply = (result.stdout or "").strip().splitlines()
+    document = _json_reply(result.stdout)
+    if document is not None and isinstance(document.get("response"), str):
+        # agy 用 --output-format json 時回覆在 response 裡
+        reply = document["response"].strip().splitlines()
+    else:
+        reply = (result.stdout or "").strip().splitlines()
     if result.returncode == 0:
         return reply[-1] if reply else "(no output)"
     lines = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]

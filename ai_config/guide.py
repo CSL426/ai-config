@@ -455,6 +455,9 @@ nothing: the next real use starts the window instead, which is how the
 boundaries drift off the chosen times. An exhausted usage limit is the
 exception that is not a failure: it means that account's window is already
 running, so the run is logged as such and the scheduled job still succeeds.
+agy saves every print-mode call as a conversation and cannot delete one, so
+its keepalive opens one conversation a month and resumes it, running from
+acg's state folder so it stays out of each project's resume list.
 For claude, `status` also shows the window Claude Code last reported
 (`目前視窗 09:50–14:50`) and warns when it did not start at a scheduled
 time: the call then landed inside a window something else on the account
