@@ -879,10 +879,15 @@ def test_codex_desktop_tables_stay_on_the_machine_that_wrote_them(
     # 各的就在檔尾衝突,套到 Linux 上 Codex 每次啟動都找不到它
     repo_dir, home_dir = make_repo(tmp_path)
     (repo_dir / "claude").mkdir(exist_ok=True)
+    # data 庫裡留著另一台推上來的舊副本:apply 不能拿它蓋掉這台的,init 要把它清掉
     write(
         repo_dir / "codex/config.toml",
         'personality = "pragmatic"\n\n'
-        '[mcp_servers.rea]\ncommand = "npx"\n',
+        '[mcp_servers.rea]\ncommand = "npx"\n\n'
+        "[mcp_servers.node_repl]\ncommand = 'C:\\other\\node_repl.exe'\n\n"
+        "[mcp_servers.node_repl.env]\n"
+        "SKY_CUA_NATIVE_PIPE_DIRECTORY = '\\\\.\\pipe\\codex-stale'\n\n"
+        '[desktop]\nfollowUpQueueMode = "steer"\n',
     )
     desktop = (
         "[mcp_servers.node_repl]\n"
@@ -900,11 +905,14 @@ def test_codex_desktop_tables_stay_on_the_machine_that_wrote_them(
     applied = run_ai_config(repo_dir, home_dir, "apply", "codex")
     assert applied.returncode == 0, applied.stderr + applied.stdout
     live = (home_dir / ".codex/config.toml").read_text()
-    assert "node_repl.exe" in live
+    assert "Codex\\bin\\node_repl.exe" in live
     assert "codex-1234" in live
+    assert "codex-stale" not in live
     assert 'followUpQueueMode = "queue"' in live
+    assert "steer" not in live
 
     status = run_ai_config(repo_dir, home_dir, "status", "codex")
+    assert status.returncode == 0, status.stderr + status.stdout
     assert "config.toml" not in status.stdout, status.stdout
 
     gathered = run_ai_config(repo_dir, home_dir, "init", "codex")
