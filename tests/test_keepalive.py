@@ -561,3 +561,128 @@ def test_keepalive_tasks_run_without_a_window(state: Path) -> None:
     """They fire during the day, where a terminal popping up is most visible."""
     for argv in keepalive_scheduler.schtasks_argv(("07:00",)):
         assert argv[argv.index("/TR") + 1].startswith("conhost.exe --headless cmd /c ")
+
+
+def _agy(monkeypatch: pytest.MonkeyPatch, replies: list) -> list:
+    """Fake agy: each call takes the next (exit code, conversation id) and is recorded."""
+    import json
+    import subprocess
+
+    from ai_config import locking
+
+    calls = []
+    monkeypatch.setattr(keepalive_runner, "_agy_listing", lambda: "gemini-3.8-flash-low\tFlash\n")
+    # 鎖檔放在暫存區,不碰這台真的 ~/.ai-config-backup
+    monkeypatch.setattr(locking, "BACKUP_BASE", Path(keepalive_settings._state_dir()) / "locks")
+
+    def run(argv, **kwargs):
+        calls.append({"argv": list(argv), "cwd": kwargs.get("cwd")})
+        code, conversation = replies.pop(0)
+        # 只有帶了 --output-format json 才回 JSON:漏掉旗標時,ID 與回覆都讀不到
+        wants_json = "--output-format" in argv and argv[argv.index("--output-format") + 1] == "json"
+        if code:
+            stdout = ""
+        elif wants_json:
+            stdout = json.dumps({"conversation_id": conversation, "response": "hi\n"})
+        else:
+            stdout = "hi\n"
+        return subprocess.CompletedProcess(argv, code, stdout, "" if code == 0 else "conversation not found")
+
+    monkeypatch.setattr(keepalive_runner.subprocess, "run", run)
+    return calls
+
+
+def test_agy_keeps_one_conversation_instead_of_a_new_one_each_call(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A4000 had 123 "reply with only the word: hi" conversations in agy's resume list."""
+    calls = _agy(monkeypatch, [(0, "first"), (0, "first")])
+
+    assert keepalive_runner.send("agy") == 0
+    assert keepalive_runner.send("agy") == 0
+
+    assert "--conversation" not in calls[0]["argv"]
+    second = calls[1]["argv"]
+    assert second[second.index("--conversation") + 1] == "first"
+    # 不掛在家目錄這個 workspace 底下
+    assert all(call["cwd"] == state / "keepalive-agy" for call in calls)
+    assert "exit 0: hi" in keepalive_settings.log_path("agy").read_text(encoding="utf-8")
+
+
+def test_agy_starts_over_when_its_conversation_is_gone(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _agy(monkeypatch, [(0, "first"), (1, ""), (0, "second"), (0, "second")])
+
+    keepalive_runner.send("agy")
+    assert keepalive_runner.send("agy") == 0, "a lost conversation must not cost the wake-up"
+    keepalive_runner.send("agy")
+
+    assert "--conversation" not in calls[2]["argv"]
+    assert calls[3]["argv"][calls[3]["argv"].index("--conversation") + 1] == "second"
+
+
+def test_agy_opens_a_new_conversation_each_month(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "keepalive-agy-conversation.json").write_text(
+        json.dumps({"id": "old", "month": "2000-01"}), encoding="utf-8"
+    )
+    calls = _agy(monkeypatch, [(0, "new"), (0, "new")])
+
+    keepalive_runner.send("agy")
+    keepalive_runner.send("agy")
+
+    assert "--conversation" not in calls[0]["argv"]
+    saved = json.loads((state / "keepalive-agy-conversation.json").read_text(encoding="utf-8"))
+    assert saved["id"] == "new"
+    assert saved["month"] != "2000-01", "the new month is recorded, or every call starts over"
+    assert calls[1]["argv"][calls[1]["argv"].index("--conversation") + 1] == "new"
+
+
+def test_agy_ignores_a_recorded_id_that_is_not_text(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hand-edited or corrupt record must not crash the scheduled wake-up."""
+    import json
+    from datetime import datetime
+
+    state.mkdir(parents=True, exist_ok=True)
+    month = datetime.now().astimezone().strftime("%Y-%m")
+    (state / "keepalive-agy-conversation.json").write_text(
+        json.dumps({"id": 42, "month": month}), encoding="utf-8"
+    )
+    calls = _agy(monkeypatch, [(0, "fresh")])
+
+    assert keepalive_runner.send("agy") == 0
+    assert "--conversation" not in calls[0]["argv"]
+
+
+def test_a_second_agy_keepalive_waits_for_none(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both would read "no conversation yet" and each open one."""
+    from ai_config import locking
+
+    calls = _agy(monkeypatch, [])
+    with locking.exclusive_lock(".acg-keepalive-agy.lock") as acquired:
+        assert acquired
+        assert keepalive_runner.send("agy") == 0
+
+    assert calls == []
+    assert "another agy keepalive is running" in keepalive_settings.log_path("agy").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_only_agy_replies_are_read_as_json(state: Path) -> None:
+    """A claude or codex reply that happens to be JSON is logged as it came."""
+    import subprocess
+
+    done = subprocess.CompletedProcess([], 0, '{"response": "inner"}\n', "")
+
+    assert keepalive_runner._outcome(done) == '{"response": "inner"}'
+    assert keepalive_runner._outcome(done, json_reply=True) == "inner"

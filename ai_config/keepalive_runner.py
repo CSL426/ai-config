@@ -110,10 +110,7 @@ def send(tool: str = keepalive_settings.DEFAULT_TOOL) -> int:
     keepalive_settings._check_tool(tool)
     args = keepalive_settings.run_args(keepalive_settings.load(tool), tool)
     if tool == "agy":
-        model = cheapest_agy_model(_agy_listing())
-        if model:
-            args = [args[0], "--model", model, *args[1:]]
-        return _call(args, tool, f"{tool} {model}" if model else tool, None)
+        return _send_agy(args, tool)
     homes = codex_homes() if tool == "codex" else []
     if not homes:
         return _call(args, tool, tool, None)
@@ -130,23 +127,118 @@ def send(tool: str = keepalive_settings.DEFAULT_TOOL) -> int:
     return worst
 
 
+def _send_agy(args: list, tool: str) -> int:
+    """One conversation a month, resumed every call, run from acg's own folder.
+
+    agy keeps every print-mode call as a conversation of the folder it ran
+    in, and has no way to delete one. Three calls a day from the home
+    folder left 123 "reply with only the word: hi" conversations, 46 MB, in
+    the list a person resumes from (A4000, 2026-10-22). Monthly, so the
+    resumed conversation never grows long.
+    """
+    from .locking import exclusive_lock
+
+    # 手動 send 碰上排程時,兩邊都會讀到「還沒有對話」而各開一個
+    with exclusive_lock(".acg-keepalive-agy.lock") as acquired:
+        if not acquired:
+            _append_log("another agy keepalive is running; it anchors the window", tool)
+            return 0
+        return _send_agy_locked(args, tool)
+
+
+def _send_agy_locked(args: list, tool: str) -> int:
+    model = cheapest_agy_model(_agy_listing())
+    label = f"{tool} {model}" if model else tool
+    flags = [*(["--model", model] if model else []), "--output-format", "json"]
+    workdir = keepalive_settings._state_dir() / "keepalive-agy"
+    try:
+        workdir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        workdir = None
+    month = datetime.now().astimezone().strftime("%Y-%m")
+    record = _read_agy_conversation()
+    resumed = record.get("id") if record.get("month") == month else None
+    if isinstance(resumed, str) and resumed:
+        code, result = _run(
+            [args[0], *flags, "--conversation", resumed, *args[1:]], tool, label, None, workdir,
+            json_reply=True,
+        )
+        if code == 0 or result is None:
+            return code
+        # 對話被刪了或壞了:開一個新的,不讓這次喚醒落空。agy 的錯誤訊息分不出
+        # 「找不到對話」和其他失敗,所以一律換新,最壞是多一個對話
+        _append_log(f"could not resume conversation {resumed}; starting a new one", tool)
+    code, result = _run(
+        [args[0], *flags, *args[1:]], tool, label, None, workdir, json_reply=True
+    )
+    started = _agy_conversation_id(result)
+    if code == 0 and started:
+        _write_agy_conversation({"id": started, "month": month})
+    return code
+
+
+def _agy_conversation_path() -> Path:
+    return keepalive_settings._state_dir() / "keepalive-agy-conversation.json"
+
+
+def _read_agy_conversation() -> dict:
+    try:
+        record = json.loads(_agy_conversation_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def _write_agy_conversation(record: dict) -> None:
+    path = _agy_conversation_path()
+    temporary = path.with_name(f"{path.name}.tmp")
+    try:
+        # 先寫暫存檔再整檔替換:寫到一半中斷時,舊紀錄還在
+        temporary.write_text(json.dumps(record), encoding="utf-8")
+        os.replace(temporary, path)
+    except OSError as exc:
+        # 記不住只代表下次多開一個對話,不該讓喚醒算失敗;但要留下原因
+        _append_log(f"could not record the agy conversation: {exc}", "agy")
+
+
+def _agy_conversation_id(result: "subprocess.CompletedProcess | None") -> "str | None":
+    document = _json_reply(result.stdout if result else "")
+    found = document.get("conversation_id") if document else None
+    return found if isinstance(found, str) and found else None
+
+
+def _json_reply(stdout: str) -> "dict | None":
+    try:
+        document = json.loads(stdout or "")
+    except ValueError:
+        return None
+    return document if isinstance(document, dict) else None
+
+
 def _call(args: list, tool: str, label: str, env: "dict | None") -> int:
+    return _run(args, tool, label, env)[0]
+
+
+def _run(
+    args: list, tool: str, label: str, env: "dict | None", cwd: "Path | None" = None,
+    *, json_reply: bool = False,
+) -> "tuple[int, subprocess.CompletedProcess | None]":
     _append_log(f"calling {label}", tool)
     try:
         result = subprocess.run(
             args, capture_output=True, text=True, **UTF8,
-            timeout=120, check=False, env=env,
+            timeout=120, check=False, env=env, cwd=cwd,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         _append_log(f"failed to start {label}: {exc}", tool)
-        return 1
-    reason = _outcome(result)
+        return 1, None
+    reason = _outcome(result, json_reply=json_reply)
     _append_log(f"exit {result.returncode}: {reason}", tool)
     if result.returncode and _USAGE_LIMIT.search(reason):
         # 額度用完代表這個帳號的視窗本來就在跑,喚醒的目的已經達成
         _append_log(f"{label}: usage limit reached, its window is already running", tool)
-        return 0
-    return result.returncode
+        return 0, result
+    return result.returncode, result
 
 
 _ERROR_HINT = re.compile(
@@ -155,14 +247,19 @@ _ERROR_HINT = re.compile(
 _USAGE_LIMIT = re.compile(r"usage limit|hit your limit|limit reached", re.IGNORECASE)
 
 
-def _outcome(result: "subprocess.CompletedProcess") -> str:
+def _outcome(result: "subprocess.CompletedProcess", *, json_reply: bool = False) -> str:
     """The one line worth keeping: the reply, or on failure, the reason.
 
     A failed call used to log only its exit code. The reason was on
     stderr the whole time -- an exhausted usage limit ran for two days
     as "exit 1: (no output)" -- and finding it meant rerunning by hand.
     """
-    reply = (result.stdout or "").strip().splitlines()
+    document = _json_reply(result.stdout) if json_reply else None
+    if document is not None and isinstance(document.get("response"), str):
+        # agy 用 --output-format json 時回覆在 response 裡
+        reply = document["response"].strip().splitlines()
+    else:
+        reply = (result.stdout or "").strip().splitlines()
     if result.returncode == 0:
         return reply[-1] if reply else "(no output)"
     lines = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]
