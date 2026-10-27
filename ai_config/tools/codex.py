@@ -57,6 +57,10 @@ _UI_STATE_HEADER = re.compile(r"^\[(tui\.model_availability_nux|notice\.model_mi
 # Codex 在 Windows 上自己寫的 [windows](sandbox = "unelevated" 這類),依這台
 # 能不能提權而定。不留著的話 apply 刪掉、Codex 寫回,status 永遠多一條差異
 _WINDOWS_HEADER = re.compile(r"^\[windows(\]|\.)")
+# Codex Desktop 啟動時自己寫的:node_repl 指向這台的 runtime 執行檔、pipe 名稱
+# 每次不同;[desktop] 是 App 的介面偏好。同步到沒有 Desktop 的機器只會啟動報錯,
+# 而且兩台各寫各的,data 庫的 config.toml 就一直衝突
+_DESKTOP_HEADER = re.compile(r"^\[(desktop|mcp_servers\.node_repl)(\]|\.)")
 # 跟設定混在同一個區塊裡的狀態旗標:[tui] 還有 status_line 這種真正的偏好
 _MACHINE_LOCAL_TABLE_KEYS = {"tui": {"screen_reader_detection_done"}}
 _TABLE_NAME = re.compile(r"^\[([A-Za-z0-9_.-]+)\]\s*$")
@@ -71,6 +75,7 @@ def _is_machine_local_header(line: str) -> bool:
         or _HOOK_STATE_HEADER.match(line)
         or _UI_STATE_HEADER.match(line)
         or _WINDOWS_HEADER.match(line)
+        or _DESKTOP_HEADER.match(line)
     )
 _TOP_LEVEL_ASSIGNMENT = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
 # 模型與思考強度是每台自己挑的,常常只是為了問一個問題臨時切換;跟 Claude
@@ -367,7 +372,8 @@ def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
                 )
                 _write_config(target, merged, source_stat)
                 log_success(
-                    "config.toml (merged, preserved [projects.*], [windows] and Codex-managed plugins)"
+                    "config.toml (merged, preserved [projects.*], [windows], "
+                    "Codex Desktop tables and Codex-managed plugins)"
                 )
             else:
                 filtered = filter_codex_config(source.read_text(encoding="utf-8"))
