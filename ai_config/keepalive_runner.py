@@ -136,6 +136,17 @@ def _send_agy(args: list, tool: str) -> int:
     the list a person resumes from (A4000, 2026-10-22). Monthly, so the
     resumed conversation never grows long.
     """
+    from .locking import exclusive_lock
+
+    # 手動 send 碰上排程時,兩邊都會讀到「還沒有對話」而各開一個
+    with exclusive_lock(".acg-keepalive-agy.lock") as acquired:
+        if not acquired:
+            _append_log("another agy keepalive is running; it anchors the window", tool)
+            return 0
+        return _send_agy_locked(args, tool)
+
+
+def _send_agy_locked(args: list, tool: str) -> int:
     model = cheapest_agy_model(_agy_listing())
     label = f"{tool} {model}" if model else tool
     flags = [*(["--model", model] if model else []), "--output-format", "json"]
@@ -147,15 +158,19 @@ def _send_agy(args: list, tool: str) -> int:
     month = datetime.now().astimezone().strftime("%Y-%m")
     record = _read_agy_conversation()
     resumed = record.get("id") if record.get("month") == month else None
-    if resumed:
+    if isinstance(resumed, str) and resumed:
         code, result = _run(
-            [args[0], *flags, "--conversation", resumed, *args[1:]], tool, label, None, workdir
+            [args[0], *flags, "--conversation", resumed, *args[1:]], tool, label, None, workdir,
+            json_reply=True,
         )
         if code == 0 or result is None:
             return code
-        # 對話被刪了或壞了:開一個新的,不讓這次喚醒落空
+        # 對話被刪了或壞了:開一個新的,不讓這次喚醒落空。agy 的錯誤訊息分不出
+        # 「找不到對話」和其他失敗,所以一律換新,最壞是多一個對話
         _append_log(f"could not resume conversation {resumed}; starting a new one", tool)
-    code, result = _run([args[0], *flags, *args[1:]], tool, label, None, workdir)
+    code, result = _run(
+        [args[0], *flags, *args[1:]], tool, label, None, workdir, json_reply=True
+    )
     started = _agy_conversation_id(result)
     if code == 0 and started:
         _write_agy_conversation({"id": started, "month": month})
@@ -175,11 +190,15 @@ def _read_agy_conversation() -> dict:
 
 
 def _write_agy_conversation(record: dict) -> None:
+    path = _agy_conversation_path()
+    temporary = path.with_name(f"{path.name}.tmp")
     try:
-        _agy_conversation_path().write_text(json.dumps(record), encoding="utf-8")
-    except OSError:
-        # 記不住只代表下次多開一個對話,不該讓喚醒算失敗
-        pass
+        # 先寫暫存檔再整檔替換:寫到一半中斷時,舊紀錄還在
+        temporary.write_text(json.dumps(record), encoding="utf-8")
+        os.replace(temporary, path)
+    except OSError as exc:
+        # 記不住只代表下次多開一個對話,不該讓喚醒算失敗;但要留下原因
+        _append_log(f"could not record the agy conversation: {exc}", "agy")
 
 
 def _agy_conversation_id(result: "subprocess.CompletedProcess | None") -> "str | None":
@@ -202,6 +221,7 @@ def _call(args: list, tool: str, label: str, env: "dict | None") -> int:
 
 def _run(
     args: list, tool: str, label: str, env: "dict | None", cwd: "Path | None" = None,
+    *, json_reply: bool = False,
 ) -> "tuple[int, subprocess.CompletedProcess | None]":
     _append_log(f"calling {label}", tool)
     try:
@@ -212,7 +232,7 @@ def _run(
     except (OSError, subprocess.SubprocessError) as exc:
         _append_log(f"failed to start {label}: {exc}", tool)
         return 1, None
-    reason = _outcome(result)
+    reason = _outcome(result, json_reply=json_reply)
     _append_log(f"exit {result.returncode}: {reason}", tool)
     if result.returncode and _USAGE_LIMIT.search(reason):
         # 額度用完代表這個帳號的視窗本來就在跑,喚醒的目的已經達成
@@ -227,14 +247,14 @@ _ERROR_HINT = re.compile(
 _USAGE_LIMIT = re.compile(r"usage limit|hit your limit|limit reached", re.IGNORECASE)
 
 
-def _outcome(result: "subprocess.CompletedProcess") -> str:
+def _outcome(result: "subprocess.CompletedProcess", *, json_reply: bool = False) -> str:
     """The one line worth keeping: the reply, or on failure, the reason.
 
     A failed call used to log only its exit code. The reason was on
     stderr the whole time -- an exhausted usage limit ran for two days
     as "exit 1: (no output)" -- and finding it meant rerunning by hand.
     """
-    document = _json_reply(result.stdout)
+    document = _json_reply(result.stdout) if json_reply else None
     if document is not None and isinstance(document.get("response"), str):
         # agy 用 --output-format json 時回覆在 response 裡
         reply = document["response"].strip().splitlines()
