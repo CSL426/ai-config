@@ -84,11 +84,22 @@ def _run_memory(args: list[str]) -> int:
             if not decision.push:
                 log_info(f"跳過自動推送:{decision.reason}")
                 return 0
-        allow_secrets = rest == ["--allow-secrets"]
-        if rest and not allow_secrets:
+        allow_secrets = False
+        reviewed: list[str] = []
+        args = list(rest)
+        while args:
+            flag = args.pop(0)
+            if flag == "--allow-secrets":
+                allow_secrets = True
+            elif flag == "--allow-secret-path" and args:
+                reviewed.append(args.pop(0).replace("\\", "/"))
+            else:
+                args = [flag]
+                break
+        if args:
             log_error(
-                f"Usage: {ENTRYPOINT} memory push "
-                "[--allow-secrets] [--if-stale <小時>]"
+                f"Usage: {ENTRYPOINT} memory push [--allow-secrets] "
+                "[--allow-secret-path <路徑> ...] [--if-stale <小時>] [--force]"
             )
             return 1
         if stale is not None:
@@ -100,7 +111,10 @@ def _run_memory(args: list[str]) -> int:
             return auto.push_and_record(
                 lambda: do_push(MEMORY_SCOPE, allow_secrets=False, scheduled=True),
             )
-        code = do_push(MEMORY_SCOPE, allow_secrets=allow_secrets)
+        code = do_push(
+            MEMORY_SCOPE, allow_secrets=allow_secrets,
+            allowed_secret_paths=frozenset(reviewed),
+        )
         if code == 0:
             # 手動推成功也算:排程的失敗提醒要馬上消失,冷卻時間也從這次算起
             auto.record_push()

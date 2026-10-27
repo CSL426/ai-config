@@ -28,6 +28,8 @@ from .paths import (
 from .safety import SECRET_PATTERN as _SECRET_PATTERN
 
 _ALLOW_SECRET_PATHS = False
+# 看過、確定是誤判的那幾份:只放行它們,同一次推送裡其他被判定的照樣處理
+_ALLOWED_SECRET_PATHS: "frozenset[str]" = frozenset()
 
 
 @dataclass(frozen=True)
@@ -660,6 +662,7 @@ def _validate_ahead_push(
     secret_paths = _ahead_secret_paths(commits)
     if secret_paths is None:
         return False
+    secret_paths = _without_reviewed(secret_paths)
     if secret_paths:
         if _ALLOW_SECRET_PATHS:
             log_warn("Credential-content check skipped (--allow-secrets):")
@@ -759,6 +762,7 @@ def _validate_staged_push(
     secret_paths = _staged_secret_paths()
     if secret_paths is None:
         return False
+    secret_paths = _without_reviewed(secret_paths)
     if secret_paths:
         if _ALLOW_SECRET_PATHS:
             log_warn("Credential-content check skipped (--allow-secrets):")
@@ -797,6 +801,20 @@ def _validate_staged_push(
     check = _run_repo_git("diff", "--cached", "--check")
     _warn_whitespace_issues(check)
     return True
+
+
+def _without_reviewed(secret_paths: list[str]) -> list[str]:
+    """Drop the paths someone read and named as false positives (--allow-secret-path).
+
+    --allow-secrets waives the check for the whole push, so a real key in
+    another file would go with the false positive that prompted it.
+    """
+    reviewed = [path for path in secret_paths if path in _ALLOWED_SECRET_PATHS]
+    if reviewed:
+        log_warn("Credential-content check skipped for the reviewed paths (--allow-secret-path):")
+        for path in reviewed:
+            print(f"  {path}")
+    return [path for path in secret_paths if path not in _ALLOWED_SECRET_PATHS]
 
 
 def _held_notes(paths: "list[str] | set[str]") -> "set[str]":

@@ -4,7 +4,7 @@
 from . import push_preflight, push_review
 from .commands.sync import _git_failure, _run_repo_git
 from .config import configured_remote_provider
-from .console import confirm as confirm_prompt
+from .console import confirm_publish as confirm_prompt
 from .console import log_error, log_info, log_success, log_warn
 from .paths import ENTRYPOINT, SCRIPT_DIR, tilde
 

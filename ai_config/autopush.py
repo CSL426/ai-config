@@ -80,7 +80,7 @@ def failure_path() -> Path:
 # 疑似含憑證的筆記怎麼處理;status、session 提醒、memory status 共用一句
 HELD_NOTE_ADVICE = (
     "真的是金鑰就刪掉那個值並換一組新的;是誤判就執行 "
-    f"{ENTRYPOINT} memory push --allow-secrets"
+    f"{ENTRYPOINT} memory push --allow-secret-path <路徑>(只放行那一份)"
 )
 
 

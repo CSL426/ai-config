@@ -588,7 +588,7 @@ def test_left_out_notes_are_told_at_session_start_until_they_are_handled(
         return capsys.readouterr().out
 
     said = hook("SessionStart")
-    assert "today-2026-10-19.done.md" in said and "--allow-secrets" in said
+    assert "today-2026-10-19.done.md" in said and "--allow-secret-path" in said
     # 只在 session 開頭說,每個 prompt 都說會洗版
     assert "today-2026-10-19" not in hook("UserPromptSubmit")
     held.clear()

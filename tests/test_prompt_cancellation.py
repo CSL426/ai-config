@@ -186,3 +186,27 @@ def test_a_real_terminal_still_waits(monkeypatch: pytest.MonkeyPatch) -> None:
     cli._pause_before_closing()
 
     assert asked == [1]
+
+
+def test_a_confirmation_nobody_can_answer_says_how_to_skip_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two Windows agents saw only "Cancelled" from memory push: no terminal to answer y."""
+    _eof_on_input(monkeypatch)
+    monkeypatch.setattr(console.sys.stdin, "isatty", lambda: False, raising=False)
+
+    assert console.confirm("Commit and push these changes? [y/N] ", force_hint=True) is False
+    assert "--force" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("forceable", [True, False])
+def test_only_a_push_confirmation_suggests_force(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], forceable: bool
+) -> None:
+    """An agent follows the hint: skill remove must not be told to add --force."""
+    _eof_on_input(monkeypatch)
+    monkeypatch.setattr(console.sys.stdin, "isatty", lambda: False, raising=False)
+
+    assert console.confirm("Remove these skill copies permanently? [y/N] ", forceable=forceable) is False
+    out = capsys.readouterr().out
+    assert "--force" not in out and "No terminal" in out

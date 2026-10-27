@@ -13,11 +13,12 @@ from .sync import _git_failure, _remote_is_read_only, _run_repo_git
 
 def do_push(
     tool: str, allow_secrets: bool = False, scheduled: bool = False,
-    overwrite_newer: bool = False,
+    overwrite_newer: bool = False, allowed_secret_paths: "frozenset[str]" = frozenset(),
 ) -> int:
     # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
     # 才會為 True(GUI 走不到,維持硬擋)。
     push_preflight._ALLOW_SECRET_PATHS = allow_secrets
+    push_preflight._ALLOWED_SECRET_PATHS = frozenset(allowed_secret_paths)
     log_header("Push local configuration")
     provider = configured_remote_provider()
     if provider == "git" and _remote_is_read_only():

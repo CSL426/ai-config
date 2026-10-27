@@ -3,7 +3,7 @@
 import json
 
 from .commands.sync import _run_repo_git
-from .console import confirm as confirm_prompt
+from .console import confirm_publish as confirm_prompt
 from .console import forced, log_info
 from .paths import ALL_TOOLS, SCRIPT_DIR, tilde
 
