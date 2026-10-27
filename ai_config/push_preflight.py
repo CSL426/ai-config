@@ -115,6 +115,12 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
         if not _memory_root_available(selected, working):
             return None
         outside = _paths_outside(working, selected)
+        held = _held_notes(outside) if MEMORY_SCOPE not in selected else set()
+        if held:
+            # memory push 本來就會把它們留在本機;拿它們擋工具的推送,兩邊就互相卡死:
+            # push codex 叫人先推記憶,記憶推送又把它們留下(A4000,2026-10-27)
+            log_info(f"{len(held)} 則疑似含憑證的筆記留在本機,記憶推送也不會帶上;不擋這次推送")
+            outside = [path for path in outside if path not in held]
         if outside and selected == [MEMORY_SCOPE]:
             # 記憶是自己一個範圍,而且多半由排程推。設定目錄有什麼改動與它無關,
             # 拿那些擋下來只會讓沒人看著的排程整晚不跑 — 昨晚就是這樣失敗的。
@@ -778,6 +784,9 @@ def _validate_staged_push(
     left = {
         path for path in (unstaged.stdout + untracked.stdout).split("\0") if path
     } - (held or set())  # 刻意留下的筆記不算意外
+    if MEMORY_SCOPE not in selected:
+        # 沒選記憶的推送不會碰到它們,記憶推送也會把它們留下
+        left -= _held_notes(left)
     if unstaged.returncode != 0 or untracked.returncode != 0 or left:
         log_error("Unexpected repository changes remain after staging; push cancelled.")
         return False
@@ -785,6 +794,17 @@ def _validate_staged_push(
     check = _run_repo_git("diff", "--cached", "--check")
     _warn_whitespace_issues(check)
     return True
+
+
+def _held_notes(paths: "list[str] | set[str]") -> "set[str]":
+    """The notes among these that a memory push leaves out: they look like a credential."""
+    from .memory_index import carries_secret
+
+    return {
+        path for path in paths
+        if path.replace("\\", "/").startswith(f"{MEMORY_SCOPE}/")
+        and carries_secret(SCRIPT_DIR / path)
+    }
 
 
 def _hold_back_notes(selected: list[str], paths: list[str], held: "set[str]") -> bool:
