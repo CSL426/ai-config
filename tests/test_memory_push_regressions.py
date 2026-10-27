@@ -415,3 +415,40 @@ def test_an_ordinary_memory_change_still_blocks_a_tool_push(
 
     assert push.do_push("claude") == 1
     assert "outside the selected tools" in capsys.readouterr().err
+
+
+def test_an_index_with_a_token_still_blocks_a_tool_push(
+    data_repo: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A credential in the index stops a memory push, so the change is still waiting."""
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n" + _token_line(), encoding="utf-8")
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+
+    assert push.do_push("claude") == 1
+    assert "outside the selected tools" in capsys.readouterr().err
+
+
+def test_an_archived_note_with_a_token_does_not_block_a_tool_push(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Closing a handoff moves it into archive/; memory push leaves out the move as a whole."""
+    root = tracked_memory(data_repo)
+    (root / "handoff").mkdir()
+    (root / "handoff/line.md").write_text("an open line\n", encoding="utf-8")
+    git(data_repo, "add", "memory")
+    git(data_repo, "commit", "-m", "handoff")
+    git(data_repo, "push")
+    (root / "handoff/archive").mkdir()
+    (root / "handoff/line.md").rename(root / "handoff/archive/line.md")
+    (root / "handoff/archive/line.md").write_text("closed\n" + _token_line(), encoding="utf-8")
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+    patch_push(monkeypatch, "confirm_prompt", lambda prompt: True)
+
+    assert push.do_push("claude") == 0
+    assert "memory/handoff/line.md" in git(data_repo, "ls-tree", "-r", "--name-only", "origin/main")
+
+
+def test_a_backslash_in_a_root_file_name_is_not_a_memory_path() -> None:
+    """Git paths use /; on POSIX a backslash is part of the name, not a folder."""
+    assert push_preflight._held_notes(["memory\\deploy.md"]) == set()

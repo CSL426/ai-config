@@ -4,6 +4,7 @@ Scope, working tree, upstream position, credential files and credential
 content: everything that decides whether a push may go ahead at all.
 """
 
+import os
 import subprocess
 from dataclasses import dataclass
 
@@ -731,7 +732,9 @@ def _validate_staged_push(
 
     A memory-only push may leave notes out instead of stopping; it records
     them in ``held``, which the caller passes again to the check before the
-    commit. Without ``held`` nothing is left out.
+    commit. Without ``held`` no staged note is left out. A push that does not
+    select memory also ignores the uncommitted notes a memory push would
+    leave out (see ``_held_notes``) when looking for changes left behind.
     """
     if MEMORY_SCOPE in selected:
         staged = _staged_paths()
@@ -797,14 +800,29 @@ def _validate_staged_push(
 
 
 def _held_notes(paths: "list[str] | set[str]") -> "set[str]":
-    """The notes among these that a memory push leaves out: they look like a credential."""
+    """The paths among these that a memory push would leave out.
+
+    Notes that look like a credential, but not an index: a credential in the
+    index stops a memory push instead, so it is a change still waiting. Also
+    the old name of such a note that was moved or archived, because a memory
+    push leaves that deletion out together with the note.
+    """
     from .memory_index import carries_secret
 
-    return {
-        path for path in paths
-        if path.replace("\\", "/").startswith(f"{MEMORY_SCOPE}/")
-        and carries_secret(SCRIPT_DIR / path)
+    # git 的路徑一律用 /,不能把檔名裡的反斜線當成目錄
+    notes = [path for path in paths if path.startswith(f"{MEMORY_SCOPE}/")]
+    held = {
+        path for path in notes
+        if path.rsplit("/", 1)[-1] != INDEX_NAME and carries_secret(SCRIPT_DIR / path)
     }
+    names = {path.rsplit("/", 1)[-1] for path in held}
+    moved = {
+        path for path in notes
+        if path not in held
+        and path.rsplit("/", 1)[-1] in names
+        and not os.path.lexists(SCRIPT_DIR / path)
+    }
+    return held | moved
 
 
 def _hold_back_notes(selected: list[str], paths: list[str], held: "set[str]") -> bool:
