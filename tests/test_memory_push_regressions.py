@@ -384,3 +384,71 @@ def test_a_control_character_in_a_name_cannot_forge_the_review() -> None:
 
     assert "\n" not in shown and "\x1b" not in shown
     assert push_preflight._shown_path("memory/topics/部署.md") == "memory/topics/部署.md"
+
+
+def test_a_held_note_does_not_block_a_tool_push(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A4000, 2026-10-27: push codex said to push memory first, and memory push kept the note.
+
+    The note is left out by memory push on purpose, so a push that does not
+    select memory has nothing to wait for. Any other memory change still stops it.
+    """
+    tracked_memory(data_repo)
+    _write_secret_note(data_repo, _token_line())
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+    patch_push(monkeypatch, "confirm_prompt", lambda prompt: True)
+
+    assert push.do_push("claude") == 0
+
+    assert "claude/settings.json" in git(data_repo, "show", "--name-only", "--format=", "origin/main")
+    assert git(data_repo, "ls-files", "--others", "--exclude-standard") == SECRET_NOTE
+    assert "疑似含憑證的筆記留在本機" in capsys.readouterr().out
+
+
+def test_an_ordinary_memory_change_still_blocks_a_tool_push(
+    data_repo: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n- unpushed\n", encoding="utf-8")
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+
+    assert push.do_push("claude") == 1
+    assert "outside the selected tools" in capsys.readouterr().err
+
+
+def test_an_index_with_a_token_still_blocks_a_tool_push(
+    data_repo: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A credential in the index stops a memory push, so the change is still waiting."""
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n" + _token_line(), encoding="utf-8")
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+
+    assert push.do_push("claude") == 1
+    assert "outside the selected tools" in capsys.readouterr().err
+
+
+def test_an_archived_note_with_a_token_does_not_block_a_tool_push(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Closing a handoff moves it into archive/; memory push leaves out the move as a whole."""
+    root = tracked_memory(data_repo)
+    (root / "handoff").mkdir()
+    (root / "handoff/line.md").write_text("an open line\n", encoding="utf-8")
+    git(data_repo, "add", "memory")
+    git(data_repo, "commit", "-m", "handoff")
+    git(data_repo, "push")
+    (root / "handoff/archive").mkdir()
+    (root / "handoff/line.md").rename(root / "handoff/archive/line.md")
+    (root / "handoff/archive/line.md").write_text("closed\n" + _token_line(), encoding="utf-8")
+    (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+    patch_push(monkeypatch, "confirm_prompt", lambda prompt: True)
+
+    assert push.do_push("claude") == 0
+    assert "memory/handoff/line.md" in git(data_repo, "ls-tree", "-r", "--name-only", "origin/main")
+
+
+def test_a_backslash_in_a_root_file_name_is_not_a_memory_path() -> None:
+    """Git paths use /; on POSIX a backslash is part of the name, not a folder."""
+    assert push_preflight._held_notes(["memory\\deploy.md"]) == set()
