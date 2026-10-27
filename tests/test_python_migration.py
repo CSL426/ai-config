@@ -870,3 +870,46 @@ def test_codex_windows_table_stays_on_the_machine_that_wrote_it(tmp_path: Path) 
     gathered = run_ai_config(repo_dir, home_dir, "init", "codex")
     assert gathered.returncode == 0, gathered.stderr + gathered.stdout
     assert "[windows]" not in (repo_dir / "codex/config.toml").read_text()
+
+
+def test_codex_desktop_tables_stay_on_the_machine_that_wrote_them(
+    tmp_path: Path,
+) -> None:
+    # Codex Desktop 寫的 node_repl 指向這台的 C:\ 執行檔;進了 data 庫,兩台各寫
+    # 各的就在檔尾衝突,套到 Linux 上 Codex 每次啟動都找不到它
+    repo_dir, home_dir = make_repo(tmp_path)
+    (repo_dir / "claude").mkdir(exist_ok=True)
+    write(
+        repo_dir / "codex/config.toml",
+        'personality = "pragmatic"\n\n'
+        '[mcp_servers.rea]\ncommand = "npx"\n',
+    )
+    desktop = (
+        "[mcp_servers.node_repl]\n"
+        "command = 'C:\\Users\\u\\Codex\\bin\\node_repl.exe'\n\n"
+        "[mcp_servers.node_repl.env]\n"
+        "SKY_CUA_NATIVE_PIPE_DIRECTORY = '\\\\.\\pipe\\codex-1234'\n\n"
+        '[desktop]\nfollowUpQueueMode = "queue"\n'
+    )
+    write(
+        home_dir / ".codex/config.toml",
+        'personality = "pragmatic"\n\n'
+        '[mcp_servers.rea]\ncommand = "npx"\n\n' + desktop,
+    )
+
+    applied = run_ai_config(repo_dir, home_dir, "apply", "codex")
+    assert applied.returncode == 0, applied.stderr + applied.stdout
+    live = (home_dir / ".codex/config.toml").read_text()
+    assert "node_repl.exe" in live
+    assert "codex-1234" in live
+    assert 'followUpQueueMode = "queue"' in live
+
+    status = run_ai_config(repo_dir, home_dir, "status", "codex")
+    assert "config.toml" not in status.stdout, status.stdout
+
+    gathered = run_ai_config(repo_dir, home_dir, "init", "codex")
+    assert gathered.returncode == 0, gathered.stderr + gathered.stdout
+    repo = (repo_dir / "codex/config.toml").read_text()
+    assert "node_repl" not in repo
+    assert "[desktop]" not in repo
+    assert "[mcp_servers.rea]" in repo
