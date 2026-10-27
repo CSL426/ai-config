@@ -265,7 +265,9 @@ confirmation but keep the credential check. A note that looks like it carries
 a credential is left out and the rest of the notebook still goes; the left-out
 notes are listed by `memory autopush status` and told to a new Claude session
 until a memory push includes none of them (the value removed, or a false
-positive pushed with `memory push --allow-secrets`). `push` with a tool keeps
+positive pushed with `memory push --allow-secret-path <path>`, which waives the
+check for that reviewed note only, unlike `--allow-secrets`, which waives it
+for the whole push). `push` with a tool keeps
 stopping the whole push, since a tool's settings go together. A push that does
 not select memory is not held up by such a left-out note either: memory push
 would leave it out anyway, so it is not a change waiting to be pushed.

@@ -97,21 +97,35 @@ def forced() -> bool:
     return _FORCE
 
 
-def confirm(prompt: str, *, forceable: bool = True) -> bool:
+def confirm(prompt: str, *, forceable: bool = True, force_hint: bool = False) -> bool:
     """Ask a yes/no question; EOF and a bare Enter both mean no.
 
     ``forceable=False`` keeps a question out of --force's reach: a
     destructive step still has to be answered by whoever is running it.
+    ``force_hint`` names --force when nobody can answer; only a question
+    whose yes merely publishes what was just shown should ask for that,
+    since an agent follows the hint without the user.
     """
     if forceable and _FORCE:
         print(f"{prompt}y")
         return True
     answer = ask(prompt)
     if answer is None:
-        if forceable and not sys.stdin.isatty():
+        if not sys.stdin.isatty():
             # agent 跑指令時沒有人能回答,問句讀到 EOF 就當成拒絕;只印一行
             # 「Cancelled」看不出是沒人回答,兩台 Windows 的 agent 都卡在這裡
             print()
-            log_warn("No terminal to answer this; re-run with --force to accept it")
+            if forceable and force_hint:
+                log_warn("No terminal to answer this; re-run with --force to accept it")
+            else:
+                log_warn("No terminal to answer this; run it in a terminal to answer")
         return False
     return answer.strip().lower() in {"y", "yes"}
+
+
+def confirm_publish(prompt: str) -> bool:
+    """A confirmation whose yes only publishes what was just shown (push).
+
+    Nobody can answer it in an agent's shell, so it names --force then.
+    """
+    return confirm(prompt, force_hint=True)

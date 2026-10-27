@@ -226,7 +226,8 @@ def _announce_held_notes(value: dict) -> None:
     print(
         f"acg:共用記憶有筆記疑似含憑證,沒有上傳,其他筆記照常同步({paths}{more})。"
         "先自己讀那幾份,找出觸發的那一行:看得出是誤判(規則字面、$(...)、<佔位符>、"
-        "說明文字)就跟使用者說明,再用 memory push --allow-secrets --force 推;像真金鑰"
+        "說明文字)就跟使用者說明,再用 memory push --allow-secret-path <那份路徑> --force 推"
+        "(只放行看過的那份);像真金鑰"
         f"或讀不到時才請使用者確認:{HELD_NOTE_ADVICE}。處理後這則提醒就不會再出現。"
     )
 

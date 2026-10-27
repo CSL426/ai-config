@@ -195,15 +195,18 @@ def test_a_confirmation_nobody_can_answer_says_how_to_skip_it(
     _eof_on_input(monkeypatch)
     monkeypatch.setattr(console.sys.stdin, "isatty", lambda: False, raising=False)
 
-    assert console.confirm("Commit and push these changes? [y/N] ") is False
+    assert console.confirm("Commit and push these changes? [y/N] ", force_hint=True) is False
     assert "--force" in capsys.readouterr().out
 
 
-def test_a_question_force_cannot_answer_does_not_suggest_it(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("forceable", [True, False])
+def test_only_a_push_confirmation_suggests_force(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], forceable: bool
 ) -> None:
+    """An agent follows the hint: skill remove must not be told to add --force."""
     _eof_on_input(monkeypatch)
     monkeypatch.setattr(console.sys.stdin, "isatty", lambda: False, raising=False)
 
-    assert console.confirm("  Are you sure? [y/N] ", forceable=False) is False
-    assert "--force" not in capsys.readouterr().out
+    assert console.confirm("Remove these skill copies permanently? [y/N] ", forceable=forceable) is False
+    out = capsys.readouterr().out
+    assert "--force" not in out and "No terminal" in out

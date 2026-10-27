@@ -473,3 +473,40 @@ def test_a_memory_push_without_a_terminal_says_to_add_force(
     assert push.do_push("memory") == 1
     assert "re-run with --force" in capsys.readouterr().out
     assert git(data_repo, "rev-list", "--count", "origin/main..HEAD") == "0"
+
+
+def test_only_the_reviewed_note_is_waived(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--allow-secrets waives the whole push; a real key elsewhere would go with the false positive."""
+    root = tracked_memory(data_repo)
+    (root / "topics").mkdir()
+    (root / "topics/rule.md").write_text("the rule flags `token:` " + _token_line(), encoding="utf-8")
+    _write_secret_note(data_repo, _token_line())
+    patch_push(monkeypatch, "confirm_prompt", lambda prompt: True)
+
+    assert push.do_push("memory", allowed_secret_paths=frozenset({"memory/topics/rule.md"})) == 0
+
+    pushed = git(data_repo, "ls-tree", "-r", "--name-only", "origin/main")
+    assert "memory/topics/rule.md" in pushed
+    assert SECRET_NOTE not in pushed
+    assert git(data_repo, "ls-files", "--others", "--exclude-standard") == SECRET_NOTE
+
+
+def test_memory_push_takes_reviewed_paths_on_the_command_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import memory as memory_command
+
+    seen = {}
+
+    def fake_push(scope, **kwargs):
+        seen.update(kwargs)
+        return 1
+
+    monkeypatch.setattr(push, "do_push", fake_push)
+    memory_command.run_memory(["push", "--allow-secret-path", "memory\\handoff\\a.md",
+                        "--allow-secret-path", "memory/topics/b.md"])
+
+    assert seen["allowed_secret_paths"] == {"memory/handoff/a.md", "memory/topics/b.md"}
+    assert seen["allow_secrets"] is False

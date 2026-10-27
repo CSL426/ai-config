@@ -2,7 +2,7 @@
 name: memory
 description: 看共用記憶的狀態、索引漂移與疑似憑證的筆記
 disable-model-invocation: true
-allowed-tools: Bash(acg memory status), Bash(ai-config memory status)
+allowed-tools: Bash(acg memory status), Bash(ai-config memory status), Bash(acg memory autopush status), Bash(ai-config memory autopush status), Read(~/.claude/shared-memory/**)
 ---
 
 # memory:看共用記憶的狀態
@@ -18,9 +18,10 @@ allowed-tools: Bash(acg memory status), Bash(ai-config memory status)
 - **疑似含有憑證的筆記**。掃的是會同步的檔案(含專案日誌與交接)。還沒上傳的會被留在本機,
   其他筆記照常同步;session 開頭也會提醒。先自己讀那幾份,找出觸發的那一行:看得出是誤判
   (講規則的字面、`$(...)` 指令替換、`<佔位符>`、說明文字),就跟使用者說是哪一行、為什麼
-  不是金鑰,再用 `acg memory push --allow-secrets` 推。像真金鑰(`ghp_`、`sk-` 開頭、
-  `key=` 後面一串英數),或你讀不到內容時,才交給使用者:真的是金鑰就刪掉那個值並換一組
-  新的。本機日誌不同步,不在掃描範圍。
+  不是金鑰,再用 `acg memory push --allow-secret-path <那份的路徑> --force` 推。只放行你讀過
+  的那幾份,不要用 `--allow-secrets`:它對整次推送都不檢查,別份裡的真金鑰會一起上去。
+  像真金鑰(`ghp_`、`sk-` 開頭、`key=` 後面一串英數),或你讀不到內容時,才交給使用者:
+  真的是金鑰就刪掉那個值並換一組新的。本機日誌不同步,不在掃描範圍。
 - **還沒同步的專案數**,status 分兩行講:
   - 「另外 N 個專案的日誌還沒同步」:現在的 session 正在寫的日誌。有開每晚自動上傳的機器,
     排程會在上傳前自動 adopt 有 git 遠端的專案;沒有遠端的只列在排程日誌裡,要手動 adopt
