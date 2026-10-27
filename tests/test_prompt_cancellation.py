@@ -186,3 +186,24 @@ def test_a_real_terminal_still_waits(monkeypatch: pytest.MonkeyPatch) -> None:
     cli._pause_before_closing()
 
     assert asked == [1]
+
+
+def test_a_confirmation_nobody_can_answer_says_how_to_skip_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two Windows agents saw only "Cancelled" from memory push: no terminal to answer y."""
+    _eof_on_input(monkeypatch)
+    monkeypatch.setattr(console.sys.stdin, "isatty", lambda: False, raising=False)
+
+    assert console.confirm("Commit and push these changes? [y/N] ") is False
+    assert "--force" in capsys.readouterr().out
+
+
+def test_a_question_force_cannot_answer_does_not_suggest_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _eof_on_input(monkeypatch)
+    monkeypatch.setattr(console.sys.stdin, "isatty", lambda: False, raising=False)
+
+    assert console.confirm("  Are you sure? [y/N] ", forceable=False) is False
+    assert "--force" not in capsys.readouterr().out

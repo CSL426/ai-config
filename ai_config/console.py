@@ -108,5 +108,10 @@ def confirm(prompt: str, *, forceable: bool = True) -> bool:
         return True
     answer = ask(prompt)
     if answer is None:
+        if forceable and not sys.stdin.isatty():
+            # agent 跑指令時沒有人能回答,問句讀到 EOF 就當成拒絕;只印一行
+            # 「Cancelled」看不出是沒人回答,兩台 Windows 的 agent 都卡在這裡
+            print()
+            log_warn("No terminal to answer this; re-run with --force to accept it")
         return False
     return answer.strip().lower() in {"y", "yes"}

@@ -88,7 +88,7 @@ def _run_memory(args: list[str]) -> int:
         if rest and not allow_secrets:
             log_error(
                 f"Usage: {ENTRYPOINT} memory push "
-                "[--allow-secrets] [--if-stale <小時>]"
+                "[--allow-secrets] [--if-stale <小時>] [--force]"
             )
             return 1
         if stale is not None:

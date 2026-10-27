@@ -94,6 +94,8 @@ def usage() -> None:
     print("                  enable|disable codex|agy  remember capture on that host only")
     print("                  Shared notebook that every AI tool reads and writes")
     print("                  path --global|--project print one of the two roots")
+    print("                  push [--allow-secrets] [--force]  save the notebook now;")
+    print("                    --force skips the confirmation, which an agent cannot answer")
     print("                  push --if-stale <小時> only when nothing pushed since")
     print("                  autopush status|enable [時]|disable  schedule a nightly save")
     print("                    (the same nightly run updates the tools if autoupdate is on)")

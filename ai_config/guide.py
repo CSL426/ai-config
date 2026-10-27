@@ -271,7 +271,9 @@ not select memory is not held up by such a left-out note either: memory push
 would leave it out anyway, so it is not a change waiting to be pushed.
 A push nobody confirms (the schedule, or `--force`) prints the files and the
 diffstat but not the diff itself, which would only copy the notebook into the
-nightly log.
+nightly log. An agent's shell has no terminal, so a confirmation it reaches
+counts as no; the cancel then says to re-run with `--force`, which an agent
+running `memory push` or `push` for the user needs.
 
 An unattended push that fails is remembered with its reason and the files
 involved, until a later push succeeds or nothing is left to push. `memory

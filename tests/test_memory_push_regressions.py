@@ -452,3 +452,24 @@ def test_an_archived_note_with_a_token_does_not_block_a_tool_push(
 def test_a_backslash_in_a_root_file_name_is_not_a_memory_path() -> None:
     """Git paths use /; on POSIX a backslash is part of the name, not a folder."""
     assert push_preflight._held_notes(["memory\\deploy.md"]) == set()
+
+
+def test_a_memory_push_without_a_terminal_says_to_add_force(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """TLG88N2 and CAO4ENQ, 2026-10-27: an agent saw only "Cancelled" and pushed nothing."""
+    import builtins
+    import sys
+
+    root = tracked_memory(data_repo)
+    (root / "MEMORY.md").write_text("# Notes\n- unpushed\n", encoding="utf-8")
+
+    def eof(prompt: str = "") -> str:
+        raise EOFError
+
+    monkeypatch.setattr(builtins, "input", eof)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
+
+    assert push.do_push("memory") == 1
+    assert "re-run with --force" in capsys.readouterr().out
+    assert git(data_repo, "rev-list", "--count", "origin/main..HEAD") == "0"
