@@ -42,7 +42,12 @@ def _link(path: Path, record: dict) -> None:
         if not _try_create_junction(Path(record["target"]), path):
             raise OSError(f"Cannot create Junction: {path}")
     else:
-        path.symlink_to(record["target"], target_is_directory=True)
+        # Windows 分檔案連結和目錄連結;把 AGENTS.md 這種檔案連結建成目錄連結,
+        # Codex 就讀不到。POSIX 不看這個旗標
+        target = Path(record["target"])
+        if not target.is_absolute():
+            target = path.parent / target
+        path.symlink_to(record["target"], target_is_directory=not target.is_file())
 
 
 def _copy_tree(

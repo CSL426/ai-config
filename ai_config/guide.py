@@ -66,6 +66,14 @@ project, status, pull, push, and sync.
 For Claude, the managed set is `CLAUDE.md`, `settings.json`, `mcp.json`,
 `statusline.sh`, and the `rules/ agents/ commands/ skills/` directories.
 
+Codex's `~/.codex/AGENTS.md` gets Claude's instructions. `apply` makes it a
+link to `~/.claude/CLAUDE.md` when the data repo has no `codex/AGENTS.md` of
+its own and `~/.claude/CLAUDE.md` already matches the repository, so an edit
+reaches both tools at once instead of waiting for the next apply. When the
+link cannot be made (Windows without Developer Mode) it copies as before and
+prints the command that makes it; when `CLAUDE.md` has local edits it copies
+and says to apply claude first.
+
 `claude/skills/` mirrors verbatim to Claude Code and also projects to Codex/agy
 with frontmatter normalized for their stricter parsers. Tool-specific
 `codex/skills/` and `agy/skills/` are also sources. Projection precedence is
