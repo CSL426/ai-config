@@ -921,3 +921,81 @@ def test_codex_desktop_tables_stay_on_the_machine_that_wrote_them(
     assert "node_repl" not in repo
     assert "[desktop]" not in repo
     assert "[mcp_servers.rea]" in repo
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix symlink")
+def test_apply_codex_links_agents_to_claude_md_when_they_match(tmp_path: Path) -> None:
+    """A copy goes stale between applies; A4000 had the link by hand, gb10 a copy."""
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/CLAUDE.md", "repo instructions\n")
+    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(home_dir / ".claude/CLAUDE.md", "repo instructions\n")
+    agents = home_dir / ".codex/AGENTS.md"
+    write(agents, "stale copy\n")
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert agents.is_symlink()
+    assert agents.resolve() == (home_dir / ".claude/CLAUDE.md").resolve()
+    # 舊的那份在這次 apply 的備份裡
+    assert list((home_dir / ".ai-config-backup").glob("*/codex/AGENTS.md"))
+    again = run_ai_config(repo_dir, home_dir, "apply", "codex")
+    assert again.returncode == 0 and "shared with ~/.claude/CLAUDE.md" in again.stdout
+
+
+def test_apply_codex_copies_when_claude_md_has_local_edits(tmp_path: Path) -> None:
+    """Writing through a link would replace unpushed CLAUDE.md edits the backup lacks."""
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/CLAUDE.md", "repo instructions\n")
+    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(home_dir / ".claude/CLAUDE.md", "unpushed local edit\n")
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    agents = home_dir / ".codex/AGENTS.md"
+    assert not agents.is_symlink()
+    assert agents.read_text() == "repo instructions\n"
+    assert (home_dir / ".claude/CLAUDE.md").read_text() == "unpushed local edit\n"
+    assert "apply claude first" in result.stdout
+
+
+def test_apply_codex_keeps_a_codex_specific_agents_md_separate(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/CLAUDE.md", "repo instructions\n")
+    write(repo_dir / "codex/AGENTS.md", "codex only\n")
+    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(home_dir / ".claude/CLAUDE.md", "repo instructions\n")
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    agents = home_dir / ".codex/AGENTS.md"
+    assert not agents.is_symlink() and agents.read_text() == "codex only\n"
+
+
+def test_a_failed_link_copies_and_says_how(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Windows without Developer Mode cannot make links; apply must still finish."""
+    from ai_config.tools import codex
+
+    claude_md = tmp_path / ".claude/CLAUDE.md"
+    write(claude_md, "same\n")
+    staged = tmp_path / "stage/AGENTS.md"
+    write(staged, "same\n")
+    destination = tmp_path / ".codex/AGENTS.md"
+    write(destination, "old\n")
+    monkeypatch.setattr(codex, "CLAUDE_HOME", tmp_path / ".claude")
+
+    def refuse(*args, **kwargs):
+        raise OSError(1314, "A required privilege is not held by the client")
+
+    monkeypatch.setattr(codex.os, "symlink", refuse)
+
+    assert codex._link_to_claude_md(staged, destination) is False
+    assert destination.read_text() == "old\n"
+    assert not (tmp_path / ".codex/.AGENTS.md.acg-link").exists()
+    out = capsys.readouterr().out
+    assert "copied instead" in out and ("New-Item" in out or "ln -sf" in out)

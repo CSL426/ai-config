@@ -15,13 +15,17 @@ from ..fsops import (
     overlay_dir_to_stage,
 )
 from ..paths import (
+    CLAUDE_HOME,
     CODEX_CANONICAL_SKILLS,
     CODEX_HOME,
     CODEX_LEGACY_SKILLS,
     CODEX_SKILLS_MIGRATION_MARKER,
     CODEX_VENDOR_SKILL_DIRS,
+    ENTRYPOINT,
+    NATIVE_WINDOWS,
     SCRIPT_DIR,
     claude_source_dir,
+    tilde,
 )
 from ..safety import (
     assert_managed_paths_safe,
@@ -340,6 +344,54 @@ def prepare_codex_canonical_skills() -> None:
     retire_legacy_skills(legacy, "Codex")
 
 
+def _link_to_claude_md(staged: Path, destination: Path) -> bool:
+    """Make ~/.codex/AGENTS.md a link to ~/.claude/CLAUDE.md, when nothing is lost.
+
+    A copy goes stale between applies: an edit to CLAUDE.md reaches Codex
+    only at the next apply. A4000 had the link by hand since April; gb10 and
+    the Windows machines had copies. Linked only when CLAUDE.md already holds
+    what this apply writes, because later writes go through the link into
+    CLAUDE.md, and this apply's backup does not hold CLAUDE.md.
+    """
+    claude_md = CLAUDE_HOME / "CLAUDE.md"
+    if is_reparse_point(claude_md) or not claude_md.is_file():
+        return False
+    if claude_md.read_bytes() != staged.read_bytes():
+        log_info(
+            "AGENTS.md is copied, not linked: ~/.claude/CLAUDE.md differs from the "
+            f"repository. Run {ENTRYPOINT} apply claude first to share one file"
+        )
+        return False
+    temporary = destination.with_name(".AGENTS.md.acg-link")
+    try:
+        if os.path.lexists(temporary):
+            temporary.unlink()
+        os.symlink(claude_md, temporary)
+        # 先建在旁邊再整個換掉:中途失敗時原本的 AGENTS.md 還在
+        os.replace(temporary, destination)
+    except OSError as exc:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        _explain_link_failure(destination, claude_md, exc)
+        return False
+    return True
+
+
+def _explain_link_failure(destination: Path, claude_md: Path, exc: OSError) -> None:
+    # 不擋 apply:照舊複製,只說明怎麼自己建(或交給 AI 建)
+    log_warn(f"Could not link {tilde(destination)} to {tilde(claude_md)} ({exc}); copied instead")
+    if NATIVE_WINDOWS:
+        log_info(
+            "Windows needs Developer Mode (Settings > System > For developers) or an "
+            "elevated PowerShell for links: New-Item -ItemType SymbolicLink -Force "
+            f'-Path "{destination}" -Target "{claude_md}"'
+        )
+    else:
+        log_info(f'To share one file: ln -sf "{claude_md}" "{destination}"')
+
+
 def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
     if includes(category, "skills"):
         prepare_codex_canonical_skills()
@@ -356,6 +408,10 @@ def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
                     )
                 shutil.copy2(src / "AGENTS.md", shared_target)
                 log_success("AGENTS.md (shared with ~/.claude/CLAUDE.md)")
+            elif not (SCRIPT_DIR / "codex" / "AGENTS.md").is_file() and _link_to_claude_md(
+                src / "AGENTS.md", agents_destination
+            ):
+                log_success("AGENTS.md (now a link to ~/.claude/CLAUDE.md, one file for both)")
             else:
                 shutil.copy2(src / "AGENTS.md", agents_destination)
                 log_success("AGENTS.md")
