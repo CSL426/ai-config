@@ -21,7 +21,7 @@ def notebook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_a_note_carrying_a_token_is_reported(notebook: Path) -> None:
     note = notebook / memory_paths.TOPICS_NAME / "deploy.md"
-    note.write_text("# 部署\n\nghp_" + "a" * 30 + "\n", encoding="utf-8")
+    note.write_text("# 部署\n\nghp_" + "aB3" * 10 + "\n", encoding="utf-8")
 
     assert memory_index.secret_notes() == [f"{memory_paths.TOPICS_NAME}/deploy.md"]
 
@@ -102,6 +102,12 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     # 中文句子裡提到 key、後面也接中文:2026-10-21 一份交接因此整份留在本機
     "使用者確認 CAO4ENQ 那份 10/19 日誌的 token:真的就刪值並撤換",
     "改用環境變數的password: 不再寫進設定檔",
+    # 單字裡剛好有 sk-、ghp_ 這幾個字:記憶檔名 ask-peer-session-for-windows 曾被當成金鑰
+    "見 memory:ask-peer-session-for-windows",
+    "the task-runner-configuration-for-windows",
+    "naghp_" + "a" * 24,
+    "under_sk-peer-session-for-windows",
+    "見記憶ask-peer-session-for-windows",
     # markdown 行內程式碼裡的 key:冒號後面就是收尾的反引號
     "loosen cred rule (`token:` after 中文 desc not cred; line-start `password:` still blocked)",
 ])
@@ -118,7 +124,7 @@ def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     "password: " + "hunter2",
     "api_key = " + '"' + "sk-live-abc" + '"',
     "token=" + "$",  # 字面上的 $ 結尾不是變數
-    "GH_TOKEN=$(gh auth token) ghp_" + "a" * 30,
+    "GH_TOKEN=$(gh auth token) ghp_" + "aB3" * 10,
     '"token": "' + "abc123" + '"',  # JSON 的值以引號開頭,不能當成空值
     "token = " + "abc123",
     "`token=" + "abc123`",
@@ -132,6 +138,14 @@ def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     "日誌的 token: " + "abc123",
     "見設定 password=" + "hunter2",
     "說明\n" + "token: 中文密碼",
+    # token 前面是標點或空白時照樣抓
+    "key: sk-" + "aB3" * 8,
+    "OPENAI=sk-proj-" + "b7" * 12,
+    "(ghp_" + "cQ" * 12 + ")",
+    # 黏在單字後面的真 token 也要抓
+    "mykeysk-" + "Ab9" * 8,
+    "tokenghp_" + "Zz1" * 8,
+    "`AKIA" + "D" * 16 + "`",
     # 反引號包著的值照樣是值
     "token: `" + "abc123`",
     "`token:" + "abc123`",
