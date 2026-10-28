@@ -582,6 +582,9 @@ stale readings are skipped. PreCompact only resets the reminder state; it
 does not ask the model to write or delay compaction. The reminder itself
 never writes a handoff: use `memory handoff write` or `/acg handoff` to save
 the current work and next steps. Reminder settings and readings stay local.
+`write` refuses a thread another session has claimed, since rewriting it
+would reopen the thread and drop the claim; the session that claimed it can
+write it again, and `--force` overrides.
 
 ## Shared memory
 

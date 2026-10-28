@@ -30,7 +30,9 @@ def _handoff(rest: list[str]) -> int:
         if action == "list" and len(args) <= 1:
             return _handoff_list(Path(args[0]) if args else None)
         if action == "write" and len(args) >= 2:
-            note = hand.write(args[0], " ".join(args[1:]))
+            from ..console import forced
+
+            note = hand.write(args[0], " ".join(args[1:]), force=forced())
             # 記在哪個專案要講:接手的 session 從別的目錄開就會找不到
             log_success(f"已記下交接:{note.thread}(專案 {note.project})")
             # 接手的人用的是 /acg pickup 或一句「接著做」;這行會被 session
