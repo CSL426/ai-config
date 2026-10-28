@@ -921,3 +921,148 @@ def test_codex_desktop_tables_stay_on_the_machine_that_wrote_them(
     assert "node_repl" not in repo
     assert "[desktop]" not in repo
     assert "[mcp_servers.rea]" in repo
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix symlink")
+def test_apply_codex_links_agents_to_claude_md_when_they_match(tmp_path: Path) -> None:
+    """A copy goes stale between applies; A4000 had the link by hand, gb10 a copy."""
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/CLAUDE.md", "repo instructions\n")
+    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(home_dir / ".claude/CLAUDE.md", "repo instructions\n")
+    agents = home_dir / ".codex/AGENTS.md"
+    write(agents, "stale copy\n")
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert agents.is_symlink()
+    assert agents.resolve() == (home_dir / ".claude/CLAUDE.md").resolve()
+    # 舊的那份在這次 apply 的備份裡
+    backups = list((home_dir / ".ai-config-backup").glob("*/codex/AGENTS.md"))
+    assert [b.read_text() for b in backups] == ["stale copy\n"]
+    again = run_ai_config(repo_dir, home_dir, "apply", "codex")
+    assert again.returncode == 0 and "shared with ~/.claude/CLAUDE.md" in again.stdout
+    assert agents.is_symlink()
+    assert agents.resolve() == (home_dir / ".claude/CLAUDE.md").resolve()
+
+
+def test_apply_codex_copies_when_claude_md_has_local_edits(tmp_path: Path) -> None:
+    """Writing through a link would replace unpushed CLAUDE.md edits the backup lacks."""
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/CLAUDE.md", "repo instructions\n")
+    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(home_dir / ".claude/CLAUDE.md", "unpushed local edit\n")
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    agents = home_dir / ".codex/AGENTS.md"
+    assert not agents.is_symlink()
+    assert agents.read_text() == "repo instructions\n"
+    assert (home_dir / ".claude/CLAUDE.md").read_text() == "unpushed local edit\n"
+    assert "Apply claude first" in result.stdout
+
+
+def test_apply_codex_keeps_a_codex_specific_agents_md_separate(tmp_path: Path) -> None:
+    repo_dir, home_dir = make_repo(tmp_path)
+    write(repo_dir / "claude/CLAUDE.md", "repo instructions\n")
+    write(repo_dir / "codex/AGENTS.md", "codex only\n")
+    write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')
+    write(home_dir / ".claude/CLAUDE.md", "repo instructions\n")
+
+    result = run_ai_config(repo_dir, home_dir, "apply", "codex")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    agents = home_dir / ".codex/AGENTS.md"
+    assert not agents.is_symlink() and agents.read_text() == "codex only\n"
+
+
+def _codex_apply_inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, claude: str):
+    """In-process Codex settings apply: a staged AGENTS.md and a fake home."""
+    from ai_config.tools import codex
+
+    monkeypatch.setattr(codex, "CLAUDE_HOME", tmp_path / ".claude")
+    monkeypatch.setattr(codex, "SCRIPT_DIR", tmp_path / "repo")
+    monkeypatch.setattr(codex, "codex_agents_shared_target", lambda path=None: None)
+    write(tmp_path / ".claude/CLAUDE.md", claude)
+    src = tmp_path / "stage"
+    write(src / "AGENTS.md", "same\n")
+    dst = tmp_path / ".codex"
+    write(dst / "AGENTS.md", "old\n")
+    return codex, src, dst
+
+
+def test_a_failed_link_copies_and_says_how(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Windows without Developer Mode cannot make links; apply must still finish."""
+    codex, src, dst = _codex_apply_inputs(tmp_path, monkeypatch, "same\n")
+    # 別人剛好放在那個位置的檔案不能被拿去當暫存連結刪掉
+    write(dst / ".AGENTS.md.acg-link", "someone else's file\n")
+
+    def refuse(*args, **kwargs):
+        raise OSError(1314, "A required privilege is not held by the client")
+
+    monkeypatch.setattr(codex.os, "symlink", refuse)
+
+    codex.apply_internal(src, dst, category="settings")
+
+    assert not (dst / "AGENTS.md").is_symlink()
+    assert (dst / "AGENTS.md").read_text() == "same\n", "the fallback copy happened"
+    assert (dst / ".AGENTS.md.acg-link").read_text() == "someone else's file\n"
+    assert not list(dst.glob(".AGENTS.md.acg-link-*"))
+    out = capsys.readouterr().out
+    assert "copied instead" in out and ("New-Item" in out or "ln -sf" in out)
+
+
+def test_an_unreadable_claude_md_keeps_the_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    codex, src, dst = _codex_apply_inputs(tmp_path, monkeypatch, "same\n")
+    real = Path.read_bytes
+
+    def unreadable(self: Path) -> bytes:
+        if self.name == "CLAUDE.md":
+            raise PermissionError("denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", unreadable)
+
+    codex.apply_internal(src, dst, category="settings")
+
+    assert not (dst / "AGENTS.md").is_symlink()
+    assert (dst / "AGENTS.md").read_text() == "same\n"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix symlink")
+def test_a_linked_claude_home_is_not_linked_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A link through a linked ~/.claude can point outside the managed root."""
+    from ai_config.tools import codex
+
+    elsewhere = tmp_path / "elsewhere"
+    write(elsewhere / "CLAUDE.md", "same\n")
+    (tmp_path / ".claude").symlink_to(elsewhere, target_is_directory=True)
+    monkeypatch.setattr(codex, "CLAUDE_HOME", tmp_path / ".claude")
+    staged = tmp_path / "stage/AGENTS.md"
+    write(staged, "same\n")
+
+    assert codex._link_to_claude_md(staged, tmp_path / ".codex/AGENTS.md") is False
+
+
+def test_a_replayed_link_to_a_file_is_a_file_link(tmp_path: Path) -> None:
+    """Windows reads a file link made with directory semantics as a broken folder."""
+    from ai_config import applyplan
+
+    target = tmp_path / "CLAUDE.md"
+    write(target, "shared\n")
+    link = tmp_path / "AGENTS.md"
+    try:
+        applyplan._link(link, {"kind": "symlink", "target": str(target)})
+    except OSError:
+        pytest.skip("this machine cannot create symlinks")
+
+    assert link.is_symlink() and link.is_file()
+    assert link.read_text() == "shared\n"
