@@ -102,6 +102,7 @@ def usage() -> None:
     print("                  autopush status|enable [時]|disable  schedule a nightly save")
     print("                    (the same nightly run updates the tools if autoupdate is on)")
     print("                  handoff list [專案路徑]|write <線> <內容>|claim [線]|done <線>")
+    print("                    write refuses a thread another session claimed; --force overrides")
     print("                    hand one work thread to the session that follows")
     print("                  handoff remind status|enable [百分比]|disable")
     print("                    Claude context reminder; memory enable turns it on at 70%")

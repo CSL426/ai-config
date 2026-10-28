@@ -287,7 +287,9 @@ def archive_finished(older_than_days: int = ARCHIVE_AFTER_DAYS) -> list[str]:
     return moved
 
 
-def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
+def write(
+    thread: str, body: str, cwd: "Path | None" = None, *, force: bool = False,
+) -> Handoff:
     """Record where this thread got to, for whoever continues it."""
     if not thread.strip():
         raise ValueError("交接需要一個看得懂的工作線名稱")
@@ -298,14 +300,10 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
     path = root / f"{_slug(thread)}.md"
     assert_plain_path(path, directory=False)
     existing = _parse(path) if path.is_file() else None
-    if _taken_by_someone_else(existing):
+    if not force:
         # 2026-10-28:Codex 接走 9 秒後,原作者的 session 又寫了一次同名交接,把線變回
         # 待接手、也蓋掉了接手紀錄,之後每個 session 開工都被提醒去接一條已經有人在做的線
-        raise ValueError(
-            f"這條線已經被 {taker(existing)} 接走了({existing.updated}):{thread}。"
-            "覆寫會把它變回待接手、蓋掉接手紀錄;要記自己的進度就換個名稱寫新的一條,"
-            "確定要覆寫再加 --force"
-        )
+        _refuse_if_taken(existing, thread)
     now = _now()
     note = Handoff(
         path=path,
@@ -321,21 +319,34 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
         updated=now,
         body=body,
     )
+    if not force:
+        # 讀完到寫入之間有人認領的話,寫之前再看一次
+        _refuse_if_taken(_parse(path) if path.is_file() else None, thread)
     _write_text_atomic(path, _render(note))
     return note
 
 
-def _taken_by_someone_else(note: "Handoff | None") -> bool:
-    """Closed by another session's claim; the taker itself may write it again."""
-    from .console import forced
+def _refuse_if_taken(note: "Handoff | None", thread: str) -> None:
+    if _taken_by_someone_else(note):
+        raise ValueError(
+            f"這條線已經被 {taker(note)} 接走了({note.updated}):{thread}。"
+            "覆寫會把它變回待接手、蓋掉接手紀錄;要記自己的進度就換個名稱寫新的一條,"
+            "確定要覆寫再加 --force"
+        )
 
-    return (
-        note is not None
-        and note.state == DONE
-        and bool(note.claimed_by)
-        and note.claimed_by != session_id()
-        and not forced()
-    )
+
+def _taken_by_someone_else(note: "Handoff | None") -> bool:
+    """Closed by another session's claim; the taker itself may write it again.
+
+    The taker is recognised by session id or by session name: /clear gives a
+    session a new id but keeps its name, and the taker hands back after one.
+    """
+    if note is None or note.state != DONE or not (note.claimed_by or note.claimed_name):
+        return False
+    mine_id, mine_name = session_id(), session_name()
+    if note.claimed_by and note.claimed_by == mine_id:
+        return False
+    return not (note.claimed_name and note.claimed_name == mine_name)
 
 
 def _load_or_fail(name: str) -> Handoff:
@@ -418,6 +429,9 @@ def done(name: str) -> Handoff:
     """Mark a thread finished so it stops showing up as work to pick up."""
     note = _load_or_fail(name)
     note.state = DONE
+    # 做完就不再屬於誰:留著接手紀錄,之後用同名開一條新線會被當成搶別人的
+    note.claimed_by = ""
+    note.claimed_name = ""
     note.updated = _now()
     _write_text_atomic(note.path, _render(note))
     return note

@@ -806,12 +806,16 @@ def test_writing_over_a_thread_someone_else_took_is_refused(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
     handoff.claim("LLM Wiki")
 
+    taken = handoff.load_all()[0]
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-one")
-    with pytest.raises(ValueError, match="已經被 .* 接走了"):
+    with pytest.raises(ValueError) as refused:
         handoff.write("LLM Wiki", "原作者的第二版")
 
+    assert handoff.taker(taken) in str(refused.value)
+    assert taken.updated in str(refused.value)
     kept = handoff.load_all()[0]
     assert kept.state == handoff.DONE and kept.claimed_by == "session-two"
+    assert kept.body.strip() == "第一版"
 
 
 def test_the_taker_writes_the_thread_again_when_it_stops(
@@ -821,14 +825,30 @@ def test_the_taker_writes_the_thread_again_when_it_stops(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
     handoff.claim("LLM Wiki")
 
-    note = handoff.write("LLM Wiki", "接手後的進度")
+    handoff.write("LLM Wiki", "接手後的進度")
 
-    assert note.state == handoff.OPEN and note.body == "接手後的進度"
+    saved = handoff.load_all()[0]
+    assert saved.state == handoff.OPEN and saved.body.strip() == "接手後的進度"
 
 
 def test_force_overwrites_a_taken_thread(
     notebook: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    handoff.write("LLM Wiki", "第一版")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    handoff.claim("LLM Wiki")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-one")
+
+    handoff.write("LLM Wiki", "硬蓋", force=True)
+
+    saved = handoff.load_all()[0]
+    assert saved.state == handoff.OPEN and saved.body.strip() == "硬蓋"
+
+
+def test_a_leftover_global_force_does_not_open_a_taken_thread(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The GUI is one long process; an earlier command's --force must not carry over."""
     from ai_config import console
 
     handoff.write("LLM Wiki", "第一版")
@@ -837,4 +857,34 @@ def test_force_overwrites_a_taken_thread(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-one")
     monkeypatch.setattr(console, "_FORCE", True)
 
-    assert handoff.write("LLM Wiki", "硬蓋").state == handoff.OPEN
+    with pytest.raises(ValueError):
+        handoff.write("LLM Wiki", "不該蓋過去")
+
+
+def test_the_taker_after_clear_is_still_the_taker(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """/clear gives a new session id but keeps the name; the taker hands back after one."""
+    handoff.write("LLM Wiki", "第一版")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    monkeypatch.setattr(handoff, "session_name", lambda: "codex-llm")
+    handoff.claim("LLM Wiki")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-three")
+
+    handoff.write("LLM Wiki", "清空對話後的進度")
+
+    assert handoff.load_all()[0].body.strip() == "清空對話後的進度"
+
+
+def test_a_finished_thread_can_be_started_again(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    handoff.write("LLM Wiki", "第一版")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    handoff.claim("LLM Wiki")
+    handoff.done("LLM Wiki")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-one")
+
+    handoff.write("LLM Wiki", "新的一輪")
+
+    assert handoff.load_all()[0].state == handoff.OPEN
