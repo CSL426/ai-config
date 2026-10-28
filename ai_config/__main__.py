@@ -40,6 +40,8 @@ def usage() -> None:
     print("  init [tool]     Gather configs from tool homes into the data repository")
     print("  apply [tool]    Deploy data repository configs to tool home directories")
     print("                  --category settings|skills|all (default all)")
+    print("                  Codex's AGENTS.md becomes a link to ~/.claude/CLAUDE.md when")
+    print("                  they match; otherwise it is copied")
     print("  project [tool]  Project ~/.claude/ directly to other tool home dirs")
     print("  status [tool]   Show diff between the data repository and live configs")
     print("  pull [tool]     Safely fast-forward repo changes, then show status")

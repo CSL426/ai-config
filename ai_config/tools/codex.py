@@ -3,7 +3,9 @@ Only manages Codex-specific files; shared content is projected from claude/."""
 
 import os
 import re
+import shlex
 import shutil
+import uuid
 from pathlib import Path
 
 from ..categories import includes
@@ -21,7 +23,6 @@ from ..paths import (
     CODEX_LEGACY_SKILLS,
     CODEX_SKILLS_MIGRATION_MARKER,
     CODEX_VENDOR_SKILL_DIRS,
-    ENTRYPOINT,
     NATIVE_WINDOWS,
     SCRIPT_DIR,
     claude_source_dir,
@@ -350,28 +351,37 @@ def _link_to_claude_md(staged: Path, destination: Path) -> bool:
     A copy goes stale between applies: an edit to CLAUDE.md reaches Codex
     only at the next apply. A4000 had the link by hand since April; gb10 and
     the Windows machines had copies. Linked only when CLAUDE.md already holds
-    what this apply writes, because later writes go through the link into
-    CLAUDE.md, and this apply's backup does not hold CLAUDE.md.
+    what this apply writes: from then on, writes go through the link into
+    CLAUDE.md, and this apply's backup was taken before the link existed.
+    Any doubt (a linked ~/.claude, an unreadable file) keeps the copy.
     """
     claude_md = CLAUDE_HOME / "CLAUDE.md"
-    if is_reparse_point(claude_md) or not claude_md.is_file():
+    if (
+        is_reparse_point(CLAUDE_HOME)
+        or is_reparse_point(claude_md)
+        or not claude_md.is_file()
+    ):
         return False
-    if claude_md.read_bytes() != staged.read_bytes():
+    try:
+        same = claude_md.read_bytes() == staged.read_bytes()
+    except OSError:
+        return False
+    if not same:
         log_info(
             "AGENTS.md is copied, not linked: ~/.claude/CLAUDE.md differs from the "
-            f"repository. Run {ENTRYPOINT} apply claude first to share one file"
+            "repository. Apply claude first to share one file"
         )
         return False
-    temporary = destination.with_name(".AGENTS.md.acg-link")
+    # 每次用沒人用過的名字:固定名字可能剛好是別人的檔案,先刪就毀了它
+    temporary = destination.with_name(f".AGENTS.md.acg-link-{uuid.uuid4().hex}")
     try:
-        if os.path.lexists(temporary):
-            temporary.unlink()
         os.symlink(claude_md, temporary)
         # 先建在旁邊再整個換掉:中途失敗時原本的 AGENTS.md 還在
         os.replace(temporary, destination)
     except OSError as exc:
         try:
-            temporary.unlink()
+            if os.path.lexists(temporary):
+                temporary.unlink()
         except OSError:
             pass
         _explain_link_failure(destination, claude_md, exc)
@@ -380,16 +390,23 @@ def _link_to_claude_md(staged: Path, destination: Path) -> bool:
 
 
 def _explain_link_failure(destination: Path, claude_md: Path, exc: OSError) -> None:
-    # 不擋 apply:照舊複製,只說明怎麼自己建(或交給 AI 建)
+    # 不擋 apply:照舊複製,只說明怎麼自己建(或交給 AI 建)。路徑要跳脫,
+    # 照貼的指令不能被路徑裡的特殊字元改掉意思
     log_warn(f"Could not link {tilde(destination)} to {tilde(claude_md)} ({exc}); copied instead")
     if NATIVE_WINDOWS:
+        def quoted(path: Path) -> str:
+            return "'" + str(path).replace("'", "''") + "'"
+
         log_info(
             "Windows needs Developer Mode (Settings > System > For developers) or an "
             "elevated PowerShell for links: New-Item -ItemType SymbolicLink -Force "
-            f'-Path "{destination}" -Target "{claude_md}"'
+            f"-Path {quoted(destination)} -Target {quoted(claude_md)}"
         )
     else:
-        log_info(f'To share one file: ln -sf "{claude_md}" "{destination}"')
+        log_info(
+            f"To share one file: ln -sf {shlex.quote(str(claude_md))} "
+            f"{shlex.quote(str(destination))}"
+        )
 
 
 def apply_internal(src: Path, dst: Path, *, category: str = "all") -> None:
