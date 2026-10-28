@@ -298,6 +298,14 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
     path = root / f"{_slug(thread)}.md"
     assert_plain_path(path, directory=False)
     existing = _parse(path) if path.is_file() else None
+    if _taken_by_someone_else(existing):
+        # 2026-10-28:Codex 接走 9 秒後,原作者的 session 又寫了一次同名交接,把線變回
+        # 待接手、也蓋掉了接手紀錄,之後每個 session 開工都被提醒去接一條已經有人在做的線
+        raise ValueError(
+            f"這條線已經被 {taker(existing)} 接走了({existing.updated}):{thread}。"
+            "覆寫會把它變回待接手、蓋掉接手紀錄;要記自己的進度就換個名稱寫新的一條,"
+            "確定要覆寫再加 --force"
+        )
     now = _now()
     note = Handoff(
         path=path,
@@ -315,6 +323,19 @@ def write(thread: str, body: str, cwd: "Path | None" = None) -> Handoff:
     )
     _write_text_atomic(path, _render(note))
     return note
+
+
+def _taken_by_someone_else(note: "Handoff | None") -> bool:
+    """Closed by another session's claim; the taker itself may write it again."""
+    from .console import forced
+
+    return (
+        note is not None
+        and note.state == DONE
+        and bool(note.claimed_by)
+        and note.claimed_by != session_id()
+        and not forced()
+    )
 
 
 def _load_or_fail(name: str) -> Handoff:

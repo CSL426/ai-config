@@ -796,3 +796,45 @@ def test_writing_says_which_project(nested, capsys: pytest.CaptureFixture[str]) 
 
     assert memory_handoff._handoff(["write", "線", "內容"]) == 0
     assert "csl426--gl" in capsys.readouterr().out
+
+
+def test_writing_over_a_thread_someone_else_took_is_refused(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-10-28: the author rewrote a line nine seconds after Codex took it, reopening it."""
+    handoff.write("LLM Wiki", "第一版")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    handoff.claim("LLM Wiki")
+
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-one")
+    with pytest.raises(ValueError, match="已經被 .* 接走了"):
+        handoff.write("LLM Wiki", "原作者的第二版")
+
+    kept = handoff.load_all()[0]
+    assert kept.state == handoff.DONE and kept.claimed_by == "session-two"
+
+
+def test_the_taker_writes_the_thread_again_when_it_stops(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    handoff.write("LLM Wiki", "第一版")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    handoff.claim("LLM Wiki")
+
+    note = handoff.write("LLM Wiki", "接手後的進度")
+
+    assert note.state == handoff.OPEN and note.body == "接手後的進度"
+
+
+def test_force_overwrites_a_taken_thread(
+    notebook: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_config import console
+
+    handoff.write("LLM Wiki", "第一版")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    handoff.claim("LLM Wiki")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-one")
+    monkeypatch.setattr(console, "_FORCE", True)
+
+    assert handoff.write("LLM Wiki", "硬蓋").state == handoff.OPEN
