@@ -255,7 +255,9 @@ SECRET_PATTERN = re.compile(
     rb"(?:" + _IN_PROSE + _SECRET_KEYS + rb"(?![ \t]*[\x80-\xff]))|"
     rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
     rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
-    rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    # 前面緊接英數字的是單字的一部分,不是 token:記憶檔名 ask-peer-session-for-windows
+    # 裡的 sk-peer-session-for-windows 把一整份交接留在本機
+    rb"(?<![A-Za-z0-9])(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
     rb"AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|"
     rb"sk-(?:proj-)?[A-Za-z0-9_-]{20,})",
     re.IGNORECASE,
