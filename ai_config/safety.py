@@ -247,6 +247,9 @@ _IN_CODE_SPAN = rb"(?:(?<=`)" + _SECRET_KEYS + rb"(?!(?<=:)`))"
 # password: 中文密碼 前面沒有中文,照舊算憑證
 _IN_PROSE = rb"(?:(?<=[\x80-\xff])|(?<=[\x80-\xff][ \t]))"
 
+# token 本體在第一個非 token 字元之前要出現大寫或數字;整段比對不分大小寫,這裡要分
+_RANDOM = rb"(?-i:(?=[a-z_-]*[A-Z0-9]))"
+
 # 憑證樣式:push 的最後一道關卡與記憶寫入的第一道關卡共用同一份定義,
 # 兩邊分頭維護遲早會漂移
 SECRET_PATTERN = re.compile(
@@ -255,11 +258,13 @@ SECRET_PATTERN = re.compile(
     rb"(?:" + _IN_PROSE + _SECRET_KEYS + rb"(?![ \t]*[\x80-\xff]))|"
     rb"(?:authorization\s*[:=]\s*[\"']?bearer\s+\S+)|"
     rb"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)|"
-    # 前面緊接英數字的是單字的一部分,不是 token:記憶檔名 ask-peer-session-for-windows
-    # 裡的 sk-peer-session-for-windows 把一整份交接留在本機
-    rb"(?<![A-Za-z0-9])(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    # 真的 token 本體是隨機字元,一定混有大寫或數字;全是小寫加連字號的是英文:
+    # 記憶檔名 ask-peer-session-for-windows 裡的 sk-peer-session-for-windows 曾把
+    # 一整份交接留在本機。前面接什麼字不管,黏在單字後面的真 token 照樣要抓
+    rb"(?:github_pat_" + _RANDOM + rb"[A-Za-z0-9_]{20,}|gh[pousr]_" + _RANDOM
+    + rb"[A-Za-z0-9]{20,}|"
     rb"AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|"
-    rb"sk-(?:proj-)?[A-Za-z0-9_-]{20,})",
+    rb"sk-(?:proj-)?" + _RANDOM + rb"[A-Za-z0-9_-]{20,})",
     re.IGNORECASE,
 )
 

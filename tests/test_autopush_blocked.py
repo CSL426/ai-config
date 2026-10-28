@@ -50,7 +50,7 @@ def test_a_note_with_a_token_is_left_out_and_reported_until_resolved(tmp_path: P
     home = tmp_path / "home"
     home.mkdir()
     note = data / "memory" / "topics" / "deploy.md"
-    note.write_text("# deploy\n\nghp_" + "a" * 30 + "\n", encoding="utf-8")
+    note.write_text("# deploy\n\nghp_" + "aB3" * 10 + "\n", encoding="utf-8")
     index = data / "memory" / "MEMORY.md"
     index.write_text("# index\n- [deploy](topics/deploy.md)\n", encoding="utf-8")
 
