@@ -516,21 +516,35 @@ def test_codex_without_a_cache_leaves_the_model_alone(tmp_path: Path) -> None:
     assert keepalive_runner.cheapest_codex_model(tmp_path) is None
 
 
-def test_agy_picks_the_oldest_low_flash() -> None:
+def test_agy_wakes_each_quota_group_with_its_cheapest_model() -> None:
+    """Only Flash was called; Gemini 4 and Claude/GPT kept unanchored windows (2026-10-30)."""
     listing = (
         "Fetching available models...\n"
+        "gemini-4-argon-medium\tGemini 4 Argon (Medium)\n"
+        "gemini-4-argon-low\tGemini 4 Argon (Low)\n"
         "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
         "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n"
         "gemini-3.6-flash-low\tGemini 3.6 Flash (Low)\n"
-        "gemini-3.1-pro-low\tGemini 3.1 Pro (Low)\n"
-        "claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)\n"
+        "claude-opus-5-5-low\tClaude Opus 5.5 (Low)\n"
+        "claude-sonnet-5-5-low\tClaude Sonnet 5.5 (Low)\n"
+        "gpt-oss-120b-medium\tGPT-OSS 120B (Medium)\n"
     )
 
-    assert keepalive_runner.cheapest_agy_model(listing) == "gemini-3.6-flash-low"
+    assert keepalive_runner.agy_models_per_group(listing) == [
+        ("gemini-flash", "gemini-3.6-flash-low"),
+        ("gemini-4", "gemini-4-argon-low"),
+        ("claude-gpt", "gpt-oss-120b-medium"),
+    ]
+
+
+def test_a_group_the_listing_lacks_is_skipped() -> None:
+    listing = "claude-sonnet-5-5-low\tSonnet\n"
+
+    assert keepalive_runner.agy_models_per_group(listing) == [("claude-gpt", "claude-sonnet-5-5-low")]
 
 
 def test_agy_with_an_unreadable_listing_leaves_the_model_alone() -> None:
-    assert keepalive_runner.cheapest_agy_model("") is None
+    assert keepalive_runner.agy_models_per_group("") == []
 
 
 def test_each_codex_account_is_called_with_its_cheapest_model(
@@ -638,7 +652,7 @@ def test_agy_opens_a_new_conversation_each_month(
 
     assert "--conversation" not in calls[0]["argv"]
     saved = json.loads((state / "keepalive-agy-conversation.json").read_text(encoding="utf-8"))
-    assert saved["id"] == "new"
+    assert saved["groups"]["gemini-flash"] == "new"
     assert saved["month"] != "2000-01", "the new month is recorded, or every call starts over"
     assert calls[1]["argv"][calls[1]["argv"].index("--conversation") + 1] == "new"
 
@@ -686,3 +700,24 @@ def test_only_agy_replies_are_read_as_json(state: Path) -> None:
 
     assert keepalive_runner._outcome(done) == '{"response": "inner"}'
     assert keepalive_runner._outcome(done, json_reply=True) == "inner"
+
+
+def test_each_agy_group_keeps_its_own_conversation(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _agy(monkeypatch, [(0, "f"), (0, "g"), (0, "c"), (0, "f"), (1, ""), (0, "c2"), (0, "c2")])
+    monkeypatch.setattr(keepalive_runner, "_agy_listing", lambda: (
+        "gemini-3.8-flash-low\tFlash\ngemini-4-argon-low\tArgon\ngpt-oss-120b-medium\tGPT\n"
+    ))
+
+    keepalive_runner.send("agy")
+    # 第二輪:Gemini 4 那組的對話不見了,其他組照樣接著原本的對話
+    keepalive_runner.send("agy")
+
+    models = [call["argv"][call["argv"].index("--model") + 1] for call in calls]
+    assert models[:3] == ["gemini-3.8-flash-low", "gemini-4-argon-low", "gpt-oss-120b-medium"]
+    resumed = [
+        call["argv"][call["argv"].index("--conversation") + 1]
+        for call in calls[3:] if "--conversation" in call["argv"]
+    ]
+    assert resumed == ["f", "g", "c"]

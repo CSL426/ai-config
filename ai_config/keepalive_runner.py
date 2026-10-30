@@ -48,20 +48,46 @@ def cheapest_codex_model(home: Path) -> "str | None":
     return max(listed, key=lambda model: model["priority"])["slug"]
 
 
-def cheapest_agy_model(listing: str) -> "str | None":
-    """The weakest model `agy models` lists: a flash, at low, from the oldest line."""
+# agy 的額度按模型分組,每組各有自己的五小時視窗。使用者 2026-10-30 確認:Gemini Flash
+# 一組(平常在用)、Gemini 4 一組、Claude 與 GPT 共用一組;以前只打 Flash,另外兩組的
+# 重置時間都沒被錨定。每組的樣式依序比對,前面的樣式優先(GPT-OSS 比 Claude 便宜)
+_AGY_GROUPS = (
+    ("gemini-flash", (r"^gemini-.*flash",)),
+    ("gemini-4", (r"^gemini-4",)),
+    ("claude-gpt", (r"^gpt-", r"^claude-")),
+)
+_EFFORT = ("low", "medium", "high")
+
+
+def agy_models_per_group(listing: str) -> "list[tuple[str, str]]":
+    """One model to call per quota group: the cheapest `agy models` lists for it.
+
+    Within a group the earlier pattern wins (GPT-OSS before Claude), then the
+    lowest effort, then the oldest version. A group the listing lacks is
+    skipped; an empty listing leaves agy's own default to a single call.
+    """
     ids = [line.split("\t", 1)[0].strip() for line in listing.splitlines() if "\t" in line]
     ids = [model for model in ids if model]
-    if not ids:
-        return None
-    flash = [model for model in ids if "flash" in model] or ids
-    low = [model for model in flash if model.endswith("-low")] or flash
 
     def version(model: str) -> tuple:
         found = re.search(r"(\d+(?:\.\d+)*)", model)
         return tuple(int(part) for part in found.group(1).split(".")) if found else (999,)
 
-    return min(low, key=version)
+    def effort(model: str) -> int:
+        suffix = model.rsplit("-", 1)[-1]
+        return _EFFORT.index(suffix) if suffix in _EFFORT else len(_EFFORT)
+
+    def rank(model: str, patterns: tuple) -> "int | None":
+        return next((i for i, pattern in enumerate(patterns) if re.search(pattern, model)), None)
+
+    picks = []
+    for group, patterns in _AGY_GROUPS:
+        members = [model for model in ids if rank(model, patterns) is not None]
+        if members:
+            picks.append((group, min(members, key=lambda model: (
+                rank(model, patterns), effort(model), version(model),
+            ))))
+    return picks
 
 
 def _agy_listing() -> str:
@@ -147,9 +173,6 @@ def _send_agy(args: list, tool: str) -> int:
 
 
 def _send_agy_locked(args: list, tool: str) -> int:
-    model = cheapest_agy_model(_agy_listing())
-    label = f"{tool} {model}" if model else tool
-    flags = [*(["--model", model] if model else []), "--output-format", "json"]
     workdir = keepalive_settings._state_dir() / "keepalive-agy"
     try:
         workdir.mkdir(parents=True, exist_ok=True)
@@ -157,14 +180,33 @@ def _send_agy_locked(args: list, tool: str) -> int:
         workdir = None
     month = datetime.now().astimezone().strftime("%Y-%m")
     record = _read_agy_conversation()
-    resumed = record.get("id") if record.get("month") == month else None
+    known = record.get("groups") if record.get("month") == month else None
+    conversations = dict(known) if isinstance(known, dict) else {}
+    picks = agy_models_per_group(_agy_listing()) or [("default", None)]
+    worst = 0
+    for group, model in picks:
+        # 一組失敗不該讓另一組跳過喚醒
+        code, started = _wake_agy_group(args, tool, model, conversations.get(group), workdir)
+        worst = max(worst, code)
+        if started:
+            conversations[group] = started
+            _write_agy_conversation({"month": month, "groups": conversations})
+    return worst
+
+
+def _wake_agy_group(
+    args: list, tool: str, model: "str | None", resumed: object, workdir: "Path | None",
+) -> "tuple[int, str | None]":
+    """One call for one quota group, in that group's conversation for the month."""
+    label = f"{tool} {model}" if model else tool
+    flags = [*(["--model", model] if model else []), "--output-format", "json"]
     if isinstance(resumed, str) and resumed:
         code, result = _run(
             [args[0], *flags, "--conversation", resumed, *args[1:]], tool, label, None, workdir,
             json_reply=True,
         )
         if code == 0 or result is None:
-            return code
+            return code, None
         # 對話被刪了或壞了:開一個新的,不讓這次喚醒落空。agy 的錯誤訊息分不出
         # 「找不到對話」和其他失敗,所以一律換新,最壞是多一個對話
         _append_log(f"could not resume conversation {resumed}; starting a new one", tool)
@@ -172,9 +214,7 @@ def _send_agy_locked(args: list, tool: str) -> int:
         [args[0], *flags, *args[1:]], tool, label, None, workdir, json_reply=True
     )
     started = _agy_conversation_id(result)
-    if code == 0 and started:
-        _write_agy_conversation({"id": started, "month": month})
-    return code
+    return code, started if code == 0 else None
 
 
 def _agy_conversation_path() -> Path:
