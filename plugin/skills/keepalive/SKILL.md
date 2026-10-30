@@ -13,9 +13,10 @@ allowed-tools: Bash(acg keepalive status), Bash(ai-config keepalive status)
 的邊界就落在哪裡。keepalive 在選定的時間送一句即丟的提示把視窗點著,讓邊界避開工作時段。
 每次都用那個工具最便宜的模型、最低的思考強度,因為這通呼叫存在的意義只是「它發生過」。
 
-claude 用程式裡設定的 Haiku;agy 與 codex 從工具自己的清單挑:agy 從 `agy models` 挑最舊的
-flash low,codex 每個帳號從自己的 `models_cache.json` 挑排序最後的那個(快取沒有價格,這是
-推測)。日誌會記下挑了哪個。
+claude 用程式裡設定的 Haiku;agy 與 codex 從工具自己的清單挑:agy 的額度分三組(Gemini Flash、
+Gemini 4、Claude 與 GPT 共用一組),每組各打一次最便宜的(Flash low、Argon low、GPT-OSS),
+每組各用一個每月對話;codex 每個帳號從自己的 `models_cache.json` 挑排序最後的那個(快取沒有價格,
+這是推測)。日誌會記下挑了哪個。
 
 agy 每次 `-p` 都會存成一個對話,而且沒有刪除指令,所以 keepalive 每台每個月只開一個
 對話,之後都接著它,並在 `~/.local/state/acg/keepalive-agy` 執行,不會混進使用者在各專案

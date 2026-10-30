@@ -472,7 +472,10 @@ exception that is not a failure: it means that account's window is already
 running, so the run is logged as such and the scheduled job still succeeds.
 agy saves every print-mode call as a conversation and cannot delete one, so
 its keepalive opens one conversation a month and resumes it, running from
-acg's state folder so it stays out of each project's resume list.
+acg's state folder so it stays out of each project's resume list. agy's
+quota comes in groups (Gemini Flash, Gemini 4, and Claude with GPT), each
+with its own window, so each run calls the cheapest model of every group the
+model list offers, each in its own monthly conversation.
 For claude, `status` also shows the window Claude Code last reported
 (`目前視窗 09:50–14:50`) and warns when it did not start at a scheduled
 time: the call then landed inside a window something else on the account
@@ -489,8 +492,8 @@ Each tool is anchored separately, with its own times, schedule and log:
 three accounts, three windows, no reason for their boundaries to line up.
 Every call uses the weakest model and the least thinking that tool offers,
 because the call exists to have happened. claude uses the Haiku model set in
-the code; agy and codex pick from the tool's own list: agy the oldest low
-flash from `agy models`, and each codex account the model its
+the code; agy and codex pick from the tool's own list: agy the cheapest
+model of each quota group in `agy models`, and each codex account the model its
 own `models_cache.json` promotes last, at low effort — the cache has no
 prices, so for codex that is a best guess. The log names the pick. Off unless a machine turns it
 on, and settings stay local — each machine keeps different hours, so
