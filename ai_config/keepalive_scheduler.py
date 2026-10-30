@@ -38,7 +38,8 @@ def systemd_units(times, tool: str = keepalive_settings.DEFAULT_TOOL) -> tuple:
         f"Description=acg keepalive: anchor the {tool} usage window\n\n"
         "[Service]\n"
         "Type=oneshot\n"
-        "RuntimeMaxSec=300\n"
+        # agy 一次要點三組額度,每組最多等 120 秒;300 秒會在後面的組之前被砍掉
+        "RuntimeMaxSec=900\n"
         f"ExecStart={command}\n"
     )
     calendars = "".join(f"OnCalendar=*-*-* {at}:00\n" for at in times)
@@ -65,7 +66,7 @@ def launchd_plist(times, tool: str = keepalive_settings.DEFAULT_TOOL) -> bytes:
             {"Hour": int(at[:2]), "Minute": int(at[3:])} for at in times
         ],
         "RunAtLoad": False,
-        "ExitTimeOut": 300,
+        "ExitTimeOut": 900,
         "StandardOutPath": str(keepalive_settings.log_path(tool)),
         "StandardErrorPath": str(keepalive_settings.log_path(tool)),
     })

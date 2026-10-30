@@ -51,10 +51,11 @@ def cheapest_codex_model(home: Path) -> "str | None":
 # agy 的額度按模型分組,每組各有自己的五小時視窗。使用者 2026-10-30 確認:Gemini Flash
 # 一組(平常在用)、Gemini 4 一組、Claude 與 GPT 共用一組;以前只打 Flash,另外兩組的
 # 重置時間都沒被錨定。每組的樣式依序比對,前面的樣式優先(GPT-OSS 比 Claude 便宜)
+# 樣式互斥:Gemini 4 的 flash 算 Gemini 4 那組;同組裡便宜的排前面(GPT-OSS、Sonnet)
 _AGY_GROUPS = (
-    ("gemini-flash", (r"^gemini-.*flash",)),
+    ("gemini-flash", (r"^gemini-(?!4)[^-]*-flash",)),
     ("gemini-4", (r"^gemini-4",)),
-    ("claude-gpt", (r"^gpt-", r"^claude-")),
+    ("claude-gpt", (r"^gpt-oss", r"^gpt-", r"^claude-sonnet", r"^claude-")),
 )
 _EFFORT = ("low", "medium", "high")
 
@@ -182,12 +183,18 @@ def _send_agy_locked(args: list, tool: str) -> int:
     record = _read_agy_conversation()
     known = record.get("groups") if record.get("month") == month else None
     conversations = dict(known) if isinstance(known, dict) else {}
-    picks = agy_models_per_group(_agy_listing()) or [("default", None)]
+    listing = _agy_listing()
+    picks = agy_models_per_group(listing)
+    if not picks:
+        # 讀不到清單或一個都認不得時,只能讓 agy 用它的預設模型點一組;要留下原因
+        _append_log("agy models gave no recognised model; calling agy's default only", tool)
+        picks = [("default", None)]
     worst = 0
     for group, model in picks:
         # 一組失敗不該讓另一組跳過喚醒
         code, started = _wake_agy_group(args, tool, model, conversations.get(group), workdir)
-        worst = max(worst, code)
+        # 被訊號終止時回傳碼是負的,也要算失敗
+        worst = max(worst, abs(code))
         if started:
             conversations[group] = started
             _write_agy_conversation({"month": month, "groups": conversations})

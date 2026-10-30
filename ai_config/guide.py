@@ -492,8 +492,8 @@ Each tool is anchored separately, with its own times, schedule and log:
 three accounts, three windows, no reason for their boundaries to line up.
 Every call uses the weakest model and the least thinking that tool offers,
 because the call exists to have happened. claude uses the Haiku model set in
-the code; agy and codex pick from the tool's own list: agy the oldest low
-flash from `agy models`, and each codex account the model its
+the code; agy and codex pick from the tool's own list: agy the cheapest
+model of each quota group in `agy models`, and each codex account the model its
 own `models_cache.json` promotes last, at low effort — the cache has no
 prices, so for codex that is a best guess. The log names the pick. Off unless a machine turns it
 on, and settings stay local — each machine keeps different hours, so

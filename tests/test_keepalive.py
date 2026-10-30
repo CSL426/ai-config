@@ -721,3 +721,33 @@ def test_each_agy_group_keeps_its_own_conversation(
         for call in calls[3:] if "--conversation" in call["argv"]
     ]
     assert resumed == ["f", "g", "c"]
+
+
+def test_agy_groups_do_not_overlap_and_prefer_the_cheaper_family() -> None:
+    listing = (
+        "gemini-4-flash-low\tGemini 4 Flash\n"
+        "gemini-4-argon-low\tGemini 4 Argon\n"
+        "gemini-3.8-flash-low\tFlash\n"
+        "gpt-5-low\tGPT 5\n"
+        "gpt-oss-120b-medium\tGPT-OSS\n"
+        "claude-opus-5-5-low\tOpus\n"
+        "claude-sonnet-5-5-low\tSonnet\n"
+    )
+
+    picks = dict(keepalive_runner.agy_models_per_group(listing))
+
+    assert picks["gemini-flash"] == "gemini-3.8-flash-low"
+    assert picks["gemini-4"].startswith("gemini-4")
+    assert picks["claude-gpt"] == "gpt-oss-120b-medium"
+    assert dict(keepalive_runner.agy_models_per_group(
+        "claude-opus-5-5-low\tOpus\nclaude-sonnet-5-5-low\tSonnet\n"
+    ))["claude-gpt"] == "claude-sonnet-5-5-low"
+
+
+def test_a_signal_killed_group_counts_as_a_failure(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _agy(monkeypatch, [(-9, ""), (-9, "")])
+
+    assert keepalive_runner.send("agy") != 0
+    assert "no recognised model" not in keepalive_settings.log_path("agy").read_text(encoding="utf-8")
