@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -261,11 +262,62 @@ def test_the_list_says_how_long_a_thread_has_waited(
     )
     handoff.write("放很久的", "內容")
     path = handoff.handoff_dir() / "放很久的.md"
-    _rewrite(path, lambda text: text.replace("created: 2026", "created: 2020", 1))
+    _rewrite(path, lambda text: re.sub(r"created: \d{4}", "created: 2020", text, count=1))
 
     assert command.run_memory(["handoff", "list"]) == 0
 
     assert "天前" in capsys.readouterr().out
+
+
+def test_list_shows_when_an_old_thread_was_last_rewritten(
+    notebook: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A handoff written just now must not read as a days-old leftover."""
+    from ai_config.commands import memory as command
+
+    monkeypatch.setattr(
+        memory_paths, "project_key", lambda cwd=None: memory_paths.ProjectKey("o--r", True, "t"),
+    )
+    handoff.write("剛改寫的舊線", "第一版")
+    path = handoff.handoff_dir() / "剛改寫的舊線.md"
+    _rewrite(path, lambda text: re.sub(r"created: \d{4}", "created: 2020", text, count=1))
+    handoff.write("剛改寫的舊線", "第二版")
+
+    assert command.run_memory(["handoff", "list"]) == 0
+
+    assert "天前開的,剛更新" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("created", "updated", "expected"),
+    [
+        ("2026-11-02T00:00:00Z", "2026-11-02T00:00:00Z", ""),
+        ("2026-10-29T12:00:00Z", "2026-10-29T12:00:00Z", "4 天前開的"),
+        ("2026-10-31T12:00:00Z", "2026-11-02T09:00:00Z", "2 天前開的,3 小時前更新"),
+        ("2026-10-29T12:00:00Z", "2026-10-31T11:00:00Z", "4 天前開的,2 天前更新"),
+        ("2026-10-29T10:00:00Z", "2026-10-29T11:00:00Z", "4 天前開的,4 天前更新"),
+    ],
+)
+def test_age_text(
+    monkeypatch: pytest.MonkeyPatch, created: str, updated: str, expected: str,
+) -> None:
+    fixed = datetime(2026, 11, 2, 12, 0, 0, tzinfo=UTC)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(handoff, "datetime", Clock)
+    note = handoff.Handoff(
+        path=Path("x.md"), thread="x", project="", state=handoff.OPEN, author="",
+        claimed_by="", session_name="", claimed_name="", created=created,
+        updated=updated, body="",
+    )
+
+    assert handoff.age_text(note) == expected
 
 
 def test_a_note_with_windows_line_endings_still_loads(notebook: Path) -> None:

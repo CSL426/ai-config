@@ -387,7 +387,8 @@ a month, move to `handoff/archive/` the next time the list runs; the
 record is kept. The plugin's `/acg handoff` and `/acg pickup` carry the
 same steps, and fire when someone says "交接" or "接著做" instead of
 typing them. Writing the same thread again opens it anew, keeping the date
-it was first opened, which `list` shows as how long it has been waiting.
+it was first opened; `list` shows that age and, once rewritten, the last
+update, so a thread rewritten just now is not an old leftover.
 
 ### Talking to another live session
 

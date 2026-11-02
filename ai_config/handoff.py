@@ -200,6 +200,26 @@ def age_in_days(created: str) -> int:
     return max((datetime.now(UTC) - opened).days, 0)
 
 
+def age_text(note: "Handoff") -> str:
+    """When the thread was opened and, once rewritten, when it was last touched.
+
+    Empty for a thread opened today. Rewriting keeps ``created``, so the age
+    alone made a handoff written minutes ago look like a days-old leftover.
+    """
+    age = age_in_days(note.created)
+    if not age:
+        return ""
+    opened = f"{age} 天前開的"
+    idle = hours_since(note.updated)
+    if note.updated == note.created or idle is None:
+        return opened
+    if idle < 1:
+        return f"{opened},剛更新"
+    if idle < 24:
+        return f"{opened},{int(idle)} 小時前更新"
+    return f"{opened},{int(idle // 24)} 天前更新"
+
+
 def hours_since(stamp: str) -> "float | None":
     """Hours since a timestamp; None when it cannot be read."""
     try:

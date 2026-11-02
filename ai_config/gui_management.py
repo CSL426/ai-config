@@ -62,7 +62,7 @@ def _handoff_threads() -> list:
 
         notes = [note for note in handoff.load_all() if note.state != handoff.DONE]
         return [{"thread": note.thread, "project": note.project, "state": note.state,
-                 "age_days": handoff.age_in_days(note.created),
+                 "age": handoff.age_text(note),
                  "stale": handoff.is_stale(note),
                  "summary": handoff.summary(note.body)} for note in notes]
     except (ImportError, OSError, RuntimeError, ValueError):

@@ -8,7 +8,8 @@ allowed-tools: Bash(acg memory handoff list), Bash(ai-config memory handoff list
 # handoffs:列出還沒被接手的工作線
 
 執行 `acg memory handoff list`,把輸出整理給使用者看。`○` 表示還沒人接;被認領的線會
-直接結案,不會出現在清單上。名稱後面的天數是這條線開了多久,放越久越值得問使用者要不要接。
+直接結案,不會出現在清單上。名稱後面的天數是這條線開了多久,放越久越值得問使用者要不要接;後面若有「剛更新」或「N 小時前更新」,
+表示它最近才改寫過,不是擱著的舊線。
 
 一個月沒更新的線(不論是否結束)會在列表跑的時候自動搬進 `handoff/archive/`,紀錄留著,
 只是不再擋在工作目錄裡。
