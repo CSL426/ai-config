@@ -217,8 +217,7 @@ def age_text(note: "Handoff") -> str:
         return f"{opened},剛更新"
     if idle < 24:
         return f"{opened},{int(idle)} 小時前更新"
-    days = int(idle // 24)
-    return opened if days == age else f"{opened},{days} 天前更新"
+    return f"{opened},{int(idle // 24)} 天前更新"
 
 
 def hours_since(stamp: str) -> "float | None":

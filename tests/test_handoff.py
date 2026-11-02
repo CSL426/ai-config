@@ -262,7 +262,7 @@ def test_the_list_says_how_long_a_thread_has_waited(
     )
     handoff.write("放很久的", "內容")
     path = handoff.handoff_dir() / "放很久的.md"
-    _rewrite(path, lambda text: text.replace("created: 2026", "created: 2020", 1))
+    _rewrite(path, lambda text: re.sub(r"created: \d{4}", "created: 2020", text, count=1))
 
     assert command.run_memory(["handoff", "list"]) == 0
 
@@ -282,7 +282,7 @@ def test_list_shows_when_an_old_thread_was_last_rewritten(
     )
     handoff.write("剛改寫的舊線", "第一版")
     path = handoff.handoff_dir() / "剛改寫的舊線.md"
-    _rewrite(path, lambda text: text.replace("created: 2026", "created: 2020", 1))
+    _rewrite(path, lambda text: re.sub(r"created: \d{4}", "created: 2020", text, count=1))
     handoff.write("剛改寫的舊線", "第二版")
 
     assert command.run_memory(["handoff", "list"]) == 0
@@ -297,7 +297,7 @@ def test_list_shows_when_an_old_thread_was_last_rewritten(
         ("2026-10-29T12:00:00Z", "2026-10-29T12:00:00Z", "4 天前開的"),
         ("2026-10-31T12:00:00Z", "2026-11-02T09:00:00Z", "2 天前開的,3 小時前更新"),
         ("2026-10-29T12:00:00Z", "2026-10-31T11:00:00Z", "4 天前開的,2 天前更新"),
-        ("2026-10-29T10:00:00Z", "2026-10-29T11:00:00Z", "4 天前開的"),
+        ("2026-10-29T10:00:00Z", "2026-10-29T11:00:00Z", "4 天前開的,4 天前更新"),
     ],
 )
 def test_age_text(

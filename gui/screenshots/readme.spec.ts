@@ -24,7 +24,7 @@ const memory = {
     push: { allowed: true, reason: "" },
   },
   handoffs: [{ thread: "release checklist", project: "owner--repo", state: "open",
-    age_days: 0, stale: false, summary: "發布前跑三平台測試、打 tag" }],
+    age: "", stale: false, summary: "發布前跑三平台測試、打 tag" }],
   handoff_reminder: { enabled: true, threshold: 70, installed: true },
   remember_hosts: {
     codex: { available: true, installed: true, version: "0.3.0", trusted: true, detail: "" },
