@@ -751,3 +751,33 @@ def test_a_signal_killed_group_counts_as_a_failure(
 
     assert keepalive_runner.send("agy") != 0
     assert "no recognised model" not in keepalive_settings.log_path("agy").read_text(encoding="utf-8")
+
+
+def test_an_exhausted_agy_quota_does_not_open_a_new_conversation(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 429 on resume was read as a broken conversation; each run left an empty one behind."""
+    import json
+    import subprocess
+    from datetime import datetime
+
+    from ai_config import locking
+
+    state.mkdir(parents=True, exist_ok=True)
+    month = datetime.now().astimezone().strftime("%Y-%m")
+    (state / "keepalive-agy-conversation.json").write_text(
+        json.dumps({"month": month, "groups": {"gemini-4": "kept"}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(locking, "BACKUP_BASE", state / "locks")
+    monkeypatch.setattr(keepalive_runner, "_agy_listing", lambda: "gemini-4-argon-low\tArgon\n")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 3, "", 'AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED '
+                                           '(code 429): Individual quota reached. Resets in 99h."}')
+
+    monkeypatch.setattr(keepalive_runner.subprocess, "run", run)
+
+    assert keepalive_runner.send("agy") == 0, "an exhausted quota means the window is running"
+    assert len(calls) == 1 and "--conversation" in calls[0]

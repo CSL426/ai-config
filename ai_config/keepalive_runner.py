@@ -291,7 +291,11 @@ def _run(
 _ERROR_HINT = re.compile(
     r"error|fail|limit|not supported|denied|invalid", re.IGNORECASE,
 )
-_USAGE_LIMIT = re.compile(r"usage limit|hit your limit|limit reached", re.IGNORECASE)
+# agy 額度用完時說的是 429 RESOURCE_EXHAUSTED「Individual quota reached」;沒認出來的話,
+# 接續對話失敗會被當成對話壞了而改開新的,每次排程都多留一個空對話(A4000,2026-11-01)
+_USAGE_LIMIT = re.compile(
+    r"usage limit|hit your limit|limit reached|quota reached|RESOURCE_EXHAUSTED", re.IGNORECASE,
+)
 
 
 def _outcome(result: "subprocess.CompletedProcess", *, json_reply: bool = False) -> str:
