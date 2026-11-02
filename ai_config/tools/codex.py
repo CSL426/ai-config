@@ -349,8 +349,8 @@ def _link_to_claude_md(staged: Path, destination: Path) -> bool:
     """Make ~/.codex/AGENTS.md a link to ~/.claude/CLAUDE.md, when nothing is lost.
 
     A copy goes stale between applies: an edit to CLAUDE.md reaches Codex
-    only at the next apply. A4000 had the link by hand since April; gb10 and
-    the Windows machines had copies. Linked only when CLAUDE.md already holds
+    only at the next apply. One machine had the link by hand since April; the
+    others had copies. Linked only when CLAUDE.md already holds
     what this apply writes: from then on, writes go through the link into
     CLAUDE.md, and this apply's backup was taken before the link existed.
     Any doubt (a linked ~/.claude, an unreadable file) keeps the copy.

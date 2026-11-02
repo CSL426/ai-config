@@ -409,7 +409,7 @@ def test_adopt_from_the_subdirectory_reaches_its_old_journal(journal_project, mo
 
 
 def test_remembers_own_logs_stay_under_the_ignored_names(journal_project):
-    """A4000: moved aside as logs.from-api they fell outside .gitignore, ready to be pushed."""
+    """Moved aside as logs.from-api they fell outside .gitignore, ready to be pushed."""
     import subprocess
 
     root = journal_project

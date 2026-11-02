@@ -91,7 +91,7 @@ def _synced_files(root: Path) -> "list[str] | None":
     Git decides, not a list of folders: memory/.gitignore keeps only the
     root journal on this machine, while project journals and handoffs sync.
     A hand-kept list once skipped every journal and missed the very note
-    that kept DESKTOP-CAO4ENQ's notebook local. Outside any repository
+    that kept a Windows machine's notebook local. Outside any repository
     nothing syncs; None means git could not say.
     """
     try:

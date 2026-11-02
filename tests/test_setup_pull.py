@@ -616,7 +616,7 @@ def test_pull_refuses_when_remote_touches_a_locally_modified_file(
 
 
 def test_pull_takes_the_remote_copy_of_a_change_made_identically_here(tmp_path: Path) -> None:
-    """DESKTOP-CAO4ENQ, 2026-10-21: pull said push first, push said pull first."""
+    """A Windows machine, 2026-10-21: pull said push first, push said pull first."""
     remote, data_repo = create_data_remote(tmp_path)
     _push_from_another_clone(tmp_path, remote, "memory/handoff/archive/old.md", "## Goal\n收尾\n")
     same = data_repo / "memory/handoff/archive/old.md"

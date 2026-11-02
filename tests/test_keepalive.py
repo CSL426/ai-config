@@ -348,7 +348,7 @@ def test_status_shows_the_window_and_its_drift(
 def test_without_a_schedule_there_is_no_drift_to_report(
     state: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """DESKTOP-CAO4ENQ: 「未啟用」 above a warning about a scheduled time that does not exist."""
+    """A Windows machine: 「未啟用」 above a warning about a scheduled time that does not exist."""
     from datetime import datetime, timedelta
 
     from ai_config.commands import keepalive as command
@@ -609,7 +609,7 @@ def _agy(monkeypatch: pytest.MonkeyPatch, replies: list) -> list:
 def test_agy_keeps_one_conversation_instead_of_a_new_one_each_call(
     state: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A4000 had 123 "reply with only the word: hi" conversations in agy's resume list."""
+    """One machine had 123 "reply with only the word: hi" conversations in agy's resume list."""
     calls = _agy(monkeypatch, [(0, "first"), (0, "first")])
 
     assert keepalive_runner.send("agy") == 0
@@ -751,3 +751,65 @@ def test_a_signal_killed_group_counts_as_a_failure(
 
     assert keepalive_runner.send("agy") != 0
     assert "no recognised model" not in keepalive_settings.log_path("agy").read_text(encoding="utf-8")
+
+
+def _quota_agy(monkeypatch: pytest.MonkeyPatch, state: Path) -> list:
+    """Fake agy whose Gemini 4 quota is gone, with a fixed month."""
+    import subprocess
+
+    from ai_config import locking
+
+    monkeypatch.setattr(locking, "BACKUP_BASE", state / "locks")
+    monkeypatch.setattr(keepalive_runner, "_this_month", lambda: "2026-11")
+    monkeypatch.setattr(keepalive_runner, "_agy_listing", lambda: "gemini-4-argon-low\tArgon\n")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 3, "", 'AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED '
+                                           '(code 429): Individual quota reached. Resets in 99h36m."}')
+
+    monkeypatch.setattr(keepalive_runner.subprocess, "run", run)
+    return calls
+
+
+def test_an_exhausted_agy_quota_does_not_open_a_new_conversation(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 429 on resume was read as a broken conversation; each run left an empty one behind."""
+    import json
+
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "keepalive-agy-conversation.json").write_text(
+        json.dumps({"month": "2026-11", "groups": {"gemini-4": "kept"}}), encoding="utf-8"
+    )
+    calls = _quota_agy(monkeypatch, state)
+
+    assert keepalive_runner.send("agy") == 0, "an exhausted quota means the window is running"
+    assert len(calls) == 1 and "--conversation" in calls[0]
+
+
+def test_a_group_without_quota_rests_until_it_resets(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh call refused for quota leaves no id; without a rest each run opens another."""
+    import json
+
+    calls = _quota_agy(monkeypatch, state)
+
+    keepalive_runner.send("agy")
+    keepalive_runner.send("agy")
+
+    assert len(calls) == 1, "the second run waits for the reset"
+    saved = json.loads((state / "keepalive-agy-conversation.json").read_text(encoding="utf-8"))
+    assert "gemini-4" in saved["resting"]
+    assert "quota exhausted until" in keepalive_settings.log_path("agy").read_text(encoding="utf-8")
+
+
+def test_a_resource_error_that_is_not_quota_is_a_failure() -> None:
+    import subprocess
+
+    done = subprocess.CompletedProcess([], 3, "", "RESOURCE_EXHAUSTED: out of memory on host")
+
+    assert keepalive_runner._quota_rest(done) is None
+    assert not keepalive_runner._USAGE_LIMIT.search(keepalive_runner._outcome(done))

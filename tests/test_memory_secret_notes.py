@@ -43,7 +43,7 @@ def test_the_local_journal_is_not_scanned(notebook: Path) -> None:
 
 
 def test_a_project_journal_is_scanned(notebook: Path) -> None:
-    """Project journals sync; skipping them hid DESKTOP-CAO4ENQ's held note from status."""
+    """Project journals sync; skipping them hid a Windows machine's held note from status."""
     journal = notebook / memory_paths.PROJECTS_NAME / "o--r" / memory_paths.JOURNAL_DIR_NAME
     journal.mkdir(parents=True)
     (journal / "recent.md").write_text("password=" + "hunter2\n", encoding="utf-8")
@@ -100,7 +100,7 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     "?token=&page=2",
     "- 取消用 ?token= 網址參數傳 token(app/auth.py)",
     # 中文句子裡提到 key、後面也接中文:2026-10-21 一份交接因此整份留在本機
-    "使用者確認 CAO4ENQ 那份 10/19 日誌的 token:真的就刪值並撤換",
+    "使用者確認另一台那份 10/19 日誌的 token:真的就刪值並撤換",
     "改用環境變數的password: 不再寫進設定檔",
     # 單字裡剛好有 sk-、ghp_ 這幾個字:記憶檔名 ask-peer-session-for-windows 曾被當成金鑰
     "見 memory:ask-peer-session-for-windows",
