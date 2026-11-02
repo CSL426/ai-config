@@ -197,7 +197,7 @@ def test_setup_writes_the_block_once_and_keeps_the_rest_of_the_file(tmp_path: Pa
 
 
 def test_setup_leaves_a_codex_function_of_your_own_alone(tmp_path: Path) -> None:
-    """A4000's codex() switches accounts; the block defines nothing that competes with it."""
+    """One machine's codex() switches accounts; the block defines nothing that competes with it."""
     rc = tmp_path / ".bashrc"
     mine = 'codex() {\n  CODEX_HOME="$HOME/.codex-set" command codex "$@"\n}\n'
     rc.write_text(mine, encoding="utf-8")
@@ -209,7 +209,7 @@ def test_setup_leaves_a_codex_function_of_your_own_alone(tmp_path: Path) -> None
 
 
 def test_the_old_codex_function_goes_with_the_old_block(tmp_path: Path) -> None:
-    """gb10 and Windows got acg's codex() that attached every TUI with --remote unix://."""
+    """The other machines got acg's codex() that attached every TUI with --remote unix://."""
     rc = tmp_path / ".bashrc"
     old = "# >>> acg msg >>>\nclaude-msg() { :; }\ncodex() {\n  command codex --remote unix:// \"$@\"\n}\n# <<< acg msg <<<\n"
     rc.write_text("export A=1\n\n" + old, encoding="utf-8")

@@ -102,7 +102,7 @@ ARCHIVED = "memory/handoff/archive/acg 1.0.45 收尾.md"
 
 
 def _both_archive_the_same_handoff(mine: Path, other: Path, *, crlf: bool = False) -> None:
-    """DESKTOP-CAO4ENQ, 2026-10-21: two machines archived one stale handoff each."""
+    """A Windows machine, 2026-10-21: two machines archived one stale handoff each."""
     body = "## Goal\n收尾\n"
     for repo in (other,):
         (repo / HANDOFF).parent.mkdir(parents=True, exist_ok=True)

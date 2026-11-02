@@ -4,7 +4,7 @@ import json
 import os
 import re
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import keepalive_settings
@@ -160,7 +160,7 @@ def _send_agy(args: list, tool: str) -> int:
     agy keeps every print-mode call as a conversation of the folder it ran
     in, and has no way to delete one. Three calls a day from the home
     folder left 123 "reply with only the word: hi" conversations, 46 MB, in
-    the list a person resumes from (A4000, 2026-10-22). Monthly, so the
+    the list a person resumes from (2026-10-22). Monthly, so the
     resumed conversation never grows long.
     """
     from .locking import exclusive_lock
@@ -179,10 +179,12 @@ def _send_agy_locked(args: list, tool: str) -> int:
         workdir.mkdir(parents=True, exist_ok=True)
     except OSError:
         workdir = None
-    month = datetime.now().astimezone().strftime("%Y-%m")
+    month = _this_month()
     record = _read_agy_conversation()
     known = record.get("groups") if record.get("month") == month else None
     conversations = dict(known) if isinstance(known, dict) else {}
+    resting = record.get("resting") if isinstance(record.get("resting"), dict) else {}
+    now = datetime.now().astimezone()
     listing = _agy_listing()
     picks = agy_models_per_group(listing)
     if not picks:
@@ -191,19 +193,57 @@ def _send_agy_locked(args: list, tool: str) -> int:
         picks = [("default", None)]
     worst = 0
     for group, model in picks:
+        until = _parse_time(resting.get(group))
+        if until and until > now:
+            # 額度用完的組在重置前打了也沒用,還會讓 agy 多留一個空對話
+            _append_log(f"{group}: quota exhausted until {until:%m-%d %H:%M}; skipped", tool)
+            continue
         # 一組失敗不該讓另一組跳過喚醒
-        code, started = _wake_agy_group(args, tool, model, conversations.get(group), workdir)
+        code, started, rests_until = _wake_agy_group(
+            args, tool, model, conversations.get(group), workdir
+        )
         # 被訊號終止時回傳碼是負的,也要算失敗
         worst = max(worst, abs(code))
         if started:
             conversations[group] = started
-            _write_agy_conversation({"month": month, "groups": conversations})
+        if rests_until:
+            resting[group] = rests_until.isoformat()
+        else:
+            resting.pop(group, None)
+        if started or rests_until or group in record.get("resting", {}):
+            _write_agy_conversation({"month": month, "groups": conversations, "resting": resting})
     return worst
+
+
+def _this_month() -> str:
+    return datetime.now().astimezone().strftime("%Y-%m")
+
+
+def _parse_time(value: object) -> "datetime | None":
+    try:
+        return datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        return None
+
+
+def _quota_rest(result: "subprocess.CompletedProcess | None") -> "datetime | None":
+    """When an exhausted quota resets, from agy's "Resets in 99h36m"; None if it is not one."""
+    if result is None or result.returncode == 0:
+        return None
+    text = f"{result.stderr or ''}\n{result.stdout or ''}"
+    if not _USAGE_LIMIT.search(text):
+        return None
+    found = _RESETS_IN.search(text)
+    hours = int(found.group(1) or 0) if found else 0
+    minutes = int(found.group(2) or 0) if found else 0
+    # 說不出何時重置就先停五小時,跟一個視窗一樣長
+    wait = timedelta(hours=hours, minutes=minutes) if (hours or minutes) else timedelta(hours=5)
+    return datetime.now().astimezone() + wait
 
 
 def _wake_agy_group(
     args: list, tool: str, model: "str | None", resumed: object, workdir: "Path | None",
-) -> "tuple[int, str | None]":
+) -> "tuple[int, str | None, datetime | None]":
     """One call for one quota group, in that group's conversation for the month."""
     label = f"{tool} {model}" if model else tool
     flags = [*(["--model", model] if model else []), "--output-format", "json"]
@@ -213,7 +253,7 @@ def _wake_agy_group(
             json_reply=True,
         )
         if code == 0 or result is None:
-            return code, None
+            return code, None, _quota_rest(result)
         # 對話被刪了或壞了:開一個新的,不讓這次喚醒落空。agy 的錯誤訊息分不出
         # 「找不到對話」和其他失敗,所以一律換新,最壞是多一個對話
         _append_log(f"could not resume conversation {resumed}; starting a new one", tool)
@@ -221,7 +261,7 @@ def _wake_agy_group(
         [args[0], *flags, *args[1:]], tool, label, None, workdir, json_reply=True
     )
     started = _agy_conversation_id(result)
-    return code, started if code == 0 else None
+    return code, started if code == 0 else None, _quota_rest(result)
 
 
 def _agy_conversation_path() -> Path:
@@ -292,10 +332,11 @@ _ERROR_HINT = re.compile(
     r"error|fail|limit|not supported|denied|invalid", re.IGNORECASE,
 )
 # agy 額度用完時說的是 429 RESOURCE_EXHAUSTED「Individual quota reached」;沒認出來的話,
-# 接續對話失敗會被當成對話壞了而改開新的,每次排程都多留一個空對話(A4000,2026-11-01)
+# 接續對話失敗會被當成對話壞了而改開新的,每次排程都多留一個空對話(2026-11-01)
 _USAGE_LIMIT = re.compile(
-    r"usage limit|hit your limit|limit reached|quota reached|RESOURCE_EXHAUSTED", re.IGNORECASE,
+    r"usage limit|hit your limit|limit reached|quota reached", re.IGNORECASE,
 )
+_RESETS_IN = re.compile(r"Resets in (?:(\d+)h)?(?:(\d+)m)?", re.IGNORECASE)
 
 
 def _outcome(result: "subprocess.CompletedProcess", *, json_reply: bool = False) -> str:

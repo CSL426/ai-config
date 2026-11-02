@@ -133,7 +133,7 @@ def retire_legacy_skills(legacy: Path, label: str) -> list[str]:
     """Remove the skills acg wrote to a tool's old folder once they are migrated.
 
     Migration copies them to the new folder, but the tool keeps reading both:
-    on DESKTOP-TLG88N2 (2026-10-21) Codex loaded eleven skills twice, the old
+    on a Windows machine (2026-10-21) Codex loaded eleven skills twice, the old
     copies still carrying July's descriptions. Only names in the old manifest
     go, since that is acg's own record of what it wrote; a hand-installed
     skill and Codex's .system stay. apply has backed the folder up by now.

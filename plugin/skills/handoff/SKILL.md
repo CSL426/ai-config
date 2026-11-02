@@ -32,7 +32,7 @@ acg memory handoff remind disable
 ## 什麼時候寫交接
 
 只有兩種情況:context 快滿或使用者要 `/clear`,或使用者明確要把整條線交給另一個 session
-接手。只是請別的 session 幫忙做一部分(例如「叫 gb10 那邊跑一下測試」)、或 context 還很多時,
+接手。只是請別的 session 幫忙做一部分(例如「叫另一台機器跑一下測試」)、或 context 還很多時,
 不要寫交接,用 SendMessage 或 `acg msg` 傳話就好;交接一寫,這條線就會出現在待接清單上,被當成整條移交。
 分不清是哪一種就先問使用者。
 

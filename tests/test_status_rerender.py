@@ -57,7 +57,7 @@ def _status_claude(
 def test_a_path_this_acg_would_rewrite_is_a_difference(
     machine: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:
-    """DESKTOP-CAO4ENQ: applied with 1.0.130, the other machine's path stayed in live."""
+    """A Windows machine: applied with 1.0.130, the other machine's path stayed in live."""
     legacy = _settings("~/ai-config/data/claude/mods")
 
     _status_claude(tmp_path, monkeypatch, legacy, legacy)
@@ -152,7 +152,7 @@ def test_a_broken_hook_definition_is_reported_not_swallowed(
 def test_hook_rows_in_another_order_are_no_difference(
     machine: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:
-    """gb10: apply and the handoff reminder appended their rows in a different order."""
+    """Apply and the handoff reminder appended their rows in a different order."""
     current = json.loads(_settings("~/.acg-data/claude/mods"))
     rows = [
         {"hooks": [{"type": "command", "command": "bash after-push.sh"}]},
@@ -176,7 +176,7 @@ def test_hook_rows_in_another_order_are_no_difference(
 def test_a_settings_difference_shows_values_not_key_order(
     machine: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:
-    """DESKTOP-CAO4ENQ: acg update reordered keys, and the real difference was cut off."""
+    """A Windows machine: acg update reordered keys, and the real difference was cut off."""
     repo = {
         "enabledPlugins": {"a@x": True, "b@x": True},
         **{f"key{index:02d}": index for index in range(30)},

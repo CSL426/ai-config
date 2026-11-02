@@ -69,7 +69,7 @@ CODEX_VENDOR_SKILL_DIRS = frozenset({".system"})
 # cache under version control, and — because Claude's managed directories are
 # exact mirrors — apply would delete the copy Claude Code is still using.
 # The first-party skills it replaces go to skills/.trash/<stamp>/, which is
-# its own bin, not a skill (seen on gb10, 2026-10-06).
+# its own bin, not a skill (seen 2026-10-06).
 CLAUDE_VENDOR_SKILL_DIRS = frozenset({"synced", ".trash"})
 
 # Antigravity 2.0 stores global skills here. AGY_HOME/skills points to this

@@ -259,7 +259,7 @@ def _record_review(monkeypatch: pytest.MonkeyPatch, repo: Path) -> "list[str]":
 def test_a_memory_push_leaves_out_a_note_with_a_token_and_sends_the_rest(
     data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """DESKTOP-CAO4ENQ: one journal line with a token kept the whole notebook local."""
+    """A Windows machine: one journal line with a token kept the whole notebook local."""
     root = tracked_memory(data_repo)
     (root / "MEMORY.md").write_text("# Notes\n\na new handoff pointer\n", encoding="utf-8")
     secret = _write_secret_note(data_repo, "## 10:00\n.env 缺 " + _token_line())
@@ -389,7 +389,7 @@ def test_a_control_character_in_a_name_cannot_forge_the_review() -> None:
 def test_a_held_note_does_not_block_a_tool_push(
     data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A4000, 2026-10-27: push codex said to push memory first, and memory push kept the note.
+    """2026-10-27: push codex said to push memory first, and memory push kept the note.
 
     The note is left out by memory push on purpose, so a push that does not
     select memory has nothing to wait for. Any other memory change still stops it.
@@ -457,7 +457,7 @@ def test_a_backslash_in_a_root_file_name_is_not_a_memory_path() -> None:
 def test_a_memory_push_without_a_terminal_says_to_add_force(
     data_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """TLG88N2 and CAO4ENQ, 2026-10-27: an agent saw only "Cancelled" and pushed nothing."""
+    """Two Windows machines, 2026-10-27: an agent saw only "Cancelled" and pushed nothing."""
     import builtins
     import sys
 

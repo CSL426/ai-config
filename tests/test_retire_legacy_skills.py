@@ -1,6 +1,6 @@
 """Skills acg wrote to a tool's old folder go once they are migrated.
 
-DESKTOP-TLG88N2, 2026-10-21: Codex read both ~/.codex/skills and
+A Windows machine, 2026-10-21: Codex read both ~/.codex/skills and
 ~/.agents/skills and loaded eleven skills twice; the old copies were July's.
 """
 

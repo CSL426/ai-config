@@ -121,7 +121,7 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
         held = _held_notes(outside) if MEMORY_SCOPE not in selected else set()
         if held:
             # memory push 本來就會把它們留在本機;拿它們擋工具的推送,兩邊就互相卡死:
-            # push codex 叫人先推記憶,記憶推送又把它們留下(A4000,2026-10-27)
+            # push codex 叫人先推記憶,記憶推送又把它們留下(2026-10-27)
             log_info(f"{len(held)} 則疑似含憑證的筆記留在本機,記憶推送也不會帶上;不擋這次推送")
             outside = [path for path in outside if path not in held]
         if outside and selected == [MEMORY_SCOPE]:
@@ -847,7 +847,7 @@ def _hold_back_notes(selected: list[str], paths: list[str], held: "set[str]") ->
     """A memory-only push leaves out notes that look like they carry a credential.
 
     One journal line quoting a token used to cancel the whole notebook, night
-    after night, on DESKTOP-CAO4ENQ: none of that machine's handoffs reached
+    after night, on one Windows machine: none of that machine's handoffs reached
     the others. Notes are independent of each other, so the rest can go; a
     tool's settings are not, and a push that names a tool still stops.
     """

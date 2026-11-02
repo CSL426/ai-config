@@ -925,7 +925,7 @@ def test_codex_desktop_tables_stay_on_the_machine_that_wrote_them(
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unix symlink")
 def test_apply_codex_links_agents_to_claude_md_when_they_match(tmp_path: Path) -> None:
-    """A copy goes stale between applies; A4000 had the link by hand, gb10 a copy."""
+    """A copy goes stale between applies; one machine had the link by hand, another a copy."""
     repo_dir, home_dir = make_repo(tmp_path)
     write(repo_dir / "claude/CLAUDE.md", "repo instructions\n")
     write(repo_dir / "codex/config.toml", 'model = "gpt-5"\n')

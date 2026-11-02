@@ -130,7 +130,7 @@ def journal_destination(destination: Path, entry: Path, origin: str, held: "Path
 
     remember's own logs/ and tmp/ go under the existing ones as from-<origin>.
     Renamed aside as logs.from-<origin> they fell outside the journal's
-    .gitignore, and a migration on A4000 left a month of plugin logs ready
+    .gitignore, and a migration on one machine left a month of plugin logs ready
     to be pushed with the notes.
     """
     if (
