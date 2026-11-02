@@ -125,9 +125,9 @@ def _handoff_list(cwd: "Path | None" = None) -> int:
         where = f"{cwd} 這個專案" if cwd is not None else "這個專案"
         log_info(f"{where}沒有待接手的工作線")
     for note in notes:
-        age = hand.age_in_days(note.created)
         # 一條線放了幾天,就是該不該接它的理由;當天開的不用說
-        waited = f"  ({age} 天前開的)" if age else ""
+        age = hand.age_text(note)
+        waited = f"  ({age})" if age else ""
         # 擱著沒動的線跟剛寫好的長得一樣,而裡面的進度可能早就被
         # 別處的工作蓋過去了。接手前該先讀一遍,不是照著做
         stale = "  ⚠ 可能已過期" if hand.is_stale(note) else ""
