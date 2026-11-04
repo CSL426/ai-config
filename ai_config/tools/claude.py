@@ -39,10 +39,12 @@ from ..safety import assert_managed_paths_safe
 # machine: internal hosts, private repository names, where secrets live.
 # statusLine is synced: the script it names travels with the repository and
 # the command is written with "~", which the status line runs through a shell.
-# advisorModel 跟 model 一樣是這台機器的選擇,每台各設各的
-_MACHINE_LOCAL_SETTINGS = frozenset(
-    {"permissions", "env", "model", "modelSettings", "effortLevel", "autoMode", "advisorModel"}
-)
+# advisorModel 跟 model 一樣是這台機器的選擇,每台各設各的;
+# switchModelsOnFlag 也是在介面上選的,只存在於這台時 apply 會把它洗掉
+_MACHINE_LOCAL_SETTINGS = frozenset({
+    "permissions", "env", "model", "modelSettings", "effortLevel", "autoMode", "advisorModel",
+    "switchModelsOnFlag",
+})
 _SETTINGS_LABEL = "Claude settings.json"
 
 

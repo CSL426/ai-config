@@ -212,8 +212,8 @@ Pull still downloads the entire repository, including shared memory.
 
 ## Gotchas
 
-- **`permissions`, `env`, `model`, `modelSettings`, `advisorModel`, `effortLevel`, and `autoMode` are
-  machine-local and never synced**
+- **`permissions`, `env`, `model`, `modelSettings`, `advisorModel`, `effortLevel`,
+  `switchModelsOnFlag`, and `autoMode` are machine-local and never synced**
   (plus `trustedWorkspaces` on agy, and the `ref` that pins the `acg`
   marketplace to the release each machine runs). Each machine keeps its own allowlist and
   environment, so a difference there is expected, not

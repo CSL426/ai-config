@@ -145,6 +145,16 @@ def _market(ref: "str | None" = None, repo: str = "CSL426/ai-config") -> dict:
     return {"extraKnownMarketplaces": {"acg": {"source": source}}}
 
 
+def test_the_model_switch_choice_stays_on_its_machine() -> None:
+    """Set in the UI and absent from the repository, apply used to wipe it."""
+    target = json.dumps({"theme": "light", "switchModelsOnFlag": False})
+
+    merged = json.loads(merge_claude_settings(json.dumps({"theme": "dark"}), target))
+
+    assert merged["switchModelsOnFlag"] is False
+    assert "switchModelsOnFlag" not in json.loads(filter_claude_settings(target))
+
+
 def test_the_acg_release_pin_stays_on_its_machine() -> None:
     # 每台把 /acg 釘在自己跑的版本;收進資料庫的話三台的夜間 push 互相覆蓋,
     # apply 之後下一次 update 又把 marketplace 拆掉重加
