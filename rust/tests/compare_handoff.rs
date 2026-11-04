@@ -14,6 +14,11 @@ fn resolve_executable_in_path(name: &str) -> Option<PathBuf> {
     None
 }
 
+fn git_directory() -> Option<PathBuf> {
+    let name = if cfg!(windows) { "git.exe" } else { "git" };
+    resolve_executable_in_path(name).and_then(|p| p.parent().map(|p| p.to_path_buf()))
+}
+
 fn python_executable() -> PathBuf {
     if let Ok(py) = std::env::var("PYTHON") {
         let p = PathBuf::from(py);
@@ -75,13 +80,14 @@ struct TestEnv {
 impl TestEnv {
     fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
-        let py_data = temp.path().join("py_data");
-        let py_home = temp.path().join("py_home");
-        let py_work = temp.path().join("py_work");
+        let canonical_temp = acg::paths::resolve_like_python(temp.path());
+        let py_data = canonical_temp.join("py_data");
+        let py_home = canonical_temp.join("py_home");
+        let py_work = canonical_temp.join("py_work");
 
-        let rs_data = temp.path().join("rs_data");
-        let rs_home = temp.path().join("rs_home");
-        let rs_work = temp.path().join("rs_work");
+        let rs_data = canonical_temp.join("rs_data");
+        let rs_home = canonical_temp.join("rs_home");
+        let rs_work = canonical_temp.join("rs_work");
 
         fs::create_dir_all(py_data.join("claude")).unwrap();
         fs::create_dir_all(&py_home).unwrap();
@@ -130,25 +136,40 @@ impl TestEnv {
         }
     }
 
-    fn run_both_raw(&self, args: &[&str], extra_envs: &[(&str, &str)]) -> (Output, Output) {
+    #[allow(dead_code)]
+    fn run_both_raw_with_data_repos(
+        &self,
+        args: &[&str],
+        py_data: &Path,
+        rs_data: &Path,
+        extra_envs: &[(&str, &str)],
+    ) -> (Output, Output) {
         let py_bin = python_executable();
         let rs_bin = PathBuf::from(env!("CARGO_BIN_EXE_acg"));
         let root = repo_root();
 
-        let clean_path = if cfg!(windows) {
-            let py_dir = py_bin.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-            format!("{py_dir};C:\\Windows\\System32;C:\\Windows")
+        let mut paths = Vec::new();
+        if let Some(py_dir) = py_bin.parent() {
+            paths.push(py_dir.to_path_buf());
+        }
+        if let Some(git_dir) = git_directory() {
+            paths.push(git_dir);
+        }
+        if cfg!(windows) {
+            paths.push(PathBuf::from(r"C:\Windows\System32"));
+            paths.push(PathBuf::from(r"C:\Windows"));
         } else {
-            let py_dir = py_bin.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-            format!("{py_dir}:/usr/bin:/bin")
-        };
+            paths.push(PathBuf::from("/usr/bin"));
+            paths.push(PathBuf::from("/bin"));
+        }
+        let clean_path = std::env::join_paths(paths).unwrap().to_string_lossy().to_string();
 
         let mut py_cmd = Command::new(&py_bin);
         py_cmd.args(["-m", "ai_config"]);
         py_cmd.args(args);
         py_cmd.current_dir(&self.py_work);
         py_cmd.env("PATH", &clean_path);
-        py_cmd.env("AI_CONFIG_REPO", &self.py_data);
+        py_cmd.env("AI_CONFIG_REPO", py_data);
         py_cmd.env("HOME", &self.py_home);
         py_cmd.env("USERPROFILE", &self.py_home);
         py_cmd.env("XDG_CONFIG_HOME", self.py_home.join(".config"));
@@ -177,7 +198,7 @@ impl TestEnv {
         rs_cmd.args(args);
         rs_cmd.current_dir(&self.rs_work);
         rs_cmd.env("PATH", &clean_path);
-        rs_cmd.env("AI_CONFIG_REPO", &self.rs_data);
+        rs_cmd.env("AI_CONFIG_REPO", rs_data);
         rs_cmd.env("HOME", &self.rs_home);
         rs_cmd.env("USERPROFILE", &self.rs_home);
         rs_cmd.env("XDG_CONFIG_HOME", self.rs_home.join(".config"));
@@ -204,6 +225,23 @@ impl TestEnv {
         (py_res, rs_res)
     }
 
+    fn run_both_raw(&self, args: &[&str], extra_envs: &[(&str, &str)]) -> (Output, Output) {
+        self.run_both_raw_with_data_repos(args, &self.py_data, &self.rs_data, extra_envs)
+    }
+
+    #[allow(dead_code)]
+    fn run_both_with_data_repos(
+        &self,
+        args: &[&str],
+        py_data: &Path,
+        rs_data: &Path,
+        extra_envs: &[(&str, &str)],
+    ) -> (Output, Output) {
+        let mut full = vec!["memory", "handoff"];
+        full.extend_from_slice(args);
+        self.run_both_raw_with_data_repos(&full, py_data, rs_data, extra_envs)
+    }
+
     fn run_both(&self, args: &[&str], extra_envs: &[(&str, &str)]) -> (Output, Output) {
         let mut full = vec!["memory", "handoff"];
         full.extend_from_slice(args);
@@ -211,10 +249,20 @@ impl TestEnv {
     }
 
     fn assert_matches(&self, py_out: &Output, rs_out: &Output) {
-        let py_stdout = String::from_utf8_lossy(&py_out.stdout);
-        let rs_stdout = String::from_utf8_lossy(&rs_out.stdout);
-        let py_stderr = String::from_utf8_lossy(&py_out.stderr);
-        let rs_stderr = String::from_utf8_lossy(&rs_out.stderr);
+        self.assert_matches_extra(py_out, rs_out, &[]);
+    }
+
+    #[allow(dead_code)]
+    fn assert_matches_extra(
+        &self,
+        py_out: &Output,
+        rs_out: &Output,
+        extra_data_dirs: &[&Path],
+    ) {
+        let py_stdout = String::from_utf8_lossy(&py_out.stdout).replace("\r\n", "\n");
+        let rs_stdout = String::from_utf8_lossy(&rs_out.stdout).replace("\r\n", "\n");
+        let py_stderr = String::from_utf8_lossy(&py_out.stderr).replace("\r\n", "\n");
+        let rs_stderr = String::from_utf8_lossy(&rs_out.stderr).replace("\r\n", "\n");
 
         assert_eq!(
             py_out.status.code(),
@@ -235,14 +283,14 @@ impl TestEnv {
         let rs_work_str = self.rs_work.to_string_lossy();
         let rs_home_str = self.rs_home.to_string_lossy();
 
-        let py_stdout_norm = py_stdout_norm
+        let mut py_stdout_norm = py_stdout_norm
             .replace(&*py_data_str, "<DATA_DIR>")
             .replace(&*rs_data_str, "<DATA_DIR>")
             .replace(&*py_work_str, "<WORK_DIR>")
             .replace(&*rs_work_str, "<WORK_DIR>")
             .replace(&*py_home_str, "<HOME_DIR>")
             .replace(&*rs_home_str, "<HOME_DIR>");
-        let rs_stdout_norm = rs_stdout_norm
+        let mut rs_stdout_norm = rs_stdout_norm
             .replace(&*py_data_str, "<DATA_DIR>")
             .replace(&*rs_data_str, "<DATA_DIR>")
             .replace(&*py_work_str, "<WORK_DIR>")
@@ -250,20 +298,28 @@ impl TestEnv {
             .replace(&*py_home_str, "<HOME_DIR>")
             .replace(&*rs_home_str, "<HOME_DIR>");
 
-        let py_stderr_norm = py_stderr_norm
+        let mut py_stderr_norm = py_stderr_norm
             .replace(&*py_data_str, "<DATA_DIR>")
             .replace(&*rs_data_str, "<DATA_DIR>")
             .replace(&*py_work_str, "<WORK_DIR>")
             .replace(&*rs_work_str, "<WORK_DIR>")
             .replace(&*py_home_str, "<HOME_DIR>")
             .replace(&*rs_home_str, "<HOME_DIR>");
-        let rs_stderr_norm = rs_stderr_norm
+        let mut rs_stderr_norm = rs_stderr_norm
             .replace(&*py_data_str, "<DATA_DIR>")
             .replace(&*rs_data_str, "<DATA_DIR>")
             .replace(&*py_work_str, "<WORK_DIR>")
             .replace(&*rs_work_str, "<WORK_DIR>")
             .replace(&*py_home_str, "<HOME_DIR>")
             .replace(&*rs_home_str, "<HOME_DIR>");
+
+        for extra in extra_data_dirs {
+            let s = extra.to_string_lossy();
+            py_stdout_norm = py_stdout_norm.replace(&*s, "<DATA_DIR>");
+            rs_stdout_norm = rs_stdout_norm.replace(&*s, "<DATA_DIR>");
+            py_stderr_norm = py_stderr_norm.replace(&*s, "<DATA_DIR>");
+            rs_stderr_norm = rs_stderr_norm.replace(&*s, "<DATA_DIR>");
+        }
 
         assert_eq!(py_stdout_norm, rs_stdout_norm, "Stdout mismatch!");
         assert_eq!(py_stderr_norm, rs_stderr_norm, "Stderr mismatch!");
@@ -1164,4 +1220,62 @@ fn test_compare_claim_own_thread_no_matching_thread() {
     let rs_err = String::from_utf8_lossy(&rs.stderr);
     assert!(py_err.contains("沒有 session「lonely-worker」留下的工作線,請指定要認領的工作線"));
     assert!(rs_err.contains("沒有 session「lonely-worker」留下的工作線,請指定要認領的工作線"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_compare_symlinked_data_dir() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    let py_symlink = env.py_data.parent().unwrap().join("py_data_symlink");
+    let rs_symlink = env.rs_data.parent().unwrap().join("rs_data_symlink");
+    std::os::unix::fs::symlink(&env.py_data, &py_symlink).unwrap();
+    std::os::unix::fs::symlink(&env.rs_data, &rs_symlink).unwrap();
+
+    // 1. Write through symlinked data repo
+    let (py_write, rs_write) = env.run_both_with_data_repos(
+        &["write", "符號連結線", "資料目錄經過symlink依然正常解析"],
+        &py_symlink,
+        &rs_symlink,
+        &[("CLAUDE_CODE_SESSION_ID", "author-sym")],
+    );
+    env.assert_matches_extra(&py_write, &rs_write, &[&py_symlink, &rs_symlink]);
+    assert_eq!(py_write.status.code(), Some(0));
+    assert_eq!(rs_write.status.code(), Some(0));
+
+    // 2. List through symlinked data repo
+    let (py_list, rs_list) = env.run_both_with_data_repos(
+        &["list"],
+        &py_symlink,
+        &rs_symlink,
+        &[],
+    );
+    env.assert_matches_extra(&py_list, &rs_list, &[&py_symlink, &rs_symlink]);
+    assert_eq!(py_list.status.code(), Some(0));
+    assert_eq!(rs_list.status.code(), Some(0));
+    let py_out = String::from_utf8_lossy(&py_list.stdout);
+    assert!(py_out.contains("符號連結線"));
+
+    // 3. Claim through symlinked data repo
+    let (py_claim, rs_claim) = env.run_both_with_data_repos(
+        &["claim", "符號連結線"],
+        &py_symlink,
+        &rs_symlink,
+        &[("CLAUDE_CODE_SESSION_ID", "taker-sym")],
+    );
+    env.assert_matches_extra(&py_claim, &rs_claim, &[&py_symlink, &rs_symlink]);
+    assert_eq!(py_claim.status.code(), Some(0));
+    assert_eq!(rs_claim.status.code(), Some(0));
+
+    // 4. Done through symlinked data repo
+    let (py_done, rs_done) = env.run_both_with_data_repos(
+        &["done", "符號連結線"],
+        &py_symlink,
+        &rs_symlink,
+        &[("CLAUDE_CODE_SESSION_ID", "taker-sym")],
+    );
+    env.assert_matches_extra(&py_done, &rs_done, &[&py_symlink, &rs_symlink]);
+    assert_eq!(py_done.status.code(), Some(0));
+    assert_eq!(rs_done.status.code(), Some(0));
 }

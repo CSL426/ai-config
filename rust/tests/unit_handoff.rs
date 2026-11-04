@@ -145,3 +145,60 @@ fn test_assert_plain_path() {
         assert!(assert_plain_path(&link_path, None).is_err());
     }
 }
+
+#[test]
+fn test_strip_verbatim_prefix() {
+    use acg::paths::strip_verbatim_prefix;
+    use std::path::Path;
+
+    assert_eq!(
+        strip_verbatim_prefix(Path::new(r"\\?\C:\Users\foo")),
+        Path::new(r"C:\Users\foo")
+    );
+    assert_eq!(
+        strip_verbatim_prefix(Path::new(r"\\?\UNC\server\share\foo")),
+        Path::new(r"\\server\share\foo")
+    );
+    assert_eq!(
+        strip_verbatim_prefix(Path::new("/tmp/normal/path")),
+        Path::new("/tmp/normal/path")
+    );
+}
+
+#[test]
+fn test_resolve_like_python() {
+    use acg::paths::resolve_like_python;
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Resolving an existing path
+    let existing = tmp.path().join("existing");
+    std::fs::create_dir_all(&existing).unwrap();
+    let resolved = resolve_like_python(&existing);
+    assert!(resolved.is_absolute());
+    assert!(resolved.exists());
+
+    // Resolving a non-existent child under an existing parent
+    let nonexistent = existing.join("a").join("b").join("c");
+    let resolved_nonexistent = resolve_like_python(&nonexistent);
+    assert!(resolved_nonexistent.is_absolute());
+    assert!(resolved_nonexistent.ends_with("a/b/c") || resolved_nonexistent.ends_with(r"a\b\c"));
+
+    // Resolving with dotdot in non-existent tail
+    let with_dotdot = existing.join("a").join("..").join("b");
+    let resolved_dotdot = resolve_like_python(&with_dotdot);
+    assert!(resolved_dotdot.ends_with("b"));
+    assert!(!resolved_dotdot.to_string_lossy().contains(".."));
+
+    #[cfg(unix)]
+    {
+        let symlink_path = tmp.path().join("symlink_to_existing");
+        std::os::unix::fs::symlink(&existing, &symlink_path).unwrap();
+
+        let resolved_sym = resolve_like_python(&symlink_path);
+        assert_eq!(resolved_sym, resolved);
+
+        let sub_sym = symlink_path.join("sub_file");
+        let resolved_sub = resolve_like_python(&sub_sym);
+        assert_eq!(resolved_sub, resolved.join("sub_file"));
+    }
+}

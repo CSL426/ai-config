@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn is_windows_mode() -> bool {
     std::env::var("AI_CONFIG_PLATFORM")
@@ -63,7 +63,86 @@ pub fn find_config_path() -> Option<PathBuf> {
     Some(home.join(".config").join("ai-config").join("config.json"))
 }
 
-pub fn data_dir() -> PathBuf {
+pub fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+fn normalize_path_components(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            c => out.push(c.as_os_str()),
+        }
+    }
+    out
+}
+
+pub fn resolve_like_python(path: &Path) -> PathBuf {
+    let path = if path.starts_with("~") || path == Path::new("~") {
+        if let Some(home) = home_dir() {
+            if path == Path::new("~") {
+                home
+            } else if let Ok(stripped) = path.strip_prefix("~") {
+                home.join(stripped)
+            } else {
+                path.to_path_buf()
+            }
+        } else {
+            path.to_path_buf()
+        }
+    } else {
+        path.to_path_buf()
+    };
+
+    let path = if path.is_relative() {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(&path))
+            .unwrap_or(path)
+    } else {
+        path
+    };
+
+    let mut existing = path.clone();
+    let mut tail = Vec::new();
+    loop {
+        if let Ok(canon) = std::fs::canonicalize(&existing) {
+            let mut resolved = strip_verbatim_prefix(&canon);
+            for part in tail.into_iter().rev() {
+                resolved.push(part);
+            }
+            return normalize_path_components(&resolved);
+        }
+        if let Some(file_name) = existing.file_name() {
+            tail.push(file_name.to_os_string());
+            if let Some(parent) = existing.parent() {
+                if parent == existing || parent.as_os_str().is_empty() {
+                    break;
+                }
+                existing = parent.to_path_buf();
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    normalize_path_components(&strip_verbatim_prefix(&path))
+}
+
+pub fn raw_data_dir() -> PathBuf {
     if let Ok(val) = std::env::var("AI_CONFIG_REPO") {
         let trimmed = val.trim();
         if !trimmed.is_empty() {
@@ -86,6 +165,10 @@ pub fn data_dir() -> PathBuf {
     }
     let home = home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".acg").join("data")
+}
+
+pub fn data_dir() -> PathBuf {
+    resolve_like_python(&raw_data_dir())
 }
 
 pub fn memory_dir() -> PathBuf {
