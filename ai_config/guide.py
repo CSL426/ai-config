@@ -539,8 +539,8 @@ returned context for its next step, since Antigravity cannot take context
 from PostToolUse. Antigravity sends no tool output, so a hook that needs to
 know what a command did should fall back on `cwd`. Only `Bash` matchers and
 PostToolUse, SessionStart and UserPromptSubmit reach Antigravity; Codex has no
-`Stop`. Antigravity runs UserPromptSubmit as PreInvocation, before every model
-step, so one message can run it several times and the hook must tolerate that.
+`Stop`. Antigravity has no UserPromptSubmit, so it arrives through PreInvocation:
+the hook runs once per message and its answer is injected before every step.
 `hooks list` says which tool misses which hook.
 
 On Windows, `bash` on PATH can be WSL's launcher, which gets Windows paths

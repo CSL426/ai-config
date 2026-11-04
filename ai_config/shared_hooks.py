@@ -38,8 +38,8 @@ CODEX_EVENTS = frozenset({
 })
 # Antigravity 擋工具的回應格式沒有文件,PreToolUse 投過去會擋不住,所以不接
 AGY_EVENTS = frozenset({"PostToolUse", "SessionStart", "UserPromptSubmit"})
-# Antigravity 沒有 UserPromptSubmit,最接近的是 PreInvocation:
-# 它在每個模型步驟前都會跑,所以一則訊息用了工具就會跑不只一次
+# Antigravity 沒有 UserPromptSubmit,最接近的是 PreInvocation,但它在每個模型步驟前都會跑。
+# 注入的內容只活一步,所以每步都要給;hook 本身一則訊息只跑一次(見 _prompt_reply)
 AGY_EVENT_NAMES = {"UserPromptSubmit": "PreInvocation"}
 AGY_TOOL_EVENTS = frozenset({"PostToolUse"})
 # Claude Code 的工具名 → Antigravity 的;只轉接 shell,其他工具的 payload 沒有對應
@@ -741,21 +741,55 @@ def run_agy_hook(args: list[str]) -> int:
     return 0
 
 
+def _prompt_memo(name: str) -> Path:
+    return _snapshot_dir() / "prompt-memo" / f"{name}.json"
+
+
+def _prompt_reply(name: str, snapshot: dict, payload: dict) -> dict:
+    """Run a prompt hook once per message and inject its answer at every step.
+
+    A hook may have side effects, and one that draws something at random
+    would otherwise change its answer mid-reply. Only the latest message is
+    kept, so a machine's many conversations leave no pile of files; two at
+    once just run the hook again.
+    """
+    converted = claude_payload(payload, snapshot["event"])
+    key = {"conversation": converted["session_id"], "prompt": converted["prompt"],
+           "digest": _digest(snapshot)}
+    memo = _prompt_memo(name)
+    known = _read_json(memo) if memo.is_file() else {}
+    # 第一步一定重跑:同一句話再送一次是另一則訊息
+    if payload.get("invocationNum") and {k: known.get(k) for k in key} == key:
+        text = str(known.get("text", ""))
+    else:
+        done = _run_snapshot(
+            name, snapshot, json.dumps(converted, ensure_ascii=False), converted["cwd"],
+        )
+        if done is None:
+            return {}
+        text = _additional_context(done.stdout)
+        if done.stdout.strip() and not text:
+            _log(name, "prompt hook printed no additionalContext")
+        memo.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(memo, {**key, "text": text})
+    # 這個事件本身就能注入。留給 acg-inject 的話,兩者誰先跑不一定,
+    # 而回覆前的最後一步一過,留著的內容就送不到這一則了
+    return {"injectSteps": [{"ephemeralMessage": text}]} if text else {}
+
+
 def _relay(args: list[str], payload: dict) -> dict:
     loaded = _load_snapshot(args)
     if loaded is None:
         return {}
     name, snapshot = loaded
+    if snapshot["event"] in AGY_EVENT_NAMES:
+        return _prompt_reply(name, snapshot, payload)
     converted = claude_payload(payload, snapshot["event"])
     # 跑的是 apply 當時定案的指令,跟 Claude Code、Codex 拿到的那份一樣
     done = _run_snapshot(name, snapshot, json.dumps(converted, ensure_ascii=False), converted["cwd"])
     if done is None:
         return {}
     text = _additional_context(done.stdout)
-    if snapshot["event"] in AGY_EVENT_NAMES:
-        # 這個事件本身就能注入。留給 acg-inject 的話,兩者誰先跑不一定,
-        # 而回覆前的最後一步一過,留著的內容就送不到這一則了
-        return {"injectSteps": [{"ephemeralMessage": text}]} if text else {}
     if text and converted["session_id"]:
         path = _context_file(converted["session_id"])
         path.parent.mkdir(parents=True, exist_ok=True)
