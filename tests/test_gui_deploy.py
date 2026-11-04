@@ -155,3 +155,13 @@ def test_skill_sync_refuses_a_change_after_preview(api: GuiApi, project: Path) -
 
     assert api.confirm_skill_sync(shown["token"])["code"] != 0
     assert not (project / ".claude/skills").exists()
+
+
+def test_skill_sync_refuses_changed_content_after_preview(api: GuiApi, project: Path) -> None:
+    """Same action and reason, different bytes: the person did not see this version."""
+    _write(project / ".agents/skills/review/SKILL.md", "v1\n")
+    shown = api.preview_skill_sync(_choose(api, project))
+    _write(project / ".agents/skills/review/SKILL.md", "v2\n")
+
+    assert api.confirm_skill_sync(shown["token"])["code"] != 0
+    assert not (project / ".claude/skills/review").exists()

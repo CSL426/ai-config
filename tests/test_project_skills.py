@@ -432,3 +432,122 @@ def test_names_windows_cannot_hold_are_refused(tmp_path: Path, name: str) -> Non
     _write(tmp_path / RECORD, json.dumps({"skills": {name: "abc"}}))
 
     assert _sync(tmp_path) == 1
+
+
+def test_credential_names_are_caught_in_any_case(tmp_path: Path) -> None:
+    """On Windows AUTH.JSON and auth.json are the same file."""
+    source = _source(tmp_path)
+    _write(source / "AUTH.JSON", "secret\n")
+    _write(source / "nested/.GIT/config", "secret\n")
+
+    assert _sync(tmp_path) == 0
+
+    assert not (_copy(tmp_path) / "AUTH.JSON").exists()
+    assert not (_copy(tmp_path) / "nested").exists()
+
+
+def test_a_fingerprint_tells_different_layouts_apart() -> None:
+    assert project_skills.fingerprint({"a": b"b\0c"}) != project_skills.fingerprint(
+        {"a": b"b", "c": b""},
+    )
+
+
+def test_a_file_appearing_after_planning_is_not_displaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _source(tmp_path)
+    planned = project_skills.plan(tmp_path)
+
+    def racing(project: Path) -> list:
+        _write(_copy(tmp_path), "mine\n")
+        return planned
+
+    monkeypatch.setattr(project_skills, "plan", racing)
+
+    with pytest.raises(RuntimeError, match="changed during sync"):
+        project_skills.sync(tmp_path)
+
+    assert _copy(tmp_path).read_text(encoding="utf-8") == "mine\n"
+
+
+def test_a_failed_swap_keeps_the_old_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _source(tmp_path)
+    _sync(tmp_path)
+    _source(tmp_path, body="v2\n")
+    real = os.replace
+    calls = []
+
+    def failing(src: object, dst: object) -> None:
+        calls.append(dst)
+        # 第一次把舊副本搬開,第二次換上新的時失敗,第三次還原也失敗
+        if len(calls) >= 2:
+            raise OSError("locked")
+        real(src, dst)
+
+    monkeypatch.setattr(project_skills.os, "replace", failing)
+
+    assert _sync(tmp_path) == 1
+
+    monkeypatch.setattr(project_skills.os, "replace", real)
+    kept = list((tmp_path / ".claude/skills").glob(".acg-retired-*/SKILL.md"))
+    assert [path.read_text(encoding="utf-8") for path in kept] == ["v1\n"]
+
+
+def test_a_failed_swap_restores_the_old_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _source(tmp_path)
+    _sync(tmp_path)
+    _source(tmp_path, body="v2\n")
+    real = os.replace
+    calls = []
+
+    def failing(src: object, dst: object) -> None:
+        calls.append(dst)
+        if len(calls) == 2:
+            raise OSError("locked")
+        real(src, dst)
+
+    monkeypatch.setattr(project_skills.os, "replace", failing)
+
+    assert _sync(tmp_path) == 1
+
+    assert (_copy(tmp_path) / "SKILL.md").read_text(encoding="utf-8") == "v1\n"
+
+
+def test_a_case_only_rename_does_not_delete_the_copy(tmp_path: Path) -> None:
+    """On a case-insensitive disk the old and new names are one directory."""
+    _source(tmp_path, "Review")
+    _write(tmp_path / RECORD, json.dumps({"skills": {"review": "abc"}}))
+
+    actions = _actions(tmp_path)
+
+    assert actions["review"] == "forget"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_read_only_copies_can_still_be_removed(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    _sync(tmp_path)
+    copied = _copy(tmp_path) / "SKILL.md"
+    copied.chmod(0o444)
+    _copy(tmp_path).chmod(0o555)
+    (source / "SKILL.md").unlink()
+    source.rmdir()
+    _write(tmp_path / ".agents/skills/other/SKILL.md", "o\n")
+
+    assert _sync(tmp_path) == 0
+
+    assert not _copy(tmp_path).exists()
+
+
+def test_a_symlink_loop_is_reported_not_raised(tmp_path: Path) -> None:
+    loop = tmp_path / "loop"
+    try:
+        loop.symlink_to(loop)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+
+    assert _sync(loop) == 1

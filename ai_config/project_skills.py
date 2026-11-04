@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +26,8 @@ _RESERVED_NAMES = frozenset(
     {"CON", "PRN", "AUX", "NUL"}
     | {f"{port}{number}" for port in ("COM", "LPT") for number in range(1, 10)}
 )
-_NEVER_COPIED = EXCLUDED_FILES | {".git"}
+# Windows 的檔名不分大小寫,AUTH.JSON 跟 auth.json 是同一種東西
+_NEVER_COPIED = frozenset(name.casefold() for name in EXCLUDED_FILES | {".git"})
 
 CREATE = "create"
 UPDATE = "update"
@@ -123,7 +125,7 @@ def _files(root: Path, *, for_copy: bool) -> dict[str, bytes]:
             continue
         if not path.is_file():
             raise RuntimeError(f"Unexpected file type: {path}")
-        if for_copy and _NEVER_COPIED.intersection(relative.parts):
+        if for_copy and _NEVER_COPIED.intersection(p.casefold() for p in relative.parts):
             continue
         found[relative.as_posix()] = path.read_bytes()
     return found
@@ -133,8 +135,10 @@ def fingerprint(files: dict[str, bytes]) -> str:
     # autocrlf 的 Windows 取出同一份提交只有換行不同,那不算有人改過
     digest = hashlib.sha256()
     for name in sorted(files):
-        digest.update(name.encode("utf-8") + b"\0")
-        digest.update(files[name].replace(b"\r\n", b"\n") + b"\0")
+        encoded = name.encode("utf-8")
+        content = files[name].replace(b"\r\n", b"\n")
+        # 帶長度:內容裡的 NUL 不能讓兩種不同的檔案配置算出同一個指紋
+        digest.update(b"%d:%d:" % (len(encoded), len(content)) + encoded + content)
     return digest.hexdigest()
 
 
@@ -226,15 +230,34 @@ def plan(project: Path) -> list[Step]:
     for name in sorted(incomplete & record.keys()):
         # 名稱還在就不是刪掉了;先讓人看到
         steps.append(Step(name, CONFLICT, "來源還在但不是可同步的技能,不動副本"))
+    # 不分大小寫的檔案系統上,只改大小寫的舊名字跟新名字是同一個目錄,刪舊的就把新的刪了
+    current = {name.casefold() for name in skills}
     for name in sorted(record.keys() - skills.keys() - incomplete):
-        steps.append(_plan_orphan(name, target / name, record[name]))
+        if name.casefold() in current:
+            steps.append(Step(name, FORGET, _REASONS[FORGET]))
+        else:
+            steps.append(_plan_orphan(name, target / name, record[name]))
     return steps
 
 
 def _unchanged(dst: Path, expected: "str | None") -> None:
-    current = fingerprint(_files(dst, for_copy=False)) if _plain_dir(dst) else None
-    if (current if dst.exists() or is_reparse_point(dst) else None) != expected:
+    absent = not dst.exists() and not is_reparse_point(dst)
+    same = (absent if expected is None
+            else _plain_dir(dst) and fingerprint(_files(dst, for_copy=False)) == expected)
+    if not same:
         raise RuntimeError(f"Copy changed during sync: {dst.name}")
+
+
+def _remove_tree(path: Path) -> None:
+    """Delete a tree, read-only files included: Windows refuses those otherwise."""
+    def clear_and_retry(function, target, _error):
+        Path(target).parent.chmod(0o755)
+        Path(target).chmod(0o755)
+        function(target)
+
+    # onerror 從 3.12 起不建議使用,但 3.11 還沒有 onexc
+    hook = "onexc" if sys.version_info >= (3, 12) else "onerror"
+    shutil.rmtree(path, **{hook: clear_and_retry})
 
 
 def _install(src: Path, target: Path, name: str, expected: "str | None") -> str:
@@ -243,12 +266,15 @@ def _install(src: Path, target: Path, name: str, expected: "str | None") -> str:
     staging = Path(tempfile.mkdtemp(prefix=f".acg-sync-{name}-", dir=target))
     retired = target / f".acg-retired-{staging.name}"
     dst = target / name
+    swapped = False
     try:
         files = _files(src, for_copy=True)
-        for relative in files:
+        for relative, content in files.items():
             copied = staging / relative
             copied.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src / relative, copied)
+            # 寫掃描時讀到的內容,不重新開來源:掃描之後才被換成 symlink 的不能跟過去
+            copied.write_bytes(content)
+            shutil.copymode(src / relative, copied, follow_symlinks=False)
         # mkdtemp 的目錄只有擁有者能讀,直接換上去別人就讀不到了
         shutil.copystat(src, staging)
         # 放在換上去的前一刻:規劃之後才被改或才出現的副本都不能帶走
@@ -262,9 +288,12 @@ def _install(src: Path, target: Path, name: str, expected: "str | None") -> str:
             if existed:
                 os.replace(retired, dst)
             raise
+        swapped = True
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-        shutil.rmtree(retired, ignore_errors=True)
+    # 換上去之後才清舊的:還原也失敗時,這是舊副本僅存的一份
+    if swapped and retired.exists():
+        _remove_tree(retired)
     return fingerprint(files)
 
 
@@ -272,6 +301,7 @@ def _carry_out(project: Path, step: Step, record: dict[str, str]) -> None:
     src = project / SOURCE / step.name
     target = project / TARGET
     dst = target / step.name
+    _refuse_links(project)
     if step.action in (CREATE, UPDATE):
         expected = record[step.name] if step.action == UPDATE else None
         record[step.name] = _install(src, target, step.name, expected)
@@ -279,7 +309,7 @@ def _carry_out(project: Path, step: Step, record: dict[str, str]) -> None:
         record[step.name] = fingerprint(_files(dst, for_copy=False))
     elif step.action == REMOVE:
         _unchanged(dst, record[step.name])
-        shutil.rmtree(dst)
+        _remove_tree(dst)
         del record[step.name]
     elif step.action == FORGET:
         del record[step.name]
@@ -304,14 +334,18 @@ def preview(project: Path) -> list[dict]:
     """The desktop app's change list, in the shape its preview panel takes."""
     operations = {CREATE: "create", UPDATE: "modify", REMOVE: "delete",
                   ADOPT: "modify", FORGET: "modify"}
-    return [
-        {"category": "deploy", "tool": "Claude",
-         "operation": operations.get(step.action, "skip"),
-         "source": str(project / SOURCE / step.name),
-         "destination": str(project / TARGET / step.name),
-         "physical_target": None, "shared": False, "reason": step.reason}
-        for step in plan(project)
-    ]
+    changes = []
+    for step in plan(project):
+        src = project / SOURCE / step.name
+        changes.append({
+            "category": "deploy", "tool": "Claude",
+            "operation": operations.get(step.action, "skip"),
+            "source": str(src), "destination": str(project / TARGET / step.name),
+            "physical_target": None, "shared": False, "reason": step.reason,
+            # 預覽後才改的內容,動作和理由都一樣,沒有這個就看不出來
+            "content": fingerprint(_files(src, for_copy=True)) if _plain_dir(src) else "",
+        })
+    return changes
 
 
 def execute(project: Path) -> int:
@@ -340,11 +374,11 @@ def run_skill_sync(args: list[str], usage: str) -> int:
     if len(args) - len(rest) > 1 or len(rest) > 1 or (rest and rest[0].startswith("-")):
         log_error(usage)
         return 1
-    project = Path(rest[0] if rest else ".").resolve()
-    if not project.is_dir():
-        log_error(f"Project directory not found: {project}")
-        return 1
     try:
+        project = Path(rest[0] if rest else ".").resolve()
+        if not project.is_dir():
+            log_error(f"Project directory not found: {project}")
+            return 1
         if not check:
             return 1 if _report(sync(project), project) else 0
         steps = plan(project)
