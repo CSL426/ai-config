@@ -246,7 +246,7 @@ Things to leave alone:
   them back on each machine. Your own hooks are synced; write their paths
   with `~/`, not `/home/<you>/`.
 - **Settings that belong to one machine are never synced:** Claude's
-  `permissions`, `env`, `model`, `modelSettings`, `advisorModel`, `effortLevel`, `autoMode`; Codex's
+  `permissions`, `env`, `model`, `modelSettings`, `advisorModel`, `effortLevel`, `switchModelsOnFlag`, `autoMode`; Codex's
   `[projects.*]`, `[windows]`, Codex Desktop's `[desktop]` and `[mcp_servers.node_repl]`,
   `notify`, `model`; Antigravity's `trustedWorkspaces`. A
   difference there is expected, not drift.
