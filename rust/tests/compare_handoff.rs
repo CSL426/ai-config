@@ -136,18 +136,8 @@ impl TestEnv {
         }
     }
 
-    #[allow(dead_code)]
-    fn run_both_raw_with_data_repos(
-        &self,
-        args: &[&str],
-        py_data: &Path,
-        rs_data: &Path,
-        extra_envs: &[(&str, &str)],
-    ) -> (Output, Output) {
+    fn clean_path(&self) -> String {
         let py_bin = python_executable();
-        let rs_bin = PathBuf::from(env!("CARGO_BIN_EXE_acg"));
-        let root = repo_root();
-
         let mut paths = Vec::new();
         if let Some(py_dir) = py_bin.parent() {
             paths.push(py_dir.to_path_buf());
@@ -162,7 +152,22 @@ impl TestEnv {
             paths.push(PathBuf::from("/usr/bin"));
             paths.push(PathBuf::from("/bin"));
         }
-        let clean_path = std::env::join_paths(paths).unwrap().to_string_lossy().to_string();
+        std::env::join_paths(paths).unwrap().to_string_lossy().to_string()
+    }
+
+    #[allow(dead_code)]
+    fn run_both_raw_with_data_repos(
+        &self,
+        args: &[&str],
+        py_data: &Path,
+        rs_data: &Path,
+        extra_envs: &[(&str, &str)],
+    ) -> (Output, Output) {
+        let py_bin = python_executable();
+        let rs_bin = PathBuf::from(env!("CARGO_BIN_EXE_acg"));
+        let root = repo_root();
+
+        let clean_path = self.clean_path();
 
         let mut py_cmd = Command::new(&py_bin);
         py_cmd.args(["-m", "ai_config"]);
@@ -863,13 +868,7 @@ fn test_compare_list_other_project_path() {
     let rs_bin = PathBuf::from(env!("CARGO_BIN_EXE_acg"));
     let root = repo_root();
 
-    let clean_path = if cfg!(windows) {
-        let py_dir = py_bin.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-        format!("{py_dir};C:\\Windows\\System32;C:\\Windows")
-    } else {
-        let py_dir = py_bin.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-        format!("{py_dir}:/usr/bin:/bin")
-    };
+    let clean_path = env.clean_path();
 
     let mut py_cmd = Command::new(&py_bin);
     py_cmd.args(["-m", "ai_config", "memory", "handoff", "list", py_path_arg]);
@@ -894,12 +893,11 @@ fn test_compare_list_other_project_path() {
     rs_cmd.env("NO_COLOR", "1");
     let rs_res = rs_cmd.output().expect("Failed Rust");
 
-    let py_out = String::from_utf8_lossy(&py_res.stdout);
-    let rs_out = String::from_utf8_lossy(&rs_res.stdout);
-    assert_eq!(py_res.status.code(), rs_res.status.code());
+    env.assert_matches(&py_res, &rs_res);
+    let py_out = String::from_utf8_lossy(&py_res.stdout).replace("\r\n", "\n");
+    let rs_out = String::from_utf8_lossy(&rs_res.stdout).replace("\r\n", "\n");
     assert!(py_out.contains("別專案線") && !py_out.contains("本專案線"));
     assert!(rs_out.contains("別專案線") && !rs_out.contains("本專案線"));
-    assert_eq!(py_out, rs_out);
 }
 
 #[test]

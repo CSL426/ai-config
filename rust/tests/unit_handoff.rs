@@ -131,16 +131,17 @@ fn test_summary_extraction() {
 #[test]
 fn test_assert_plain_path() {
     let tmp = tempfile::tempdir().unwrap();
-    let file_path = tmp.path().join("regular.txt");
+    let canonical_tmp = acg::paths::resolve_like_python(tmp.path());
+    let file_path = canonical_tmp.join("regular.txt");
     std::fs::write(&file_path, "hello").unwrap();
 
     assert!(assert_plain_path(&file_path, Some(false)).is_ok());
     assert!(assert_plain_path(&file_path, Some(true)).is_err());
-    assert!(assert_plain_path(tmp.path(), Some(true)).is_ok());
+    assert!(assert_plain_path(&canonical_tmp, Some(true)).is_ok());
 
     #[cfg(unix)]
     {
-        let link_path = tmp.path().join("symlink.txt");
+        let link_path = canonical_tmp.join("symlink.txt");
         std::os::unix::fs::symlink(&file_path, &link_path).unwrap();
         assert!(assert_plain_path(&link_path, None).is_err());
     }
