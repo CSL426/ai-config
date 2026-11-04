@@ -113,3 +113,23 @@ for (const width of [320, 640]) {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 }
+
+test("專案技能先預覽再同步,確認只呼叫同步", async ({ page }) => {
+  await boot(page);
+  await page.locator("#project-open").click();
+  await expect(page.locator("#skill-sync-preview")).toBeDisabled();
+  await queue(page, "select_project", chosen);
+  await queue(page, "deploy_info", info(nothingPlaced));
+  await page.locator("#project-select").click();
+  await expect(page.locator("#project-root")).toHaveText("/tmp/project");
+
+  await page.locator("#skill-sync-preview").click();
+  await expect(page.locator("#confirm-text")).toContainText(".agents/skills");
+  await expect(page.locator("#confirm-yes")).toContainText("1 項變更");
+  expect(await calls(page, "confirm_skill_sync")).toHaveLength(0);
+
+  await queue(page, "deploy_info", info(nothingPlaced));
+  await page.locator("#confirm-yes").click();
+  expect((await calls(page, "confirm_skill_sync"))[0].args).toEqual(["skill-sync-first"]);
+  expect(await calls(page, "confirm_deploy")).toHaveLength(0);
+});

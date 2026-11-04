@@ -147,7 +147,7 @@ export interface ChangePreview extends RunResult {
   error: ErrorCode | null;
   token: string;
   needs_confirmation: boolean;
-  scope: { tool?: ToolScope; category?: ApplyCategory; action?: MemoryAction | "deploy" | "undeploy"; project_key?: string | null };
+  scope: { tool?: ToolScope; category?: ApplyCategory; action?: MemoryAction | "deploy" | "skill-sync" | "undeploy"; project_key?: string | null };
   changes: PreviewChange[];
   warnings: string[];
 }
@@ -255,6 +255,8 @@ interface AcgApi {
   confirm_deploy(token: string): Promise<OperationResult>;
   preview_undeploy(projectToken: string): Promise<ChangePreview>;
   confirm_undeploy(token: string): Promise<OperationResult>;
+  preview_skill_sync(projectToken: string): Promise<ChangePreview>;
+  confirm_skill_sync(token: string): Promise<OperationResult>;
   preview_push(scope?: PushScope): Promise<PushPreview>;
   confirm_push(scope: PushScope, token: string): Promise<OperationResult>;
   list_skills(): Promise<SkillList>;

@@ -175,6 +175,14 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
             return 1
         print(render_completion(args[1]), end="")
         return 0
+    # 來源是專案本身,不讀資料庫,所以 setup 之前也能跑
+    if cmd == "skill" and args[1:2] == ["sync"]:
+        from .project_skills import run_skill_sync
+
+        return run_skill_sync(
+            args[2:], f"Usage: {ENTRYPOINT} skill sync [project-dir] [--check]",
+        )
+
     if cmd == "skill" and args[1:] in ([], ["guide"]):
         from .guide import render_guide
 
