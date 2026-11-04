@@ -253,12 +253,13 @@ confirmYes.addEventListener("click", async () => {
     : pending.kind === "apply" ? bridge.confirm_apply(pending.token)
     : pending.kind === "deploy" ? bridge.confirm_deploy(pending.token)
     : pending.kind === "undeploy" ? bridge.confirm_undeploy(pending.token)
+    : pending.kind === "skill-sync" ? bridge.confirm_skill_sync(pending.token)
     : bridge.confirm_memory(pending.token));
   if (result && "error" in result && result.error === "BUSY") {
     armPreview(pending, "另一項操作執行中，此預覽仍有效，請稍後確認或取消。");
     return;
   }
-  if (pending.kind === "deploy" || pending.kind === "undeploy") {
+  if (pending.kind === "deploy" || pending.kind === "undeploy" || pending.kind === "skill-sync") {
     // 只動到那個專案;全域狀態與記憶頁都沒有變
     await refreshDeploy();
     return;

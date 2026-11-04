@@ -33,6 +33,7 @@ onSync(({ managementBlocked }) => {
     busy || !state.projectToken || state.deploySelected.size === 0;
   $<HTMLButtonElement>("#deploy-clear").disabled = busy || state.deploySelected.size === 0;
   const placed = state.deployInfo?.deployed;
+  $<HTMLButtonElement>("#skill-sync-preview").disabled = busy || !state.projectToken;
   $<HTMLButtonElement>("#deploy-remove").disabled = busy || !state.projectToken
     || !placed || (placed.files === 0 && placed.plugins.length === 0 && !placed.memory);
   $("#deploy-selection").textContent = `已選 ${state.deploySelected.size} 項`;
@@ -125,29 +126,36 @@ export async function refreshDeploy(): Promise<void> {
   syncControls();
 }
 
-async function preview(kind: "deploy" | "undeploy"): Promise<void> {
+const PREVIEWS = {
+  deploy: { label: "部署到專案", idle: "都已在專案裡，不需要變更",
+    note: "只寫進這個專案，不動這台電腦的全域設定。標示略過的是專案裡已有不同內容的檔案，不會被覆蓋。" },
+  undeploy: { label: "收回專案裡的部署", idle: "沒有要收回的東西",
+    note: "只刪除部署後沒被改過的檔案；改過的會保留並列出。" },
+  "skill-sync": { label: "同步專案技能", idle: "沒有可同步的變更；標示略過的是已一致或有衝突的技能",
+    note: "把 .agents/skills 複製到 .claude/skills。手寫的同名技能與改過的副本不會被動到。" },
+};
+
+async function preview(kind: keyof typeof PREVIEWS): Promise<void> {
   const bridge = api();
   const token = state.projectToken;
   if (!bridge || !token || state.running || state.pendingPreview) return;
   const names = [...state.deploySelected];
   if (kind === "deploy" && !names.length) return;
   state.previewOpener = document.activeElement as HTMLElement | null;
-  const label = kind === "deploy" ? "部署到專案" : "收回專案裡的部署";
+  const { label, idle, note } = PREVIEWS[kind];
   const result = await perform(`${label}前預覽`, () => kind === "deploy"
-    ? bridge.preview_deploy(token, names) : bridge.preview_undeploy(token));
+    ? bridge.preview_deploy(token, names)
+    : kind === "undeploy" ? bridge.preview_undeploy(token) : bridge.preview_skill_sync(token));
   if (!result || !("changes" in result)) return;
   const shown = result as ChangePreview;
   renderChanges(shown);
   if (shown.code !== 0) return;
   if (!shown.needs_confirmation) {
-    outputState.textContent = kind === "deploy" ? "都已在專案裡，不需要變更" : "沒有要收回的東西";
+    outputState.textContent = idle;
     return;
   }
   const count = shown.changes.filter(change => change.operation !== "skip").length;
-  armPreview({ kind, token: shown.token, scope: state.selectedTool, label: `${label}（${count} 項變更）` },
-    kind === "deploy"
-      ? "只寫進這個專案，不動這台電腦的全域設定。標示略過的是專案裡已有不同內容的檔案，不會被覆蓋。"
-      : "只刪除部署後沒被改過的檔案；改過的會保留並列出。");
+  armPreview({ kind, token: shown.token, scope: state.selectedTool, label: `${label}（${count} 項變更）` }, note);
 }
 
 $("#project-open").addEventListener("click", async () => {
@@ -184,3 +192,4 @@ $("#deploy-clear").addEventListener("click", () => {
 });
 $("#deploy-preview").addEventListener("click", () => { void preview("deploy"); });
 $("#deploy-remove").addEventListener("click", () => { void preview("undeploy"); });
+$("#skill-sync-preview").addEventListener("click", () => { void preview("skill-sync"); });

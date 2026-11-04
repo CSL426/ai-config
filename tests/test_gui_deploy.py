@@ -132,3 +132,26 @@ def test_one_chosen_project_serves_memory_and_deploy(api: GuiApi, project: Path)
 
     assert api.deploy_info(token)["root"] == str(project.resolve())
     assert api._project_path(token) == Path(chosen["memory_root"])
+
+
+def test_skill_sync_previews_then_does_what_it_showed(api: GuiApi, project: Path) -> None:
+    _write(project / ".agents/skills/review/SKILL.md", "v1\n")
+    token = _choose(api, project)
+
+    shown = api.preview_skill_sync(token)
+
+    assert shown["needs_confirmation"] is True
+    assert [change["operation"] for change in shown["changes"]] == ["create"]
+    assert not (project / ".claude/skills/review").exists()
+    assert api.confirm_skill_sync(shown["token"])["code"] == 0
+    assert (project / ".claude/skills/review/SKILL.md").is_file()
+    assert api.preview_skill_sync(token)["needs_confirmation"] is False
+
+
+def test_skill_sync_refuses_a_change_after_preview(api: GuiApi, project: Path) -> None:
+    _write(project / ".agents/skills/review/SKILL.md", "v1\n")
+    shown = api.preview_skill_sync(_choose(api, project))
+    _write(project / ".agents/skills/other/SKILL.md", "v1\n")
+
+    assert api.confirm_skill_sync(shown["token"])["code"] != 0
+    assert not (project / ".claude/skills").exists()

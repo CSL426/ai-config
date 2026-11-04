@@ -11,7 +11,7 @@ import io
 import re
 import secrets
 
-from . import paths
+from . import paths, project_skills
 from .applyplan import StalePreview
 from .commands import deploy
 from .gui_management import failure, outcome
@@ -60,6 +60,8 @@ class DeployApi:
                 if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
                     raise ValueError("無效的選取")
                 changes = deploy.preview(root, names)
+            elif kind == "skill-sync":
+                changes = project_skills.preview(root)
             else:
                 changes = deploy.removal_preview(root)
             scope = {"action": kind, "project_key": str(root)}
@@ -83,6 +85,9 @@ class DeployApi:
     def preview_undeploy(self, project_token):
         return self._deploy_preview("undeploy", project_token)
 
+    def preview_skill_sync(self, project_token):
+        return self._deploy_preview("skill-sync", project_token)
+
     def _deploy_confirm(self, kind, token):
         if not self._lock.acquire(blocking=False):
             return outcome(1, "另一個動作正在執行", "BUSY")
@@ -99,6 +104,7 @@ class DeployApi:
             with apply_lock(timeout=0):
                 # 預覽之後專案或資料庫若有變動,就不照舊的預覽動手
                 fresh = (deploy.preview(root, pending["names"]) if kind == "deploy"
+                         else project_skills.preview(root) if kind == "skill-sync"
                          else deploy.removal_preview(root))
                 if fresh != pending["changes"]:
                     raise StalePreview("內容在預覽後已有變動,請重新預覽")
@@ -106,6 +112,8 @@ class DeployApi:
                 with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
                     if kind == "deploy":
                         code = deploy.execute(root, pending["names"])
+                    elif kind == "skill-sync":
+                        code = project_skills.execute(root)
                     else:
                         from . import deploy_record
 
@@ -126,3 +134,6 @@ class DeployApi:
 
     def confirm_undeploy(self, token):
         return self._deploy_confirm("undeploy", token)
+
+    def confirm_skill_sync(self, token):
+        return self._deploy_confirm("skill-sync", token)

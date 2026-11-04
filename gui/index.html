@@ -490,6 +490,15 @@ claude plugin install acg@acg</textarea>
             <button class="btn btn-ghost" id="deploy-clear" disabled>清除選取</button>
           </div>
         </section>
+        <section class="memory-section" aria-labelledby="skill-sync-title">
+          <div class="memory-section-head">
+            <div>
+              <h3 id="skill-sync-title">專案自己的技能</h3>
+              <p>技能只寫在 <code>.agents/skills</code>，Codex 與 Antigravity 直接讀，這裡複製一份到 <code>.claude/skills</code> 給 Claude。</p>
+            </div>
+            <button class="btn btn-ghost" id="skill-sync-preview" disabled>預覽同步</button>
+          </div>
+        </section>
         <section class="memory-section" aria-labelledby="deploy-placed-title">
           <div class="memory-section-head">
             <div>

@@ -12,7 +12,7 @@ import type {
 export type MainView =
   | "status" | "output" | "skills" | "export" | "apply" | "memory" | "project" | "automation";
 export type PendingPreview = {
-  kind: "push" | "apply" | "memory" | "deploy" | "undeploy";
+  kind: "push" | "apply" | "memory" | "deploy" | "undeploy" | "skill-sync";
   token: string;
   scope: PushScope;
   label: string;

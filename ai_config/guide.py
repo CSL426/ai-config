@@ -34,6 +34,7 @@ project, status, pull, push, and sync.
 | `sync [tool]` | alias for pull |
 | `push [tool]` | gather, review, commit, and push (see guards below); confirms first |
 | `deploy [dir]` | install chosen skills, Claude plugins and rules into one project only (interactive) |
+| `skill sync [dir] [--check]` | copy a project's own `.agents/skills` to `.claude/skills`; `--check` writes nothing and fails on any difference |
 | `deploy --profile <name>` | replay a saved selection without prompting |
 | `deploy --save-as <name>` | deploy interactively, then remember the selection |
 | `deploy --remove [dir]` | take back everything deploy put into that project |
@@ -178,6 +179,16 @@ What was placed is recorded in `.acg-deploy.json` at the project root.
 deleted (a file edited since is kept and listed), plugins and marketplaces
 are removed from the project scope, and the `AGENTS.md` block is cut out
 (the file too, if acg created it and nothing else is left).
+
+`skill sync` is for a project's own skills rather than the database's. Write a
+skill once in `.agents/skills/`, which Codex and Antigravity read, and it is
+copied to `.claude/skills/` for Claude, with no symlinks and no setup needed.
+Commit both the copies and `.acg-skill-sync.json`, which records what acg placed.
+A same-name skill acg did not place, or a copy edited since, is left alone and
+the exit code is 1. A copy whose source is gone is deleted only if unchanged. It
+refuses the home directory and the database, and refuses to run if
+`.agents/skills` is missing while the record lists skills. Edit the source, not
+the copy.
 
 The desktop app's 專案部署 panel does the same through a folder picker and
 a preview; it reads and writes the same `.acg-deploy.json`, so a deploy made
