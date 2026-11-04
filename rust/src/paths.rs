@@ -55,12 +55,15 @@ pub fn find_config_path() -> Option<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        return Some(home.join("Library").join("Application Support").join("ai-config").join("config.json"));
+        Some(home.join("Library").join("Application Support").join("ai-config").join("config.json"))
     }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        return Some(PathBuf::from(xdg).join("ai-config").join("config.json"));
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+            return Some(PathBuf::from(xdg).join("ai-config").join("config.json"));
+        }
+        Some(home.join(".config").join("ai-config").join("config.json"))
     }
-    Some(home.join(".config").join("ai-config").join("config.json"))
 }
 
 pub fn strip_verbatim_prefix(path: &Path) -> PathBuf {
