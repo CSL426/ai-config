@@ -189,6 +189,81 @@ def _call(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture, args: 
     return json.loads(capsys.readouterr().out)
 
 
+def test_a_prompt_hook_reaches_agy_as_pre_invocation(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """Saved for acg-inject it could miss the reply: order between the two is not fixed."""
+    script = world / "word.py"
+    script.write_text(
+        "import json, sys\n"
+        "p = json.load(sys.stdin)\n"
+        "print(json.dumps({'hookSpecificOutput': {'hookEventName': p['hook_event_name'],"
+        " 'additionalContext': 'word for ' + p['prompt']}}))\n",
+        encoding="utf-8",
+    )
+    command = f"{shlex.quote(Path(sys.executable).as_posix())} {shlex.quote(script.as_posix())}"
+    hook = shared_hooks.SharedHook("word", "UserPromptSubmit", command)
+    shared_hooks.write_definition(hook)
+
+    assert hook.unsupported("agy") == ""
+    shared_hooks.project_agy()
+    entry = json.loads(remember_hosts.AGY_HOOKS.read_text(encoding="utf-8"))["acg-word"]
+    assert "UserPromptSubmit" not in entry
+    projected = shlex.split(entry["PreInvocation"][0]["command"])
+    assert projected[-3:] == ["__agy-hook", "word", shared_hooks._digest(hook)]
+
+    agy = {"conversationId": "c-1", "workspacePaths": [str(world)], "lastUserInput": "hi",
+           "invocationNum": 0}
+    reply = _call(monkeypatch, capsys, projected[-2:], agy)
+
+    assert reply == {"injectSteps": [{"ephemeralMessage": "word for hi"}]}
+    # 不會再留一份給 acg-inject,否則下一步會收到兩次
+    assert _call(monkeypatch, capsys, ["--inject"], {"conversationId": "c-1"}) == {}
+
+
+def _counting_prompt_hook(world: Path) -> tuple[shared_hooks.SharedHook, Path]:
+    runs = world / "runs.txt"
+    script = world / "count.py"
+    script.write_text(
+        "import json, pathlib\n"
+        f"p = pathlib.Path({str(runs)!r})\n"
+        "n = len(p.read_text()) + 1 if p.exists() else 1\n"
+        "p.write_text('x' * n)\n"
+        "print(json.dumps({'hookSpecificOutput': {'additionalContext': f'run {n}'}}))\n",
+        encoding="utf-8",
+    )
+    command = f"{shlex.quote(Path(sys.executable).as_posix())} {shlex.quote(script.as_posix())}"
+    hook = shared_hooks.SharedHook("count", "UserPromptSubmit", command)
+    shared_hooks.write_definition(hook)
+    shared_hooks.project_agy()
+    return hook, runs
+
+
+def test_a_prompt_hook_runs_once_per_message_and_answers_every_step(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """An injected message lasts one step, but the hook may have side effects."""
+    hook, runs = _counting_prompt_hook(world)
+    args = ["count", shared_hooks._digest(hook)]
+    agy = {"conversationId": "c-1", "workspacePaths": [str(world)], "lastUserInput": "hi"}
+    step = lambda number: _call(monkeypatch, capsys, args, {**agy, "invocationNum": number})
+
+    first, second, third = step(0), step(1), step(2)
+
+    assert first == second == third == {"injectSteps": [{"ephemeralMessage": "run 1"}]}
+    assert len(runs.read_text()) == 1
+    # 同一句話再送一次是另一則訊息
+    assert step(0) == {"injectSteps": [{"ephemeralMessage": "run 2"}]}
+    # 別的對話或別的訊息也不能拿到這一則的結果
+    other = {**agy, "conversationId": "c-2", "invocationNum": 3}
+    assert _call(monkeypatch, capsys, args, other) == {
+        "injectSteps": [{"ephemeralMessage": "run 3"}],
+    }
+    assert _call(monkeypatch, capsys, args, {**agy, "lastUserInput": "yo", "invocationNum": 1}) == {
+        "injectSteps": [{"ephemeralMessage": "run 4"}],
+    }
+
+
 def test_the_adapter_hands_the_reply_to_the_next_step(
     world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:

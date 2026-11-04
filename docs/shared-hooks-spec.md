@@ -43,7 +43,14 @@ A shared hook is written once, in Claude Code's format, and acg projects it.
     conversation; one shared `acg-inject` entry on `PreInvocation` hands it
     to the model before its next step.
 - Events a tool lacks are skipped and `hooks list` says so (Codex has no
-  `Stop`; Antigravity takes PreToolUse, PostToolUse and SessionStart here).
+  `Stop`; Antigravity takes PostToolUse, SessionStart and UserPromptSubmit here).
+- Antigravity has no UserPromptSubmit, so a shared one becomes `PreInvocation`
+  and answers with `injectSteps` itself. That event fires before every model
+  step, not once per message (checked 2026-11-03, agy 1.4.12: one firing
+  without tools, up to five with), and an injected message lasts one step. So
+  the adapter runs the hook on `invocationNum` 0 and re-injects the same answer
+  at later steps, keeping one memo per hook. The payload's `lastUserInput`
+  arrives as `prompt`.
 - Codex trust is never written. `hooks list` shows whether each Codex home
   has a trust record for the projected hook, and says to review it in
   `/hooks`.
