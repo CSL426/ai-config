@@ -68,6 +68,9 @@ pub fn run_handoff(args: &[String], force: bool) -> i32 {
                 Err(err) => Err(err),
             }
         }
+        "remind" => {
+            Err("Command not yet implemented in Rust: memory handoff remind".to_string())
+        }
         _ => {
             log_error(&handoff_usage());
             return 1;

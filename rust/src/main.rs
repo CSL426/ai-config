@@ -31,19 +31,23 @@ fn main() {
     let rest = &args[1..];
 
     if cmd == "memory" {
-        if rest.is_empty() || rest[0] == "--help" || rest[0] == "-h" {
+        if rest.first().map(|s| s.as_str()) == Some("handoff") {
+            let code = run_handoff(&rest[1..], force);
+            std::process::exit(code);
+        }
+        let sub = rest.first().map(|s| s.as_str()).unwrap_or("");
+        if sub == "--help" || sub == "-h" {
             log_info(&memory_usage());
             std::process::exit(0);
         }
-        if rest[0] == "handoff" {
-            let code = run_handoff(&rest[1..], force);
-            std::process::exit(code);
+        if sub.is_empty() {
+            log_error("Command not yet implemented in Rust: memory");
         } else {
-            log_error(&memory_usage());
-            std::process::exit(1);
+            log_error(&format!("Command not yet implemented in Rust: memory {sub}"));
         }
-    } else {
-        log_error(&format!("Unknown command: {cmd}"));
         std::process::exit(1);
     }
+
+    log_error(&format!("Command not yet implemented in Rust: {cmd}"));
+    std::process::exit(1);
 }
