@@ -93,7 +93,7 @@ fn handoff_list(cwd: Option<&Path>) -> Result<i32, String> {
         }
     }
 
-    let archived = archive_finished(ARCHIVE_AFTER_DAYS).unwrap_or_default();
+    let archived = archive_finished(ARCHIVE_AFTER_DAYS)?;
     if !archived.is_empty() {
         log_info(&format!(
             "已把 {} 條結案或 {} 天沒人動的線移到 {}/:{}",

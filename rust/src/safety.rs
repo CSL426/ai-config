@@ -9,9 +9,13 @@ pub fn is_reparse_point(path: &Path) -> bool {
     }
     #[cfg(windows)]
     {
-        use std::os::windows::fs::FileTypeExt;
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
         std::fs::symlink_metadata(path)
-            .map(|m| m.file_type().is_symlink() || m.file_type().is_reparse_point())
+            .map(|m| {
+                m.file_type().is_symlink()
+                    || (m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+            })
             .unwrap_or(false)
     }
 }

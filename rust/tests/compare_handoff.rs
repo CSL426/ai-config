@@ -2,6 +2,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+fn resolve_executable_in_path(name: &str) -> Option<PathBuf> {
+    if let Ok(path_var) = std::env::var("PATH") {
+        for entry in std::env::split_paths(&path_var) {
+            let candidate = entry.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 fn python_executable() -> PathBuf {
     if let Ok(py) = std::env::var("PYTHON") {
         let p = PathBuf::from(py);
@@ -26,7 +38,16 @@ fn python_executable() -> PathBuf {
         }
         curr = parent;
     }
-    PathBuf::from(if cfg!(windows) { "python.exe" } else { "python3" })
+    let name = if cfg!(windows) { "python.exe" } else { "python3" };
+    if let Some(found) = resolve_executable_in_path(name) {
+        return found;
+    }
+    if cfg!(windows) {
+        if let Some(found) = resolve_executable_in_path("python") {
+            return found;
+        }
+    }
+    PathBuf::from(name)
 }
 
 fn repo_root() -> PathBuf {
@@ -136,6 +157,17 @@ impl TestEnv {
         py_cmd.env("AI_CONFIG_ENTRYPOINT", "./ai-config.sh");
         py_cmd.env("NO_COLOR", "1");
         py_cmd.env("GIT_CONFIG_GLOBAL", if cfg!(windows) { "NUL" } else { "/dev/null" });
+        if cfg!(windows) {
+            if let Ok(sysroot) = std::env::var("SystemRoot") {
+                py_cmd.env("SystemRoot", &sysroot);
+            }
+            if let Ok(comspec) = std::env::var("COMSPEC") {
+                py_cmd.env("COMSPEC", &comspec);
+            }
+            if let Ok(pathext) = std::env::var("PATHEXT") {
+                py_cmd.env("PATHEXT", &pathext);
+            }
+        }
         for (k, v) in extra_envs {
             py_cmd.env(k, v);
         }
@@ -153,6 +185,17 @@ impl TestEnv {
         rs_cmd.env("AI_CONFIG_ENTRYPOINT", "./ai-config.sh");
         rs_cmd.env("NO_COLOR", "1");
         rs_cmd.env("GIT_CONFIG_GLOBAL", if cfg!(windows) { "NUL" } else { "/dev/null" });
+        if cfg!(windows) {
+            if let Ok(sysroot) = std::env::var("SystemRoot") {
+                rs_cmd.env("SystemRoot", &sysroot);
+            }
+            if let Ok(comspec) = std::env::var("COMSPEC") {
+                rs_cmd.env("COMSPEC", &comspec);
+            }
+            if let Ok(pathext) = std::env::var("PATHEXT") {
+                rs_cmd.env("PATHEXT", &pathext);
+            }
+        }
         for (k, v) in extra_envs {
             rs_cmd.env(k, v);
         }
@@ -258,27 +301,25 @@ impl TestEnv {
             let py_file = py_handoff.join(rel);
             let rs_file = rs_handoff.join(rel);
             if py_file.is_file() {
-                let py_note = acg::handoff::parse(&py_file)
-                    .unwrap()
-                    .expect("Python file must be parseable");
-                let rs_note = acg::handoff::parse(&rs_file)
-                    .unwrap()
-                    .expect("Rust file must be parseable");
+                let py_parsed = acg::handoff::parse(&py_file).unwrap();
+                let rs_parsed = acg::handoff::parse(&rs_file).unwrap();
+                assert_eq!(py_parsed.is_some(), rs_parsed.is_some(), "Parseability mismatch for {}", rel.display());
+                if let (Some(py_note), Some(rs_note)) = (py_parsed, rs_parsed) {
+                    assert_eq!(py_note.thread, rs_note.thread);
+                    assert_eq!(py_note.project, rs_note.project);
+                    assert_eq!(py_note.state, rs_note.state);
+                    assert_eq!(py_note.author, rs_note.author);
+                    assert_eq!(py_note.claimed_by, rs_note.claimed_by);
+                    assert_eq!(py_note.session_name, rs_note.session_name);
+                    assert_eq!(py_note.claimed_name, rs_note.claimed_name);
+                    assert_eq!(py_note.body, rs_note.body);
 
-                assert_eq!(py_note.thread, rs_note.thread);
-                assert_eq!(py_note.project, rs_note.project);
-                assert_eq!(py_note.state, rs_note.state);
-                assert_eq!(py_note.author, rs_note.author);
-                assert_eq!(py_note.claimed_by, rs_note.claimed_by);
-                assert_eq!(py_note.session_name, rs_note.session_name);
-                assert_eq!(py_note.claimed_name, rs_note.claimed_name);
-                assert_eq!(py_note.body, rs_note.body);
-
-                // Both created and updated must be valid ISO8601 timestamps
-                assert!(acg::handoff::parse_timestamp(&py_note.created).is_some());
-                assert!(acg::handoff::parse_timestamp(&rs_note.created).is_some());
-                assert!(acg::handoff::parse_timestamp(&py_note.updated).is_some());
-                assert!(acg::handoff::parse_timestamp(&rs_note.updated).is_some());
+                    // Both created and updated must be valid ISO8601 timestamps
+                    assert!(acg::handoff::parse_timestamp(&py_note.created).is_some());
+                    assert!(acg::handoff::parse_timestamp(&rs_note.created).is_some());
+                    assert!(acg::handoff::parse_timestamp(&py_note.updated).is_some());
+                    assert!(acg::handoff::parse_timestamp(&rs_note.updated).is_some());
+                }
             }
         }
     }
@@ -983,4 +1024,144 @@ fn test_rust_unimplemented_commands_error() {
         stderr.contains("Command not yet implemented in Rust: memory handoff remind"),
         "Expected stderr to contain 'Command not yet implemented in Rust: memory handoff remind', got: {stderr}"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_compare_archive_dir_is_symlink() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    for data in [&env.py_data, &env.rs_data] {
+        let hdir = data.join("memory").join("handoff");
+        fs::create_dir_all(&hdir).unwrap();
+
+        // An old note ready to be archived (40 days old)
+        let old_note = "---\nthread: 待封存\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: 2026-09-01T10:00:00Z\nupdated: 2026-09-01T10:00:00Z\n---\n\n舊筆記\n";
+        fs::write(hdir.join("待封存.md"), old_note).unwrap();
+
+        // Target external dir for symlink
+        let external = data.join("external_archive_target");
+        fs::create_dir_all(&external).unwrap();
+
+        // archive directory is a symlink!
+        let arch_symlink = hdir.join("archive");
+        std::os::unix::fs::symlink(&external, &arch_symlink).unwrap();
+    }
+
+    // List triggers archive_finished, which should refuse reparse point parent and exit 1
+    let (py, rs) = env.run_both(&["list"], &[]);
+    env.assert_matches(&py, &rs);
+    assert_eq!(py.status.code(), Some(1));
+    assert_eq!(rs.status.code(), Some(1));
+    let py_err = String::from_utf8_lossy(&py.stderr);
+    let rs_err = String::from_utf8_lossy(&rs.stderr);
+    assert!(py_err.contains("Refusing reparse point parent:"));
+    assert!(rs_err.contains("Refusing reparse point parent:"));
+}
+
+#[test]
+fn test_compare_non_utf8_note_skipped_in_list() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    for data in [&env.py_data, &env.rs_data] {
+        let hdir = data.join("memory").join("handoff");
+        fs::create_dir_all(&hdir).unwrap();
+
+        // Valid note
+        let valid = "---\nthread: 正常線\nproject: my-org--my-repo\nstate: open\nauthor: user\ncreated: 2026-11-02T10:00:00Z\nupdated: 2026-11-02T10:00:00Z\n---\n\n正常內容\n";
+        fs::write(hdir.join("正常線.md"), valid).unwrap();
+
+        // Non-UTF-8 corrupted file with invalid byte sequence
+        let bad_bytes: [u8; 12] = [b'-', b'-', b'-', b'\n', 0xFF, 0xFE, 0xFD, 0xFC, b'\n', b'-', b'-', b'-'];
+        fs::write(hdir.join("壞檔.md"), bad_bytes).unwrap();
+    }
+
+    // 1. List: skips bad note and lists 正常線 without error (exit code 0)
+    let (py_list, rs_list) = env.run_both(&["list"], &[]);
+    env.assert_matches(&py_list, &rs_list);
+    assert_eq!(py_list.status.code(), Some(0));
+    assert_eq!(rs_list.status.code(), Some(0));
+    let py_out = String::from_utf8_lossy(&py_list.stdout);
+    assert!(py_out.contains("正常線"));
+    assert!(!py_out.contains("壞檔"));
+
+    // 2. Claim the corrupt file: fails with "交接格式不正確" and exit code 1
+    let (py_claim, rs_claim) = env.run_both(&["claim", "壞檔"], &[]);
+    env.assert_matches(&py_claim, &rs_claim);
+    assert_eq!(py_claim.status.code(), Some(1));
+    assert_eq!(rs_claim.status.code(), Some(1));
+    let py_err = String::from_utf8_lossy(&py_claim.stderr);
+    let rs_err = String::from_utf8_lossy(&rs_claim.stderr);
+    assert!(py_err.contains("交接格式不正確:壞檔.md"));
+    assert!(rs_err.contains("交接格式不正確:壞檔.md"));
+}
+
+#[test]
+fn test_compare_claim_own_thread_named_elsewhere() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    // Session worker-alpha writes a note in a DIFFERENT project
+    for data in [&env.py_data, &env.rs_data] {
+        let hdir = data.join("memory").join("handoff");
+        fs::create_dir_all(&hdir).unwrap();
+        let other_note = "---\nthread: 別處留下的線\nproject: other-org--other-repo\nstate: open\nauthor: u\nsession_name: worker-alpha\ncreated: 2026-11-02T10:00:00Z\nupdated: 2026-11-02T10:00:00Z\n---\n\n別處的筆記內容\n";
+        fs::write(hdir.join("別處留下的線.md"), other_note).unwrap();
+    }
+
+    // Current session is worker-alpha in my-org--my-repo
+    env.setup_session("sess-new-123", "worker-alpha", None);
+
+    // Claim with NO argument: should find the thread in the other project and notify
+    let (py, rs) = env.run_both(&["claim"], &[("CLAUDE_CODE_SESSION_ID", "sess-new-123")]);
+    env.assert_matches(&py, &rs);
+    let py_out = String::from_utf8_lossy(&py.stdout);
+    assert!(py_out.contains("這條線記在專案 other-org--other-repo,不是這個 session 的專案"));
+}
+
+#[test]
+fn test_compare_claim_own_thread_multiple_candidates_conflict() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    for data in [&env.py_data, &env.rs_data] {
+        let hdir = data.join("memory").join("handoff");
+        fs::create_dir_all(&hdir).unwrap();
+        let note1 = "---\nthread: 線一\nproject: my-org--my-repo\nstate: open\nauthor: u\nsession_name: busy-worker\ncreated: 2026-11-02T10:00:01Z\nupdated: 2026-11-02T10:00:01Z\n---\n\n進度一\n";
+        let note2 = "---\nthread: 線二\nproject: my-org--my-repo\nstate: open\nauthor: u\nsession_name: busy-worker\ncreated: 2026-11-02T10:00:02Z\nupdated: 2026-11-02T10:00:02Z\n---\n\n進度二\n";
+        fs::write(hdir.join("線一.md"), note1).unwrap();
+        fs::write(hdir.join("線二.md"), note2).unwrap();
+    }
+
+    env.setup_session("sess-busy", "busy-worker", None);
+
+    // Claim with NO arguments when multiple open threads match session_name: should error
+    let (py, rs) = env.run_both(&["claim"], &[("CLAUDE_CODE_SESSION_ID", "sess-busy")]);
+    env.assert_matches(&py, &rs);
+    assert_eq!(py.status.code(), Some(1));
+    assert_eq!(rs.status.code(), Some(1));
+    let py_err = String::from_utf8_lossy(&py.stderr);
+    let rs_err = String::from_utf8_lossy(&rs.stderr);
+    assert!(py_err.contains("session「busy-worker」留下不只一條線:"));
+    assert!(rs_err.contains("session「busy-worker」留下不只一條線:"));
+}
+
+#[test]
+fn test_compare_claim_own_thread_no_matching_thread() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    env.setup_session("sess-empty", "lonely-worker", None);
+
+    // Claim with NO arguments when no open threads match: should error
+    let (py, rs) = env.run_both(&["claim"], &[("CLAUDE_CODE_SESSION_ID", "sess-empty")]);
+    env.assert_matches(&py, &rs);
+    assert_eq!(py.status.code(), Some(1));
+    assert_eq!(rs.status.code(), Some(1));
+    let py_err = String::from_utf8_lossy(&py.stderr);
+    let rs_err = String::from_utf8_lossy(&rs.stderr);
+    assert!(py_err.contains("沒有 session「lonely-worker」留下的工作線,請指定要認領的工作線"));
+    assert!(rs_err.contains("沒有 session「lonely-worker」留下的工作線,請指定要認領的工作線"));
 }

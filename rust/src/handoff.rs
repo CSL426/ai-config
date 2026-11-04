@@ -55,11 +55,15 @@ pub fn parse(path: &Path) -> Result<Option<Handoff>, String> {
         return Ok(None);
     }
     let raw_bytes = std::fs::read(path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
-    let mut text = String::from_utf8_lossy(&raw_bytes).to_string();
-    if text.starts_with('\u{feff}') {
-        text.remove(0);
-    }
-    let text = text.replace("\r\n", "\n");
+    let slice = if raw_bytes.starts_with(b"\xef\xbb\xbf") {
+        &raw_bytes[3..]
+    } else {
+        &raw_bytes[..]
+    };
+    let Ok(valid_str) = std::str::from_utf8(slice) else {
+        return Ok(None);
+    };
+    let text = valid_str.replace("\r\n", "\n");
 
     const FRONT: &str = "---\n";
     if !text.starts_with(FRONT) {
@@ -404,9 +408,9 @@ pub fn archive_finished(older_than_days: u64) -> Result<Vec<String>, String> {
             }
         }
         assert_plain_path(&target, Some(false))?;
-        std::fs::rename(&note.path, &target)
-            .map_err(|e| format!("Failed to move {} to {}: {e}", note.path.display(), target.display()))?;
-        moved.push(note.thread);
+        if std::fs::rename(&note.path, &target).is_ok() {
+            moved.push(note.thread);
+        }
     }
     Ok(moved)
 }
