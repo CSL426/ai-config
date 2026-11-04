@@ -189,6 +189,36 @@ def _call(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture, args: 
     return json.loads(capsys.readouterr().out)
 
 
+def test_a_prompt_hook_reaches_agy_as_pre_invocation(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """Saved for acg-inject it could miss the reply: order between the two is not fixed."""
+    script = world / "word.py"
+    script.write_text(
+        "import json, sys\n"
+        "p = json.load(sys.stdin)\n"
+        "print(json.dumps({'hookSpecificOutput': {'hookEventName': p['hook_event_name'],"
+        " 'additionalContext': 'word for ' + p['prompt']}}))\n",
+        encoding="utf-8",
+    )
+    command = f"{shlex.quote(Path(sys.executable).as_posix())} {shlex.quote(script.as_posix())}"
+    hook = shared_hooks.SharedHook("word", "UserPromptSubmit", command)
+    shared_hooks.write_definition(hook)
+
+    assert hook.unsupported("agy") == ""
+    shared_hooks.project_agy()
+    entry = json.loads(remember_hosts.AGY_HOOKS.read_text(encoding="utf-8"))["acg-word"]
+    assert "UserPromptSubmit" not in entry
+    assert entry["PreInvocation"][0]["type"] == "command"
+
+    agy = {"conversationId": "c-1", "workspacePaths": [str(world)], "lastUserInput": "hi"}
+    reply = _call(monkeypatch, capsys, ["word", shared_hooks._digest(hook)], agy)
+
+    assert reply == {"injectSteps": [{"ephemeralMessage": "word for hi"}]}
+    # 不會再留一份給 acg-inject,否則下一步會收到兩次
+    assert _call(monkeypatch, capsys, ["--inject"], {"conversationId": "c-1"}) == {}
+
+
 def test_the_adapter_hands_the_reply_to_the_next_step(
     world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:

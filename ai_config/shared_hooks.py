@@ -37,7 +37,10 @@ CODEX_EVENTS = frozenset({
     "SessionStart", "SessionEnd", "UserPromptSubmit", "SubagentStart", "SubagentStop",
 })
 # Antigravity 擋工具的回應格式沒有文件,PreToolUse 投過去會擋不住,所以不接
-AGY_EVENTS = frozenset({"PostToolUse", "SessionStart"})
+AGY_EVENTS = frozenset({"PostToolUse", "SessionStart", "UserPromptSubmit"})
+# Antigravity 沒有 UserPromptSubmit,最接近的是 PreInvocation:
+# 它在每個模型步驟前都會跑,所以一則訊息用了工具就會跑不只一次
+AGY_EVENT_NAMES = {"UserPromptSubmit": "PreInvocation"}
 AGY_TOOL_EVENTS = frozenset({"PostToolUse"})
 # Claude Code 的工具名 → Antigravity 的;只轉接 shell,其他工具的 payload 沒有對應
 AGY_TOOLS = {"Bash": "run_command"}
@@ -437,7 +440,8 @@ def agy_document(existing: dict, hooks: list[SharedHook]) -> dict:
             handlers: list = [{"matcher": hook.agy_matcher(), "hooks": [call]}]
         else:
             handlers = [call]
-        result[f"{AGY_PREFIX}{hook.name}"] = {"enabled": True, hook.event: handlers}
+        event = AGY_EVENT_NAMES.get(hook.event, hook.event)
+        result[f"{AGY_PREFIX}{hook.name}"] = {"enabled": True, event: handlers}
     if reached:
         result[AGY_INJECT] = {"enabled": True, "PreInvocation": [{
             "type": "command", "command": _acg_command(_ADAPTER, "--inject"), "timeout": 10,
@@ -585,6 +589,8 @@ def claude_payload(agy: dict, event: str) -> dict:
         payload["tool_input"] = (
             {"command": str(args.get("CommandLine", ""))} if tool == "run_command" else args
         )
+    if event == "UserPromptSubmit":
+        payload["prompt"] = str(agy.get("lastUserInput", ""))
     return payload
 
 
@@ -746,6 +752,10 @@ def _relay(args: list[str], payload: dict) -> dict:
     if done is None:
         return {}
     text = _additional_context(done.stdout)
+    if snapshot["event"] in AGY_EVENT_NAMES:
+        # 這個事件本身就能注入。留給 acg-inject 的話,兩者誰先跑不一定,
+        # 而回覆前的最後一步一過,留著的內容就送不到這一則了
+        return {"injectSteps": [{"ephemeralMessage": text}]} if text else {}
     if text and converted["session_id"]:
         path = _context_file(converted["session_id"])
         path.parent.mkdir(parents=True, exist_ok=True)

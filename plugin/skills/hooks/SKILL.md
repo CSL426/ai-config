@@ -25,7 +25,8 @@ allowed-tools: Bash(acg hooks:*), Bash(ai-config hooks:*), Bash(acg apply:*), Ba
 
 寫 hook 時以 Claude Code 為準:Codex 吃同一種格式。Antigravity 由 acg 轉接,但它**不給
 指令的輸出**,需要知道結果的 hook 要能改用 `cwd` 判斷;它只接 `Bash` 的 matcher 與
-PreToolUse、PostToolUse、SessionStart。Codex 沒有 `Stop`。
+PostToolUse、SessionStart、UserPromptSubmit。Antigravity 的 UserPromptSubmit 走 `PreInvocation`,
+每個模型步驟前都會跑,一則訊息可能跑好幾次,hook 要能承受。Codex 沒有 `Stop`。
 
 ## Codex 要信任
 

@@ -538,8 +538,10 @@ __agy-hook <name>`, which rewrites its payload into that shape and keeps the
 returned context for its next step, since Antigravity cannot take context
 from PostToolUse. Antigravity sends no tool output, so a hook that needs to
 know what a command did should fall back on `cwd`. Only `Bash` matchers and
-PreToolUse, PostToolUse and SessionStart reach Antigravity; Codex has no
-`Stop`. `hooks list` says which tool misses which hook.
+PostToolUse, SessionStart and UserPromptSubmit reach Antigravity; Codex has no
+`Stop`. Antigravity runs UserPromptSubmit as PreInvocation, before every model
+step, so one message can run it several times and the hook must tolerate that.
+`hooks list` says which tool misses which hook.
 
 On Windows, `bash` on PATH can be WSL's launcher, which gets Windows paths
 wrong and fails silently. There Codex's copy calls `acg __agy-hook --run
