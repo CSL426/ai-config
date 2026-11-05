@@ -940,3 +940,40 @@ def test_a_finished_thread_can_be_started_again(
     handoff.write("LLM Wiki", "新的一輪")
 
     assert handoff.load_all()[0].state == handoff.OPEN
+
+
+def test_load_all_skips_corrupted_and_non_utf8_notes(notebook: Path) -> None:
+    handoff.write("正常線", "內容")
+    hdir = handoff.handoff_dir()
+    (hdir / "bad_bytes.md").write_bytes(b"\xff\xfe\x00\x00\x80\x81")
+    (hdir / "bad_text.md").write_text("這是沒有frontmatter的損壞檔案\n", encoding="utf-8")
+
+    notes = handoff.load_all()
+    assert len(notes) == 1
+    assert notes[0].thread == "正常線"
+
+
+def test_write_refuses_corrupted_note_without_force(notebook: Path) -> None:
+    hdir = handoff.handoff_dir()
+    hdir.mkdir(parents=True, exist_ok=True)
+    (hdir / "壞掉的線.md").write_bytes(b"\xff\xfe\x00\x00\x80\x81")
+
+    with pytest.raises(ValueError, match="交接格式不正確:壞掉的線"):
+        handoff.write("壞掉的線", "不加force應該拒絕")
+
+    # With force=True, it allows overwriting the corrupted note
+    note = handoff.write("壞掉的線", "加force覆寫", force=True)
+    assert note.thread == "壞掉的線"
+    assert note.body.strip() == "加force覆寫"
+
+
+def test_claim_and_done_refuse_corrupted_note(notebook: Path) -> None:
+    hdir = handoff.handoff_dir()
+    hdir.mkdir(parents=True, exist_ok=True)
+    (hdir / "壞掉的線.md").write_bytes(b"\xff\xfe\x00\x00\x80\x81")
+
+    with pytest.raises(ValueError, match="交接格式不正確:壞掉的線"):
+        handoff.claim("壞掉的線")
+
+    with pytest.raises(ValueError, match="交接格式不正確:壞掉的線"):
+        handoff.done("壞掉的線")
