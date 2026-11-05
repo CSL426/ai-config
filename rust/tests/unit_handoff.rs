@@ -231,7 +231,8 @@ fn test_timestamp_strict_utc_format() {
 fn test_umask_applied_on_new_file() {
     use std::os::unix::fs::PermissionsExt;
     let tmp = tempfile::tempdir().unwrap();
-    let note_path = tmp.path().join("umask_test.md");
+    let canonical_tmp = acg::paths::resolve_like_python(tmp.path());
+    let note_path = canonical_tmp.join("umask_test.md");
 
     struct UmaskGuard(u32);
     impl Drop for UmaskGuard {
@@ -276,7 +277,8 @@ fn test_corrupt_config_returns_err() {
 #[test]
 fn test_rust_corrupted_note_refused_in_write_claim_done() {
     let tmp = tempfile::tempdir().unwrap();
-    let data_repo = tmp.path().join("data");
+    let canonical_tmp = acg::paths::resolve_like_python(tmp.path());
+    let data_repo = canonical_tmp.join("data");
     let hdir = data_repo.join("memory").join("handoff");
     std::fs::create_dir_all(&hdir).unwrap();
     std::env::set_var("AI_CONFIG_REPO", &data_repo);
