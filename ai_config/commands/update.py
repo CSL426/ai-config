@@ -11,11 +11,13 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from .. import locking
@@ -39,6 +41,9 @@ from ..version import current_version
 _DEFAULT_REPOSITORY = "CSL426/ai-config"
 _DELEGATED_UPDATE = "AI_CONFIG_UPDATE_DELEGATED"
 _RELEASE_VERSION = re.compile(r"^v?(\d+(?:\.\d+){1,3})$")
+# (連線逾時秒數, 失敗後等多久再試)
+_API_ATTEMPTS = ((15, 5), (30, 15))
+_REDIRECT_TIMEOUT = 30
 
 
 def _repository() -> str:
@@ -55,21 +60,63 @@ def _installer_url(script: str, tag: str) -> str:
     return f"https://raw.githubusercontent.com/{_repository()}/{tag}/{script}"
 
 
-def _latest_release_version() -> str:
-    url = f"https://api.github.com/repos/{_repository()}/releases/latest"
+def _latest_tag_from_api(timeout: int) -> object:
     request = Request(
-        url,
+        f"https://api.github.com/repos/{_repository()}/releases/latest",
         headers={
             "Accept": "application/vnd.github+json",
             "User-Agent": "ai-config-updater",
         },
     )
-    with urlopen(request, timeout=15) as response:
+    with urlopen(request, timeout=timeout) as response:
         document = json.load(response)
-    tag = document.get("tag_name") if isinstance(document, dict) else None
+    return document.get("tag_name") if isinstance(document, dict) else None
+
+
+def _latest_tag_from_redirect(timeout: int) -> str:
+    """The release page redirects to its tag, with no API rate limit to hit."""
+    request = Request(
+        f"https://github.com/{_repository()}/releases/latest",
+        headers={"User-Agent": "ai-config-updater"},
+    )
+    with urlopen(request, timeout=timeout) as response:
+        return response.geturl().rpartition("/tag/")[2]
+
+
+def _valid_release(tag: object) -> str:
     if not isinstance(tag, str) or not _RELEASE_VERSION.fullmatch(tag):
         raise RuntimeError("Latest GitHub release has an invalid version tag")
     return tag.removeprefix("v")
+
+
+def _latest_release_version() -> str:
+    """Ask the API, retrying once, then the release page.
+
+    One timed-out connection used to end the check, and a machine that hit it
+    every night at the scheduled hour stayed on its old version without anyone
+    noticing. The time and duration in the error tell a later reader whether
+    the failures cluster at that hour.
+    """
+    started = time.monotonic()
+    failure: Exception | None = None
+    for timeout, pause in _API_ATTEMPTS:
+        try:
+            return _valid_release(_latest_tag_from_api(timeout))
+        except HTTPError as exc:
+            # 伺服器有回應,是 rate limit 這類問題,馬上再問一次也一樣
+            failure = exc
+            break
+        except (OSError, ValueError) as exc:
+            failure = exc
+            time.sleep(pause)
+    try:
+        return _valid_release(_latest_tag_from_redirect(_REDIRECT_TIMEOUT))
+    except (OSError, ValueError, RuntimeError) as exc:
+        waited = int(time.monotonic() - started)
+        raise RuntimeError(
+            f"api.github.com: {failure}; github.com: {exc} "
+            f"(gave up after {waited}s at {time.strftime('%H:%M')})"
+        ) from exc
 
 
 def _version_key(value: str) -> "tuple[int, ...] | None":

@@ -1,7 +1,10 @@
 """Behaviour tests for the self-update command."""
 
+import io
+import re
 import sys
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 import pytest
 from test_apply_projection import run_ai_config
@@ -700,3 +703,128 @@ def test_the_windows_installer_comes_from_the_release_being_installed(monkeypatc
 
     assert update.run_update() == 0
     assert "CSL426/ai-config/v1.0.6/install.ps1" in calls["cmd"][5]
+
+
+class _FakeResponse:
+    def __init__(self, body: bytes = b"", url: str = "") -> None:
+        self._body, self._url = io.BytesIO(body), url
+
+    def __enter__(self) -> "_FakeResponse":  # noqa: PYI034
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def read(self, *args: int) -> bytes:
+        return self._body.read(*args)
+
+    def geturl(self) -> str:
+        return self._url
+
+
+def _fake_github(monkeypatch: pytest.MonkeyPatch, *replies: object) -> list:
+    """Each reply answers one request in order; an exception is raised."""
+    from ai_config.commands import update
+
+    queue, seen = list(replies), []
+
+    def fake_urlopen(request: object, timeout: int) -> object:
+        seen.append((request.full_url, timeout))
+        reply = queue.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(update, "urlopen", fake_urlopen)
+    monkeypatch.setattr(update.time, "sleep", lambda seconds: None)
+    return seen
+
+
+_API_REPLY = b'{"tag_name": "v1.0.9"}'
+_PAGE_URL = "https://github.com/CSL426/ai-config/releases/tag/v1.0.9"
+
+
+def test_latest_version_comes_from_the_api_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config.commands import update
+
+    seen = _fake_github(monkeypatch, _FakeResponse(_API_REPLY))
+
+    assert update._latest_release_version() == "1.0.9"
+    assert len(seen) == 1
+
+
+def test_a_timed_out_check_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One slow connection used to leave a machine on its old version every night."""
+    from ai_config.commands import update
+
+    seen = _fake_github(monkeypatch, URLError("timed out"), _FakeResponse(_API_REPLY))
+
+    assert update._latest_release_version() == "1.0.9"
+    assert [timeout for _, timeout in seen] == [15, 30]
+
+
+def test_the_release_page_answers_when_the_api_will_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import update
+
+    seen = _fake_github(
+        monkeypatch, URLError("timed out"), TimeoutError("timed out"),
+        _FakeResponse(url=_PAGE_URL),
+    )
+
+    assert update._latest_release_version() == "1.0.9"
+    assert seen[-1][0] == "https://github.com/CSL426/ai-config/releases/latest"
+
+
+def test_a_rate_limit_goes_straight_to_the_release_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import update
+
+    limited = HTTPError("https://api.github.com", 403, "rate limited", None, None)
+    seen = _fake_github(monkeypatch, limited, _FakeResponse(url=_PAGE_URL))
+
+    assert update._latest_release_version() == "1.0.9"
+    assert len(seen) == 2
+
+
+def test_a_failed_check_says_what_failed_and_when(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config.commands import update
+
+    _fake_github(
+        monkeypatch, URLError("timed out"), URLError("timed out"), URLError("no route"),
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        update._latest_release_version()
+
+    assert "api.github.com" in str(caught.value)
+    assert "no route" in str(caught.value)
+    assert re.search(r"after \d+s at \d\d:\d\d", str(caught.value))
+
+
+def test_a_bad_tag_from_the_api_is_not_retried_as_a_network_fault(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A version that does not parse is an answer; it must never be installed."""
+    from ai_config.commands import update
+
+    seen = _fake_github(monkeypatch, _FakeResponse(b'{"tag_name": "evil; rm -rf"}'))
+
+    with pytest.raises(RuntimeError, match="invalid version tag"):
+        update._latest_release_version()
+
+    assert len(seen) == 1
+
+
+def test_a_redirect_without_a_tag_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config.commands import update
+
+    _fake_github(
+        monkeypatch, URLError("x"), URLError("x"),
+        _FakeResponse(url="https://github.com/login"),
+    )
+
+    with pytest.raises(RuntimeError, match="invalid version tag"):
+        update._latest_release_version()
