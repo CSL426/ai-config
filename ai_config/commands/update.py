@@ -16,6 +16,7 @@ import tomllib
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -41,9 +42,11 @@ from ..version import current_version
 _DEFAULT_REPOSITORY = "CSL426/ai-config"
 _DELEGATED_UPDATE = "AI_CONFIG_UPDATE_DELEGATED"
 _RELEASE_VERSION = re.compile(r"^v?(\d+(?:\.\d+){1,3})$")
-# (連線逾時秒數, 失敗後等多久再試)
-_API_ATTEMPTS = ((15, 5), (30, 15))
+# (連線逾時秒數, 失敗後等多久再試);最後一次失敗就直接換轉址,不用等
+_API_ATTEMPTS = ((15, 5), (30, 0))
 _REDIRECT_TIMEOUT = 30
+# IncompleteRead 不是 OSError:回應讀到一半斷掉時也要能重試
+_CHECK_FAILURES = (OSError, ValueError, HTTPException)
 
 
 def _repository() -> str:
@@ -102,16 +105,16 @@ def _latest_release_version() -> str:
     for timeout, pause in _API_ATTEMPTS:
         try:
             return _valid_release(_latest_tag_from_api(timeout))
-        except HTTPError as exc:
-            # 伺服器有回應,是 rate limit 這類問題,馬上再問一次也一樣
+        except _CHECK_FAILURES as exc:
             failure = exc
-            break
-        except (OSError, ValueError) as exc:
-            failure = exc
-            time.sleep(pause)
+            # 4xx 是 rate limit 這類問題,馬上再問一次也一樣
+            if isinstance(exc, HTTPError) and exc.code < 500:
+                break
+            if pause:
+                time.sleep(pause)
     try:
         return _valid_release(_latest_tag_from_redirect(_REDIRECT_TIMEOUT))
-    except (OSError, ValueError, RuntimeError) as exc:
+    except (*_CHECK_FAILURES, RuntimeError) as exc:
         waited = int(time.monotonic() - started)
         raise RuntimeError(
             f"api.github.com: {failure}; github.com: {exc} "

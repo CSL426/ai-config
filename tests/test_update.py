@@ -3,6 +3,7 @@
 import io
 import re
 import sys
+from http.client import IncompleteRead
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
@@ -828,3 +829,37 @@ def test_a_redirect_without_a_tag_is_refused(monkeypatch: pytest.MonkeyPatch) ->
 
     with pytest.raises(RuntimeError, match="invalid version tag"):
         update._latest_release_version()
+
+
+def test_a_server_error_is_retried_but_a_client_error_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_config.commands import update
+
+    broken = HTTPError("https://api.github.com", 502, "bad gateway", None, None)
+    seen = _fake_github(monkeypatch, broken, _FakeResponse(_API_REPLY))
+
+    assert update._latest_release_version() == "1.0.9"
+    assert len(seen) == 2
+
+
+def test_a_truncated_response_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config.commands import update
+
+    seen = _fake_github(monkeypatch, IncompleteRead(b"{"), _FakeResponse(_API_REPLY))
+
+    assert update._latest_release_version() == "1.0.9"
+    assert len(seen) == 2
+
+
+def test_no_pause_after_the_last_api_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_config.commands import update
+
+    _fake_github(
+        monkeypatch, URLError("x"), URLError("x"), _FakeResponse(url=_PAGE_URL),
+    )
+    pauses: list = []
+    monkeypatch.setattr(update.time, "sleep", pauses.append)
+
+    assert update._latest_release_version() == "1.0.9"
+    assert pauses == [5]
