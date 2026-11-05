@@ -219,3 +219,7 @@ pub fn handoff_dir() -> PathBuf {
 pub fn archive_dir() -> PathBuf {
     handoff_dir().join("archive")
 }
+
+pub fn backup_base() -> Option<PathBuf> {
+    home_dir().map(|h| h.join(".ai-config-backup"))
+}

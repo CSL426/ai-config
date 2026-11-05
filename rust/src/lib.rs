@@ -1,7 +1,9 @@
 pub mod commands;
 pub mod console;
 pub mod handoff;
+pub mod locking;
 pub mod paths;
 pub mod project;
 pub mod safety;
 pub mod session;
+pub mod sha256;

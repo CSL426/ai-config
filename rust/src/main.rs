@@ -15,6 +15,21 @@ fn main() {
         .map(|s| s.to_string_lossy().into_owned())
         .collect();
 
+    if let Some(cmd) = raw_args.first() {
+        if cmd == "__commit-style" {
+            let code = acg::commands::commit_style::run_hook(&raw_args[1..]);
+            std::process::exit(code);
+        }
+        if cmd == "__handoff-statusline" {
+            let code = acg::commands::handoff_reminder::run_statusline(&raw_args[1..]);
+            std::process::exit(code);
+        }
+        if cmd == "__handoff-reminder" {
+            let code = acg::commands::handoff_reminder::run_hook(&raw_args[1..]);
+            std::process::exit(code);
+        }
+    }
+
     let mut force = false;
     let mut args = Vec::new();
     for token in raw_args {

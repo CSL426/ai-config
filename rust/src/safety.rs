@@ -85,3 +85,22 @@ pub fn assert_plain_path(path: &Path, directory: Option<bool>) -> Result<(), Str
 
     Ok(())
 }
+
+pub fn assert_root_not_reparse(path: &Path, label: &str) -> Result<(), String> {
+    if is_reparse_point(path) {
+        return Err(format!("Refusing reparse point {label}: {}", path.display()));
+    }
+    Ok(())
+}
+
+pub fn assert_safe_write_target(path: &Path) -> Result<(), String> {
+    if is_reparse_point(path) {
+        return Err(format!("Refusing reparse point file destination: {}", path.display()));
+    }
+    if let Some(parent) = path.parent() {
+        if is_reparse_point(parent) {
+            return Err(format!("Refusing reparse point parent destination: {}", parent.display()));
+        }
+    }
+    Ok(())
+}

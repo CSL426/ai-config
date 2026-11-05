@@ -8,11 +8,15 @@ on:
     paths:
       - "rust/**"
       - "ai_config/handoff.py"
+      - "ai_config/commit_style.py"
+      - "ai_config/handoff_reminder.py"
       - ".github/workflows/rust.yml"
   pull_request:
     paths:
       - "rust/**"
       - "ai_config/handoff.py"
+      - "ai_config/commit_style.py"
+      - "ai_config/handoff_reminder.py"
       - ".github/workflows/rust.yml"
   workflow_dispatch:
 
