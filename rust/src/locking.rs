@@ -77,7 +77,8 @@ mod win_lock {
     const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x0000_0001;
 
     #[repr(C)]
-    struct OVERLAPPED {
+    #[allow(clippy::upper_case_acronyms)]
+    struct Overlapped {
         internal: usize,
         internal_high: usize,
         offset: u32,
@@ -92,20 +93,20 @@ mod win_lock {
             dwReserved: u32,
             nNumberOfBytesToLockLow: u32,
             nNumberOfBytesToLockHigh: u32,
-            lpOverlapped: *mut OVERLAPPED,
+            lpOverlapped: *mut Overlapped,
         ) -> i32;
         fn UnlockFileEx(
             hFile: RawHandle,
             dwReserved: u32,
             nNumberOfBytesToUnlockLow: u32,
             nNumberOfBytesToUnlockHigh: u32,
-            lpOverlapped: *mut OVERLAPPED,
+            lpOverlapped: *mut Overlapped,
         ) -> i32;
     }
 
     pub fn try_lock_file(file: &std::fs::File) -> bool {
         let handle = file.as_raw_handle();
-        let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+        let mut overlapped: Overlapped = unsafe { std::mem::zeroed() };
         let ret = unsafe {
             LockFileEx(
                 handle,
@@ -121,7 +122,7 @@ mod win_lock {
 
     pub fn unlock_file(file: &std::fs::File) {
         let handle = file.as_raw_handle();
-        let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+        let mut overlapped: Overlapped = unsafe { std::mem::zeroed() };
         let _ = unsafe { UnlockFileEx(handle, 0, 1, 0, &mut overlapped) };
     }
 }
