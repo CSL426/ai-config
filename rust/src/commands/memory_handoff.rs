@@ -24,7 +24,14 @@ pub fn run_handoff(args: &[String], force: bool) -> i32 {
 
     let result = match action {
         "list" if rest.len() <= 1 => {
-            let cwd = rest.first().map(PathBuf::from);
+            let cwd = rest.first().map(|s| {
+                let p = Path::new(s);
+                let mut out = PathBuf::new();
+                for c in p.components() {
+                    out.push(c.as_os_str());
+                }
+                out
+            });
             handoff_list(cwd.as_deref())
         }
         "write" if rest.len() >= 2 => {
@@ -93,7 +100,11 @@ fn handoff_list(cwd: Option<&Path>) -> Result<i32, String> {
         }
     }
 
-    let archived = archive_finished(ARCHIVE_AFTER_DAYS)?;
+    let archived = match archive_finished(ARCHIVE_AFTER_DAYS) {
+        Ok(list) => list,
+        Err(crate::handoff::ArchiveError::Io(_)) => Vec::new(),
+        Err(crate::handoff::ArchiveError::Safety(err)) => return Err(err),
+    };
     if !archived.is_empty() {
         log_info(&format!(
             "已把 {} 條結案或 {} 天沒人動的線移到 {}/:{}",

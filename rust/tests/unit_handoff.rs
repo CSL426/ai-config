@@ -203,3 +203,106 @@ fn test_resolve_like_python() {
         assert_eq!(resolved_sub, resolved.join("sub_file"));
     }
 }
+
+#[test]
+fn test_short_id_unicode_characters() {
+    assert_eq!(short_id("測試用工作階段名稱", 8), "測試用工作階段名稱".chars().take(8).collect::<String>());
+    assert_eq!(short_id("測試-工作階段", 8), "測試-工作階段");
+    assert_eq!(short_id("測試工作階段名稱超出長度", 8), "測試工作階段名稱");
+    assert_eq!(short_id("測試_工作_階段_超長", 8), "測試_工作_階段");
+    assert_eq!(short_id("短", 8), "短");
+    assert_eq!(short_id("一二三四五六七八", 8), "一二三四五六七八");
+}
+
+#[test]
+fn test_timestamp_strict_utc_format() {
+    assert!(parse_timestamp("2026-11-05T12:00:00Z").is_some());
+    // Offsets must be rejected (matching Python %Y-%m-%dT%H:%M:%SZ)
+    assert!(parse_timestamp("2026-11-05T12:00:00+08:00").is_none());
+    assert!(parse_timestamp("2026-11-05T12:00:00-05:00").is_none());
+    // Subseconds must be rejected
+    assert!(parse_timestamp("2026-11-05T12:00:00.123Z").is_none());
+    assert!(parse_timestamp("2026-11-05 12:00:00").is_none());
+    assert!(parse_timestamp("invalid").is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn test_umask_applied_on_new_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let note_path = tmp.path().join("umask_test.md");
+
+    struct UmaskGuard(u32);
+    impl Drop for UmaskGuard {
+        fn drop(&mut self) {
+            unsafe { libc::umask(self.0 as libc::mode_t); }
+        }
+    }
+    let old = unsafe { libc::umask(0o077) };
+    let _guard = UmaskGuard(old as u32);
+
+    write_text_atomic(&note_path, "content").unwrap();
+    let meta = std::fs::metadata(&note_path).unwrap();
+    let mode = meta.permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "Expected mode 0600 under umask 077, got {:o}", mode);
+}
+
+#[test]
+fn test_summary_heading_regex_and_empty_first_line() {
+    let body1 = "   ## Not a heading\nSome text";
+    assert_eq!(summary(body1, 70), "## Not a heading");
+
+    let body2 = "## Next\n\n* Real item";
+    assert_eq!(summary(body2, 70), "還剩:Real item");
+}
+
+#[test]
+fn test_corrupt_config_returns_err() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = tmp.path().join("config.json");
+    std::fs::write(&cfg, "{corrupted json").unwrap();
+    std::env::set_var("AI_CONFIG_CONFIG", cfg.to_str().unwrap());
+    std::env::remove_var("AI_CONFIG_REPO");
+
+    let result = acg::paths::data_dir();
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("Cannot read configuration file"));
+
+    std::env::remove_var("AI_CONFIG_CONFIG");
+}
+
+#[test]
+fn test_rust_corrupted_note_refused_in_write_claim_done() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data_repo = tmp.path().join("data");
+    let hdir = data_repo.join("memory").join("handoff");
+    std::fs::create_dir_all(&hdir).unwrap();
+    std::env::set_var("AI_CONFIG_REPO", &data_repo);
+
+    std::fs::write(hdir.join("壞線.md"), [0xff, 0xfe, 0x00, 0x00, 0x80, 0x81]).unwrap();
+
+    // 1. load_all skips corrupted note
+    let all = load_all(None).unwrap();
+    assert!(all.is_empty());
+
+    // 2. write without force refuses
+    let w_err = write("壞線", "不加force應該拒絕", None, false).unwrap_err();
+    assert_eq!(w_err, "交接格式不正確:壞線");
+
+    // 3. claim refuses
+    let c_err = claim(Some("壞線")).unwrap_err();
+    assert_eq!(c_err, "交接格式不正確:壞線");
+
+    // 4. done refuses
+    let d_err = done("壞線").unwrap_err();
+    assert_eq!(d_err, "交接格式不正確:壞線");
+
+    // 5. write with force succeeds
+    let note = write("壞線", "加force覆寫", None, true).unwrap();
+    assert_eq!(note.thread, "壞線");
+    assert_eq!(note.body, "加force覆寫");
+
+    std::env::remove_var("AI_CONFIG_REPO");
+}

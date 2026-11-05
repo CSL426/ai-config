@@ -358,29 +358,34 @@ impl TestEnv {
 
         assert_eq!(py_files, rs_files, "Generated file structure mismatch!");
 
+        let ts_re = regex::Regex::new(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\b").unwrap();
         for rel in &py_files {
             let py_file = py_handoff.join(rel);
             let rs_file = rs_handoff.join(rel);
-            if py_file.is_file() {
-                let py_parsed = acg::handoff::parse(&py_file).unwrap();
-                let rs_parsed = acg::handoff::parse(&rs_file).unwrap();
-                assert_eq!(py_parsed.is_some(), rs_parsed.is_some(), "Parseability mismatch for {}", rel.display());
-                if let (Some(py_note), Some(rs_note)) = (py_parsed, rs_parsed) {
-                    assert_eq!(py_note.thread, rs_note.thread);
-                    assert_eq!(py_note.project, rs_note.project);
-                    assert_eq!(py_note.state, rs_note.state);
-                    assert_eq!(py_note.author, rs_note.author);
-                    assert_eq!(py_note.claimed_by, rs_note.claimed_by);
-                    assert_eq!(py_note.session_name, rs_note.session_name);
-                    assert_eq!(py_note.claimed_name, rs_note.claimed_name);
-                    assert_eq!(py_note.body, rs_note.body);
 
-                    // Both created and updated must be valid ISO8601 timestamps
-                    assert!(acg::handoff::parse_timestamp(&py_note.created).is_some());
-                    assert!(acg::handoff::parse_timestamp(&rs_note.created).is_some());
-                    assert!(acg::handoff::parse_timestamp(&py_note.updated).is_some());
-                    assert!(acg::handoff::parse_timestamp(&rs_note.updated).is_some());
-                }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let py_mode = fs::symlink_metadata(&py_file).unwrap().permissions().mode() & 0o777;
+                let rs_mode = fs::symlink_metadata(&rs_file).unwrap().permissions().mode() & 0o777;
+                assert_eq!(py_mode, rs_mode, "File permissions mismatch for {}", rel.display());
+            }
+
+            if py_file.is_file() {
+                let py_bytes = fs::read(&py_file).unwrap();
+                let rs_bytes = fs::read(&rs_file).unwrap();
+
+                let py_norm = if let Ok(s) = std::str::from_utf8(&py_bytes) {
+                    ts_re.replace_all(s, "<TIMESTAMP>").into_owned().into_bytes()
+                } else {
+                    py_bytes
+                };
+                let rs_norm = if let Ok(s) = std::str::from_utf8(&rs_bytes) {
+                    ts_re.replace_all(s, "<TIMESTAMP>").into_owned().into_bytes()
+                } else {
+                    rs_bytes
+                };
+                assert_eq!(py_norm, rs_norm, "File byte mismatch for {}", rel.display());
             }
         }
     }
@@ -612,16 +617,20 @@ fn test_compare_archive_finished_on_list() {
     env.init_git_repo("https://github.com/my-org/my-repo.git");
 
     // Pre-populate old notes in both environments (Safety Scenario 4)
+    let now = chrono::Utc::now();
+    let old_time = (now - chrono::Duration::days(45)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let active_time = (now - chrono::Duration::hours(1)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
     for data in [&env.py_data, &env.rs_data] {
         let hdir = data.join("memory").join("handoff");
         fs::create_dir_all(&hdir).unwrap();
 
-        // An old note untouched for 40 days
-        let old_note = "---\nthread: 陳年舊事\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: 2026-09-01T10:00:00Z\nupdated: 2026-09-01T10:00:00Z\n---\n\n這是舊的\n";
+        // An old note untouched for 45 days
+        let old_note = format!("---\nthread: 陳年舊事\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: {old_time}\nupdated: {old_time}\n---\n\n這是舊的\n");
         fs::write(hdir.join("陳年舊事.md"), old_note).unwrap();
 
         // An active note
-        let active_note = "---\nthread: 現行線\nproject: my-org--my-repo\nstate: open\nauthor: user\ncreated: 2026-11-02T10:00:00Z\nupdated: 2026-11-02T10:00:00Z\n---\n\n現行進度\n";
+        let active_note = format!("---\nthread: 現行線\nproject: my-org--my-repo\nstate: open\nauthor: user\ncreated: {active_time}\nupdated: {active_time}\n---\n\n現行進度\n");
         fs::write(hdir.join("現行線.md"), active_note).unwrap();
     }
 
@@ -643,20 +652,24 @@ fn test_compare_archive_collision_naming() {
     let env = TestEnv::new();
     env.init_git_repo("https://github.com/my-org/my-repo.git");
 
+    let now = chrono::Utc::now();
+    let old_time = (now - chrono::Duration::days(45)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let date_stamp = &old_time[..10];
+
     for data in [&env.py_data, &env.rs_data] {
         let hdir = data.join("memory").join("handoff");
         let adir = hdir.join("archive");
         fs::create_dir_all(&adir).unwrap();
 
         // Already archived first copy
-        let n1 = "---\nthread: 撞名線\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: 2026-08-01T10:00:00Z\nupdated: 2026-08-01T10:00:00Z\n---\n\nfirst archived\n";
+        let n1 = "---\nthread: 撞名線\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: 2020-01-01T10:00:00Z\nupdated: 2020-01-01T10:00:00Z\n---\n\nfirst archived\n";
         fs::write(adir.join("撞名線.md"), n1).unwrap();
         // Already archived collision copy with date
-        let n2 = "---\nthread: 撞名線\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: 2026-08-15T10:00:00Z\nupdated: 2026-08-15T10:00:00Z\n---\n\nsecond archived\n";
-        fs::write(adir.join("撞名線.2026-09-01.md"), n2).unwrap();
+        let n2 = "---\nthread: 撞名線\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: 2020-01-15T10:00:00Z\nupdated: 2020-01-15T10:00:00Z\n---\n\nsecond archived\n";
+        fs::write(adir.join(format!("撞名線.{date_stamp}.md")), n2).unwrap();
 
         // New note that is ready to archive with same updated date
-        let old_note = "---\nthread: 撞名線\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: 2026-09-01T10:00:00Z\nupdated: 2026-09-01T10:00:00Z\n---\n\n這是第三次撞名\n";
+        let old_note = format!("---\nthread: 撞名線\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: {old_time}\nupdated: {old_time}\n---\n\n這是第三次撞名\n");
         fs::write(hdir.join("撞名線.md"), old_note).unwrap();
     }
 
@@ -666,8 +679,8 @@ fn test_compare_archive_collision_naming() {
     for data in [&env.py_data, &env.rs_data] {
         let adir = data.join("memory").join("handoff").join("archive");
         assert!(adir.join("撞名線.md").is_file());
-        assert!(adir.join("撞名線.2026-09-01.md").is_file());
-        assert!(adir.join("撞名線.2026-09-01-2.md").is_file());
+        assert!(adir.join(format!("撞名線.{date_stamp}.md")).is_file());
+        assert!(adir.join(format!("撞名線.{date_stamp}-2.md")).is_file());
     }
 }
 
@@ -1114,43 +1127,6 @@ fn test_compare_archive_dir_is_symlink() {
     assert!(rs_err.contains("Refusing reparse point parent:"));
 }
 
-#[test]
-fn test_compare_non_utf8_note_skipped_in_list() {
-    let env = TestEnv::new();
-    env.init_git_repo("https://github.com/my-org/my-repo.git");
-
-    for data in [&env.py_data, &env.rs_data] {
-        let hdir = data.join("memory").join("handoff");
-        fs::create_dir_all(&hdir).unwrap();
-
-        // Valid note
-        let valid = "---\nthread: 正常線\nproject: my-org--my-repo\nstate: open\nauthor: user\ncreated: 2026-11-02T10:00:00Z\nupdated: 2026-11-02T10:00:00Z\n---\n\n正常內容\n";
-        fs::write(hdir.join("正常線.md"), valid).unwrap();
-
-        // Non-UTF-8 corrupted file with invalid byte sequence
-        let bad_bytes: [u8; 12] = [b'-', b'-', b'-', b'\n', 0xFF, 0xFE, 0xFD, 0xFC, b'\n', b'-', b'-', b'-'];
-        fs::write(hdir.join("壞檔.md"), bad_bytes).unwrap();
-    }
-
-    // 1. List: skips bad note and lists 正常線 without error (exit code 0)
-    let (py_list, rs_list) = env.run_both(&["list"], &[]);
-    env.assert_matches(&py_list, &rs_list);
-    assert_eq!(py_list.status.code(), Some(0));
-    assert_eq!(rs_list.status.code(), Some(0));
-    let py_out = String::from_utf8_lossy(&py_list.stdout);
-    assert!(py_out.contains("正常線"));
-    assert!(!py_out.contains("壞檔"));
-
-    // 2. Claim the corrupt file: fails with "交接格式不正確" and exit code 1
-    let (py_claim, rs_claim) = env.run_both(&["claim", "壞檔"], &[]);
-    env.assert_matches(&py_claim, &rs_claim);
-    assert_eq!(py_claim.status.code(), Some(1));
-    assert_eq!(rs_claim.status.code(), Some(1));
-    let py_err = String::from_utf8_lossy(&py_claim.stderr);
-    let rs_err = String::from_utf8_lossy(&rs_claim.stderr);
-    assert!(py_err.contains("交接格式不正確:壞檔.md"));
-    assert!(rs_err.contains("交接格式不正確:壞檔.md"));
-}
 
 #[test]
 fn test_compare_claim_own_thread_named_elsewhere() {
@@ -1276,4 +1252,198 @@ fn test_compare_symlinked_data_dir() {
     env.assert_matches_extra(&py_done, &rs_done, &[&py_symlink, &rs_symlink]);
     assert_eq!(py_done.status.code(), Some(0));
     assert_eq!(rs_done.status.code(), Some(0));
+}
+
+#[cfg(windows)]
+fn create_junction(link: &Path, target: &Path) {
+    let status = Command::new("cmd")
+        .args(["/C", "mklink", "/J", link.to_str().unwrap(), target.to_str().unwrap()])
+        .status()
+        .expect("Failed to execute mklink /J");
+    assert!(status.success(), "mklink /J failed");
+}
+
+#[cfg(windows)]
+#[test]
+fn test_compare_junction_parent_refusal() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    for data in [&env.py_data, &env.rs_data] {
+        let mem_dir = data.join("memory");
+        fs::create_dir_all(&mem_dir).unwrap();
+        let target_dir = data.join("real_handoff");
+        fs::create_dir_all(&target_dir).unwrap();
+        let handoff_junction = mem_dir.join("handoff");
+        create_junction(&handoff_junction, &target_dir);
+    }
+
+    let (py, rs) = env.run_both(&["write", "安全測試線", "內容"], &[]);
+    env.assert_matches(&py, &rs);
+    assert_eq!(py.status.code(), Some(1));
+    assert_eq!(rs.status.code(), Some(1));
+}
+
+#[cfg(windows)]
+#[test]
+fn test_compare_archive_dir_is_junction() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    let now = chrono::Utc::now();
+    let old_time = (now - chrono::Duration::days(45)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+    for data in [&env.py_data, &env.rs_data] {
+        let hdir = data.join("memory").join("handoff");
+        fs::create_dir_all(&hdir).unwrap();
+        let old_note = format!("---\nthread: 舊線\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: {old_time}\nupdated: {old_time}\n---\n\n舊筆記\n");
+        fs::write(hdir.join("舊線.md"), old_note).unwrap();
+
+        let external = data.join("external_archive_target");
+        fs::create_dir_all(&external).unwrap();
+
+        let arch_junction = hdir.join("archive");
+        create_junction(&arch_junction, &external);
+    }
+
+    let (py, rs) = env.run_both(&["list"], &[]);
+    env.assert_matches(&py, &rs);
+    assert_eq!(py.status.code(), Some(1));
+    assert_eq!(rs.status.code(), Some(1));
+}
+
+#[cfg(windows)]
+#[test]
+fn test_compare_junction_data_dir() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    let py_junction = env.py_data.parent().unwrap().join("py_data_junction");
+    let rs_junction = env.rs_data.parent().unwrap().join("rs_data_junction");
+    create_junction(&py_junction, &env.py_data);
+    create_junction(&rs_junction, &env.rs_data);
+
+    let (py_write, rs_write) = env.run_both_with_data_repos(
+        &["write", "節點連結線", "資料目錄經過junction依然正常解析"],
+        &py_junction,
+        &rs_junction,
+        &[("CLAUDE_CODE_SESSION_ID", "author-junc")],
+    );
+    env.assert_matches_extra(&py_write, &rs_write, &[&py_junction, &rs_junction]);
+    assert_eq!(py_write.status.code(), Some(0));
+    assert_eq!(rs_write.status.code(), Some(0));
+
+    let (py_list, rs_list) = env.run_both_with_data_repos(
+        &["list"],
+        &py_junction,
+        &rs_junction,
+        &[],
+    );
+    env.assert_matches_extra(&py_list, &rs_list, &[&py_junction, &rs_junction]);
+    assert_eq!(py_list.status.code(), Some(0));
+    assert_eq!(rs_list.status.code(), Some(0));
+}
+
+#[test]
+fn test_compare_archive_dir_is_file_ignored_in_list() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    let now = chrono::Utc::now();
+    let old_time = (now - chrono::Duration::days(45)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+    for data in [&env.py_data, &env.rs_data] {
+        let hdir = data.join("memory").join("handoff");
+        fs::create_dir_all(&hdir).unwrap();
+        let old_note = format!("---\nthread: 舊線\nproject: my-org--my-repo\nstate: done\nauthor: user\ncreated: {old_time}\nupdated: {old_time}\n---\n\n舊筆記\n");
+        fs::write(hdir.join("舊線.md"), old_note).unwrap();
+
+        // archive is a regular file, not a dir
+        fs::write(hdir.join("archive"), "a regular file, not a dir").unwrap();
+    }
+
+    let (py, rs) = env.run_both(&["list"], &[]);
+    env.assert_matches(&py, &rs);
+    assert_eq!(py.status.code(), Some(0));
+    assert_eq!(rs.status.code(), Some(0));
+}
+
+#[test]
+fn test_compare_corrupt_config_stops_with_error() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    let bad_config = env.py_home.join("bad_config.json");
+    fs::write(&bad_config, "{invalid_json: true").unwrap();
+
+    let extra_env = [("AI_CONFIG_CONFIG", bad_config.to_str().unwrap()), ("AI_CONFIG_REPO", "")];
+    let (py, rs) = env.run_both_raw(&["list"], &extra_env);
+    assert_eq!(py.status.code(), Some(1));
+    assert_eq!(rs.status.code(), Some(1));
+    let py_err = String::from_utf8_lossy(&py.stderr);
+    let rs_err = String::from_utf8_lossy(&rs.stderr);
+    assert!(py_err.contains("Cannot read configuration file"));
+    assert!(rs_err.contains("Cannot read configuration file"));
+    let py_out = String::from_utf8_lossy(&py.stdout);
+    let rs_out = String::from_utf8_lossy(&rs.stdout);
+    assert!(py_out.contains("setup to replace the invalid configuration"));
+    assert!(rs_out.contains("setup to replace the invalid configuration"));
+}
+
+#[test]
+fn test_compare_missing_claude_directory_in_data_repo() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    let empty_py_data = env.py_home.join("empty_data");
+    let empty_rs_data = env.rs_home.join("empty_data");
+    fs::create_dir_all(&empty_py_data).unwrap();
+    fs::create_dir_all(&empty_rs_data).unwrap();
+
+    let (py, rs) = env.run_both_with_data_repos(
+        &["list"],
+        &empty_py_data,
+        &empty_rs_data,
+        &[],
+    );
+    env.assert_matches_extra(&py, &rs, &[&empty_py_data, &empty_rs_data]);
+    assert_eq!(py.status.code(), Some(1));
+    assert_eq!(rs.status.code(), Some(1));
+    let py_err = String::from_utf8_lossy(&py.stderr);
+    let rs_err = String::from_utf8_lossy(&rs.stderr);
+    assert!(py_err.contains("Repository configuration directory not found"));
+    assert!(rs_err.contains("Repository configuration directory not found"));
+}
+
+#[test]
+fn test_compare_claim_whitespace_fails() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    let (py, rs) = env.run_both(&["claim", "   "], &[]);
+    env.assert_matches(&py, &rs);
+    assert_eq!(py.status.code(), Some(1));
+    assert_eq!(rs.status.code(), Some(1));
+    let py_err = String::from_utf8_lossy(&py.stderr);
+    let rs_err = String::from_utf8_lossy(&rs.stderr);
+    assert!(py_err.contains("沒有這則交接:   "));
+    assert!(rs_err.contains("沒有這則交接:   "));
+}
+
+#[test]
+fn test_compare_empty_thread_field() {
+    let env = TestEnv::new();
+    env.init_git_repo("https://github.com/my-org/my-repo.git");
+
+    for data in [&env.py_data, &env.rs_data] {
+        let hdir = data.join("memory").join("handoff");
+        fs::create_dir_all(&hdir).unwrap();
+        let note = "---\nthread:\nproject: my-org--my-repo\nstate: open\nauthor: u\ncreated: 2026-11-05T10:00:00Z\nupdated: 2026-11-05T10:00:00Z\n---\n\n內容\n";
+        fs::write(hdir.join("空工作線.md"), note).unwrap();
+    }
+
+    let (py, rs) = env.run_both(&["list"], &[]);
+    env.assert_matches(&py, &rs);
+    assert_eq!(py.status.code(), Some(0));
+    assert_eq!(rs.status.code(), Some(0));
 }

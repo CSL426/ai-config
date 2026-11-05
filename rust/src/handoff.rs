@@ -106,12 +106,10 @@ pub fn parse(path: &Path) -> Result<Option<Handoff>, String> {
         .unwrap_or(&updated)
         .to_string();
 
-    let thread = fields
-        .get("thread")
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&stem)
-        .to_string();
+    let thread = match fields.get("thread") {
+        Some(val) => val.trim().to_string(),
+        None => stem,
+    };
 
     Ok(Some(Handoff {
         path: path.to_path_buf(),
@@ -156,12 +154,8 @@ pub fn now_utc() -> String {
 }
 
 pub fn parse_timestamp(stamp: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(stamp)
-        .map(|dt| dt.with_timezone(&Utc))
-        .or_else(|_| {
-            chrono::NaiveDateTime::parse_from_str(stamp, "%Y-%m-%dT%H:%M:%SZ")
-                .map(|ndt| ndt.and_utc())
-        })
+    chrono::NaiveDateTime::parse_from_str(stamp, "%Y-%m-%dT%H:%M:%SZ")
+        .map(|ndt| ndt.and_utc())
         .ok()
 }
 
@@ -206,10 +200,15 @@ pub fn is_stale(note: &Handoff) -> bool {
 }
 
 pub fn short_id(value: &str, keep: usize) -> &str {
-    if value.len() <= keep {
+    if value.chars().count() <= keep {
         return value;
     }
-    let head = &value[..keep];
+    let byte_index = value
+        .char_indices()
+        .nth(keep)
+        .map(|(idx, _)| idx)
+        .unwrap_or(value.len());
+    let head = &value[..byte_index];
     if head.contains('-') || head.contains('_') {
         head.trim_end_matches(['-', '_'])
     } else {
@@ -277,12 +276,21 @@ pub fn summary(body: &str, limit: usize) -> String {
 
     for line in body.lines() {
         let trimmed = line.trim();
-        if !trimmed.is_empty() && !heading_re.is_match(trimmed) {
+        if !trimmed.is_empty() && !heading_re.is_match(line) {
             return trimmed.chars().take(limit).collect();
         }
     }
 
     String::new()
+}
+
+#[cfg(unix)]
+fn current_umask() -> u32 {
+    unsafe {
+        let mask = libc::umask(0o022);
+        libc::umask(mask);
+        mask as u32
+    }
 }
 
 pub fn write_text_atomic(path: &Path, content: &str) -> Result<(), String> {
@@ -327,7 +335,8 @@ pub fn write_text_atomic(path: &Path, content: &str) -> Result<(), String> {
         if let Ok(meta) = path.metadata() {
             let _ = std::fs::set_permissions(temp.path(), meta.permissions());
         } else {
-            let _ = std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o666));
+            let mode = 0o666 & !current_umask();
+            let _ = std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(mode));
         }
     }
 
@@ -369,21 +378,37 @@ pub fn load_all(project: Option<&str>) -> Result<Vec<Handoff>, String> {
     Ok(notes)
 }
 
-pub fn archive_finished(older_than_days: u64) -> Result<Vec<String>, String> {
+#[derive(Debug)]
+pub enum ArchiveError {
+    Safety(String),
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for ArchiveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArchiveError::Safety(s) => write!(f, "{s}"),
+            ArchiveError::Io(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for ArchiveError {}
+
+pub fn archive_finished(older_than_days: u64) -> Result<Vec<String>, ArchiveError> {
     let root = handoff_dir();
     if !root.is_dir() {
         return Ok(Vec::new());
     }
     let mut moved = Vec::new();
-    let notes = load_all(None)?;
+    let notes = load_all(None).map_err(ArchiveError::Safety)?;
     let arch_dir = archive_dir();
 
     for note in notes {
         if age_in_days(&note.updated) < older_than_days {
             continue;
         }
-        std::fs::create_dir_all(&arch_dir)
-            .map_err(|e| format!("Failed to create archive directory {}: {e}", arch_dir.display()))?;
+        std::fs::create_dir_all(&arch_dir).map_err(ArchiveError::Io)?;
 
         let file_name = note.path.file_name().unwrap();
         let stem = note.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
@@ -407,7 +432,7 @@ pub fn archive_finished(older_than_days: u64) -> Result<Vec<String>, String> {
                 spare += 1;
             }
         }
-        assert_plain_path(&target, Some(false))?;
+        assert_plain_path(&target, Some(false)).map_err(ArchiveError::Safety)?;
         if std::fs::rename(&note.path, &target).is_ok() {
             moved.push(note.thread);
         }
@@ -453,12 +478,9 @@ pub fn load_or_fail(name: &str) -> Result<Handoff, String> {
     if !path.is_file() {
         return Err(format!("沒有這則交接:{name}"));
     }
-    match parse(&path)? {
-        Some(note) => Ok(note),
-        None => {
-            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            Err(format!("交接格式不正確:{fname}"))
-        }
+    match parse(&path) {
+        Ok(Some(note)) => Ok(note),
+        _ => Err(format!("交接格式不正確:{name}")),
     }
 }
 
@@ -525,7 +547,15 @@ pub fn write(
     assert_plain_path(&path, Some(false))?;
 
     let existing = if path.is_file() {
-        parse(&path)?
+        match parse(&path) {
+            Ok(Some(note)) => Some(note),
+            _ => {
+                if !force {
+                    return Err(format!("交接格式不正確:{thread}"));
+                }
+                None
+            }
+        }
     } else {
         None
     };
@@ -577,8 +607,11 @@ pub fn write(
         body: body.to_string(),
     };
 
-    if !force {
-        let recheck = if path.is_file() { parse(&path)? } else { None };
+    if !force && path.is_file() {
+        let recheck = match parse(&path) {
+            Ok(Some(note)) => Some(note),
+            _ => return Err(format!("交接格式不正確:{thread}")),
+        };
         refuse_if_taken(recheck.as_ref(), thread)?;
     }
 
@@ -588,17 +621,12 @@ pub fn write(
 
 pub fn claim(name: Option<&str>) -> Result<Handoff, String> {
     let mut note = match name {
-        Some(n) if !n.trim().is_empty() => load_or_fail(n.trim())?,
+        Some(n) if !n.is_empty() => load_or_fail(n)?,
         _ => own_thread()?,
     };
-    let display_name = if let Some(n) = name {
-        if !n.trim().is_empty() {
-            n.trim().to_string()
-        } else {
-            note.thread.clone()
-        }
-    } else {
-        note.thread.clone()
+    let display_name = match name {
+        Some(n) if !n.is_empty() => n.to_string(),
+        _ => note.thread.clone(),
     };
 
     if note.state == DONE {

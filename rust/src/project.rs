@@ -25,19 +25,45 @@ pub fn parse_project_key(remote_url: &str) -> String {
 }
 
 fn git_output(cwd: &Path, args: &[&str]) -> Option<String> {
-    let output = Command::new("git")
+    let mut child = Command::new("git")
         .arg("-C")
         .arg(cwd)
         .args(args)
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
         .ok()?;
-    if output.status.success() {
-        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !text.is_empty() {
-            return Some(text);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let stdout = child.stdout.take();
+    let thread_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut stream) = stdout {
+            use std::io::Read;
+            let _ = stream.read_to_end(&mut buf);
+        }
+        let _ = tx.send(buf);
+    });
+
+    match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+        Ok(bytes) => {
+            let status = child.wait().ok()?;
+            let _ = thread_handle.join();
+            if status.success() {
+                let text = String::from_utf8_lossy(&bytes).trim().to_string();
+                if !text.is_empty() {
+                    return Some(text);
+                }
+            }
+            None
+        }
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = thread_handle.join();
+            None
         }
     }
-    None
 }
 
 pub fn project_key(cwd: Option<&Path>) -> String {

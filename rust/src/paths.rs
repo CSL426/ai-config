@@ -145,37 +145,71 @@ pub fn resolve_like_python(path: &Path) -> PathBuf {
     normalize_path_components(&strip_verbatim_prefix(&path))
 }
 
-pub fn raw_data_dir() -> PathBuf {
+pub fn configured_data_repo() -> Result<Option<PathBuf>, String> {
     if let Ok(val) = std::env::var("AI_CONFIG_REPO") {
         let trimmed = val.trim();
         if !trimmed.is_empty() {
-            return PathBuf::from(trimmed);
+            return Ok(Some(resolve_like_python(Path::new(trimmed))));
         }
     }
+
     if let Some(config_path) = find_config_path() {
-        if config_path.is_file() {
-            if let Ok(text) = std::fs::read_to_string(&config_path) {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(repo) = val.get("data_repo").and_then(|v| v.as_str()) {
-                        let trimmed = repo.trim();
-                        if !trimmed.is_empty() {
-                            return PathBuf::from(trimmed);
-                        }
-                    }
+        if config_path.exists() {
+            let text = std::fs::read_to_string(&config_path)
+                .map_err(|e| format!("Cannot read configuration file {}: {e}", config_path.display()))?;
+            let val = serde_json::from_str::<serde_json::Value>(&text)
+                .map_err(|e| format!("Cannot read configuration file {}: {e}", config_path.display()))?;
+            let obj = val.as_object().ok_or_else(|| {
+                format!("Configuration file must contain a JSON object: {}", config_path.display())
+            })?;
+            if let Some(repo_val) = obj.get("data_repo") {
+                let repo_str = repo_val.as_str().ok_or_else(|| {
+                    format!("data_repo must be a string in {}", config_path.display())
+                })?;
+                let trimmed = repo_str.trim();
+                if !trimmed.is_empty() {
+                    return Ok(Some(resolve_like_python(Path::new(trimmed))));
                 }
             }
         }
     }
-    let home = home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".acg").join("data")
+    Ok(None)
 }
 
-pub fn data_dir() -> PathBuf {
-    resolve_like_python(&raw_data_dir())
+pub fn fallback_data_repo() -> PathBuf {
+    let home = home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let default_home_repo = resolve_like_python(&home.join(".acg").join("data"));
+    let previous_default_repo = resolve_like_python(&home.join("ai-config").join("data"));
+    let legacy_home_repo = resolve_like_python(&home.join("ai-config"));
+
+    let has_any_tool = |p: &Path| {
+        p.join("claude").is_dir() || p.join("codex").is_dir() || p.join("agy").is_dir()
+    };
+
+    if has_any_tool(&default_home_repo) {
+        default_home_repo
+    } else if has_any_tool(&previous_default_repo) {
+        previous_default_repo
+    } else if has_any_tool(&legacy_home_repo) {
+        legacy_home_repo
+    } else {
+        default_home_repo
+    }
+}
+
+pub fn data_dir() -> Result<PathBuf, String> {
+    match configured_data_repo()? {
+        Some(repo) => Ok(repo),
+        None => Ok(fallback_data_repo()),
+    }
+}
+
+pub fn raw_data_dir() -> PathBuf {
+    data_dir().unwrap_or_else(|_| fallback_data_repo())
 }
 
 pub fn memory_dir() -> PathBuf {
-    data_dir().join("memory")
+    raw_data_dir().join("memory")
 }
 
 pub fn handoff_dir() -> PathBuf {
