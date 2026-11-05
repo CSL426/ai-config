@@ -262,7 +262,10 @@ def load_all(project: str = "") -> list[Handoff]:
     for path in sorted(root.glob("*.md")):
         if is_reparse_point(path) or not path.is_file():
             continue
-        note = _parse(path)
+        try:
+            note = _parse(path)
+        except (UnicodeDecodeError, OSError):
+            continue
         if note is None:
             continue
         if project and note.project != project:
@@ -319,11 +322,19 @@ def write(
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{_slug(thread)}.md"
     assert_plain_path(path, directory=False)
-    existing = _parse(path) if path.is_file() else None
-    if not force:
-        # 2026-10-28:Codex 接走 9 秒後,原作者的 session 又寫了一次同名交接,把線變回
-        # 待接手、也蓋掉了接手紀錄,之後每個 session 開工都被提醒去接一條已經有人在做的線
-        _refuse_if_taken(existing, thread)
+    existing: Handoff | None = None
+    if path.is_file():
+        try:
+            existing = _parse(path)
+        except (UnicodeDecodeError, OSError) as exc:
+            if not force:
+                raise ValueError(f"交接格式不正確:{thread}") from exc
+        if not force and existing is None:
+            raise ValueError(f"交接格式不正確:{thread}")
+        if not force:
+            # 2026-10-28:Codex 接走 9 秒後,原作者的 session 又寫了一次同名交接,把線變回
+            # 待接手、也蓋掉了接手紀錄,之後每個 session 開工都被提醒去接一條已經有人在做的線
+            _refuse_if_taken(existing, thread)
     now = _now()
     note = Handoff(
         path=path,
@@ -339,9 +350,16 @@ def write(
         updated=now,
         body=body,
     )
-    if not force:
+    if not force and path.is_file():
         # 讀完到寫入之間有人認領的話,寫之前再看一次
-        _refuse_if_taken(_parse(path) if path.is_file() else None, thread)
+        recheck: Handoff | None = None
+        try:
+            recheck = _parse(path)
+        except (UnicodeDecodeError, OSError) as exc:
+            raise ValueError(f"交接格式不正確:{thread}") from exc
+        if recheck is None:
+            raise ValueError(f"交接格式不正確:{thread}")
+        _refuse_if_taken(recheck, thread)
     _write_text_atomic(path, _render(note))
     return note
 
@@ -374,9 +392,12 @@ def _load_or_fail(name: str) -> Handoff:
     assert_plain_path(path, directory=False)
     if not path.is_file():
         raise ValueError(f"沒有這則交接:{name}")
-    note = _parse(path)
+    try:
+        note = _parse(path)
+    except (UnicodeDecodeError, OSError) as exc:
+        raise ValueError(f"交接格式不正確:{name}") from exc
     if note is None:
-        raise ValueError(f"交接格式不正確:{path.name}")
+        raise ValueError(f"交接格式不正確:{name}")
     return note
 
 
