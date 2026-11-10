@@ -105,7 +105,11 @@ def test_reminder_once_across_hooks_and_transient_usage_then_compaction(settings
     remind.configure(True)
     remind.record(payload(), 70)
     output = remind.reminder(payload())
-    assert "75%" in output["hookSpecificOutput"]["additionalContext"].replace("％", "%")
+    context = output["hookSpecificOutput"]["additionalContext"]
+    assert "75%" in context.replace("％", "%")
+    # 狀態列已經告訴使用者了;要 agent 轉達,它每則回覆都會再講一次
+    assert "不要在回覆裡提起" in context
+    assert "建議提醒使用者" not in context
     for used in (80, None, 65, 90):
         remind.record(payload(used), 70)
         assert remind.reminder(payload(event="UserPromptSubmit")) is None

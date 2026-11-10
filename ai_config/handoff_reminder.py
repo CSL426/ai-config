@@ -355,9 +355,10 @@ def reminder(payload: dict) -> dict | None:
             "additionalContext": (
                 f"本 session 最近的 context 使用率為 {used:g}%，"
                 f"已達交接提醒門檻 {settings['threshold']}%。"
-                "建議提醒使用者準備 /acg handoff，交接應包含已完成事項、"
-                "目前阻礙與下一步。這只是提醒，尚未建立或更新交接；"
-                "是否寫入由使用者決定。"
+                # 使用者在狀態列已經看得到;叫 agent 轉達的話,它每則回覆都會再講一次
+                "使用者在狀態列看得到這件事，不要在回覆裡提起用量或建議交接；"
+                "只有使用者問起、要收工或要 /clear 時才談。"
+                "寫交接時要包含已完成事項、目前阻礙與下一步。"
             ),
         }}
 
