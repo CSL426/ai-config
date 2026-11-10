@@ -593,7 +593,7 @@ local setting.
 
 The reminder reads Claude Code's official context percentage from its
 statusLine input and preserves the existing status-line output. Once usage
-reaches the threshold, UserPromptSubmit or PostToolUse adds one reminder per
+reaches the threshold, UserPromptSubmit or PostToolUse adds one silent note per
 session compaction cycle. No claimed handoff is required. Missing, null, or
 stale readings are skipped. PreCompact only resets the reminder state; it
 does not ask the model to write or delay compaction. The reminder itself

@@ -92,7 +92,7 @@ jobs:
           - os: macos-15-intel
             asset: ai-config-macos-x86_64
             extra_args: "--icon assets/icon.icns --add-data=ai_config/gui_assets:gui_assets"
-          - os: macos-14
+          - os: macos-15
             asset: ai-config-macos-arm64
             extra_args: "--icon assets/icon.icns --add-data=ai_config/gui_assets:gui_assets"
 
