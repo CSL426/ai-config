@@ -148,11 +148,16 @@ function renderKeepaliveWindow(state: MemoryInfo["keepalive"]): void {
   const list = $("#keepalive-accounts");
   list.replaceChildren();
   for (const [tool, one] of Object.entries(state.tools ?? {})) {
-    for (const [home, line] of Object.entries(one.accounts ?? {})) {
+    const accounts = one.accounts ?? {};
+    // codex 各帳號上次記下的週額度，以及額度用完後排定的單獨喚醒
+    const notes = one.notes ?? {};
+    const homes = [...Object.keys(accounts), ...Object.keys(notes).filter((home) => !(home in accounts))];
+    for (const home of homes) {
       const item = document.createElement("li");
       const label = document.createElement("code");
       label.textContent = `${tool} ${home}`;
-      item.append(label, `：${line}`);
+      const parts = [accounts[home], notes[home]].filter(Boolean);
+      item.append(label, `：${parts.join("；")}`);
       list.append(item);
     }
   }

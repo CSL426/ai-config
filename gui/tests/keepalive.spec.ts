@@ -107,6 +107,27 @@ test("顯示實際視窗、偏離排程的警告與各帳號結果", async ({ pa
   await expect(page.locator("#keepalive-accounts")).toContainText("codex .codex-csl：exit 0: hi");
 });
 
+test("codex 帳號列出週額度與排定的單獨喚醒", async ({ page }) => {
+  await openMemory(page, {
+    ...active,
+    tools: {
+      codex: {
+        installed: true, times: ["07:00"], recent: [],
+        accounts: { ".codex-set": "exit 1: ERROR: usage limit" },
+        notes: {
+          ".codex-set": "每週已用 100%,11-14 09:30 重置;預定 11-14 09:32 單獨喚醒",
+          ".codex-csl": "每週已用 52%,11-15 08:00 重置",
+        },
+      },
+    },
+  });
+  await expect(page.locator("#keepalive-accounts li")).toHaveCount(2);
+  await expect(page.locator("#keepalive-accounts li").first()).toContainText(
+    "exit 1: ERROR: usage limit；每週已用 100%,11-14 09:30 重置;預定 11-14 09:32 單獨喚醒",
+  );
+  await expect(page.locator("#keepalive-accounts")).toContainText("codex .codex-csl：每週已用 52%");
+});
+
 test("視窗準時開始就不警告", async ({ page }) => {
   await openMemory(page, { ...active, window: { start: "07:00", reset: "12:00", drift: "" } });
   await expect(page.locator("#keepalive-window")).toHaveText("目前視窗 07:00–12:00");

@@ -4,10 +4,11 @@ import json
 import os
 import re
 import subprocess
-from datetime import datetime, timedelta
+import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from . import keepalive_settings
+from . import keepalive_scheduler, keepalive_settings
 from .subproc import UTF8
 
 
@@ -128,30 +129,127 @@ def codex_homes() -> list:
     return sorted(seen.values())
 
 
-def send(tool: str = keepalive_settings.DEFAULT_TOOL) -> int:
+def send(tool: str = keepalive_settings.DEFAULT_TOOL, home: "str | None" = None) -> int:
     """Make the call, once per account. A failure is logged and nothing else.
 
     Missing one costs a window that starts later than intended, which is
-    not worth waking anyone for.
+    not worth waking anyone for. `home` limits a codex call to one
+    account: the one-shot wake after an exhausted quota must not call
+    the others, whose windows run on their own schedule.
     """
     keepalive_settings._check_tool(tool)
-    args = keepalive_settings.run_args(keepalive_settings.load(tool), tool)
+    if home is not None and tool != "codex":
+        raise ValueError(f"--home 只適用於 codex,不適用於 {tool}")
+    settings = keepalive_settings.load(tool)
+    args = keepalive_settings.run_args(settings, tool)
     if tool == "agy":
         return _send_agy(args, tool)
     homes = codex_homes() if tool == "codex" else []
+    if home is not None:
+        named = {found.name: found for found in homes}
+        if home not in named:
+            raise ValueError(
+                f"不認得這個 codex 帳號:{home}(可用:{', '.join(named) or '無'})"
+            )
+        homes = [named[home]]
     if not homes:
         return _call(args, tool, tool, None)
     worst = 0
-    for home in homes:
-        env = {**os.environ, "CODEX_HOME": str(home)}
+    for found in homes:
+        env = {**os.environ, "CODEX_HOME": str(found)}
         # 每個帳號看得到的模型不一樣,各自從自己的清單挑
-        model = cheapest_codex_model(home)
+        model = cheapest_codex_model(found)
         chosen = [*args[:-1], "-m", model, args[-1]] if model else args
-        label = f"{tool} ({home.name})"
+        label = f"{tool} ({found.name})"
         _append_log(f"model {model or '(codex 預設)'}", tool)
+        before = _codex_snapshot(found, tool)
+        started = time.time()
+        code, result = _run(chosen, tool, label, env)
+        _after_codex_call(found, settings.prompt, before, started, code, result, tool)
         # 一個帳號額度用完不該讓其他帳號跳過喚醒
-        worst = max(worst, _call(chosen, tool, label, env))
+        worst = max(worst, code)
     return worst
+
+
+def _codex_snapshot(home: Path, tool: str) -> "frozenset | None":
+    from . import keepalive_limits
+
+    try:
+        return keepalive_limits.snapshot(home)
+    except (OSError, ValueError) as exc:
+        _append_log(f"{home.name}: could not list its rollouts: {exc}", tool)
+        return None
+
+
+def _after_codex_call(
+    home: Path, prompt: str, before: "frozenset | None", started: float, code: int,
+    result: "subprocess.CompletedProcess | None", tool: str,
+) -> None:
+    """Keep what a successful call reported; plan a wake after an exhausted one.
+
+    Nothing here may fail the keepalive itself: the call already happened.
+    """
+    if result is None:
+        return
+    if result.returncode == 0:
+        steps = [
+            lambda: _remember_codex_limits(home, prompt, before, started, tool),
+            # 記不下額度不該讓已經醒來的帳號還留著一個待執行的喚醒
+            lambda: _log_if(keepalive_scheduler.cancel_wake(home.name), tool),
+        ]
+    elif code == 0:
+        # _run 把額度用完當成功回傳;這種失敗的 rate_limits 是 null,重置時間只能看上次的紀錄
+        steps = [lambda: _plan_codex_wake(home, tool)]
+    else:
+        steps = []
+    for step in steps:
+        try:
+            step()
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            _append_log(f"{home.name}: could not handle its quota record: {exc}", tool)
+
+
+def _log_if(line: str, tool: str) -> None:
+    if line:
+        _append_log(line, tool)
+
+
+def _remember_codex_limits(
+    home: Path, prompt: str, before: "frozenset | None", started: float, tool: str,
+) -> None:
+    from . import keepalive_limits
+
+    if before is None:
+        return
+    rollout, reason = keepalive_limits.find_rollout(home, prompt, before, started)
+    if rollout is None:
+        _append_log(f"{home.name}: limits not recorded: {reason}", tool)
+        return
+    windows = keepalive_limits.read_limits(rollout)
+    if not windows:
+        _append_log(f"{home.name}: limits not recorded: {rollout.name} reports no codex limits", tool)
+        return
+    keepalive_limits.remember(home.name, windows)
+
+
+def _plan_codex_wake(home: Path, tool: str) -> None:
+    from . import keepalive_limits
+
+    if not keepalive_scheduler.installed("codex"):
+        # 單獨喚醒是排程的一部分:沒啟用排程時手動 send 不該留下一個排程
+        _append_log(f"{home.name}: codex keepalive is not enabled; no one-shot wake", tool)
+        return
+    record = keepalive_limits.read_json(
+        keepalive_limits.limits_path(), lambda line: _append_log(line, tool),
+    ).get(home.name)
+    now = datetime.now(UTC)
+    slot = keepalive_limits.next_slot(keepalive_settings.load("codex").times, now)
+    wake, reason = keepalive_limits.decide(record, now, slot)
+    if wake is None:
+        _append_log(f"{home.name}: no one-shot wake: {reason}", tool)
+        return
+    _, line = keepalive_scheduler.schedule_wake(home.name, wake)
+    _append_log(f"{home.name}: {line}", tool)
 
 
 def _send_agy(args: list, tool: str) -> int:

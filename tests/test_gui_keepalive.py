@@ -194,3 +194,20 @@ def test_no_recorded_window_is_none(core, monkeypatch):
     monkeypatch.setattr(keepalive_window, "last_by_account", lambda tool="claude": {})
 
     assert _keepalive_state()["window"] is None
+
+
+def test_the_page_gets_each_codex_accounts_quota_and_wake(core, monkeypatch):
+    """The page lists every codex account, so it shows their quota beside the CLI."""
+    from ai_config import keepalive_limits
+
+    monkeypatch.setattr(
+        keepalive_limits, "account_notes",
+        lambda now=None: {".codex-set": "每週已用 100%;預定 11-14 09:32 單獨喚醒"},
+    )
+
+    state = _keepalive_state()
+
+    assert state["tools"]["codex"]["notes"] == {
+        ".codex-set": "每週已用 100%;預定 11-14 09:32 單獨喚醒",
+    }
+    assert state["tools"]["claude"]["notes"] == {}

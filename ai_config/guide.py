@@ -500,6 +500,21 @@ gets its own call with that `CODEX_HOME` — accounts switched by a shell
 function are never seen by a schedule, which loads no shell profile.
 Homes sharing one credentials file count once. `status` lists each
 account's last result.
+An exhausted codex quota reports no reset time, so each successful codex
+call keeps the limits its own rollout reported (five-hour and weekly used
+percentage and reset) in `keepalive-codex-limits.json` in acg's state
+folder. When a later call for that account hits the usage limit, acg reads
+that record (ignored once older than 8 days): the latest reset among
+windows at least 90% used, else the earliest future reset. If it comes
+more than 10 minutes before the next scheduled call, a one-shot wake for
+that account alone runs 2 minutes after it — `systemd-run --user` on
+Linux, a `-Once` Task Scheduler task on Windows, not on macOS. The wake
+runs `keepalive send codex --home <home>`, where `<home>` must be one of
+the account folder names `status` lists (`.codex-csl`); it calls only that
+account. One pending wake per account, replaced rather than added; a
+successful call for the account cancels it, `disable codex` removes them
+all, and `status codex` shows each account's recorded weekly quota and
+pending wake. Wakes are only planned while the codex schedule is enabled.
 Each tool is anchored separately, with its own times, schedule and log:
 three accounts, three windows, no reason for their boundaries to line up.
 Every call uses the weakest model and the least thinking that tool offers,

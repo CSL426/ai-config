@@ -18,7 +18,12 @@ def _keepalive_state() -> dict:
     blank = {"installed": False, "times": [], "model": "", "ccs": "",
              "recent": [], "tools": {}, "window": None}
     try:
-        from . import keepalive_scheduler, keepalive_settings, keepalive_window
+        from . import (
+            keepalive_limits,
+            keepalive_scheduler,
+            keepalive_settings,
+            keepalive_window,
+        )
 
         tools = {}
         for name in keepalive_settings.TOOLS:
@@ -26,7 +31,9 @@ def _keepalive_state() -> dict:
             tools[name] = {"installed": keepalive_scheduler.installed(name),
                            "times": list(settings.times),
                            "recent": keepalive_window.last_runs(tool=name),
-                           "accounts": keepalive_window.last_by_account(name)}
+                           "accounts": keepalive_window.last_by_account(name),
+                           # codex 各帳號的週額度與額度用完後排定的單獨喚醒
+                           "notes": keepalive_limits.account_notes() if name == "codex" else {}}
         first = tools[keepalive_settings.DEFAULT_TOOL]
         return {"installed": first["installed"], "times": first["times"],
                 "model": keepalive_settings.load().model, "ccs": keepalive_scheduler.existing_ccs(),

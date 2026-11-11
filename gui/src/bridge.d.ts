@@ -92,6 +92,7 @@ export interface MemoryInfo extends RunResult {
     tools: Record<string, {
       installed: boolean; times: string[]; recent: string[];
       accounts?: Record<string, string>;
+      notes?: Record<string, string>;
     }>;
     window?: { start: string; reset: string; drift: string } | null;
   };

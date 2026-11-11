@@ -1,6 +1,7 @@
 """`acg keepalive`: anchor this machine's usage windows."""
 
 from .. import (
+    keepalive_limits,
     keepalive_runner,
     keepalive_scheduler,
     keepalive_settings,
@@ -26,6 +27,24 @@ def _split_tool(args: list) -> tuple:
     return rest, tool
 
 
+def _pop_home(args: list) -> tuple:
+    """Take `--home NAME` (or `--home=NAME`) out before the tool name is looked for.
+
+    A home is named by its folder, and a folder could be called like a
+    tool; taking it first keeps it from being read as one.
+    """
+    rest, home = [], None
+    values = iter(args)
+    for value in values:
+        if value == "--home":
+            home = next(values, "")
+        elif value.startswith("--home="):
+            home = value.partition("=")[2]
+        else:
+            rest.append(value)
+    return rest, home
+
+
 def _report(tool: str) -> None:
     settings = keepalive_settings.load(tool)
     enabled = keepalive_scheduler.installed(tool)
@@ -34,10 +53,17 @@ def _report(tool: str) -> None:
     else:
         log_info(f"{tool}:未啟用")
     accounts = keepalive_window.last_by_account(tool)
-    if accounts:
+    # codex 每個帳號上次成功時記下的週額度,以及額度用完後排好的單獨喚醒
+    notes = keepalive_limits.account_notes() if tool == "codex" else {}
+    if accounts or notes:
         # 一個工具有好幾個帳號時,每個帳號的視窗各自獨立,結果要分開看
         for home, line in accounts.items():
             print(f"    {home}: {line}")
+            if home in notes:
+                print(f"      {notes[home]}")
+        for home, note in notes.items():
+            if home not in accounts:
+                print(f"    {home}: {note}")
     else:
         recent = keepalive_window.last_runs(tool=tool)
         if recent:
@@ -80,6 +106,7 @@ def _status(tool: "str | None") -> int:
 
 
 def run_keepalive(args: list) -> int:
+    args, home = _pop_home(args)
     rest, tool = _split_tool(args)
     action = rest[0] if rest else "status"
     named = any(a in keepalive_settings.TOOLS for a in args)
@@ -89,6 +116,9 @@ def run_keepalive(args: list) -> int:
         return 0
 
     try:
+        if home is not None and (action != "send" or tool != "codex"):
+            # 只有額度用完後的單獨喚醒會用到:一次只叫醒一個 codex 帳號
+            raise ValueError("--home 只能用在 keepalive send codex")
         if action == "status":
             return _status(tool if named else None)
 
@@ -115,7 +145,7 @@ def run_keepalive(args: list) -> int:
             return code
 
         if action == "send":
-            return keepalive_runner.send(tool)
+            return keepalive_runner.send(tool, home=home)
     except ValueError as exc:
         log_error(str(exc))
         return 1

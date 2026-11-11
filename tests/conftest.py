@@ -211,3 +211,19 @@ def _shared_hooks_stay_out_of_the_real_notebook(
         return paths.SCRIPT_DIR / "claude" / "shared-hooks"
 
     monkeypatch.setattr(shared_hooks, "definitions_dir", definitions_dir)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_keepalive_wake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one-shot codex wake reaches systemd-run or the Task Scheduler.
+
+    Test homes use the same names as real ones (.codex-set, .codex-csl),
+    so a stray call would stop or replace this machine's real wake units.
+    Tests of the scheduling replace this with a recorder.
+    """
+    from ai_config import keepalive_scheduler
+
+    def refuse(argv):
+        raise AssertionError(f"a test reached the real scheduler: {argv}")
+
+    monkeypatch.setattr(keepalive_scheduler, "_wake_command", refuse)
