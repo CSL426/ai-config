@@ -670,3 +670,67 @@ def test_a_record_that_cannot_be_written_still_cancels_the_wake(
 
     assert keepalive_limits.read_json(keepalive_limits.wakes_path()) == {}
     assert ".codex-csl: could not handle its quota record" in _log()
+
+
+def test_a_failed_cancel_keeps_the_record(tmp_path, monkeypatch) -> None:
+    """A task the scheduler would not remove must stay findable for disable."""
+    from ai_config import keepalive_limits, keepalive_scheduler
+
+    monkeypatch.setattr(keepalive_limits, "wakes_path", lambda: tmp_path / "wakes.json")
+    keepalive_limits.write_json(tmp_path / "wakes.json", {".codex-set": {"at": 1}})
+    monkeypatch.setattr(keepalive_scheduler, "platform_name", lambda: "linux")
+    monkeypatch.setattr(
+        keepalive_scheduler, "_wake_command",
+        lambda argv: subprocess.CompletedProcess(argv, 1, "", "Access denied"),
+    )
+
+    message = keepalive_scheduler.cancel_wake(".codex-set")
+
+    assert "could not cancel" in message
+    assert ".codex-set" in keepalive_limits.read_json(tmp_path / "wakes.json")
+
+
+def test_a_failed_reschedule_drops_the_stale_record(tmp_path, monkeypatch) -> None:
+    """Linux stops the old timer first, so a failed replacement leaves nothing pending."""
+    from ai_config import keepalive_limits, keepalive_scheduler
+
+    monkeypatch.setattr(keepalive_limits, "wakes_path", lambda: tmp_path / "wakes.json")
+    keepalive_limits.write_json(tmp_path / "wakes.json", {".codex-set": {"at": 1}})
+    monkeypatch.setattr(keepalive_scheduler, "platform_name", lambda: "linux")
+    monkeypatch.setattr(
+        keepalive_scheduler, "_wake_command",
+        lambda argv: subprocess.CompletedProcess(argv, 1, "", "boom"),
+    )
+
+    scheduled, _ = keepalive_scheduler.schedule_wake(
+        ".codex-set", datetime.now().astimezone() + timedelta(hours=1),
+    )
+
+    assert scheduled is False
+    assert keepalive_limits.read_json(tmp_path / "wakes.json") == {}
+
+
+def test_an_unreadable_record_is_not_overwritten(tmp_path, monkeypatch) -> None:
+    from ai_config import keepalive_limits
+
+    path = tmp_path / "limits.json"
+    path.write_text("{broken", encoding="utf-8")
+    monkeypatch.setattr(keepalive_limits, "limits_path", lambda: path)
+
+    with pytest.raises(OSError):
+        keepalive_limits.remember(".codex-csl", {"weekly": {"used_percent": 1}})
+
+    assert path.read_text(encoding="utf-8") == "{broken"
+
+
+def test_a_window_missing_from_a_later_call_is_kept(tmp_path, monkeypatch) -> None:
+    from ai_config import keepalive_limits
+
+    path = tmp_path / "limits.json"
+    monkeypatch.setattr(keepalive_limits, "limits_path", lambda: path)
+    keepalive_limits.remember(".codex-csl", {"weekly": {"used_percent": 90, "resets_at": 5}})
+    keepalive_limits.remember(".codex-csl", {"five_hour": {"used_percent": 1, "resets_at": 6}})
+
+    record = keepalive_limits.read_json(path)[".codex-csl"]
+    assert record["weekly"]["resets_at"] == 5
+    assert record["five_hour"]["resets_at"] == 6

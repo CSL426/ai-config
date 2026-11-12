@@ -411,11 +411,14 @@ def schedule_wake(home_name: str, at) -> "tuple[bool, str]":
             done = _wake_command(wake_powershell_argv(home_name, at))
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"could not schedule a one-shot wake: {exc}"
-    if done.returncode != 0:
-        reason = (done.stderr or done.stdout or "").strip().splitlines()
-        return False, f"could not schedule a one-shot wake: {reason[-1] if reason else done.returncode}"
     path = keepalive_limits.wakes_path()
     wakes = keepalive_limits.read_json(path)
+    if done.returncode != 0:
+        # Linux 已經先停掉舊的 timer:留著舊紀錄,status 會顯示一個不會跑的喚醒
+        if wakes.pop(home_name, None) is not None:
+            keepalive_limits.write_json(path, wakes)
+        reason = (done.stderr or done.stdout or "").strip().splitlines()
+        return False, f"could not schedule a one-shot wake: {reason[-1] if reason else done.returncode}"
     wakes[home_name] = {"at": int(at.timestamp())}
     keepalive_limits.write_json(path, wakes)
     return True, f"one-shot wake scheduled for {at.astimezone():%Y-%m-%d %H:%M}"
@@ -431,12 +434,22 @@ def cancel_wake(home_name: str) -> str:
         return ""
     for argv in _wake_cancel_argv(home_name):
         try:
-            _wake_command(argv)
-        except (OSError, subprocess.SubprocessError):
-            continue
+            done = _wake_command(argv)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return f"{home_name}: could not cancel the pending wake: {exc}"
+        # 排程器說沒取消成功就留著紀錄,之後 disable 才找得到它
+        if done.returncode != 0 and not _already_gone(done):
+            reason = (done.stderr or done.stdout or "").strip().splitlines()
+            return f"{home_name}: could not cancel the pending wake: {reason[-1] if reason else done.returncode}"
     wakes.pop(home_name, None)
     keepalive_limits.write_json(path, wakes)
     return f"{home_name}: pending one-shot wake cancelled"
+
+
+def _already_gone(done: subprocess.CompletedProcess) -> bool:
+    """A stop or unregister that failed only because there was nothing left to remove."""
+    text = f"{done.stdout or ''}{done.stderr or ''}".lower()
+    return "not loaded" in text or "not found" in text or "no task" in text
 
 
 def remove_wakes() -> list:

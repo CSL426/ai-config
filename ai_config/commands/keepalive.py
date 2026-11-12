@@ -12,7 +12,7 @@ from ..paths import ENTRYPOINT
 
 _USAGE = (
     "Usage: {entry} keepalive "
-    "[status|enable [HH:MM ...]|disable|send] [claude|codex|agy]"
+    "[status|enable [HH:MM ...]|disable|send] [claude|codex|agy] [--home <account>]"
 )
 
 

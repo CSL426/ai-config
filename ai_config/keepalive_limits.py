@@ -208,8 +208,13 @@ def remember(home_name: str, windows: dict, now: "datetime | None" = None) -> No
     """Keep one account's limits beside the others'. Raises OSError when it cannot."""
     moment = now or datetime.now(UTC)
     path = limits_path()
+    if path.exists() and not read_json(path):
+        # 讀不懂就重寫,會把其他帳號的紀錄一起抹掉;寧可這次不記
+        raise OSError(f"{path.name} is unreadable; not overwriting it")
     record = read_json(path)
-    record[home_name] = {"recorded_at": int(moment.timestamp()), **windows}
+    earlier = record.get(home_name) if isinstance(record.get(home_name), dict) else {}
+    # 這次只回報了一個視窗時,另一個視窗先前記下的重置時間還有用
+    record[home_name] = {**earlier, **windows, "recorded_at": int(moment.timestamp())}
     write_json(path, record)
 
 
