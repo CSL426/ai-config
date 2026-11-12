@@ -1,6 +1,7 @@
 """Installing the keepalive with the platform scheduler: systemd, launchd, schtasks."""
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -272,6 +273,11 @@ def disable(tool: str = keepalive_settings.DEFAULT_TOOL) -> tuple:
                 ["schtasks", "/Delete", "/F", "/TN", f"{label} {at.replace(':', '')}"],
                 capture_output=True, check=False,
             )
+    if tool == "codex":
+        # 停用後留下的單獨喚醒會在之後某天自己點一次火
+        removed = remove_wakes()
+        if removed:
+            lines.append(f"已移除 {len(removed)} 個待執行的單獨喚醒")
     lines.append(f"已停用 {tool} 的 keepalive 排程")
     lines.append(f"設定與日誌留著:{keepalive_settings.config_path(tool)}")
     return 0, lines
@@ -289,7 +295,176 @@ def installed(tool: str = keepalive_settings.DEFAULT_TOOL) -> bool:
         ["schtasks", "/Query", "/FO", "LIST"],
         capture_output=True, text=True, **NATIVE, check=False,
     )
-    return label in (found.stdout or "")
+    # 只認每日排程那種「名稱 HHMM」:單獨喚醒的工作名稱也以 acg keepalive codex 開頭,
+    # 用子字串比對會把停用後留下的那一個當成已啟用
+    return re.search(rf"{re.escape(label)} \d{{4}}(?!\S)", found.stdout or "") is not None
+
+
+# 額度用完後的單獨喚醒:一個帳號一個,名稱固定,重排時取代而不是多一個
+_WAKE_UNIT = f"{_UNIT}-codex-wake"
+_WAKE_TASK = f"{_TASK} codex wake"
+# 帳號名稱會進到 cmd /c 的指令列;不是這些字元就不排,免得被當成指令的一部分
+_SAFE_HOME = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def wake_suffix(home_name: str) -> str:
+    """A name part for one home that no other home can share."""
+    import hashlib
+
+    base = home_name.removeprefix(".")
+    safe = re.sub(r"[^A-Za-z0-9_-]", "-", base) or "home"
+    return f"{safe}-{hashlib.sha256(home_name.encode('utf-8')).hexdigest()[:8]}"
+
+
+def wake_unit(home_name: str) -> str:
+    return f"{_WAKE_UNIT}-{wake_suffix(home_name)}"
+
+
+def wake_task(home_name: str) -> str:
+    return f"{_WAKE_TASK} {wake_suffix(home_name)}"
+
+
+def wake_invocation(home_name: str) -> list:
+    return [*_invocation("codex"), "--home", home_name]
+
+
+def wake_systemd_argv(home_name: str, at) -> list:
+    """A transient timer that fires once at a local wall-clock time."""
+    return [
+        "systemd-run", "--user", f"--unit={wake_unit(home_name)}",
+        f"--on-calendar={at.astimezone():%Y-%m-%d %H:%M:%S}",
+        "--timer-property=AccuracySec=1min",
+        *wake_invocation(home_name),
+    ]
+
+
+def _ps_quote(text: str) -> str:
+    return "'" + text.replace("'", "''") + "'"
+
+
+def _powershell(script: str) -> list:
+    return ["powershell", "-NoProfile", "-NonInteractive", "-Command", script]
+
+
+def wake_powershell_argv(home_name: str, at) -> list:
+    """Register-ScheduledTask with a -Once trigger; -Force replaces the previous one.
+
+    The time goes through ParseExact with the invariant culture: schtasks
+    /SD reads its date in the machine's locale format.
+    """
+    command = " ".join(_quote(part) for part in wake_invocation(home_name))
+    execute, _, argument = windows_command(command).partition(" ")
+    stamp = f"{at.astimezone():%Y-%m-%d %H:%M:%S}"
+    script = (
+        f"$action = New-ScheduledTaskAction -Execute {_ps_quote(execute)} "
+        f"-Argument {_ps_quote(argument)}; "
+        f"$at = [datetime]::ParseExact({_ps_quote(stamp)}, 'yyyy-MM-dd HH:mm:ss', "
+        "[Globalization.CultureInfo]::InvariantCulture); "
+        "$trigger = New-ScheduledTaskTrigger -Once -At $at; "
+        # 機器在那個時間睡著的話,醒來就補跑
+        "$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable; "
+        f"Register-ScheduledTask -TaskName {_ps_quote(wake_task(home_name))} "
+        "-Action $action -Trigger $trigger -Settings $settings -Force | Out-Null"
+    )
+    return _powershell(script)
+
+
+def _wake_cancel_argv(home_name: str) -> list:
+    """What removes one home's one-shot; empty where there is none to remove."""
+    platform = platform_name()
+    if platform == "linux":
+        # 只停 timer:取消可能就發生在那次喚醒自己的 service 裡,停 service 會殺掉自己
+        return [["systemctl", "--user", "stop", f"{wake_unit(home_name)}.timer"]]
+    if platform == "windows":
+        return [_powershell(
+            f"Unregister-ScheduledTask -TaskName {_ps_quote(wake_task(home_name))} "
+            "-Confirm:$false -ErrorAction SilentlyContinue"
+        )]
+    return []
+
+
+def _wake_command(argv: list) -> subprocess.CompletedProcess:
+    """The only place a one-shot wake reaches the platform scheduler."""
+    return subprocess.run(
+        argv, capture_output=True, text=True,
+        **(NATIVE if platform_name() == "windows" else UTF8), check=False, timeout=60,
+    )
+
+
+def schedule_wake(home_name: str, at) -> "tuple[bool, str]":
+    """One one-shot `keepalive send codex --home` at `at`, replacing any earlier one."""
+    from . import keepalive_limits
+
+    platform = platform_name()
+    if platform == "macos":
+        return False, "one-shot wakes are not supported on macOS; skipped"
+    if not _SAFE_HOME.match(home_name):
+        return False, f"home name {home_name!r} cannot go into a scheduler command; skipped"
+    try:
+        if platform == "linux":
+            unit = wake_unit(home_name)
+            _wake_command(["systemctl", "--user", "stop", f"{unit}.timer"])
+            # 失敗過的同名 transient unit 會擋住 systemd-run 再用這個名字
+            _wake_command(["systemctl", "--user", "reset-failed", f"{unit}.timer", f"{unit}.service"])
+            done = _wake_command(wake_systemd_argv(home_name, at))
+        else:
+            done = _wake_command(wake_powershell_argv(home_name, at))
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"could not schedule a one-shot wake: {exc}"
+    path = keepalive_limits.wakes_path()
+    wakes = keepalive_limits.read_json(path)
+    if done.returncode != 0:
+        # Linux 已經先停掉舊的 timer:留著舊紀錄,status 會顯示一個不會跑的喚醒
+        if wakes.pop(home_name, None) is not None:
+            keepalive_limits.write_json(path, wakes)
+        reason = (done.stderr or done.stdout or "").strip().splitlines()
+        return False, f"could not schedule a one-shot wake: {reason[-1] if reason else done.returncode}"
+    wakes[home_name] = {"at": int(at.timestamp())}
+    keepalive_limits.write_json(path, wakes)
+    return True, f"one-shot wake scheduled for {at.astimezone():%Y-%m-%d %H:%M}"
+
+
+def cancel_wake(home_name: str) -> str:
+    """Remove a home's pending one-shot; "" when it had none, without touching the scheduler."""
+    from . import keepalive_limits
+
+    path = keepalive_limits.wakes_path()
+    wakes = keepalive_limits.read_json(path)
+    if home_name not in wakes:
+        return ""
+    for argv in _wake_cancel_argv(home_name):
+        try:
+            done = _wake_command(argv)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return f"{home_name}: could not cancel the pending wake: {exc}"
+        # 排程器說沒取消成功就留著紀錄,之後 disable 才找得到它
+        if done.returncode != 0 and not _already_gone(done):
+            reason = (done.stderr or done.stdout or "").strip().splitlines()
+            return f"{home_name}: could not cancel the pending wake: {reason[-1] if reason else done.returncode}"
+    wakes.pop(home_name, None)
+    keepalive_limits.write_json(path, wakes)
+    return f"{home_name}: pending one-shot wake cancelled"
+
+
+def _already_gone(done: subprocess.CompletedProcess) -> bool:
+    """A stop or unregister that failed only because there was nothing left to remove."""
+    text = f"{done.stdout or ''}{done.stderr or ''}".lower()
+    return "not loaded" in text or "not found" in text or "no task" in text
+
+
+def remove_wakes() -> list:
+    """Every pending one-shot, including those of homes that have since gone."""
+    from . import keepalive_limits
+
+    lines = []
+    for home_name in sorted(keepalive_limits.read_json(keepalive_limits.wakes_path())):
+        try:
+            line = cancel_wake(home_name)
+        except OSError as exc:
+            line = f"{home_name}: could not remove the one-shot wake: {exc}"
+        if line:
+            lines.append(line)
+    return lines
 
 
 def refresh_windows_tasks() -> list:

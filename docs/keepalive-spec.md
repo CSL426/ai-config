@@ -124,6 +124,47 @@ claude --model <model> -p "<prompt>"
 已有的 `~/.config/claude-scheduler/config.json` 可以讀來當預設值，省去重打四個
 時間。讀取失敗就用內建預設，不要因此讓啟用失敗。
 
+## Codex 額度用完後的單獨喚醒
+
+**問題**:帳號的週額度用完時，排程呼叫失敗(`You've hit your usage limit`),日誌記成
+「視窗本來就在跑」。可是額度在某個時間點恢復後，沒有任何呼叫去錨定新視窗，它會從下一次
+有人碰巧用 codex 的時間開始。失敗的那次呼叫拿不到重置時間：rollout 裡的 `rate_limits` 是
+`limit_id: "premium"`、`primary`/`secondary` 都是 null。重置時間只能來自那個帳號上一次
+**成功**的 keepalive。
+
+**記錄**:每次某個帳號的 codex 呼叫成功後，在該帳號 sessions 資料夾(解析連結後;各帳號
+的 sessions 通常連到同一個)找出這次呼叫產生的 rollout:呼叫前後的檔案清單差集，且內容
+(解析 JSON 後的字串)含 keepalive 提示。同時間使用者自己的 session 不含提示，被排除;
+差集裡有兩個以上符合就不記，免得記錯帳號。從中取最後一筆 `limit_id: "codex"` 且視窗不為
+null 的 `rate_limits`,依 `window_minutes` 分成五小時與每週，連同記錄時間，以帳號資料夾名稱
+為鍵寫入 `~/.local/state/acg/keepalive-codex-limits.json`(整檔替換)。檔案不存在或壞掉時
+只寫一行日誌。
+
+**判斷**:某帳號呼叫因額度用完失敗時，讀它的紀錄(超過 8 天就不用):
+
+1. 重置時間在未來、且用量 ≥ 90% 的視窗中，取最晚的重置;
+2. 沒有這種視窗，取最早的未來重置;
+3. 這個時間 T 要早於下一個排程時間減 10 分鐘，才在 T + 2 分鐘排一次單獨喚醒;否則寫日誌
+   說明原因，交給排程。
+
+codex 排程沒啟用時不排(單獨喚醒屬於排程，由 `disable` 負責清除)。
+
+**單獨喚醒**:只叫醒那一個帳號，執行 `keepalive send codex --home <帳號資料夾名稱>`。
+`--home` 只接受 `codex_homes()` 找到的名稱，不在主要 usage 裡，寫在 agent guide。
+
+| 平台 | 做法 |
+| --- | --- |
+| Linux | `systemd-run --user --unit=acg-keepalive-codex-wake-<名稱>-<雜湊> --on-calendar='YYYY-MM-DD HH:MM:SS' --timer-property=AccuracySec=1min <指令>`,先停掉同名 timer 並 `reset-failed` |
+| Windows | PowerShell `Register-ScheduledTask`,`-Once -At`(時間用 InvariantCulture 的 `ParseExact`,不用依地區格式解讀日期的 `schtasks /SD`)、`-Force` 取代同名工作 |
+| macOS | 不支援，寫日誌後略過 |
+
+- 每個帳號最多一個待執行的喚醒，重排是取代。待執行的記在 `keepalive-codex-wakes.json`。
+- 那個帳號的呼叫成功就取消它的喚醒;Linux 只停 timer,因為取消可能發生在那次喚醒自己的
+  service 裡。沒有待執行的喚醒時不碰排程器。
+- `keepalive disable codex` 依紀錄清掉全部(包含帳號已刪除的)。
+- `keepalive status codex` 與 Desktop 在每個帳號底下列出記錄的每週用量、重置時間與待執行
+  的喚醒時間。
+
 ## 影響的介面
 
 CLI、`--help`(`usage()`)、agent guide、Desktop(`gui/` 與 `gui_management.py`、

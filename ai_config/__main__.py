@@ -74,6 +74,7 @@ def usage() -> None:
     print("                  write a Claude Code hook once; apply also puts it into")
     print("                  Codex and Antigravity (Codex asks you to trust it in /hooks)")
     print("  keepalive <status|enable [HH:MM ...]|disable|send> [claude|codex|agy]")
+    print("                  send codex --home <account> wakes one Codex account only")
     print("                  call a tool at chosen times so its five-hour usage")
     print("                  window starts where the day needs it; per machine,")
     print("                  and each tool keeps its own times (default: claude)")
