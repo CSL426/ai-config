@@ -623,7 +623,7 @@ def test_a_memo_that_cannot_be_written_still_injects(
     reply = _call(monkeypatch, capsys, ["count", shared_hooks._digest(hook)], agy)
 
     assert reply == {"injectSteps": [{"ephemeralMessage": "run 1"}]}
-    assert any("prompt memo" in message for message in logged)
+    assert any("prompt memo" in m and "File changed during update" in m for m in logged)
 
 
 def test_an_adapter_error_leaves_a_trace(
@@ -638,4 +638,4 @@ def test_an_adapter_error_leaves_a_trace(
     monkeypatch.setattr(shared_hooks, "_relay", boom)
 
     assert _call(monkeypatch, capsys, ["word", "abc"], {}) == {}
-    assert any("adapter error" in message for message in logged)
+    assert any("adapter error" in m and "snapshot" in m for m in logged)
