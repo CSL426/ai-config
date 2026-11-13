@@ -51,6 +51,7 @@ def _handoff(rest: list[str]) -> int:
             log_success(f"已接手:{note.thread}(這則交接已結案,收工時再寫新的)")
             if note.project != hand.home_project():
                 log_info(f"這條線記在專案 {note.project},不是這個 session 的專案")
+            _retire_author(note.author)
             print()
             print(note.body)
             return 0
@@ -63,6 +64,28 @@ def _handoff(rest: list[str]) -> int:
         return 1
     log_error(_HANDOFF_USAGE)
     return 1
+
+
+def _retire_author(author: str) -> None:
+    """Take the replaced session off /resume's list; never fail the pickup."""
+    from .. import handoff as hand
+    from .. import transcripts
+
+    current = hand.session_id()
+    if not transcripts.eligible(author, current):
+        return
+    wait = transcripts.settle_left(author)
+    if wait > 0 and transcripts.retire_later(author, current):
+        # 舊 session 剛結束,remember 之類的 hook 可能還在背景讀它
+        log_info(f"寫交接的舊對話約 {int(wait) + 1} 秒後移到 ~/.claude/archived-sessions(/resume 不再列出)")
+        return
+    moved, problem = transcripts.retire(author, current=current)
+    if moved:
+        log_info(
+            f"寫交接的舊對話已移到 {moved[0].parent}(/resume 不再列出,要找回就搬回 projects/)"
+        )
+    if problem:
+        log_warn(f"舊對話沒有封存:{problem}")
 
 
 def _handoff_remind(args: list[str]) -> int:
