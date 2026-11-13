@@ -645,6 +645,36 @@ def test_the_memo_keeps_no_prompt_text(
     assert runs.read_text() == "x"
 
 
+def test_an_old_plaintext_memo_is_removed_even_if_no_new_one_is_written(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    hook, _ = _counting_prompt_hook(world)
+    memo = shared_hooks._prompt_memo("count")
+    memo.parent.mkdir(parents=True, exist_ok=True)
+    memo.write_text(json.dumps({"conversation": "c-0", "prompt": "4/0Asecret", "text": "x"}),
+                    encoding="utf-8")
+    monkeypatch.setattr(shared_hooks, "_write_json", lambda path, data: None)
+    agy = {"conversationId": "c-1", "workspacePaths": [str(world)], "lastUserInput": "hi",
+           "invocationNum": 0}
+
+    _call(monkeypatch, capsys, ["count", shared_hooks._digest(hook)], agy)
+
+    assert not memo.exists()
+
+
+def test_a_lone_surrogate_and_a_question_mark_are_different_prompts(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    hook, _ = _counting_prompt_hook(world)
+    args = ["count", shared_hooks._digest(hook)]
+    agy = {"conversationId": "c-1", "workspacePaths": [str(world)]}
+
+    _call(monkeypatch, capsys, args, {**agy, "lastUserInput": "a?", "invocationNum": 0})
+    other = _call(monkeypatch, capsys, args, {**agy, "lastUserInput": "a\udce6", "invocationNum": 1})
+
+    assert other == {"injectSteps": [{"ephemeralMessage": "run 2"}]}
+
+
 def test_an_adapter_error_leaves_a_trace(
     world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:

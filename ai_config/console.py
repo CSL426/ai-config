@@ -14,12 +14,17 @@ def _configure_utf8_output() -> None:
     # 碼頁(cp950)解管線,中文提示會變成亂碼加 surrogate,寫檔時才炸。
     # 互動式主控台本來就是 Unicode,不去動它
     stdin = sys.stdin
-    if stdin is not None and not _is_tty(stdin):
+    if stdin is not None and not getattr(stdin, "closed", True) and not _is_tty(stdin):
         streams.append(stdin)
     for stream in streams:
         reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is not None:
+        if reconfigure is None:
+            continue
+        try:
             reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            # 關掉的串流換不了編碼;import 這裡失敗會讓整個 CLI 起不來
+            pass
 
 
 def _is_tty(stream: object) -> bool:

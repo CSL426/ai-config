@@ -46,3 +46,16 @@ def test_piped_stdin_is_read_as_utf8_whatever_the_code_page() -> None:
     )
 
     assert bytes.fromhex(result.stdout.decode("ascii")).decode("utf-8") == "打個招呼,一句話"
+
+
+def test_a_closed_stdin_does_not_stop_the_cli_from_starting() -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "import sys; sys.stdin.close(); import ai_config.console; print('ok')"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        stdin=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == b"ok"

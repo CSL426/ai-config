@@ -743,6 +743,9 @@ def run_agy_hook(args: list[str]) -> int:
     return 0
 
 
+_PROMPT_HASH = re.compile(r"[0-9a-f]{64}")
+
+
 def _prompt_memo(name: str) -> Path:
     return _snapshot_dir() / "prompt-memo" / f"{name}.json"
 
@@ -757,11 +760,21 @@ def _prompt_reply(name: str, snapshot: dict, payload: dict) -> dict:
     """
     converted = claude_payload(payload, snapshot["event"])
     # 只存雜湊:提示原文可能是使用者貼上的密碼或授權碼,不能明文落地
-    prompt = hashlib.sha256(str(converted["prompt"]).encode("utf-8", "replace")).hexdigest()
+    # surrogatepass:用 replace 的話,孤立的 surrogate 和 "?" 會算出同一個雜湊
+    prompt = hashlib.sha256(
+        str(converted["prompt"]).encode("utf-8", "surrogatepass")
+    ).hexdigest()
     key = {"conversation": converted["session_id"], "prompt": prompt,
            "digest": _digest(snapshot)}
     memo = _prompt_memo(name)
     known = _read_json(memo) if memo.is_file() else {}
+    if known and not _PROMPT_HASH.fullmatch(str(known.get("prompt", ""))):
+        # 1.0.157 之前的 memo 存的是提示原文;寫新的那步可能失敗,所以先刪
+        try:
+            memo.unlink()
+        except OSError as error:
+            _log(name, f"could not remove an old prompt memo: {error!r}")
+        known = {}
     # 第一步一定重跑:同一句話再送一次是另一則訊息
     if payload.get("invocationNum") and {k: known.get(k) for k in key} == key:
         text = str(known.get("text", ""))
