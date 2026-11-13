@@ -735,7 +735,9 @@ def run_agy_hook(args: list[str]) -> int:
         if not isinstance(payload, dict):
             payload = {}
         reply = _inject(payload) if args[:1] == ["--inject"] else _relay(args[:2], payload)
-    except Exception:  # noqa: BLE001 — hook 壞掉不能卡住 Antigravity 的對話
+    except Exception as error:  # noqa: BLE001 — hook 壞掉不能卡住 Antigravity 的對話
+        # 吞掉不留紀錄的話,Windows 上整個 hook 安靜地沒作用,只能靠猜
+        _log(args[0] if args else "-", f"adapter error: {error!r}")
         reply = {}
     print(json.dumps(reply, ensure_ascii=False))
     return 0
@@ -770,8 +772,12 @@ def _prompt_reply(name: str, snapshot: dict, payload: dict) -> dict:
         text = _additional_context(done.stdout)
         if done.stdout.strip() and not text:
             _log(name, "prompt hook printed no additionalContext")
-        memo.parent.mkdir(parents=True, exist_ok=True)
-        _write_json(memo, {**key, "text": text})
+        try:
+            memo.parent.mkdir(parents=True, exist_ok=True)
+            _write_json(memo, {**key, "text": text})
+        except (OSError, RuntimeError, ValueError) as error:
+            # 記不住只代表下一步會重跑一次 hook;這一步的注入不能因此丟掉
+            _log(name, f"could not record the prompt memo: {error!r}")
     # 這個事件本身就能注入。留給 acg-inject 的話,兩者誰先跑不一定,
     # 而回覆前的最後一步一過,留著的內容就送不到這一則了
     return {"injectSteps": [{"ephemeralMessage": text}]} if text else {}
