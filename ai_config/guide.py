@@ -391,7 +391,15 @@ thread up closes it and records who took it (session name, else id):
 the note has done its job once read, and the taker writes a fresh
 handoff when it stops. There is no "held" state to go stale, so a
 second session asking for the same thread is told who took it rather
-than taking it again. A thread nobody picks up for a day lists as
+than taking it again. In Claude Code, a claim also moves the writing
+session's transcript (and its sidecar folder) from `~/.claude/projects`
+to `~/.claude/archived-sessions/<same project folder>`: handoff, `/clear`,
+pickup otherwise leaves one `/resume` entry per cleared session, all under
+the same name. It moves only a session id that no running Claude Code
+still holds, never overwrites an earlier archive, and a move that fails
+is a warning, not a failed claim. A transcript written to in the last
+minute is moved by a detached process once that minute is up, because
+hooks such as remember still read it in the background after `/clear`. Moving the files back restores the entry. A thread nobody picks up for a day lists as
 `⚠ 可能已過期` — read it before working from it, because the work in it
 may have shipped elsewhere. Closed threads, and any thread untouched for
 a month, move to `handoff/archive/` the next time the list runs; the
