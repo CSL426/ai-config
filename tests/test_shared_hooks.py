@@ -603,3 +603,39 @@ def test_codex_on_windows_quotes_for_cmd(world: Path, monkeypatch: pytest.Monkey
     command = shared_hooks._acg_command("__agy-hook", "--run", "x", "d", windows=True)
 
     assert command == '"C:/Users/A B/acg.exe" __agy-hook --run x d'
+
+
+def test_a_memo_that_cannot_be_written_still_injects(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """On Windows the memo write failed and the whole reply was dropped without a trace."""
+    hook, _ = _counting_prompt_hook(world)
+    logged: list = []
+    monkeypatch.setattr(shared_hooks, "_log", lambda name, message: logged.append(message))
+
+    def refuse(path: Path, data: dict) -> None:
+        raise RuntimeError("File changed during update")
+
+    monkeypatch.setattr(shared_hooks, "_write_json", refuse)
+    agy = {"conversationId": "c-1", "workspacePaths": [str(world)], "lastUserInput": "hi",
+           "invocationNum": 0}
+
+    reply = _call(monkeypatch, capsys, ["count", shared_hooks._digest(hook)], agy)
+
+    assert reply == {"injectSteps": [{"ephemeralMessage": "run 1"}]}
+    assert any("prompt memo" in message for message in logged)
+
+
+def test_an_adapter_error_leaves_a_trace(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    logged: list = []
+    monkeypatch.setattr(shared_hooks, "_log", lambda name, message: logged.append(message))
+
+    def boom(args: list, payload: dict) -> dict:
+        raise KeyError("snapshot")
+
+    monkeypatch.setattr(shared_hooks, "_relay", boom)
+
+    assert _call(monkeypatch, capsys, ["word", "abc"], {}) == {}
+    assert any("adapter error" in message for message in logged)
