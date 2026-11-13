@@ -23,3 +23,26 @@ def test_console_reconfigures_legacy_output_encoding() -> None:
 
     assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
     assert "═══ test ═══" in result.stdout.decode("utf-8")
+
+
+def test_piped_stdin_is_read_as_utf8_whatever_the_code_page() -> None:
+    """Windows decoded hook payloads with cp950: 「打」 became 亂碼 plus surrogates."""
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "cp950:surrogateescape"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import ai_config.console, sys; "
+                "sys.stdout.write(sys.stdin.read().encode('utf-8').hex())"
+            ),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        input="打個招呼,一句話".encode(),
+        capture_output=True,
+        check=True,
+    )
+
+    assert bytes.fromhex(result.stdout.decode("ascii")).decode("utf-8") == "打個招呼,一句話"

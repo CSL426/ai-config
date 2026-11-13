@@ -9,10 +9,24 @@ HELP_FLAGS = frozenset({"--help", "-h"})
 
 
 def _configure_utf8_output() -> None:
-    for stream in (sys.stdout, sys.stderr):
+    streams = [sys.stdout, sys.stderr]
+    # hook 的 payload 從管線進來,一律是 UTF-8。Windows 上 Python 預設用 ANSI
+    # 碼頁(cp950)解管線,中文提示會變成亂碼加 surrogate,寫檔時才炸。
+    # 互動式主控台本來就是 Unicode,不去動它
+    stdin = sys.stdin
+    if stdin is not None and not _is_tty(stdin):
+        streams.append(stdin)
+    for stream in streams:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8", errors="replace")
+
+
+def _is_tty(stream: object) -> bool:
+    try:
+        return bool(stream.isatty())  # type: ignore[attr-defined]
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 _configure_utf8_output()

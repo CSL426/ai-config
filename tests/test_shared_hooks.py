@@ -626,6 +626,25 @@ def test_a_memo_that_cannot_be_written_still_injects(
     assert any("prompt memo" in m and "File changed during update" in m for m in logged)
 
 
+def test_the_memo_keeps_no_prompt_text(
+    world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """A pasted password or OAuth code must not land on disk in plain text."""
+    hook, runs = _counting_prompt_hook(world)
+    args = ["count", shared_hooks._digest(hook)]
+    secret = "4/0Aplaintext-code-pasted-into-agy"
+    agy = {"conversationId": "c-1", "workspacePaths": [str(world)], "lastUserInput": secret}
+
+    _call(monkeypatch, capsys, args, {**agy, "invocationNum": 0})
+    again = _call(monkeypatch, capsys, args, {**agy, "invocationNum": 1})
+
+    memo = shared_hooks._prompt_memo("count").read_text(encoding="utf-8")
+    assert secret not in memo
+    # 存雜湊照樣認得出同一則訊息,不會重跑
+    assert again == {"injectSteps": [{"ephemeralMessage": "run 1"}]}
+    assert runs.read_text() == "x"
+
+
 def test_an_adapter_error_leaves_a_trace(
     world: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:

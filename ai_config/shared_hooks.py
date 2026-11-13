@@ -756,7 +756,9 @@ def _prompt_reply(name: str, snapshot: dict, payload: dict) -> dict:
     once just run the hook again.
     """
     converted = claude_payload(payload, snapshot["event"])
-    key = {"conversation": converted["session_id"], "prompt": converted["prompt"],
+    # 只存雜湊:提示原文可能是使用者貼上的密碼或授權碼,不能明文落地
+    prompt = hashlib.sha256(str(converted["prompt"]).encode("utf-8", "replace")).hexdigest()
+    key = {"conversation": converted["session_id"], "prompt": prompt,
            "digest": _digest(snapshot)}
     memo = _prompt_memo(name)
     known = _read_json(memo) if memo.is_file() else {}
