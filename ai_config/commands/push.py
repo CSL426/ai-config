@@ -7,6 +7,7 @@ the order they run in and the CLI's exit codes.
 from .. import applied_state, push_preflight, push_publish, push_review
 from ..config import configured_remote_provider
 from ..console import log_error, log_header, log_info, log_success
+from ..paths import ENTRYPOINT
 from .apply import _init_tools, _selected_tools
 from .sync import _git_failure, _remote_is_read_only, _run_repo_git
 
@@ -72,9 +73,22 @@ def _do_push(
         log_info("Reviewing existing uncommitted configuration changes")
     elif tool != push_preflight.MEMORY_SCOPE and not _init_tools(tool):
         return 1
+    behind: set[str] = set()
     if tool != push_preflight.MEMORY_SCOPE:
         # 既有的未提交改動也要看:那可能是 pull 之前收集、比資料庫舊的版本
-        applied_state.keep_newer_repo_files(_selected_tools(tool), overwrite_newer)
+        try:
+            kept = applied_state.keep_newer_repo_files(_selected_tools(tool), overwrite_newer)
+        except applied_state.UnknownBase as exc:
+            log_error(str(exc))
+            log_info(
+                f"先執行 {ENTRYPOINT} apply {tool} 讓這台跟資料庫一致再推;"
+                "確定要用這台的版本覆蓋,才加 --overwrite-newer"
+            )
+            return 1
+        # 放回資料庫版本的工具,這台的 live 仍是舊的:不能記成已一致,否則下次 push 照樣蓋回去
+        behind = {path.split("/", 1)[0] for path, _ in kept}
+        if behind:
+            log_info(f"推完請執行 {ENTRYPOINT} apply {' '.join(sorted(behind))},讓這台跟上")
 
     status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
     if status.returncode != 0:
@@ -125,7 +139,8 @@ def _do_push(
     if not ready_to_commit:
         return 1
     return _recorded(
-        selected, push_publish._commit_and_push(commit_message, selected, reviewed_diff)
+        [scope for scope in selected if scope not in behind],
+        push_publish._commit_and_push(commit_message, selected, reviewed_diff),
     )
 
 

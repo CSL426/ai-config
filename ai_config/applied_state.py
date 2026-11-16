@@ -129,6 +129,10 @@ def _set_aside(path: str, stamp: str) -> "Path | None":
     return target
 
 
+class UnknownBase(Exception):
+    """The commit this machine last matched is gone from the repository's history."""
+
+
 def keep_newer_repo_files(tools: "list[str]", overwrite: bool = False) -> "list[tuple[str, str]]":
     """After a gather, put back every file another machine changed since this one synced.
 
@@ -139,7 +143,9 @@ def keep_newer_repo_files(tools: "list[str]", overwrite: bool = False) -> "list[
     machine last matched it keeps the repository's version. If this
     machine changed it too, its copy is set aside under the backup root
     and the user is told. ``--overwrite-newer`` keeps this machine's copy.
-    Returns (path, "stale" | "both") for every file put back.
+    Returns (path, "stale" | "both") for every file put back. Raises
+    UnknownBase when the recorded commit cannot be compared (history
+    rewritten): guessing would push the older copy again.
     """
     from datetime import datetime
 
@@ -149,11 +155,15 @@ def keep_newer_repo_files(tools: "list[str]", overwrite: bool = False) -> "list[
         recorded = _recorded_commit(tool)
         if not recorded:
             continue  # 從沒 apply/push 過:無從判斷,不擋
-        changed = _z_list("diff", "--name-only", "-z", recorded, "HEAD", "--", f"{tool}/")
+        # --no-renames:改名只列新路徑的話,這台收回來的舊路徑會被當成新增而復活
+        changed = _z_list(
+            "diff", "--name-only", "--no-renames", "-z", recorded, "HEAD", "--", f"{tool}/"
+        )
         dirty = _dirty_paths(tool)
         if changed is None or dirty is None:
-            log_warn(f"{tool}: 無法比對上次同步的版本({recorded[:7]}),這次不檢查逐檔衝突")
-            continue
+            if overwrite:
+                continue
+            raise UnknownBase(f"{tool}:找不到這台上次同步的版本({recorded[:7]}),無法逐檔比對")
         for path in sorted(set(changed) & dirty):
             here, before = _worktree_blob(path), _blob(recorded, path)
             kind = "stale" if here == before else "both"
@@ -178,6 +188,8 @@ def keep_newer_repo_files(tools: "list[str]", overwrite: bool = False) -> "list[
             kept.append((path, kind))
             if kind == "stale":
                 log_info(f"{path}:這台還沒套用別台的更新,保留資料庫的版本(之後 apply 會更新這台)")
+            elif here is None:
+                log_warn(f"{path}:這台刪掉了、別台又改過,保留資料庫的版本")
             else:
                 log_warn(f"{path}:這台和別台都改過,保留資料庫的版本;這台的版本存到 {saved}")
     return kept

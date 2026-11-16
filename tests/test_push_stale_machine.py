@@ -97,3 +97,64 @@ def test_overwrite_newer_is_the_deliberate_way_through(machine) -> None:
     assert pushed.returncode == 0, pushed.stderr + pushed.stdout
     assert "--overwrite-newer" in pushed.stdout
     assert json.loads(run_git(remote, "show", "HEAD:claude/settings.json"))["theme"] == "light"
+
+
+def _add_skill(home: Path, name: str) -> None:
+    skill = home / f".claude/skills/{name}/SKILL.md"
+    skill.parent.mkdir(parents=True, exist_ok=True)
+    skill.write_text(f"---\nname: {name}\ndescription: x\n---\nbody\n", encoding="utf-8")
+
+
+def test_a_second_push_still_keeps_the_newer_file(machine) -> None:
+    """Recording HEAD after putting a file back made the next push revert it anyway."""
+    remote, _, data, home = _behind(machine)
+    _add_skill(home, "one")
+    assert run_data_cli(data, home, "push", "claude", "--yes").returncode == 0
+    _add_skill(home, "two")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert json.loads(run_git(remote, "show", "HEAD:claude/settings.json"))["theme"] == "dark"
+    assert "name: two" in run_git(remote, "show", "HEAD:claude/skills/two/SKILL.md")
+
+
+def test_a_skill_renamed_elsewhere_is_not_brought_back(machine) -> None:
+    remote, other, data, home = machine
+    foo = other / "claude/skills/foo/SKILL.md"
+    foo.parent.mkdir(parents=True)
+    foo.write_text("---\nname: foo\ndescription: x\n---\nbody\n", encoding="utf-8")
+    run_git(other, "add", ".")
+    run_git(other, "commit", "-m", "feat: foo")
+    run_git(other, "push", "origin", "HEAD")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    assert run_data_cli(data, home, "apply", "claude").returncode == 0
+    run_git(other, "mv", "claude/skills/foo", "claude/skills/bar")
+    run_git(other, "commit", "-m", "refactor: rename foo")
+    run_git(other, "push", "origin", "HEAD")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    _add_skill(home, "mine")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    tree = run_git(remote, "ls-tree", "-r", "--name-only", "HEAD", "claude/skills")
+    assert "claude/skills/foo/SKILL.md" not in tree
+    assert "claude/skills/bar/SKILL.md" in tree
+
+
+def test_an_unknown_base_stops_until_the_machine_applies(machine, tmp_path: Path) -> None:
+    """History rewritten: the per-file check cannot run, so guessing is not allowed."""
+    remote, _, data, home = _behind(machine)
+    state = tmp_path / "state/acg/applied.json"
+    record = json.loads(state.read_text())
+    for entry in record.values():
+        entry["claude"] = "0" * 40
+    state.write_text(json.dumps(record))
+    remote_head = run_git(remote, "rev-parse", "HEAD")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 1
+    assert "apply claude" in pushed.stdout
+    assert run_git(remote, "rev-parse", "HEAD") == remote_head
