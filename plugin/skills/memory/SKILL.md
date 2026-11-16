@@ -17,7 +17,7 @@ allowed-tools: Bash(acg memory status), Bash(ai-config memory status), Bash(acg 
   連結該清掉。索引的摘要是人寫的,無法自動重建,只能回報,由人決定怎麼補。
 - **疑似含有憑證的筆記**。掃的是會同步的檔案(含專案日誌與交接)。還沒上傳的會被留在本機,
   其他筆記照常同步;session 開頭也會提醒。先自己讀那幾份,找出觸發的那一行。值是佔位詞
-  (`=unused`、`=dummy` 這類,`none`、`null`、`changeme`、`example`、`xxx` 已經不會被抓)但沒被
+  (`unused`、`dummy`、`example`、`placeholder`、`redacted` 已經不會被抓)但沒被
   認出來時,把值改寫成 `<unused>` 這種尖括號寫法再推,意思不變、不需要放行。其他誤判
   (講規則的字面、說明文字)就跟使用者說是哪一行、為什麼不是金鑰,請使用者執行
   `acg memory push --allow-secret-path <那份的路徑> --force`:放行要使用者自己同意,auto mode 也會

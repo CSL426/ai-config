@@ -237,9 +237,10 @@ _SECRET_KEYS = (
     # 中文說明(shell 裡 `token= x` 本來就是空值)。用 : 的 JSON、YAML 一律照舊檢查,
     # 值寫在下一行或是 | 區塊都可能是真的憑證
     # 明擺著的佔位值也不是:交接裡的 ARWIN_BRAIN_TOKEN=unused 讓一份壓測交接留在本機兩天。
-    # 只認這張清單,不放過「全小寫」:真的密碼也可能全是小寫字
+    # 只認這張清單,不放過「全小寫」:真的密碼也可能全是小寫字。none、null、changeme、
+    # xxx、*** 不在清單裡:它們也常是真的預設密碼或被遮住一半的真值
     rb"(?!\s*[\"']?(?:\$[({A-Za-z_]|<[^<>\s][^<>\n]{0,39}>|"
-    rb"(?:unused|none|null|dummy|changeme|example|placeholder|redacted|x{3,}|\*{3,})"
+    rb"(?:unused|dummy|example|placeholder|redacted)"
     # 佔位詞後面要是值真的結束了(行尾、引號、右括號或中文);空白、逗號後面可能還接著
     # 真值(token=none abc123),example.com.key9 也不算
     rb"[\"']?(?=\r?\n|$|[\"'`)\]]|[\x80-\xff])))"
