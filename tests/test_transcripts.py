@@ -314,3 +314,15 @@ def test_the_detached_process_does_not_start_from_the_current_project(
 
     assert seen["cwd"] == str(claude)
     assert seen["command"][1:4] == ["-I", "-m", "ai_config"]
+
+
+def test_only_validated_ids_reach_the_detached_process(
+    claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list = []
+    monkeypatch.setattr(transcripts.subprocess, "Popen", lambda command, **kw: seen.append(command))
+
+    assert not transcripts.retire_later("--evil", NEW)
+    assert transcripts.retire_later(OLD.upper(), "not-an-id")
+
+    assert seen[-1][-2:] == [OLD, ""]

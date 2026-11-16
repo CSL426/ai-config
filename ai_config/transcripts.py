@@ -171,6 +171,10 @@ def _move(session: str, moved: list[Path]) -> str:
 
 def retire_later(value: str, current: str) -> bool:
     """Leave the move to a detached process once the transcript has settled."""
+    # 只有驗證過的 session id 才放進子行程的參數;參數是清單、不經過 shell
+    value, current = _session(value), _session(current)
+    if not value:
+        return False
     if getattr(sys, "frozen", False):
         command = [sys.executable, COMMAND, value, current]
     else:
