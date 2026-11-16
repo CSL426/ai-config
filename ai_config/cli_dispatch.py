@@ -50,6 +50,9 @@ def _refresh_windows_schedules() -> None:
         log_warn(f"排程沒有改成不開視窗:{exc}")
 
 
+_YES_FLAGS = ("--yes", "-y", "--force", "-f")
+
+
 def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
     """Parse the arguments and run the command; usage() prints --help."""
     args = sys.argv[1:] if argv is None else argv
@@ -104,10 +107,11 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         usage()
         return 0
 
-    # --force/-f 對所有指令一致,在各指令自己解析參數之前就吃掉
-    if any(token in ("--force", "-f") for token in args):
+    # --yes/-y 對所有指令一致,在各指令自己解析參數之前就吃掉。--force/-f 是舊名:
+    # 意思一樣,只是 auto mode 看到 force 會當成破壞性操作而擋下 agent
+    if any(token in _YES_FLAGS for token in args):
         set_force(True)
-        args = [token for token in args if token not in ("--force", "-f")]
+        args = [token for token in args if token not in _YES_FLAGS]
         if not args:
             usage()
             return 0

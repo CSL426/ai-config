@@ -20,7 +20,7 @@ allowed-tools: Bash(acg memory status), Bash(ai-config memory status), Bash(acg 
   (`unused`、`dummy`、`example`、`placeholder`、`redacted` 已經不會被抓)但沒被
   認出來時,把值改寫成 `<unused>` 這種尖括號寫法再推,意思不變、不需要放行。其他誤判
   (講規則的字面、說明文字)就跟使用者說是哪一行、為什麼不是金鑰,請使用者執行
-  `acg memory push --allow-secret-path <那份的路徑> --force`:放行要使用者自己同意,auto mode 也會
+  `acg memory push --allow-secret-path <那份的路徑> --yes`:放行要使用者自己同意,auto mode 也會
   擋下 agent 自己放行。只放行讀過的那幾份,不要用 `--allow-secrets`:它對整次推送都不檢查,別份裡的真金鑰會一起上去。
   像真金鑰(`ghp_`、`sk-` 開頭、`key=` 後面一串英數),或你讀不到內容時,才交給使用者:
   真的是金鑰就刪掉那個值並換一組新的。本機日誌不同步,不在掃描範圍。
@@ -33,7 +33,7 @@ allowed-tools: Bash(acg memory status), Bash(ai-config memory status), Bash(acg 
     再變,所以排程不碰。要同步就手動 `acg memory adopt <路徑>`,不要就刪掉,讓使用者決定。
   兩種都不要代跑:adopt 會搬動專案裡的檔案。
 
-若有未保存的記憶變更,提醒可以用 `acg memory push` 保存。由你代跑時要加 `--force`:它推之前
+若有未保存的記憶變更,提醒可以用 `acg memory push` 保存。由你代跑時要加 `--yes`:它推之前
 會問「Commit and push these changes? [y/N]」,agent 的 shell 沒有終端機可以回答,不加就只會
 印出取消。
 

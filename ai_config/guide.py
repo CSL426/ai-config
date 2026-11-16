@@ -53,8 +53,8 @@ project, status, pull, push, and sync.
 | `unshare <name> [--from both\\|codex\\|agy]` | remove shared sources only; apply updates mirrors |
 | `completion` | print the Bash or PowerShell completion script |
 | `hooks <list\\|enable\\|disable\\|share\\|unshare>` | machine-local hooks, and Claude Code hooks shared with Codex and Antigravity |
-| `reset` | wipe configs to an empty skeleton; always confirms, and `--force` does NOT pass it |
-| `--force` / `-f` | global: answer every [y/N] with yes (push, deploy, skill remove). Not reset. |
+| `reset` | wipe configs to an empty skeleton; always confirms, and `--yes` does NOT pass it |
+| `--yes` / `-y` | global: answer every [y/N] with yes (push, deploy, skill remove). Not reset. `--force` / `-f` is the older name. |
 
 ## What syncs where
 
@@ -203,8 +203,8 @@ later with `--profile <name>`, which skips both prompts. Profiles live in
 - **Run `status` first.** It is read-only and shows exactly what would change.
 - **Never commit or push without explicit user approval.** This includes
   `push`, which commits as part of its flow.
-- **With no terminal, add `--force`.** Confirmations read stdin, so EOF counts
-  as no and the command stops with a non-zero exit. `--force` answers them
+- **With no terminal, add `--yes`.** Confirmations read stdin, so EOF counts
+  as no and the command stops with a non-zero exit. `--yes` answers them
   instead, which is what lets `pull` -> `apply` -> `push` run unattended. It
   does not reach `reset`, whose confirmation is deliberately out of its scope.
   Exit codes tell the two apart: refused confirmation is non-zero, nothing to
@@ -248,14 +248,16 @@ Pull still downloads the entire repository, including shared memory.
   changes are left unstaged, not lost.
 - **A `-` line means the file exists only live and `apply` would delete it.**
   Run `init` first if that content is worth keeping.
-- **On a machine behind the repository, `apply` before `push`.** A push
-  gathers live configuration first, so it would save this machine's older
-  copy over the newer one. Every apply and push records the commit the live
-  configuration matches; a push that would gather over later commits lists
-  them and asks, and `--force` does not answer that question. Without a
-  terminal it does not ask and stops: run `apply <tool>`, then push. Only
-  when the user decides this machine's copy should win, add
-  `--overwrite-newer`.
+- **A push never gathers an older copy over another machine's update.** Every
+  apply and push records the commit the live configuration matches. After a
+  push gathers, each file the repository changed since that commit keeps the
+  repository's version: if this machine never touched it, its copy was just
+  stale; if it changed too, its copy is saved under
+  `~/.ai-config-backup/push-kept-repo/` and the push says so. Nothing is
+  asked, so the schedule and agents get the same answer. Run `apply <tool>`
+  afterwards to bring this machine up to date. Only when the user decides
+  this machine's copy should win, add `--overwrite-newer`. (Before 1.0.160 a
+  push asked once, listing commits; a yes reverted a skill fix.)
 - **`apply` names files added by hand inside a managed Codex or agy skill**
   before it removes them (they are in the backup). Move them into the
   Claude copy of the skill and push instead.
@@ -294,10 +296,10 @@ waivers to the user. `push` with a tool keeps
 stopping the whole push, since a tool's settings go together. A push that does
 not select memory is not held up by such a left-out note either: memory push
 would leave it out anyway, so it is not a change waiting to be pushed.
-A push nobody confirms (the schedule, or `--force`) prints the files and the
+A push nobody confirms (the schedule, or `--yes`) prints the files and the
 diffstat but not the diff itself, which would only copy the notebook into the
 nightly log. An agent's shell has no terminal, so a confirmation it reaches
-counts as no; the cancel then says to re-run with `--force`, which an agent
+counts as no; the cancel then says to re-run with `--yes`, which an agent
 running `memory push` or `push` for the user needs.
 
 An unattended push that fails is remembered with its reason and the files

@@ -406,27 +406,41 @@ def test_a_held_note_does_not_block_a_tool_push(
     assert "疑似含憑證的筆記留在本機" in capsys.readouterr().out
 
 
-def test_an_ordinary_memory_change_still_blocks_a_tool_push(
-    data_repo: Path, capsys: pytest.CaptureFixture[str],
+def test_a_memory_change_waits_for_memory_push_instead_of_blocking_a_tool_push(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Memory is always changing; blocking push claude on it stranded agents (2026-11-13).
+
+    Before 1.0.160 this refused the tool push until memory was pushed first.
+    The memory change now stays in the worktree for memory push to handle.
+    """
     root = tracked_memory(data_repo)
     (root / "MEMORY.md").write_text("# Notes\n- unpushed\n", encoding="utf-8")
     (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+    staged = []
 
-    assert push.do_push("claude") == 1
-    assert "outside the selected tools" in capsys.readouterr().err
+    def accept(prompt: str) -> bool:
+        staged.append(git(data_repo, "diff", "--cached", "--name-only"))
+        return True
+
+    patch_push(monkeypatch, "confirm_prompt", accept)
+
+    assert push.do_push("claude") == 0
+    assert staged == ["claude/settings.json"]
+    assert git(data_repo, "diff", "--name-only") == "memory/MEMORY.md"
 
 
-def test_an_index_with_a_token_still_blocks_a_tool_push(
-    data_repo: Path, capsys: pytest.CaptureFixture[str],
+def test_an_index_with_a_token_stays_behind_while_the_tool_push_goes(
+    data_repo: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A credential in the index stops a memory push, so the change is still waiting."""
+    """A credential in the index stops a memory push; it must not ride along with claude."""
     root = tracked_memory(data_repo)
     (root / "MEMORY.md").write_text("# Notes\n" + _token_line(), encoding="utf-8")
     (data_repo / "claude/settings.json").write_text('{"theme": "dark"}\n', encoding="utf-8")
+    patch_push(monkeypatch, "confirm_prompt", lambda prompt: True)
 
-    assert push.do_push("claude") == 1
-    assert "outside the selected tools" in capsys.readouterr().err
+    assert push.do_push("claude") == 0
+    assert "memory/MEMORY.md" not in git(data_repo, "show", "--name-only", "--format=", "HEAD")
 
 
 def test_an_archived_note_with_a_token_does_not_block_a_tool_push(
@@ -471,7 +485,7 @@ def test_a_memory_push_without_a_terminal_says_to_add_force(
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
 
     assert push.do_push("memory") == 1
-    assert "re-run with --force" in capsys.readouterr().out
+    assert "re-run with --yes" in capsys.readouterr().out
     assert git(data_repo, "rev-list", "--count", "origin/main..HEAD") == "0"
 
 

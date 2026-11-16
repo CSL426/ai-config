@@ -15,6 +15,27 @@ def do_push(
     tool: str, allow_secrets: bool = False, scheduled: bool = False,
     overwrite_newer: bool = False, allowed_secret_paths: "frozenset[str]" = frozenset(),
 ) -> int:
+    """One push at a time: two of them stage into the same index."""
+    from ..locking import exclusive_lock
+
+    try:
+        with exclusive_lock(".ai-config-push.lock") as acquired:
+            if not acquired:
+                # 2026-11-13:使用者的 push agy 停在 [y/N],agent 的 push 撞上它 stage 的檔
+                log_error("另一個 acg push 正在進行(可能正停在確認提示);等它結束再推")
+                return 1
+            return _do_push(
+                tool, allow_secrets, scheduled, overwrite_newer, allowed_secret_paths
+            )
+    except (OSError, RuntimeError) as exc:
+        log_error(f"Could not take the push lock: {exc}")
+        return 1
+
+
+def _do_push(
+    tool: str, allow_secrets: bool, scheduled: bool,
+    overwrite_newer: bool, allowed_secret_paths: "frozenset[str]",
+) -> int:
     # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
     # 才會為 True(GUI 走不到,維持硬擋)。
     push_preflight._ALLOW_SECRET_PATHS = allow_secrets
@@ -49,12 +70,11 @@ def do_push(
     # 記憶隨時都可能有未保存的修改;只有它髒不能讓工具設定跳過收集
     if preflight.has_changes and not push_preflight._only_memory_changes():
         log_info("Reviewing existing uncommitted configuration changes")
-    elif tool != push_preflight.MEMORY_SCOPE:
-        if not applied_state.confirm_gather(_selected_tools(tool), overwrite_newer):
-            log_info("Cancelled; nothing was gathered")
-            return 1
-        if not _init_tools(tool):
-            return 1
+    elif tool != push_preflight.MEMORY_SCOPE and not _init_tools(tool):
+        return 1
+    if tool != push_preflight.MEMORY_SCOPE:
+        # 既有的未提交改動也要看:那可能是 pull 之前收集、比資料庫舊的版本
+        applied_state.keep_newer_repo_files(_selected_tools(tool), overwrite_newer)
 
     status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
     if status.returncode != 0:

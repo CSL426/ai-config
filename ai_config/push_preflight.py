@@ -109,7 +109,10 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
         if staged:
             log_error("Data repository has pre-staged changes; push cancelled:")
             push_review._print_capped(staged)
-            log_info("Unstage them before retrying so push can review the full diff")
+            log_info(
+                "Unstage them before retrying so push can review the full diff "
+                "(a push that crashed or was killed while asking can leave them)"
+            )
             return None
 
         working = _working_paths()
@@ -124,6 +127,13 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
             # push codex 叫人先推記憶,記憶推送又把它們留下(2026-10-27)
             log_info(f"{len(held)} 則疑似含憑證的筆記留在本機,記憶推送也不會帶上;不擋這次推送")
             outside = [path for path in outside if path not in held]
+        if outside and MEMORY_SCOPE not in selected and all(
+            path.startswith(f"{MEMORY_SCOPE}/") for path in outside
+        ):
+            # 記憶一直在變(remember 外掛、日誌),由 memory push 和排程負責;拿它擋
+            # push claude,agent 就得先推記憶、再被記憶的確認卡住(2026-11-13 CAO4ENQ)
+            log_info(f"記憶有 {len(outside)} 個未提交的改動,留給 memory push,這次不動它")
+            outside = []
         if outside and selected == [MEMORY_SCOPE]:
             # 記憶是自己一個範圍,而且多半由排程推。設定目錄有什麼改動與它無關,
             # 拿那些擋下來只會讓沒人看著的排程整晚不跑 — 昨晚就是這樣失敗的。
@@ -792,8 +802,8 @@ def _validate_staged_push(
         path for path in (unstaged.stdout + untracked.stdout).split("\0") if path
     } - (held or set())  # 刻意留下的筆記不算意外
     if MEMORY_SCOPE not in selected:
-        # 沒選記憶的推送不會碰到它們,記憶推送也會把它們留下
-        left -= _held_notes(left)
+        # 沒選記憶的推送不碰記憶目錄:那些改動留給 memory push(preflight 已講過)
+        left = {path for path in left if not path.startswith(f"{MEMORY_SCOPE}/")}
     if unstaged.returncode != 0 or untracked.returncode != 0 or left:
         log_error("Unexpected repository changes remain after staging; push cancelled.")
         return False

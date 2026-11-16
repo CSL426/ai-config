@@ -13,16 +13,19 @@ allowed-tools: Bash(acg status:*), Bash(ai-config status:*), Bash(acg push:*), B
 1. 執行 `acg status [工具]`,把變更列給使用者。
 2. 他確認之後,執行 `acg push [工具]`。
 
-- push 會停在確認提示。若這個 session 沒有終端機,加 `--force` 讓它自動同意;
+- push 會停在確認提示。若這個 session 沒有終端機,加 `--yes` 讓它自動同意(舊名 `--force`,auto mode 會把它當成破壞性操作);
   那表示使用者已經在上一步看過內容了。
 - 落後遠端時會被拒絕,要先 `/acg sync`。
 - 若它擋下憑證內容,先自己讀被抓到的那一行。值只是佔位詞(`=unused` 這類)就改寫成
   `<unused>` 再推,不需要放行。其他誤判(講規則的字面、說明文字)就跟使用者說明,請使用者
-  放行:只推記憶時是 `acg memory push --allow-secret-path <路徑> --force`,只放行讀過的那份;設定檔沒有這種逐檔放行,要用 `--allow-secrets` 時先確認
+  放行:只推記憶時是 `acg memory push --allow-secret-path <路徑> --yes`,只放行讀過的那份;設定檔沒有這種逐檔放行,要用 `--allow-secrets` 時先確認
   被抓到的只有你讀過的那幾份。像真金鑰或讀不到內容時,才把檔案交給使用者判斷。
-- 若它說「這台上次 apply 之後,資料庫又收到其他機器的設定更新」,表示這台的設定
-  比資料庫舊,push 會把別台的更新蓋回去。`--force` 跳不過這一步。把列出的更新告訴
-  使用者,建議先 `acg apply <工具>` 再 push。只有使用者明確說要用這台的版本覆蓋,
-  才加 `--overwrite-newer` 重跑。
+- 它說「保留資料庫的版本」的檔案,是別台在這台上次同步之後改過的:這台沒動過的直接
+  用資料庫的;兩邊都改過的也用資料庫的,這台的版本存到 `~/.ai-config-backup/push-kept-repo/`。
+  把這些檔案告訴使用者,推完後建議 `acg apply <工具>` 讓這台跟上。只有使用者明確說要用
+  這台的版本覆蓋,才加 `--overwrite-newer` 重跑。
+- 記憶有未提交的改動不會擋 `push <工具>`,那些留給 `acg memory push`。
+- 說「另一個 acg push 正在進行」時,不要重試也不要清 stage:等那個 push(可能是使用者
+  開著的終端機)結束。
 
 引數:`$ARGUMENTS`

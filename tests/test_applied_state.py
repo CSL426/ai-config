@@ -39,7 +39,7 @@ def test_a_record_is_kept_per_repository(repo: Path, monkeypatch: pytest.MonkeyP
     assert not applied_state.has_record()
     applied_state.record(["claude", "memory"])  # memory 不是工具,不記
     assert applied_state.has_record()
-    assert applied_state.newer_commits("claude") == []
+    assert applied_state._recorded_commit("claude")
     # 換到另一個資料庫,舊庫的紀錄不算數
     other = _repo(repo.parent / "other")
     monkeypatch.setattr(applied_state, "SCRIPT_DIR", other)
