@@ -68,6 +68,10 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         from .shared_hooks import run_agy_hook
 
         return run_agy_hook(args[1:])
+    if args and args[0] == "__retire-transcript":
+        from .transcripts import run_detached
+
+        return run_detached(args[1:])
     if args and args[0] == "__commit-style":
         from .commit_style import run_hook
 
