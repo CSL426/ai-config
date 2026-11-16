@@ -173,6 +173,9 @@ def test_a_literal_value_is_still_a_credential(line: str) -> None:
     "api_key=xxx1",
     "secret=***abc",
     "token=example.com.key9",
+    # 空白或逗號後面可能還接著真值
+    "token=none abc123XYZ",
+    "password=changeme,Real9pass",
     "token=<" + "a" * 60 + ">",  # 太長的尖括號可能包著真值
 ])
 def test_only_a_short_closed_placeholder_is_let_through(line: str) -> None:
