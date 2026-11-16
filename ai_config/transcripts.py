@@ -25,6 +25,7 @@ from .safety import is_reparse_point
 
 ARCHIVE_DIR_NAME = "archived-sessions"
 SETTLE_SECONDS = 60
+SETTLE_ROUNDS = 5
 COMMAND = "__retire-transcript"
 # 交接檔從共用記憶同步過來,別台機器寫的內容也會進到這裡;
 # 只有長得像 session id 的值才能拿去組路徑
@@ -58,7 +59,9 @@ def _is_live(session: str) -> bool:
     """Whether a running Claude Code still records this id as its session.
 
     /clear keeps the process and swaps the id in its record, so a cleared
-    session no longer appears here.
+    session no longer appears here. A record that cannot be read could be
+    the very session in question, so it counts as live: when unsure, the
+    transcript stays where it is.
     """
     from .handoff import _sessions_dir
 
@@ -69,7 +72,7 @@ def _is_live(session: str) -> bool:
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            continue
+            return True
         if isinstance(record, dict) and str(record.get("sessionId", "")).lower() == session:
             return True
     return False
@@ -154,7 +157,14 @@ def _move(session: str, moved: list[Path]) -> str:
         if sidecar.is_dir():
             sidecar.rename(target / session)
             moved.append(target / session)
-        transcript.rename(target / transcript.name)
+        try:
+            transcript.rename(target / transcript.name)
+        except OSError:
+            # 兩樣分開放的話,重試會撞上「封存已有同名資料夾」而永遠搬不完
+            if moved and moved[-1] == target / session:
+                (target / session).rename(sidecar)
+                moved.pop()
+            raise
         moved.append(target / transcript.name)
     return ""
 
@@ -164,8 +174,11 @@ def retire_later(value: str, current: str) -> bool:
     if getattr(sys, "frozen", False):
         command = [sys.executable, COMMAND, value, current]
     else:
-        command = [sys.executable, "-m", "ai_config", COMMAND, value, current]
+        # -I 加上換掉工作目錄:不然 `-m ai_config` 會先找到所在 repo 裡同名的套件,
+        # 認領交接時人可能正站在任何一個專案裡
+        command = [sys.executable, "-I", "-m", "ai_config", COMMAND, value, current]
     kwargs: dict = {
+        "cwd": str(_claude_home()),
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
         "stdin": subprocess.DEVNULL,
@@ -186,8 +199,17 @@ def run_detached(args: list[str]) -> int:
     if len(args) != 2:
         return 1
     value, current = args
-    # 上限防呆:時間戳在未來的檔案不能讓這個行程一直掛著
-    time.sleep(min(settle_left(value), SETTLE_SECONDS))
+    # 等的時候又被寫入就再等;次數有上限,時間戳在未來的檔案不能讓這個行程一直掛著
+    for _ in range(SETTLE_ROUNDS):
+        left = settle_left(value)
+        if left <= 0:
+            break
+        time.sleep(min(left, SETTLE_SECONDS))
+    else:
+        from .shared_hooks import _log
+
+        _log(COMMAND, "transcript never went quiet; left in place")
+        return 0
     _, problem = retire(value, current)
     if problem:
         from .shared_hooks import _log

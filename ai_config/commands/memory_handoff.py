@@ -75,9 +75,13 @@ def _retire_author(author: str) -> None:
     if not transcripts.eligible(author, current):
         return
     wait = transcripts.settle_left(author)
-    if wait > 0 and transcripts.retire_later(author, current):
-        # 舊 session 剛結束,remember 之類的 hook 可能還在背景讀它
-        log_info(f"寫交接的舊對話約 {int(wait) + 1} 秒後移到 ~/.claude/archived-sessions(/resume 不再列出)")
+    if wait > 0:
+        # 舊 session 剛結束,remember 之類的 hook 可能還在背景讀它;
+        # 背景行程開不起來就寧可不搬,也不要搶在它們讀完之前
+        if transcripts.retire_later(author, current):
+            log_info(f"寫交接的舊對話約 {int(wait) + 1} 秒後移到 ~/.claude/archived-sessions(/resume 不再列出)")
+        else:
+            log_warn("舊對話剛結束,背景程序沒開起來,這次先不封存")
         return
     moved, problem = transcripts.retire(author, current=current)
     if moved:

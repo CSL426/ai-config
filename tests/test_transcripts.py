@@ -134,30 +134,12 @@ def test_an_upper_case_id_cannot_reach_a_live_session(claude: Path) -> None:
     assert source.is_file()
 
 
-def test_a_trailing_newline_is_not_an_id(claude: Path) -> None:
-    assert transcripts._session(OLD + "\n") == OLD
-    assert transcripts._session(OLD + "\nx") == ""
+def test_only_surrounding_whitespace_is_forgiven(claude: Path) -> None:
+    """The note's field is stripped; anything else after the id makes it not an id."""
+    assert transcripts._session(f" {OLD}\n") == OLD
+    for bad in (OLD + "\nx", OLD + "0", OLD[:-1], OLD.replace("-", "", 1), f"{OLD}/x"):
+        assert transcripts._session(bad) == ""
 
-
-def test_a_move_cut_short_still_reports_what_moved(
-    claude: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The sidecar goes first; if the transcript is then locked, say what did move."""
-    source = _transcript(claude, OLD)
-    real = Path.rename
-
-    def lock_transcript(self: Path, target: Path) -> Path:
-        if self.suffix == ".jsonl":
-            raise PermissionError(13, "in use")
-        return real(self, target)
-
-    monkeypatch.setattr(Path, "rename", lock_transcript)
-
-    moved, problem = transcripts.retire(OLD, current=NEW)
-
-    assert moved == [claude / "archived-sessions" / "-home-me-repo" / OLD]
-    assert "PermissionError" in problem
-    assert source.is_file()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
@@ -183,18 +165,6 @@ def test_a_fresh_transcript_waits_to_settle(claude: Path) -> None:
     assert transcripts.settle_left(OLD, now=written + 61) == 0
     assert transcripts.settle_left("nope", now=written) == 0
 
-
-def test_the_detached_half_moves_after_waiting(
-    claude: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    source = _transcript(claude, OLD)
-    slept: list = []
-    monkeypatch.setattr(transcripts.time, "sleep", slept.append)
-
-    assert transcripts.run_detached([OLD, NEW]) == 0
-
-    assert 0 < slept[0] <= transcripts.SETTLE_SECONDS
-    assert not source.exists()
 
 
 def test_pickup_archives_the_writer_and_still_prints_the_note(
@@ -256,3 +226,91 @@ def test_pickup_of_its_own_note_spawns_nothing(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", NEW)
 
     memory_handoff._retire_author(NEW)
+
+
+def test_an_unreadable_session_record_counts_as_live(claude: Path) -> None:
+    source = _transcript(claude, OLD)
+    (claude / "sessions" / "300.json").write_text("{not json", encoding="utf-8")
+
+    assert transcripts.retire(OLD, current=NEW) == ([], "")
+    assert source.is_file()
+
+
+def test_a_locked_transcript_takes_its_sidecar_back(
+    claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Split apart, a retry would stop at the archived sidecar forever."""
+    source = _transcript(claude, OLD)
+    real = Path.rename
+
+    def lock_transcript(self: Path, target: Path) -> Path:
+        if self.suffix == ".jsonl":
+            raise PermissionError(13, "in use")
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "rename", lock_transcript)
+
+    moved, problem = transcripts.retire(OLD, current=NEW)
+
+    assert moved == [] and "PermissionError" in problem
+    assert source.is_file() and (source.parent / OLD / "subagents" / "a.jsonl").is_file()
+    assert not (claude / "archived-sessions" / "-home-me-repo" / OLD).exists()
+
+
+def test_a_transcript_written_while_waiting_is_waited_for_again(
+    claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _transcript(claude, OLD)
+    lefts = iter([30.0, 20.0, 0.0])
+    monkeypatch.setattr(transcripts, "settle_left", lambda value: next(lefts))
+    slept: list = []
+    monkeypatch.setattr(transcripts.time, "sleep", slept.append)
+
+    assert transcripts.run_detached([OLD, NEW]) == 0
+
+    assert slept == [30.0, 20.0]
+    assert not source.exists()
+
+
+def test_a_transcript_that_never_settles_is_left_in_place(
+    claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _transcript(claude, OLD)
+    monkeypatch.setattr(transcripts, "settle_left", lambda value: 60.0)
+    monkeypatch.setattr(transcripts.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr("ai_config.shared_hooks._log", lambda *a: None)
+
+    assert transcripts.run_detached([OLD, NEW]) == 0
+    assert source.is_file()
+
+
+def test_no_detached_process_means_no_move_yet(
+    claude: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    source = _transcript(claude, OLD)
+    _running(claude, NEW)
+    monkeypatch.setattr(transcripts, "retire_later", lambda *a: False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", NEW)
+
+    memory_handoff._retire_author(OLD)
+
+    assert source.is_file()
+    assert "先不封存" in capsys.readouterr().out
+
+
+def test_the_detached_process_does_not_start_from_the_current_project(
+    claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repository with its own ai_config/ package must not be what runs."""
+    seen: dict = {}
+
+    def fake_popen(command: list, **kwargs: object) -> None:
+        seen.update(kwargs, command=command)
+
+    monkeypatch.setattr(transcripts.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(transcripts.sys, "frozen", False, raising=False)
+
+    assert transcripts.retire_later(OLD, NEW)
+
+    assert seen["cwd"] == str(claude)
+    assert seen["command"][1:4] == ["-I", "-m", "ai_config"]
