@@ -192,13 +192,13 @@ before `apply`. In `~/.claude/skills` this includes skills installed by hand;
 hand-installed skills in Codex's and Antigravity's folders are reported but
 never deleted.
 
-On a machine that has not applied the latest configuration, `apply` before
-you `push`: a push gathers the live configuration, so it would save this
-machine's older copy over the newer one. acg remembers the commit each apply
-and push left this machine at; a push that would gather over later commits
-lists them and asks first, and `--force` does not skip that question.
-Without a terminal it stops instead of asking; `--overwrite-newer` is how you
-say this machine's copy should win.
+A push never saves a machine's older copy over another machine's update. acg
+remembers the commit each apply and push left this machine at; after a push
+gathers, every file the repository changed since then keeps the repository's
+version, and this machine's copy is saved under
+`~/.ai-config-backup/push-kept-repo/` if it changed too. Run `apply` afterwards
+to bring the machine up to date; `--overwrite-newer` is how you say this
+machine's copy should win.
 
 `acg setup` ends by printing which of these two paths applies, and the
 desktop app shows the same next step on its home page, with the features
@@ -212,7 +212,7 @@ where, and the rules below. It is compiled into the binary and works before
 
 - Run `acg status` first; it is read-only.
 - Never `push` without the user's approval; it commits.
-- Without a terminal, add `--force` so `[y/N]` prompts are answered.
+- Without a terminal, add `--yes` so `[y/N]` prompts are answered.
 - Ask for the data repository's URL and path; never guess them.
 
 ## Optional features
@@ -320,10 +320,10 @@ paths under your home directory, and anything the credential check flagged.
 ## CLI usage
 
 ```bash
-ai-config <command> [tool] [--force]
+ai-config <command> [tool] [--yes]
 ```
 
-`--force` (`-f`) answers every `[y/N]` confirmation with yes, so an agent or a
+`--yes` (`-y`; older name `--force`/`-f`) answers every `[y/N]` confirmation with yes, so an agent or a
 script with no terminal can run `pull`, `apply` and `push` end to end. `reset`
 ignores it: deleting every config file still has to be confirmed by a person.
 A command that stops because it never got its confirmation exits non-zero.

@@ -113,19 +113,27 @@ def _worktree_blob(path: str) -> "str | None":
     return out.strip() if out else None
 
 
-def _set_aside(path: str, stamp: str) -> "Path | None":
-    """Keep this machine's copy of a file both machines changed; nothing is lost."""
+def _set_aside(path: str, stamp: str) -> Path:
+    """Keep this machine's copy of a file both machines changed; nothing is lost.
+
+    Raises when it cannot: a copy that was not saved must not be replaced.
+    """
     from .paths import BACKUP_BASE
+    from .safety import assert_root_not_reparse, assert_safe_write_target
 
     source = SCRIPT_DIR / path
-    if not source.is_file():
-        return None
-    target = BACKUP_BASE / "push-kept-repo" / stamp / path
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(source.read_bytes())
-    except OSError:
-        return None
+    root = BACKUP_BASE / "push-kept-repo" / stamp
+    target = root / path
+    assert_root_not_reparse(BACKUP_BASE, "backup root")
+    # 備份可能含設定裡的敏感值;資料夾只給自己讀
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for parent in reversed(target.parents):
+        if parent == root or root in parent.parents:
+            assert_safe_write_target(parent / "_")
+            parent.mkdir(exist_ok=True, mode=0o700)
+    assert_safe_write_target(target)
+    target.write_bytes(source.read_bytes())
+    os.chmod(target, 0o600)
     return target
 
 
@@ -149,7 +157,8 @@ def keep_newer_repo_files(tools: "list[str]", overwrite: bool = False) -> "list[
     """
     from datetime import datetime
 
-    stamp = datetime.now().astimezone().strftime("%Y-%m-%d-%H%M%S")
+    # 微秒:同一秒推兩次,後一份不能蓋掉前一份
+    stamp = datetime.now().astimezone().strftime("%Y-%m-%d-%H%M%S-%f")
     kept: list[tuple[str, str]] = []
     for tool in tools:
         recorded = _recorded_commit(tool)
@@ -170,21 +179,19 @@ def keep_newer_repo_files(tools: "list[str]", overwrite: bool = False) -> "list[
             if overwrite:
                 log_warn(f"--overwrite-newer:{path} 用這台的版本蓋過資料庫較新的版本")
                 continue
-            if kind == "both":
-                saved = _set_aside(path, stamp)
-                if saved is None and here is not None:
-                    log_warn(f"{path}:兩邊都改過,這台的版本存不下來,先不動它")
-                    continue
-            if _blob("HEAD", path):
-                if _git("checkout", "HEAD", "--", path) is None:
-                    log_warn(f"{path}:還原資料庫版本失敗,先不動它")
-                    continue
-            else:
-                try:
+            # 任何一步失敗都要停下整次推送:留著舊檔繼續推,就是把舊版蓋回去
+            saved = None
+            try:
+                if kind == "both" and here is not None:
+                    saved = _set_aside(path, stamp)
+                if _blob("HEAD", path):
+                    # :(literal):檔名裡的 * ? [ 不能被當成萬用字元,去動到別的檔
+                    if _git("checkout", "HEAD", "--", f":(literal){path}") is None:
+                        raise OSError("git checkout failed")
+                else:
                     (SCRIPT_DIR / path).unlink()
-                except OSError:
-                    log_warn(f"{path}:資料庫已刪除,但這台的檔案移不掉,先不動它")
-                    continue
+            except (OSError, RuntimeError) as exc:
+                raise UnknownBase(f"{path}:無法保留資料庫的版本({exc})") from exc
             kept.append((path, kind))
             if kind == "stale":
                 log_info(f"{path}:這台還沒套用別台的更新,保留資料庫的版本(之後 apply 會更新這台)")

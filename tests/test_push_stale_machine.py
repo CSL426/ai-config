@@ -73,10 +73,13 @@ def test_a_machine_that_never_applied_is_not_stopped(machine) -> None:
     _, other, data, home = machine
     commit_and_push_settings(other, json.dumps({"theme": "dark"}), "feat: dark theme")
     assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    (home / ".claude").mkdir()
+    (home / ".claude/settings.json").write_text('{"theme": "light"}\n', encoding="utf-8")
 
     pushed = run_data_cli(data, home, "push", "claude", "--yes")
 
-    assert "這台上次 apply 之後" not in pushed.stdout
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert "保留資料庫的版本" not in pushed.stdout
 
 
 def _behind(machine) -> "tuple[Path, Path, Path, Path]":
@@ -158,3 +161,28 @@ def test_an_unknown_base_stops_until_the_machine_applies(machine, tmp_path: Path
     assert pushed.returncode == 1
     assert "apply claude" in pushed.stdout
     assert run_git(remote, "rev-parse", "HEAD") == remote_head
+
+
+def test_a_bracket_in_a_name_does_not_restore_other_files(machine) -> None:
+    """git reads [ab] as a wildcard; putting back q[ab] must not also reset qa."""
+    remote, other, data, home = machine
+    for name in ("q[ab]", "qa"):
+        skill = other / f"claude/skills/{name}/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(f"---\nname: x\ndescription: {name}\n---\nv1\n", encoding="utf-8")
+    run_git(other, "add", ".")
+    run_git(other, "commit", "-m", "feat: skills")
+    run_git(other, "push", "origin", "HEAD")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    assert run_data_cli(data, home, "apply", "claude").returncode == 0
+    (other / "claude/skills/q[ab]/SKILL.md").write_text("---\nname: x\ndescription: b\n---\nv2\n", encoding="utf-8")
+    run_git(other, "commit", "-am", "fix: bracket skill")
+    run_git(other, "push", "origin", "HEAD")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    (home / ".claude/skills/qa/SKILL.md").write_text("---\nname: x\ndescription: a\n---\nmine\n", encoding="utf-8")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert "mine" in run_git(remote, "show", "HEAD:claude/skills/qa/SKILL.md")
+    assert "v2" in run_git(remote, "show", "HEAD:claude/skills/q[ab]/SKILL.md")
