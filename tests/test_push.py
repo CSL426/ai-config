@@ -680,7 +680,7 @@ def test_push_scans_staged_blob_with_unicode_path(
     _, data_repo = create_data_remote(tmp_path)
     instructions = data_repo / "claude/機密說明.md"
     instructions.write_text(
-        "Never store secrets here.\ngithub_token = placeholder\n",
+        "Never store secrets here.\ngithub_token = hunter2Value\n",
         encoding="utf-8",
     )
     run_git(data_repo, "add", "claude/機密說明.md")

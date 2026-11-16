@@ -140,7 +140,7 @@ def test_individual_memory_deletion_allowed_while_root_exists(
     ("relative", "content", "message"),
     [
         ("memory/auth.json", "{}\n", "Credential files"),
-        ("memory/MEMORY.md", "password = example\n", "Potential credential"),
+        ("memory/MEMORY.md", "password = s3cretValue\n", "Potential credential"),
         ("notes.md", "outside\n", "Unexpected repository changes"),
     ],
 )
