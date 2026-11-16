@@ -196,7 +196,7 @@ def test_a_confirmation_nobody_can_answer_says_how_to_skip_it(
     monkeypatch.setattr(console.sys.stdin, "isatty", lambda: False, raising=False)
 
     assert console.confirm("Commit and push these changes? [y/N] ", force_hint=True) is False
-    assert "--force" in capsys.readouterr().out
+    assert "--yes" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("forceable", [True, False])

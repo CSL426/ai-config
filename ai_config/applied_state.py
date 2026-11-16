@@ -11,11 +11,10 @@ asks before gathering over commits made after it.
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
-from .console import confirm, log_info, log_warn
-from .paths import ALL_TOOLS, ENTRYPOINT, HOME, SCRIPT_DIR
+from .console import log_info, log_warn
+from .paths import ALL_TOOLS, HOME, SCRIPT_DIR
 
 
 def state_path() -> Path:
@@ -84,43 +83,120 @@ def repo_has_config(data_dir: Path) -> bool:
     return False
 
 
-def newer_commits(tool: str) -> "list[str]":
-    """Commits touching this tool since this machine last matched the repository."""
+
+
+def _recorded_commit(tool: str) -> "str | None":
     entry = _load().get(_repo_key())
     recorded = entry.get(tool) if isinstance(entry, dict) else None
-    if not isinstance(recorded, str) or not recorded:
-        return []  # 從沒 apply/push 過:無從判斷,不擋
-    listed = _git("log", "--format=%h %ad %s", "--date=short",
-                  f"{recorded}..HEAD", "--", f"{tool}/")
-    return [line for line in (listed or "").splitlines() if line.strip()]
+    return recorded if isinstance(recorded, str) and recorded else None
 
 
-def confirm_gather(tools: "list[str]", overwrite: bool = False) -> bool:
-    """Ask before a push gathers over configuration this machine never applied."""
-    newer = {tool: commits for tool in tools if (commits := newer_commits(tool))}
-    if not newer:
-        return True
-    log_warn(
-        "這台上次 apply 之後,資料庫又收到其他機器的設定更新,這台還沒套用:"
-    )
-    for tool, commits in newer.items():
-        print(f"  {tool}:")
-        for line in commits[:5]:
-            print(f"    {line}")
-        if len(commits) > 5:
-            print(f"    …(另外 {len(commits) - 5} 筆)")
-    log_info(
-        "現在 push 會先收集這台的設定,把上面這些改動蓋回這台的舊版本。"
-    )
-    names = " ".join(newer) if len(newer) < len(ALL_TOOLS) else ""
-    log_info(f"建議先執行 {ENTRYPOINT} apply {names}".rstrip() + ",再 push")
-    if overwrite:
-        log_warn("已指定 --overwrite-newer:用這台的版本覆蓋上面這些更新")
-        return True
-    if not sys.stdin.isatty():
-        # 沒有終端機就沒有人能回答。讀 stdin 的話,開著卻沒人寫的管道
-        # (agent 的背景 shell)會讓 push 永遠卡住
-        log_info("確定要用這台的版本覆蓋,才加 --overwrite-newer 重新執行")
-        return False
-    # --force 跳不過:這一步要人判斷是不是真的要覆蓋別台的更新
-    return confirm("確定要用這台的版本覆蓋嗎? [y/N] ", forceable=False)
+def _z_list(*args: str) -> "list[str] | None":
+    out = _git(*args)
+    return None if out is None else [item for item in out.split("\0") if item]
+
+
+def _dirty_paths(tool: str) -> "set[str] | None":
+    entries = _z_list("status", "--porcelain=v1", "-z", "--untracked-files=all", "--", f"{tool}/")
+    return None if entries is None else {entry[3:] for entry in entries if len(entry) > 3}
+
+
+def _blob(revision: str, path: str) -> "str | None":
+    out = _git("rev-parse", "--verify", "-q", f"{revision}:{path}")
+    return out.strip() if out else None
+
+
+def _worktree_blob(path: str) -> "str | None":
+    if not (SCRIPT_DIR / path).is_file():
+        return None
+    out = _git("hash-object", "--", path)
+    return out.strip() if out else None
+
+
+def _set_aside(path: str, stamp: str) -> Path:
+    """Keep this machine's copy of a file both machines changed; nothing is lost.
+
+    Raises when it cannot: a copy that was not saved must not be replaced.
+    """
+    from .paths import BACKUP_BASE
+    from .safety import assert_root_not_reparse, assert_safe_write_target
+
+    source = SCRIPT_DIR / path
+    root = BACKUP_BASE / "push-kept-repo" / stamp
+    target = root / path
+    assert_root_not_reparse(BACKUP_BASE, "backup root")
+    # 備份可能含設定裡的敏感值;資料夾只給自己讀
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for parent in reversed(target.parents):
+        if parent == root or root in parent.parents:
+            assert_safe_write_target(parent / "_")
+            parent.mkdir(exist_ok=True, mode=0o700)
+    assert_safe_write_target(target)
+    target.write_bytes(source.read_bytes())
+    os.chmod(target, 0o600)
+    return target
+
+
+class UnknownBase(Exception):
+    """The commit this machine last matched is gone from the repository's history."""
+
+
+def keep_newer_repo_files(tools: "list[str]", overwrite: bool = False) -> "list[tuple[str, str]]":
+    """After a gather, put back every file another machine changed since this one synced.
+
+    A machine that never applied an update gathers its older copy, and a
+    push used to commit that over the update; the question it asked named
+    commits, not files, and a yes reverted a skill fix (2026-11-13). Now
+    it is decided per file: a file the repository changed since this
+    machine last matched it keeps the repository's version. If this
+    machine changed it too, its copy is set aside under the backup root
+    and the user is told. ``--overwrite-newer`` keeps this machine's copy.
+    Returns (path, "stale" | "both") for every file put back. Raises
+    UnknownBase when the recorded commit cannot be compared (history
+    rewritten): guessing would push the older copy again.
+    """
+    from datetime import datetime
+
+    # 微秒:同一秒推兩次,後一份不能蓋掉前一份
+    stamp = datetime.now().astimezone().strftime("%Y-%m-%d-%H%M%S-%f")
+    kept: list[tuple[str, str]] = []
+    for tool in tools:
+        recorded = _recorded_commit(tool)
+        if not recorded:
+            continue  # 從沒 apply/push 過:無從判斷,不擋
+        # --no-renames:改名只列新路徑的話,這台收回來的舊路徑會被當成新增而復活
+        changed = _z_list(
+            "diff", "--name-only", "--no-renames", "-z", recorded, "HEAD", "--", f"{tool}/"
+        )
+        dirty = _dirty_paths(tool)
+        if changed is None or dirty is None:
+            if overwrite:
+                continue
+            raise UnknownBase(f"{tool}:找不到這台上次同步的版本({recorded[:7]}),無法逐檔比對")
+        for path in sorted(set(changed) & dirty):
+            here, before = _worktree_blob(path), _blob(recorded, path)
+            kind = "stale" if here == before else "both"
+            if overwrite:
+                log_warn(f"--overwrite-newer:{path} 用這台的版本蓋過資料庫較新的版本")
+                continue
+            # 任何一步失敗都要停下整次推送:留著舊檔繼續推,就是把舊版蓋回去
+            saved = None
+            try:
+                if kind == "both" and here is not None:
+                    saved = _set_aside(path, stamp)
+                if _blob("HEAD", path):
+                    # :(literal):檔名裡的 * ? [ 不能被當成萬用字元,去動到別的檔
+                    if _git("checkout", "HEAD", "--", f":(literal){path}") is None:
+                        raise OSError("git checkout failed")
+                else:
+                    (SCRIPT_DIR / path).unlink()
+            except (OSError, RuntimeError) as exc:
+                raise UnknownBase(f"{path}:無法保留資料庫的版本({exc})") from exc
+            kept.append((path, kind))
+            if kind == "stale":
+                log_info(f"{path}:這台還沒套用別台的更新,保留資料庫的版本(之後 apply 會更新這台)")
+            elif here is None:
+                log_warn(f"{path}:這台刪掉了、別台又改過,保留資料庫的版本")
+            else:
+                log_warn(f"{path}:這台和別台都改過,保留資料庫的版本;這台的版本存到 {saved}")
+    return kept

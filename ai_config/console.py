@@ -135,7 +135,7 @@ def confirm(prompt: str, *, forceable: bool = True, force_hint: bool = False) ->
             # 「Cancelled」看不出是沒人回答,兩台 Windows 的 agent 都卡在這裡
             print()
             if forceable and force_hint:
-                log_warn("No terminal to answer this; re-run with --force to accept it")
+                log_warn("No terminal to answer this; re-run with --yes to accept it")
             else:
                 log_warn("No terminal to answer this; run it in a terminal to answer")
         return False
@@ -145,6 +145,6 @@ def confirm(prompt: str, *, forceable: bool = True, force_hint: bool = False) ->
 def confirm_publish(prompt: str) -> bool:
     """A confirmation whose yes only publishes what was just shown (push).
 
-    Nobody can answer it in an agent's shell, so it names --force then.
+    Nobody can answer it in an agent's shell, so it names --yes then.
     """
     return confirm(prompt, force_hint=True)

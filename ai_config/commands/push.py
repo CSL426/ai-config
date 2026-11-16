@@ -7,6 +7,7 @@ the order they run in and the CLI's exit codes.
 from .. import applied_state, push_preflight, push_publish, push_review
 from ..config import configured_remote_provider
 from ..console import log_error, log_header, log_info, log_success
+from ..paths import ENTRYPOINT
 from .apply import _init_tools, _selected_tools
 from .sync import _git_failure, _remote_is_read_only, _run_repo_git
 
@@ -14,6 +15,27 @@ from .sync import _git_failure, _remote_is_read_only, _run_repo_git
 def do_push(
     tool: str, allow_secrets: bool = False, scheduled: bool = False,
     overwrite_newer: bool = False, allowed_secret_paths: "frozenset[str]" = frozenset(),
+) -> int:
+    """One push at a time: two of them stage into the same index."""
+    from ..locking import exclusive_lock
+
+    try:
+        with exclusive_lock(".ai-config-push.lock") as acquired:
+            if not acquired:
+                # 2026-11-13:使用者的 push agy 停在 [y/N],agent 的 push 撞上它 stage 的檔
+                log_error("另一個 acg push 正在進行(可能正停在確認提示);等它結束再推")
+                return 1
+            return _do_push(
+                tool, allow_secrets, scheduled, overwrite_newer, allowed_secret_paths
+            )
+    except (OSError, RuntimeError) as exc:
+        log_error(f"Could not take the push lock: {exc}")
+        return 1
+
+
+def _do_push(
+    tool: str, allow_secrets: bool, scheduled: bool,
+    overwrite_newer: bool, allowed_secret_paths: "frozenset[str]",
 ) -> int:
     # 憑證內容檢查的放行旗標:每次呼叫重設,只有 CLI 明示 --allow-secrets
     # 才會為 True(GUI 走不到,維持硬擋)。
@@ -49,12 +71,24 @@ def do_push(
     # 記憶隨時都可能有未保存的修改;只有它髒不能讓工具設定跳過收集
     if preflight.has_changes and not push_preflight._only_memory_changes():
         log_info("Reviewing existing uncommitted configuration changes")
-    elif tool != push_preflight.MEMORY_SCOPE:
-        if not applied_state.confirm_gather(_selected_tools(tool), overwrite_newer):
-            log_info("Cancelled; nothing was gathered")
+    elif tool != push_preflight.MEMORY_SCOPE and not _init_tools(tool):
+        return 1
+    behind: set[str] = set()
+    if tool != push_preflight.MEMORY_SCOPE:
+        # 既有的未提交改動也要看:那可能是 pull 之前收集、比資料庫舊的版本
+        try:
+            kept = applied_state.keep_newer_repo_files(_selected_tools(tool), overwrite_newer)
+        except applied_state.UnknownBase as exc:
+            log_error(str(exc))
+            log_info(
+                f"先執行 {ENTRYPOINT} apply {tool} 讓這台跟資料庫一致再推;"
+                "確定要用這台的版本覆蓋,才加 --overwrite-newer"
+            )
             return 1
-        if not _init_tools(tool):
-            return 1
+        # 放回資料庫版本的工具,這台的 live 仍是舊的:不能記成已一致,否則下次 push 照樣蓋回去
+        behind = {path.split("/", 1)[0] for path, _ in kept}
+        if behind:
+            log_info(f"推完請執行 {ENTRYPOINT} apply {' '.join(sorted(behind))},讓這台跟上")
 
     status = _run_repo_git("status", "--porcelain=v1", "--untracked-files=all")
     if status.returncode != 0:
@@ -105,7 +139,8 @@ def do_push(
     if not ready_to_commit:
         return 1
     return _recorded(
-        selected, push_publish._commit_and_push(commit_message, selected, reviewed_diff)
+        [scope for scope in selected if scope not in behind],
+        push_publish._commit_and_push(commit_message, selected, reviewed_diff),
     )
 
 

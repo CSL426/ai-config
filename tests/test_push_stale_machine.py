@@ -1,4 +1,4 @@
-"""A push from a machine that never applied the latest configuration asks first."""
+"""A push from a machine that never applied the latest configuration keeps the newer files."""
 
 import json
 from pathlib import Path
@@ -26,32 +26,46 @@ def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> "tuple[Path, Pat
     return remote, other, data, home
 
 
-def test_push_asks_before_gathering_over_another_machines_update(machine) -> None:
-    # 一台還沒 apply 最新設定就 push all,差點把別台一整天的技能修正蓋回舊版
+def test_a_stale_file_keeps_the_repository_version_without_asking(machine) -> None:
+    # 2026-11-13:一台沒套用 wiki888 修正的機器 push,問句只列 commit,按 y 就把修正蓋回舊版
     remote, other, data, home = machine
     applied = run_data_cli(data, home, "apply", "claude")
     assert applied.returncode == 0, applied.stderr + applied.stdout
-
     commit_and_push_settings(other, json.dumps({"theme": "dark"}), "feat: dark theme")
-    pulled = run_data_cli(data, home, "pull", "claude")
-    assert pulled.returncode == 0, pulled.stderr + pulled.stdout
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
     remote_head = run_git(remote, "rev-parse", "HEAD")
 
-    pushed = run_data_cli(data, home, "push", "claude", "--force")
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
 
-    # --force 也跳不過:沒有終端機回答,就是不推
-    assert pushed.returncode == 1, pushed.stdout
-    assert "這台上次 apply 之後" in pushed.stdout
-    assert "feat: dark theme" in pushed.stdout
-    assert "apply claude" in pushed.stdout
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert "保留資料庫的版本" in pushed.stdout
     assert json.loads((data / "claude/settings.json").read_text())["theme"] == "dark"
     assert run_git(remote, "rev-parse", "HEAD") == remote_head
 
-    # 套用之後就跟資料庫一致,push 不再攔
-    assert run_data_cli(data, home, "apply", "claude").returncode == 0
-    again = run_data_cli(data, home, "push", "claude", "--force")
-    assert "這台上次 apply 之後" not in again.stdout
-    assert again.returncode == 0, again.stderr + again.stdout
+
+def test_this_machines_other_edits_still_go_out(machine) -> None:
+    remote, _, data, home = _behind(machine)
+    skill = home / ".claude/skills/mine/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: mine\ndescription: x\n---\nbody\n", encoding="utf-8")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert json.loads(run_git(remote, "show", "HEAD:claude/settings.json"))["theme"] == "dark"
+    assert "name: mine" in run_git(remote, "show", "HEAD:claude/skills/mine/SKILL.md")
+
+
+def test_a_file_both_machines_changed_keeps_the_repository_and_saves_this_copy(machine) -> None:
+    remote, _, data, home = _behind(machine)
+    (home / ".claude/settings.json").write_text('{"theme": "light"}\n', encoding="utf-8")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert "都改過" in pushed.stdout
+    assert json.loads(run_git(remote, "show", "HEAD:claude/settings.json"))["theme"] == "dark"
+    saved = list((home / ".ai-config-backup/push-kept-repo").rglob("settings.json"))
+    assert saved and json.loads(saved[0].read_text())["theme"] == "light"
 
 
 def test_a_machine_that_never_applied_is_not_stopped(machine) -> None:
@@ -59,10 +73,13 @@ def test_a_machine_that_never_applied_is_not_stopped(machine) -> None:
     _, other, data, home = machine
     commit_and_push_settings(other, json.dumps({"theme": "dark"}), "feat: dark theme")
     assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    (home / ".claude").mkdir()
+    (home / ".claude/settings.json").write_text('{"theme": "light"}\n', encoding="utf-8")
 
-    pushed = run_data_cli(data, home, "push", "claude", "--force")
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
 
-    assert "這台上次 apply 之後" not in pushed.stdout
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert "保留資料庫的版本" not in pushed.stdout
 
 
 def _behind(machine) -> "tuple[Path, Path, Path, Path]":
@@ -73,38 +90,99 @@ def _behind(machine) -> "tuple[Path, Path, Path, Path]":
     return remote, other, data, home
 
 
-def test_an_open_stdin_nobody_writes_to_does_not_hang_the_push(machine) -> None:
-    # agent 的背景 shell:stdin 開著卻永遠沒人寫,讀它的話 push 會卡到天荒地老
-    import os
-    import subprocess
-    import sys
-
-    from data_repo_helpers import REPO_ROOT
-
-    _, _, data, home = _behind(machine)
-    env = {**os.environ, "AI_CONFIG_REPO": str(data), "HOME": str(home),
-           "USERPROFILE": str(home), "PYTHONPATH": str(REPO_ROOT)}
-    with subprocess.Popen(
-        [sys.executable, "-m", "ai_config", "push", "claude", "--force"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, env=env,
-    ) as process:
-        try:
-            process.wait(timeout=60)
-        finally:
-            if process.poll() is None:
-                process.kill()
-        out = process.stdout.read() if process.stdout else ""
-    assert process.returncode == 1, out
-    assert "--overwrite-newer" in out
-
 
 def test_overwrite_newer_is_the_deliberate_way_through(machine) -> None:
     remote, _, data, home = _behind(machine)
     (home / ".claude/settings.json").write_text('{"theme": "light"}\n', encoding="utf-8")
 
-    pushed = run_data_cli(data, home, "push", "claude", "--force", "--overwrite-newer")
+    pushed = run_data_cli(data, home, "push", "claude", "--yes", "--overwrite-newer")
 
     assert pushed.returncode == 0, pushed.stderr + pushed.stdout
     assert "--overwrite-newer" in pushed.stdout
     assert json.loads(run_git(remote, "show", "HEAD:claude/settings.json"))["theme"] == "light"
+
+
+def _add_skill(home: Path, name: str) -> None:
+    skill = home / f".claude/skills/{name}/SKILL.md"
+    skill.parent.mkdir(parents=True, exist_ok=True)
+    skill.write_text(f"---\nname: {name}\ndescription: x\n---\nbody\n", encoding="utf-8")
+
+
+def test_a_second_push_still_keeps_the_newer_file(machine) -> None:
+    """Recording HEAD after putting a file back made the next push revert it anyway."""
+    remote, _, data, home = _behind(machine)
+    _add_skill(home, "one")
+    assert run_data_cli(data, home, "push", "claude", "--yes").returncode == 0
+    _add_skill(home, "two")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert json.loads(run_git(remote, "show", "HEAD:claude/settings.json"))["theme"] == "dark"
+    assert "name: two" in run_git(remote, "show", "HEAD:claude/skills/two/SKILL.md")
+
+
+def test_a_skill_renamed_elsewhere_is_not_brought_back(machine) -> None:
+    remote, other, data, home = machine
+    foo = other / "claude/skills/foo/SKILL.md"
+    foo.parent.mkdir(parents=True)
+    foo.write_text("---\nname: foo\ndescription: x\n---\nbody\n", encoding="utf-8")
+    run_git(other, "add", ".")
+    run_git(other, "commit", "-m", "feat: foo")
+    run_git(other, "push", "origin", "HEAD")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    assert run_data_cli(data, home, "apply", "claude").returncode == 0
+    run_git(other, "mv", "claude/skills/foo", "claude/skills/bar")
+    run_git(other, "commit", "-m", "refactor: rename foo")
+    run_git(other, "push", "origin", "HEAD")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    _add_skill(home, "mine")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    tree = run_git(remote, "ls-tree", "-r", "--name-only", "HEAD", "claude/skills")
+    assert "claude/skills/foo/SKILL.md" not in tree
+    assert "claude/skills/bar/SKILL.md" in tree
+
+
+def test_an_unknown_base_stops_until_the_machine_applies(machine, tmp_path: Path) -> None:
+    """History rewritten: the per-file check cannot run, so guessing is not allowed."""
+    remote, _, data, home = _behind(machine)
+    state = tmp_path / "state/acg/applied.json"
+    record = json.loads(state.read_text())
+    for entry in record.values():
+        entry["claude"] = "0" * 40
+    state.write_text(json.dumps(record))
+    remote_head = run_git(remote, "rev-parse", "HEAD")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 1
+    assert "apply claude" in pushed.stdout
+    assert run_git(remote, "rev-parse", "HEAD") == remote_head
+
+
+def test_a_bracket_in_a_name_does_not_restore_other_files(machine) -> None:
+    """git reads [ab] as a wildcard; putting back q[ab] must not also reset qa."""
+    remote, other, data, home = machine
+    for name in ("q[ab]", "qa"):
+        skill = other / f"claude/skills/{name}/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(f"---\nname: x\ndescription: {name}\n---\nv1\n", encoding="utf-8")
+    run_git(other, "add", ".")
+    run_git(other, "commit", "-m", "feat: skills")
+    run_git(other, "push", "origin", "HEAD")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    assert run_data_cli(data, home, "apply", "claude").returncode == 0
+    (other / "claude/skills/q[ab]/SKILL.md").write_text("---\nname: x\ndescription: b\n---\nv2\n", encoding="utf-8")
+    run_git(other, "commit", "-am", "fix: bracket skill")
+    run_git(other, "push", "origin", "HEAD")
+    assert run_data_cli(data, home, "pull", "claude").returncode == 0
+    (home / ".claude/skills/qa/SKILL.md").write_text("---\nname: x\ndescription: a\n---\nmine\n", encoding="utf-8")
+
+    pushed = run_data_cli(data, home, "push", "claude", "--yes")
+
+    assert pushed.returncode == 0, pushed.stderr + pushed.stdout
+    assert "mine" in run_git(remote, "show", "HEAD:claude/skills/qa/SKILL.md")
+    assert "v2" in run_git(remote, "show", "HEAD:claude/skills/q[ab]/SKILL.md")
