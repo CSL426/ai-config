@@ -93,6 +93,12 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     "api_key = $API_KEY",
     "指令:`OPENAI_API_KEY=<金鑰> python3 probe.py`",
     'token: "<your token here>"',
+    # 明擺著的佔位值:2026-11-13 一份交接因 ARWIN_BRAIN_TOKEN=unused 留在本機
+    "worktree 裡跑要加 ARWIN_BRAIN_TOKEN=unused)",
+    "API_KEY=dummy",
+    'password: "placeholder"',
+    "SECRET=REDACTED",
+    "token=example",
     # 只提到參數名、後面沒有值:2026-10-14、15 兩晚的自動上傳都被這種寫法擋下
     "- 取消用 `?token=` 網址參數傳 token",
     "唯讀調查 `?token=` 經 log 外洩風險",
@@ -160,6 +166,17 @@ def test_a_literal_value_is_still_a_credential(line: str) -> None:
 
 @pytest.mark.parametrize("line", [
     "password=<hunter2",  # 沒收尾的不是佔位符
+    # 佔位詞只在整個值剛好是它時才放過
+    "token=unusedButReal9",
+    # 可能是真的預設密碼或遮了一半的真值:不放過
+    "API_KEY=none",
+    'password: "changeme"',
+    "token=xxxx",
+    "secret=***",
+    "token=example.com.key9",
+    # 空白或逗號後面可能還接著真值
+    "token=unused abc123XYZ",
+    "password=dummy,Real9pass",
     "token=<" + "a" * 60 + ">",  # 太長的尖括號可能包著真值
 ])
 def test_only_a_short_closed_placeholder_is_let_through(line: str) -> None:

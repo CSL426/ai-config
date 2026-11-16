@@ -197,7 +197,7 @@ function renderMemoryHealth(info: MemoryInfo): void {
     {
       kind: "error",
       heading: "疑似含有憑證的筆記",
-      hint: "還沒上傳的這幾份會留在本機，其他筆記照常同步。真的是金鑰就刪掉那個值並換一組新的；誤判請在終端機執行 acg memory push --allow-secrets。本機日誌不同步，不在此列。",
+      hint: "還沒上傳的這幾份會留在本機，其他筆記照常同步。真的是金鑰就刪掉那個值並換一組新的；值只是佔位詞就改寫成 <unused> 這種寫法；其他誤判請在終端機執行 acg memory push --allow-secret-path <那份的路徑>，只放行看過的那一份（--allow-secrets 會讓整次推送都不檢查）。本機日誌不同步，不在此列。",
       paths: info.secret_notes ?? [],
     },
     {
