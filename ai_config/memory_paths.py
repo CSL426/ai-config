@@ -193,10 +193,29 @@ def rules_target(path: Path) -> Path:
 
 
 def _assert_tree(path: Path) -> None:
+    """Refuse a reparse point or odd file type anywhere below path.
+
+    The ancestors are checked once, here; below that the walk only enters
+    directories it has already checked, so each entry needs only its own
+    check. Re-checking every ancestor of every note made this O(files x
+    depth): ~210,000 stats per prompt for a 4,800-note notebook, and the
+    UserPromptSubmit hook that calls it timed out on a Windows machine
+    whose antivirus scans each access (2026-11-18).
+    """
     assert_plain_path(path)
-    if path.is_dir():
-        for child in path.iterdir():
-            _assert_tree(child)
+    if path.is_dir() and not is_reparse_point(path):
+        _assert_children(path)
+
+
+def _assert_children(directory: Path) -> None:
+    for child in directory.iterdir():
+        if is_reparse_point(child):
+            raise RuntimeError(f"Refusing reparse point: {child}")
+        mode = child.lstat().st_mode
+        if stat.S_ISDIR(mode):
+            _assert_children(child)
+        elif not stat.S_ISREG(mode):
+            raise RuntimeError(f"Unexpected path type: {child}")
 
 
 def preflight_memory() -> None:
