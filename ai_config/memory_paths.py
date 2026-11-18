@@ -203,7 +203,7 @@ def _assert_tree(path: Path) -> None:
     whose antivirus scans each access (2026-11-18).
     """
     assert_plain_path(path)
-    if path.is_dir() and not is_reparse_point(path):
+    if path.is_dir():
         _assert_children(path)
 
 
@@ -211,7 +211,11 @@ def _assert_children(directory: Path) -> None:
     for child in directory.iterdir():
         if is_reparse_point(child):
             raise RuntimeError(f"Refusing reparse point: {child}")
-        mode = child.lstat().st_mode
+        try:
+            mode = child.lstat().st_mode
+        except FileNotFoundError:
+            # remember 一直在建、刪自己的暫存檔;走到一半被刪掉的不算錯,舊版也是略過
+            continue
         if stat.S_ISDIR(mode):
             _assert_children(child)
         elif not stat.S_ISREG(mode):

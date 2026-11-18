@@ -58,3 +58,23 @@ def test_each_entry_is_checked_once_not_once_per_descendant(
 
     entries = sum(1 for _ in root.rglob("*"))
     assert len(calls) <= entries + 40  # 每個項目一次,加上根目錄祖先的少量檢查
+
+
+def test_a_file_removed_during_the_walk_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """remember creates and deletes its own temp files while the hook walks."""
+    leaf = _tree(tmp_path / "projects")
+    gone = leaf / "save-session.pid"
+    gone.write_text("1\n", encoding="utf-8")
+    real = memory_paths.is_reparse_point
+
+    def vanish(path: Path) -> bool:
+        result = real(path)
+        if path == gone:
+            path.unlink()
+        return result
+
+    monkeypatch.setattr(memory_paths, "is_reparse_point", vanish)
+
+    memory_paths._assert_tree(tmp_path / "projects")
