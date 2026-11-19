@@ -422,6 +422,8 @@ def _call_claude(args: list, tool: str) -> int:
     resets = _five_hour_reset(result.stdout if result else "")
     if resets is not None:
         _append_log(_window_note(called, resets), tool)
+    # 失敗的呼叫不改視窗紀錄:那筆額度資訊不一定反映現況
+    if resets is not None and code == 0:
         try:
             from .keepalive_window import record_window
 
@@ -464,8 +466,15 @@ def _five_hour_reset(stdout: str) -> "datetime | None":
         windows = info.get("unifiedWindows") if isinstance(info, dict) else None
         five = windows.get("five_hour") if isinstance(windows, dict) else None
         stamp = five.get("resetsAt") if isinstance(five, dict) else None
-        if isinstance(stamp, (int, float)) and stamp > 0:
-            return datetime.fromtimestamp(stamp).astimezone()
+        # 秒數或 ISO 8601 都可能;怪值不能讓已經成功的呼叫失敗
+        from .keepalive_window import _parse_reset
+
+        try:
+            parsed = _parse_reset(stamp)
+        except (OverflowError, OSError, ValueError, TypeError):
+            parsed = None
+        if parsed is not None:
+            return parsed.astimezone()
     return None
 
 

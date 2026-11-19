@@ -70,3 +70,23 @@ def test_hooks_in_the_call_can_find_node(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setenv("PATH", env["PATH"])
     assert keepalive_runner._hook_env()["PATH"] == env["PATH"]
+
+
+def test_an_iso_or_odd_reset_never_breaks_the_call() -> None:
+    iso = '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"resetsAt":"2026-11-19T12:00:00+08:00"}}}}'
+    assert keepalive_runner._five_hour_reset(iso + "\n") is not None
+    huge = '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"resetsAt":1e30}}}}'
+    assert keepalive_runner._five_hour_reset(huge + "\n") is None
+
+
+def test_a_failed_call_does_not_rewrite_the_window(monkeypatch) -> None:
+    recorded: list = []
+    resets = datetime.now().astimezone() + timedelta(hours=5)
+    done = subprocess.CompletedProcess([], 1, _stream(resets), "boom")
+    monkeypatch.setattr(keepalive_runner.subprocess, "run", lambda *a, **k: done)
+    monkeypatch.setattr(keepalive_runner, "_append_log", lambda line, tool: None)
+    monkeypatch.setattr("ai_config.keepalive_window.record_window", recorded.append)
+
+    keepalive_runner._call_claude(["claude", "-p", "hi"], "claude")
+
+    assert recorded == []
