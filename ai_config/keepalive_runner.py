@@ -153,6 +153,8 @@ def send(tool: str = keepalive_settings.DEFAULT_TOOL, home: "str | None" = None)
             )
         homes = [named[home]]
     if not homes:
+        if tool == "claude":
+            return _call_claude(args, tool)
         return _call(args, tool, tool, None)
     worst = 0
     for found in homes:
@@ -404,9 +406,93 @@ def _call(args: list, tool: str, label: str, env: "dict | None") -> int:
     return _run(args, tool, label, env)[0]
 
 
+def _call_claude(args: list, tool: str) -> int:
+    """Call Claude and log when its five-hour window resets.
+
+    Whether a call opened the window is the whole point, and the log said
+    only "exit 0". A call that opens it resets five hours later; one that
+    lands in a window something else opened resets sooner (2026-11-18/19:
+    the 07:00 call showed a 09:x0 reset and nobody could tell from here).
+    """
+    called = datetime.now().astimezone()
+    code, result = _run(
+        [*args, "--output-format", "stream-json", "--verbose"], tool, tool, _hook_env(),
+        stream_json=True,
+    )
+    resets = _five_hour_reset(result.stdout if result else "")
+    if resets is not None:
+        _append_log(_window_note(called, resets), tool)
+    # 失敗的呼叫不改視窗紀錄:那筆額度資訊不一定反映現況
+    if resets is not None and code == 0:
+        try:
+            from .keepalive_window import record_window
+
+            record_window({"rate_limits": {"five_hour": {"resets_at": int(resets.timestamp())}}})
+        except (OSError, ValueError):
+            pass
+    return code
+
+
+def _hook_env() -> dict:
+    """The scheduler's PATH plus ~/.local/bin, where node and the tools live.
+
+    systemd starts this with a bare PATH, so every plugin hook written as
+    `node ...` failed with "node: not found" inside each keepalive call.
+    """
+    local_bin = str(Path.home() / ".local" / "bin")
+    path = os.environ.get("PATH", "")
+    if local_bin in path.split(os.pathsep):
+        return dict(os.environ)
+    return {**os.environ, "PATH": os.pathsep.join(filter(None, [local_bin, path]))}
+
+
+def _stream_events(stdout: str) -> list:
+    events = []
+    for line in (stdout or "").splitlines():
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            events.append(value)
+    return events
+
+
+def _five_hour_reset(stdout: str) -> "datetime | None":
+    for event in reversed(_stream_events(stdout)):
+        if event.get("type") != "rate_limit_event":
+            continue
+        info = event.get("rate_limit_info")
+        windows = info.get("unifiedWindows") if isinstance(info, dict) else None
+        five = windows.get("five_hour") if isinstance(windows, dict) else None
+        stamp = five.get("resetsAt") if isinstance(five, dict) else None
+        # 秒數或 ISO 8601 都可能;怪值不能讓已經成功的呼叫失敗
+        from .keepalive_window import _parse_reset
+
+        try:
+            parsed = _parse_reset(stamp)
+        except (OverflowError, OSError, ValueError, TypeError):
+            parsed = None
+        if parsed is not None:
+            return parsed.astimezone()
+    return None
+
+
+def _window_note(called: datetime, resets: datetime) -> str:
+    """Say whether this call opened the window, from when it resets."""
+    opened = resets - timedelta(hours=5)
+    # 重置時間會被取整到十分鐘,開窗時刻落在呼叫前後十分鐘內就算這次開的
+    if abs((opened - called).total_seconds()) <= 600:
+        return f"window resets {resets:%H:%M}: this call opened it"
+    return (
+        f"window resets {resets:%H:%M}: it was already open since about "
+        f"{opened:%H:%M}, so this call did not move it"
+    )
+
+
 def _run(
     args: list, tool: str, label: str, env: "dict | None", cwd: "Path | None" = None,
-    *, json_reply: bool = False,
+    *, json_reply: bool = False, stream_json: bool = False,
 ) -> "tuple[int, subprocess.CompletedProcess | None]":
     _append_log(f"calling {label}", tool)
     try:
@@ -417,7 +503,7 @@ def _run(
     except (OSError, subprocess.SubprocessError) as exc:
         _append_log(f"failed to start {label}: {exc}", tool)
         return 1, None
-    reason = _outcome(result, json_reply=json_reply)
+    reason = _outcome(result, json_reply=json_reply, stream_json=stream_json)
     _append_log(f"exit {result.returncode}: {reason}", tool)
     if result.returncode and _USAGE_LIMIT.search(reason):
         # 額度用完代表這個帳號的視窗本來就在跑,喚醒的目的已經達成
@@ -437,7 +523,9 @@ _USAGE_LIMIT = re.compile(
 _RESETS_IN = re.compile(r"Resets in (?:(\d+)h)?(?:(\d+)m)?", re.IGNORECASE)
 
 
-def _outcome(result: "subprocess.CompletedProcess", *, json_reply: bool = False) -> str:
+def _outcome(
+    result: "subprocess.CompletedProcess", *, json_reply: bool = False, stream_json: bool = False,
+) -> str:
     """The one line worth keeping: the reply, or on failure, the reason.
 
     A failed call used to log only its exit code. The reason was on
@@ -445,7 +533,13 @@ def _outcome(result: "subprocess.CompletedProcess", *, json_reply: bool = False)
     as "exit 1: (no output)" -- and finding it meant rerunning by hand.
     """
     document = _json_reply(result.stdout) if json_reply else None
-    if document is not None and isinstance(document.get("response"), str):
+    final = next(
+        (e for e in reversed(_stream_events(result.stdout)) if e.get("type") == "result"), None,
+    ) if stream_json else None
+    if final is not None and isinstance(final.get("result"), str):
+        # claude 的 stream-json:回覆在最後一筆 result 事件裡
+        reply = final["result"].strip().splitlines()
+    elif document is not None and isinstance(document.get("response"), str):
         # agy 用 --output-format json 時回覆在 response 裡
         reply = document["response"].strip().splitlines()
     else:

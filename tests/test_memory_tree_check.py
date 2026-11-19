@@ -78,3 +78,30 @@ def test_a_file_removed_during_the_walk_is_skipped(
     monkeypatch.setattr(memory_paths, "is_reparse_point", vanish)
 
     memory_paths._assert_tree(tmp_path / "projects")
+
+
+def test_a_busy_lock_skips_the_repair_quietly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture, tmp_path: Path,
+) -> None:
+    """Another acg holding the lock is not an error worth a line on every prompt."""
+    import io
+    import json
+    from contextlib import contextmanager
+
+    from ai_config import locking, memory_hooks
+
+    @contextmanager
+    def busy(timeout: float = 10.0):
+        raise TimeoutError("Timed out waiting for apply lock")
+        yield
+
+    monkeypatch.setattr(locking, "apply_lock", busy)
+    monkeypatch.setattr(memory_hooks.memory_paths, "link_state", lambda: ("ok", ""))
+    monkeypatch.setattr(memory_hooks.memory_journal, "journal_config_state", lambda: ("ours", ""))
+    monkeypatch.setattr(memory_hooks.memory_paths, "has_block", lambda text: True)
+    monkeypatch.setattr(memory_hooks.memory_paths, "_read_text", lambda path: "")
+    payload = json.dumps({"cwd": str(tmp_path), "hook_event_name": "UserPromptSubmit"})
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+
+    assert memory_hooks.run([str(memory_hooks.memory_paths.SCRIPT_DIR)]) == 0
+    assert "未修復" not in capsys.readouterr().err

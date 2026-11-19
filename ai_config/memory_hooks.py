@@ -278,9 +278,18 @@ def run(args: list[str]) -> int:
             or not memory_paths.has_block(memory_paths._read_text(memory_paths.live_rules_path()))
         ):
             return 0
-        with apply_lock(timeout=2):
+        lock = apply_lock(timeout=2)
+        try:
+            lock.__enter__()
+        except TimeoutError:
+            # 別的 acg 正拿著鎖(apply、同一則訊息的交接提醒 hook):這次不修,下則訊息再修。
+            # 只放過拿鎖逾時;修復本身的錯誤照樣要報(2026-11-18 CAO4ENQ)
+            return 0
+        try:
             memory_paths.preflight_memory()
             repair_entry(root)
+        finally:
+            lock.__exit__(None, None, None)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"acg：專案日誌入口未修復：{exc}", file=sys.stderr)
         return 1

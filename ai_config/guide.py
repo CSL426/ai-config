@@ -490,6 +490,10 @@ call at chosen times (four by default) to put the boundaries where the day
 needs them; `keepalive status` reports every tool, `disable` removes one
 schedule, `send` calls once now. The tool is claude, codex or agy, and
 claude when left out.
+Each claude call also logs when its five-hour window resets, read from the
+call's own rate-limit event: five hours after the call means this call
+opened the window ("this call opened it"); sooner means something else on
+the account opened it first, and the line says roughly when.
 A failed call logs the tool's own error line, such as an exhausted
 usage limit, rather than just its exit code. A failed call also anchors
 nothing: the next real use starts the window instead, which is how the
