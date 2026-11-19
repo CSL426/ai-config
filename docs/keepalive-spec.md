@@ -91,8 +91,15 @@ keepalive 一天有多個時間點，autopush 只有一個。systemd 一個 time
 ## 執行
 
 ```
-claude --model <model> -p "<prompt>"
+claude --model <model> -p "<prompt>" --output-format stream-json --verbose
 ```
+
+- 串流輸出裡有一筆 `rate_limit_event`,帶著 5 小時視窗的重置時間
+  (`rate_limit_info.unifiedWindows.five_hour.resetsAt`)。每次呼叫後在日誌多記一行：
+  重置時間是呼叫後 5 小時(容許 10 分鐘,重置時間會取整)就寫「這次開的」,早於那個時間
+  就寫「早在約幾點就開了」,這次沒有挪動視窗。同一個值也寫進 `window-claude.json`。
+  2026-11-18、19 兩天 07:00 的呼叫都落在凌晨就開好的視窗裡，當時只記了 `exit 0`,
+  看不出來。
 
 - 找 `claude` 執行檔的方式沿用 `ccs` 已經處理好的邏輯(`runner.py`)：Claude Code
   會裝成版本目錄加一個穩定啟動器，直接記住某個版本路徑會在下次更新後失效。

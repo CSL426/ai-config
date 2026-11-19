@@ -281,6 +281,10 @@ def run(args: list[str]) -> int:
         with apply_lock(timeout=2):
             memory_paths.preflight_memory()
             repair_entry(root)
+    except TimeoutError:
+        # 別的 acg 正拿著鎖(apply、同一則訊息的交接提醒 hook):這次不修,下則訊息再修。
+        # 報錯的話每則訊息都跳一行 hook failed,其實什麼都沒壞(2026-11-18 CAO4ENQ)
+        return 0
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"acg：專案日誌入口未修復：{exc}", file=sys.stderr)
         return 1
