@@ -393,7 +393,8 @@ class ManagementApi:
                 token = secrets.token_urlsafe(24)
                 self._locations[token] = (location, str(paths.SCRIPT_DIR), project_token)
                 locations.append({"label": label, "path": str(location), "token": token})
-            return {**empty, **outcome(), "shared_status": state.link if state.link in ("ok", "missing") else "conflict",
+            return {**empty, **outcome(),
+                    "shared_status": state.link if state.link in ("ok", "missing") else "conflict",
                     "tracked": state.changes is not None,
                     "git_status": "untracked" if state.changes is None else "dirty" if state.changes else "clean",
                     "changed_paths": state.changes or [], "entries": entries, "actions": actions,
@@ -599,7 +600,10 @@ class ManagementApi:
                             raise ValueError("此操作不接受專案參數")
                         project = None
                     candidate = plan(action, project)
-                    scope = {"action": action, "project_key": memory_paths.project_key(project).key if project else None}
+                    scope = {
+                        "action": action,
+                        "project_key": memory_paths.project_key(project).key if project else None,
+                    }
                     identity = review.fingerprint(candidate.relevant_paths,
                                                   [candidate.relevant_values, review.git_state(paths.SCRIPT_DIR)])
             if not candidate.changes:

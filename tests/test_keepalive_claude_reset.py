@@ -73,7 +73,10 @@ def test_hooks_in_the_call_can_find_node(monkeypatch, tmp_path) -> None:
 
 
 def test_an_iso_or_odd_reset_never_breaks_the_call() -> None:
-    iso = '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"resetsAt":"2026-11-19T12:00:00+08:00"}}}}'
+    iso = (
+        '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":'
+        '{"five_hour":{"resetsAt":"2026-11-19T12:00:00+08:00"}}}}'
+    )
     assert keepalive_runner._five_hour_reset(iso + "\n") is not None
     huge = '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"resetsAt":1e30}}}}'
     assert keepalive_runner._five_hour_reset(huge + "\n") is None

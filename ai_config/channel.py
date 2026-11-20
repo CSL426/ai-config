@@ -8,6 +8,7 @@ message delivered there into a `notifications/claude/channel` event, so
 the session sees it mid-conversation. `acg msg send` is the only writer.
 """
 
+import contextlib
 import json
 import os
 import secrets
@@ -178,12 +179,11 @@ def run() -> int:
     # listen 也在 try 裡:socket 建好到進入 try 之間收到訊號,finally 就不會跑
     try:
         if pid is not None:
-            try:
+            # 收不到信,但別讓 Claude 啟動時看到一個壞掉的 server
+            with contextlib.suppress(OSError):
                 channel.listen(channel_socket(pid))
-            except OSError:
-                pass  # 收不到信,但別讓 Claude 啟動時看到一個壞掉的 server
-        for line in sys.stdin:
-            line = line.strip()
+        for raw in sys.stdin:
+            line = raw.strip()
             if not line:
                 continue
             try:

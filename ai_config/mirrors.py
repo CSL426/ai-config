@@ -78,7 +78,7 @@ def check_shared_mirrors() -> None:
             log_warn(
                 f"mirror stale: {rel_text} — source changed: {tilde(src_path)}"
             )
-            print(f"    update the copy, then set {CYAN}mirror-hash: {cur_hash}{NC}")
+            print(f"    update the copy, then set {CYAN}mirror-hash: {cur_hash}{NC}")  # noqa: S608 印給人看的訊息,不是 SQL
             print(
                 "    if you just pulled another machine's config, run apply "
                 "first — the local source may be the outdated side"

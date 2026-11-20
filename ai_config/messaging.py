@@ -269,12 +269,12 @@ def codex_homes_with_daemon() -> list:
     login still run separate daemons, and a TUI attaches to the one of
     the home it was started in.
     """
-    homes = []
-    for home in sorted(HOME.glob(".codex*")):
-        # Windows 的 AF_UNIX socket 是 reparse point;不跟著它走,只看它在不在
-        if home.is_dir() and os.path.lexists(socket_path(home)):
-            homes.append(home)
-    return homes
+    # Windows 的 AF_UNIX socket 是 reparse point;不跟著它走,只看它在不在
+    return [
+        home
+        for home in sorted(HOME.glob(".codex*"))
+        if home.is_dir() and os.path.lexists(socket_path(home))
+    ]
 
 
 def _account(home: Path) -> str:

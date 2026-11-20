@@ -240,7 +240,8 @@ def plan(tools: list[str], category: str) -> ApplyPlan:
         after, files = {}, {}
         for root in roots:
             target = shadow / root.relative_to(paths.HOME)
-            for filename, record in review.tree(target).items():
+            for filename, node in review.tree(target).items():
+                record = node
                 actual = str(paths.HOME / Path(filename).relative_to(shadow))
                 if record["kind"] in ("symlink", "junction"):
                     record = {

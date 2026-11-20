@@ -194,7 +194,7 @@ def test_a_failed_turn_says_why(home: Path) -> None:
     daemon = FakeDaemon(messaging.socket_path(home / ".codex-set"), {"t": _thread("a")}, turns)
     try:
         peer = messaging.resolve("a")
-        with pytest.raises(messaging.MessagingError, match="送達.*5:04 PM"):
+        with pytest.raises(messaging.MessagingError, match=r"送達.*5:04 PM"):
             messaging.wait_codex_reply(peer, "abc123", timeout=5, poll=0.1)
     finally:
         daemon.close()

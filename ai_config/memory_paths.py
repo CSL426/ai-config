@@ -155,9 +155,11 @@ def codex_rules_path() -> Path:
 
 def instruction_paths() -> list[Path]:
     paths = [live_rules_path(), codex_rules_path()]
-    for path in (source_rules_path(), SCRIPT_DIR / "codex" / "AGENTS.md"):
-        if os.path.lexists(path):
-            paths.append(path)
+    paths.extend(
+        path
+        for path in (source_rules_path(), SCRIPT_DIR / "codex" / "AGENTS.md")
+        if os.path.lexists(path)
+    )
     return paths
 
 

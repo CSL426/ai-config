@@ -292,7 +292,7 @@ def _mutation(
             )
         result = MemoryExecutionResult(backup_path=str(snapshot) if snapshot else None)
         written: dict[Path, bytes | None] = {}
-        observer = memory_paths.WRITE_OBSERVER.set(lambda path, content: written.__setitem__(path, content))
+        observer = memory_paths.WRITE_OBSERVER.set(written.__setitem__)
         try:
             yield result
         except (OSError, RuntimeError, ValueError) as failure:

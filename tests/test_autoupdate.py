@@ -199,7 +199,7 @@ def test_codex_releases_are_left_alone_when_in_doubt(
     releases = tmp_path / ".codex" / "packages" / "app-server-daemon" / "releases"
     _release(releases, "0.150.0")
     _release(releases, "0.159.3")
-    monkeypatch.setattr(autoupdate, "_running_executables", lambda: set())
+    monkeypatch.setattr(autoupdate, "_running_executables", set)
 
     # 沒有 current:不知道哪一版在用,整個不碰
     assert autoupdate._prune_codex_releases(tmp_path) == (0, 0)

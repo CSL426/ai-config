@@ -6,12 +6,11 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-
-
-import pytest
 
 # 在任何 fixture 改 HOME 或 SCRIPT_DIR 之前就記下真的位置
 _REAL_SETTINGS = (
@@ -58,7 +57,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """
     before = session.config.stash.get(_SETTINGS_KEY, ())
     changed = [
-        path for path, old, new in zip(_GUARDED, before, _settings_fingerprint())
+        path for path, old, new in zip(_GUARDED, before, _settings_fingerprint(), strict=False)
         if old != new
     ]
     if not changed:
@@ -206,7 +205,7 @@ def _shared_hooks_stay_out_of_the_real_notebook(
     empty = tmp_path / "no-shared-hooks"
 
     def definitions_dir() -> Path:
-        if paths.SCRIPT_DIR == real:
+        if real == paths.SCRIPT_DIR:
             return empty
         return paths.SCRIPT_DIR / "claude" / "shared-hooks"
 

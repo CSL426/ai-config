@@ -1,5 +1,6 @@
 """Console output matching the legacy CLI format."""
 
+import contextlib
 import os
 import sys
 import time
@@ -20,11 +21,9 @@ def _configure_utf8_output() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
-        try:
+        # 關掉的串流換不了編碼;import 這裡失敗會讓整個 CLI 起不來
+        with contextlib.suppress(OSError, ValueError):
             reconfigure(encoding="utf-8", errors="replace")
-        except (OSError, ValueError):
-            # 關掉的串流換不了編碼;import 這裡失敗會讓整個 CLI 起不來
-            pass
 
 
 def _is_tty(stream: object) -> bool:

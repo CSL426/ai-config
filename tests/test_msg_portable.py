@@ -211,7 +211,10 @@ def test_setup_leaves_a_codex_function_of_your_own_alone(tmp_path: Path) -> None
 def test_the_old_codex_function_goes_with_the_old_block(tmp_path: Path) -> None:
     """The other machines got acg's codex() that attached every TUI with --remote unix://."""
     rc = tmp_path / ".bashrc"
-    old = "# >>> acg msg >>>\nclaude-msg() { :; }\ncodex() {\n  command codex --remote unix:// \"$@\"\n}\n# <<< acg msg <<<\n"
+    old = (
+        "# >>> acg msg >>>\nclaude-msg() { :; }\n"
+        "codex() {\n  command codex --remote unix:// \"$@\"\n}\n# <<< acg msg <<<\n"
+    )
     rc.write_text("export A=1\n\n" + old, encoding="utf-8")
 
     _path, changed = messaging.install_shell_block(rc, windows=False)

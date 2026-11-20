@@ -246,7 +246,9 @@ def test_a_prompt_hook_runs_once_per_message_and_answers_every_step(
     hook, runs = _counting_prompt_hook(world)
     args = ["count", shared_hooks._digest(hook)]
     agy = {"conversationId": "c-1", "workspacePaths": [str(world)], "lastUserInput": "hi"}
-    step = lambda number: _call(monkeypatch, capsys, args, {**agy, "invocationNum": number})
+
+    def step(number):
+        return _call(monkeypatch, capsys, args, {**agy, "invocationNum": number})
 
     first, second, third = step(0), step(1), step(2)
 

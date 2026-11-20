@@ -144,8 +144,7 @@ def managed_destinations(
             from .paths import WINDOWS_MODE
 
             if WINDOWS_MODE:
-                for name in (AGY_MARKER, AGY_STATE):
-                    result.append((tool, name, home / name))
+                result.extend((tool, name, home / name) for name in (AGY_MARKER, AGY_STATE))
     return result
 
 

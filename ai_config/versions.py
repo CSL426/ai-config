@@ -91,10 +91,10 @@ def is_managed(running: Path) -> bool:
 
 
 def _sort_key(name: str) -> tuple:
-    parts = []
-    for piece in name.split("."):
-        parts.append((0, int(piece)) if piece.isdigit() else (1, piece))
-    return tuple(parts)
+    return tuple(
+        (0, int(piece)) if piece.isdigit() else (1, piece)
+        for piece in name.split(".")
+    )
 
 
 def installed_versions() -> list[str]:

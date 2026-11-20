@@ -116,7 +116,8 @@ def _plan(root: Path, upstream: str) -> "list[_Step] | None":
     if not _ok(incoming) or not _ok(status):
         return None
     fields = [_text(part) for part in incoming.stdout.split(b"\0")]
-    remote = {path: kind for kind, path in zip(fields[0::2], fields[1::2]) if path}
+    # 結尾的 \0 會多切出一個空欄位,兩邊長度不一定相等
+    remote = {path: kind for kind, path in zip(fields[0::2], fields[1::2], strict=False) if path}
     steps = []
     entries = iter(_text(status.stdout).split("\0"))
     for entry in entries:

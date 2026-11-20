@@ -189,7 +189,11 @@ def _enable_schtasks(times, tool: str = keepalive_settings.DEFAULT_TOOL) -> list
 def enable(times=(), replace_ccs: bool = False, tool: str = keepalive_settings.DEFAULT_TOOL) -> tuple:
     """Install the schedule. Returns (exit code, lines to print)."""
     keepalive_settings._check_tool(tool)
-    parsed = keepalive_settings.parse_times(times) if times else keepalive_settings.Parsed(list(keepalive_settings.DEFAULT_TIMES))
+    parsed = (
+        keepalive_settings.parse_times(times)
+        if times
+        else keepalive_settings.Parsed(list(keepalive_settings.DEFAULT_TIMES))
+    )
     if parsed.rejected:
         return 1, [f"看不懂這些時間:{', '.join(parsed.rejected)}", "格式是 HH:MM"]
     if len(parsed.times) > keepalive_settings.MAX_TIMES:
