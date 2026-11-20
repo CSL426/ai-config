@@ -38,6 +38,9 @@ def make_drive_request(
     Retries on 403 / 429 errors up to 3 times with exponential backoff and jitter.
     Refreshes access token once on 401.
     """
+    # 帶著 Drive 的 bearer token,只能送去 Google 的 API 端點
+    if not url.startswith((f"{DRIVE_API_BASE}/", f"{DRIVE_UPLOAD_BASE}/")):
+        raise gdrive_auth.GDriveError(f"拒絕把 Drive 憑證送到非 Drive API 的網址:{url}")
     req_headers = dict(headers or {})
     access_token = gdrive_auth.get_valid_access_token(environ)
     req_headers["Authorization"] = f"Bearer {access_token}"
@@ -47,7 +50,7 @@ def make_drive_request(
     token_refreshed = False
 
     while True:
-        req = urllib.request.Request(  # noqa: S310 呼叫端只傳 DRIVE_API_BASE 開頭的網址
+        req = urllib.request.Request(  # noqa: S310 上面已限定 Drive API 網址
             url,
             data=data,
             headers=req_headers,

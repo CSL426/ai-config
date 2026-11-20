@@ -49,6 +49,13 @@ ignore = [
     "SIM108",
 ]
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# 這些走 shell 又用系統碼頁解碼,繞過 subproc.UTF8/NATIVE 的約定
+"subprocess.getoutput".msg = "用 subprocess.run(list, **UTF8) 代替"
+"subprocess.getstatusoutput".msg = "用 subprocess.run(list, **UTF8) 代替"
+"os.popen".msg = "用 subprocess.run(list, **UTF8) 代替"
+"os.system".msg = "用 subprocess.run(list, check=...) 代替"
+
 [tool.ruff.lint.per-file-ignores]
 # 測試用假路徑與雜湊不碰真實檔案或安全邊界
 "tests/**" = ["S108", "S324"]

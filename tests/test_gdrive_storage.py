@@ -22,7 +22,7 @@ from ai_config.gdrive_auth import (
     GDriveError,
     save_token,
 )
-from ai_config.gdrive_client import GDriveClient, make_drive_request
+from ai_config.gdrive_client import DRIVE_API_BASE, GDriveClient, make_drive_request
 
 
 def test_head_info_rejects_invalid_remote_document(
@@ -86,9 +86,26 @@ def test_drive_request_retries_403_three_times(
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     monkeypatch.setattr("ai_config.gdrive_client.time.sleep", lambda delay: None)
 
-    status, _, _ = make_drive_request("https://example.invalid", environ=environ)
+    status, _, _ = make_drive_request(f"{DRIVE_API_BASE}/files", environ=environ)
     assert status == 200
     assert calls == 4
+
+
+@pytest.mark.parametrize("url", [
+    "https://example.invalid/drive/v3/files",
+    "https://www.googleapis.com.evil.test/drive/v3/files",
+    "http://www.googleapis.com/drive/v3/files",
+])
+def test_the_drive_token_only_goes_to_the_drive_api(
+    monkeypatch: pytest.MonkeyPatch, url: str,
+) -> None:
+    def refuse(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("token was about to leave for a non-Drive host")
+
+    monkeypatch.setattr("urllib.request.urlopen", refuse)
+    monkeypatch.setattr("ai_config.gdrive_auth.get_valid_access_token", refuse)
+    with pytest.raises(GDriveError):
+        make_drive_request(url, environ={})
 
 
 def _drive_responder(
