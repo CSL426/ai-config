@@ -127,10 +127,10 @@ def codex_state(home: "Path | None" = None) -> HostState:
     plugins = config.get("plugins", {})
     installed = isinstance(plugins, dict) and CODEX_PLUGIN_REF in plugins
     plugin_dir = codex_plugin_dir(home)
-    if installed and plugin_dir is None:
-        return HostState(installed=False, detail="設定裡有但快取不見了,重新安裝")
     if not installed:
         return HostState(installed=False)
+    if plugin_dir is None:
+        return HostState(installed=False, detail="設定裡有但快取不見了,重新安裝")
     return HostState(
         installed=True,
         version=plugin_dir.name,

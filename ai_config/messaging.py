@@ -23,6 +23,7 @@ needs no `--remote`.
 """
 
 import base64
+import io
 import json
 import os
 import queue
@@ -38,7 +39,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self
+from typing import Self, cast
 
 from .paths import HOME
 from .processes import pid_alive
@@ -92,7 +93,8 @@ class _ProxyStream:
         assert self._proc.stdout is not None
         while True:
             try:
-                chunk = self._proc.stdout.read1(65536)
+                # Popen(bufsize=-1) 的 stdout 是 BufferedReader,型別存根只寫 IO[bytes]
+                chunk = cast(io.BufferedReader, self._proc.stdout).read1(65536)
             except (OSError, ValueError):
                 chunk = b""
             self._chunks.put(chunk)
@@ -1027,8 +1029,9 @@ def install_shell_block(path: "Path | None" = None, windows: "bool | None" = Non
     if updated == text:
         return path, False
     target.parent.mkdir(parents=True, exist_ok=True)
-    mode = target.stat().st_mode & 0o7777 if raw else None
+    mode = None
     if raw:
+        mode = target.stat().st_mode & 0o7777
         backup = target.with_name(target.name + ".acg-bak")
         backup.write_bytes(raw)
         os.chmod(backup, mode)

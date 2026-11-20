@@ -258,8 +258,10 @@ def _remove_tree(path: Path) -> None:
         function(target)
 
     # onerror 從 3.12 起不建議使用,但 3.11 還沒有 onexc
-    hook = "onexc" if sys.version_info >= (3, 12) else "onerror"
-    shutil.rmtree(path, **{hook: clear_and_retry})
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=clear_and_retry)
+    else:
+        shutil.rmtree(path, onerror=clear_and_retry)
 
 
 def _install(src: Path, target: Path, name: str, expected: "str | None") -> str:

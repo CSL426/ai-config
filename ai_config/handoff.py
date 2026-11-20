@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypeGuard
 
 from .memory_paths import (
     _read_text,
@@ -373,7 +374,7 @@ def _refuse_if_taken(note: "Handoff | None", thread: str) -> None:
         )
 
 
-def _taken_by_someone_else(note: "Handoff | None") -> bool:
+def _taken_by_someone_else(note: "Handoff | None") -> "TypeGuard[Handoff]":
     """Closed by another session's claim; the taker itself may write it again.
 
     The taker is recognised by session id or by session name: /clear gives a

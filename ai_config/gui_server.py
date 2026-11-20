@@ -106,10 +106,10 @@ def _hostname(value: str) -> str:
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
-    server: Server
+    server: Server  # pyright: ignore[reportIncompatibleVariableOverride]  # 只會掛在 Server 上
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, *_args) -> None:
+    def log_message(self, format: str, *args: object) -> None:
         return
 
     def _local_request(self) -> bool:

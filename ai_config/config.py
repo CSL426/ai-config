@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,7 @@ class ConfigError(RuntimeError):
     """Raised when the persistent configuration cannot be read or written."""
 
 
-def _home(environ: "dict[str, str] | None" = None) -> Path:
+def _home(environ: "Mapping[str, str] | None" = None) -> Path:
     environment = os.environ if environ is None else environ
     return Path(environment.get("HOME", str(Path.home()))).expanduser()
 

@@ -283,7 +283,7 @@ def _run_window(index: Path) -> int:
     hidden_console = hide_console()
 
     try:
-        import webview
+        import webview  # pyright: ignore[reportMissingImports]  # optional [gui] extra
     except ImportError:
         if hidden_console:
             show_console()
@@ -315,8 +315,9 @@ def _run_window(index: Path) -> int:
             min_size=(640, 480),
         )
         # 視窗關閉時撤銷待確認的預覽並清掉暫存投影
-        with contextlib.suppress(AttributeError):
-            window.events.closed += api._discard_previews
+        if window is not None:
+            with contextlib.suppress(AttributeError):
+                window.events.closed += api._discard_previews
         webview.start()
     except Exception as exc:  # noqa: BLE001 - pywebview 各平台丟的例外型別不一
         if hidden_console:

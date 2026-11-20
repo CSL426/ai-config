@@ -48,7 +48,8 @@ a ruff rule in `pyproject.toml`, then a contract test that parses the source
 `tests/test_release_contract.py`). Prose here is for what needs judgment.
 
 Silence a ruff finding with a per-line `# noqa: CODE` and the reason, not by
-widening `ignore`. CI pins the ruff version; raise it on purpose, in its own
+widening `ignore`; the same goes for pyright with `# pyright: ignore[rule]`.
+CI pins the ruff and pyright versions; raise them on purpose, in their own
 change.
 
 ## Verification
@@ -58,6 +59,7 @@ Run before committing implementation changes:
 ```bash
 python -m pytest
 ruff check ai_config tests
+pyright
 bash -n install.sh
 git diff --check
 ```

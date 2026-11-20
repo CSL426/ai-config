@@ -14,7 +14,7 @@ from .fsops import dir_has_files
 
 class ProjectionTool(Protocol):
     def stage_projection(
-        self, destination: Path, *, category: str = "all"
+        self, destination: Path, /, *, category: str = "all"
     ) -> None: ...
 
 

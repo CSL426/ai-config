@@ -56,11 +56,13 @@ def load(project: Path) -> Record:
         raise RuntimeError(f"{RECORD_NAME} 讀不懂,不敢照它刪東西:{exc}") from exc
     if not isinstance(raw, dict):
         raise RuntimeError(f"{RECORD_NAME} 格式不對,不敢照它刪東西")  # noqa: TRY004 — 呼叫端只接 RuntimeError
-    files = raw.get("files") if isinstance(raw.get("files"), dict) else {}
+    files = raw.get("files")
+    if not isinstance(files, dict):
+        files = {}
     created = raw.get("rules_created")
     settings = raw.get("claude_settings")
     saved = isinstance(settings, dict) and isinstance(settings.get("existed"), bool)
-    before = settings.get("text") if saved and settings["existed"] else None
+    before = settings.get("text") if isinstance(settings, dict) and saved and settings["existed"] else None
     return Record(
         settings_before=before if isinstance(before, str) else None,
         settings_saved=saved,

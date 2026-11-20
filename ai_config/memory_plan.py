@@ -226,7 +226,7 @@ def _journal(result: MemoryPlan) -> None:
         return
     memory_journal._check_journal_tree(link)
     migrate = result.old_journals and memory_journal._is_legacy_journal(legacy)
-    if migrate:
+    if migrate and legacy is not None:
         memory_journal._check_journal_tree(legacy)
     if not target.exists():
         result.change("mkdir", target, "建立可同步的專案日誌")
@@ -247,7 +247,7 @@ def _journal(result: MemoryPlan) -> None:
         return target / candidate
 
     sources = [link] if state == "local" else []
-    if migrate:
+    if migrate and legacy is not None:
         sources.append(legacy)
     for source in sources:
         for entry in sorted(source.iterdir()):
@@ -278,7 +278,7 @@ def _journal(result: MemoryPlan) -> None:
     elif prior_ignore is None:
         result.change("add", ignore, "寫入日誌同步忽略設定")
     _ignore_change(result)
-    if migrate:
+    if migrate and legacy is not None:
         note = legacy / memory_journal.MIGRATED_NOTE
         text = f"Memory data migrated to:\n  {target}\nThis directory is now empty; you may delete it.\n"
         _text_change(result, note, text, "記錄舊日誌搬移目的地")

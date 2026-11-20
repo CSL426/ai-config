@@ -573,9 +573,15 @@ def _context_file(conversation: str) -> Path:
 
 def claude_payload(agy: dict, event: str) -> dict:
     """Antigravity's payload in Claude Code's shape, so one script serves every tool."""
-    call = agy.get("toolCall") if isinstance(agy.get("toolCall"), dict) else {}
-    args = call.get("args") if isinstance(call.get("args"), dict) else {}
-    paths = agy.get("workspacePaths") if isinstance(agy.get("workspacePaths"), list) else []
+    call = agy.get("toolCall")
+    if not isinstance(call, dict):
+        call = {}
+    args = call.get("args")
+    if not isinstance(args, dict):
+        args = {}
+    paths = agy.get("workspacePaths")
+    if not isinstance(paths, list):
+        paths = []
     tool = str(call.get("name", ""))
     names = {value: key for key, value in AGY_TOOLS.items()}
     payload: dict = {

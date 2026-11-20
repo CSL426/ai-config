@@ -1,5 +1,8 @@
 """apply / init commands: deploy repo config to tool homes, or gather it back."""
 
+from pathlib import Path
+from typing import Protocol
+
 from .. import applied_state
 from ..backup import create_backup
 from ..categories import validate_category
@@ -12,7 +15,24 @@ from ..safety import assert_tool_destinations_safe
 from ..staging import staged_projections
 from ..tools import agy, claude, codex
 
-_TOOLS = {"claude": claude, "codex": codex, "agy": agy}
+
+class ToolModule(Protocol):
+    """What apply and init call on each tool module.
+
+    Each module is checked against this where _TOOLS names it, so one that
+    drops a function or changes its signature fails the type check.
+    """
+
+    def stage_projection(self, dst: Path, /, *, category: str = "all") -> None: ...
+    def apply_internal(self, src: Path, dst: Path, /, *, category: str = "all") -> None: ...
+    def preflight_init(self) -> bool: ...
+    def init(self) -> bool: ...
+
+
+_claude: ToolModule = claude
+_codex: ToolModule = codex
+_agy: ToolModule = agy
+_TOOLS: dict[str, ToolModule] = {"claude": _claude, "codex": _codex, "agy": _agy}
 _HEADERS = {"claude": "Claude", "codex": "Codex", "agy": "Antigravity CLI"}
 
 
