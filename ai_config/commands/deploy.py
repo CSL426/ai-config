@@ -93,10 +93,11 @@ def _available_items(source: Path) -> list[Item]:
     if (source / "CLAUDE.md").is_file():
         items.append(Item("CLAUDE.md", "Claude",
                           ((source / "CLAUDE.md", ".claude/CLAUDE.md"),)))
-    for name in MERGED_DIRS:
-        if (source / name).is_dir():
-            items.append(Item(name, "Claude",
-                              ((source / name, f".claude/{name}"),), merge=True))
+    items.extend(
+        Item(name, "Claude", ((source / name, f".claude/{name}"),), merge=True)
+        for name in MERGED_DIRS
+        if (source / name).is_dir()
+    )
     skills: dict[str, list[tuple[Path, str, str]]] = {}
     for relative, target, readers in SKILL_SOURCES:
         for skill in _children(source / relative):

@@ -1,5 +1,6 @@
 """Google Drive API calls: requests with retry, and the folder acg syncs through."""
 
+import contextlib
 import json
 import random
 import re
@@ -46,14 +47,14 @@ def make_drive_request(
     token_refreshed = False
 
     while True:
-        req = urllib.request.Request(
+        req = urllib.request.Request(  # noqa: S310 呼叫端只傳 DRIVE_API_BASE 開頭的網址
             url,
             data=data,
             headers=req_headers,
             method=method,
         )
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 同上
                 resp_headers = dict(resp.headers)
                 body = resp.read()
                 return resp.status, resp_headers, body
@@ -80,7 +81,7 @@ def make_drive_request(
             if exc.code in (403, 429) and retries < max_retries:
                 retries += 1
                 base_delay = 2 ** (retries - 1)
-                jitter = random.uniform(0, 0.5)
+                jitter = random.uniform(0, 0.5)  # noqa: S311 退避抖動,不涉安全
                 time.sleep(base_delay + jitter)
                 continue
 
@@ -90,7 +91,7 @@ def make_drive_request(
         except (urllib.error.URLError, OSError) as exc:
             if retries < max_retries:
                 retries += 1
-                time.sleep(1 + random.uniform(0, 0.5))
+                time.sleep(1 + random.uniform(0, 0.5))  # noqa: S311 退避抖動,不涉安全
                 continue
             raise gdrive_auth.GDriveError(f"Network error calling Google Drive: {exc}") from exc
 
@@ -363,9 +364,7 @@ class GDriveClient:
                     "Setup verification failed: test file was not permanently removed"
                 )
         except gdrive_auth.GDriveError:
-            try:
+            with contextlib.suppress(gdrive_auth.GDriveError):
                 self.delete_file(file_id)
-            except gdrive_auth.GDriveError:
-                pass
             raise
         return self.folder_url()

@@ -29,8 +29,8 @@ def credential_helper_main(argv: list[str]) -> int:
         sys.stderr.write("acg credential helper: 沒有收到 git 的請求(stdin 是終端機)\n")
         return 0
     request: dict[str, str] = {}
-    for line in sys.stdin:
-        line = line.rstrip("\r\n")
+    for raw in sys.stdin:
+        line = raw.rstrip("\r\n")
         if not line:
             break
         key, separator, value = line.partition("=")

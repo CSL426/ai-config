@@ -8,8 +8,18 @@ cannot decode rather than dying on it.
 """
 
 import locale
+from typing import Final, TypedDict
+
+
+class Decoding(TypedDict):
+    encoding: str
+    errors: str
+
 
 # git、gh、Node 寫的 CLI 與 Python 子程序都輸出 UTF-8,跟系統碼頁無關
-UTF8 = {"encoding": "utf-8", "errors": "replace"}
+UTF8: Final[Decoding] = {"encoding": "utf-8", "errors": "replace"}
 # schtasks、powershell 這類 Windows 原生工具照系統碼頁輸出
-NATIVE = {"encoding": locale.getpreferredencoding(False), "errors": "replace"}
+NATIVE: Final[Decoding] = {
+    "encoding": locale.getpreferredencoding(False),
+    "errors": "replace",
+}

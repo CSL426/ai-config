@@ -5,6 +5,25 @@ from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parent.parent / "ai_config"
 _CALLS = ("run", "Popen", "check_output", "check_call")
+_DECODINGS = {"UTF8", "NATIVE"}
+
+
+def _spreads_a_decoding(node: ast.Call) -> bool:
+    """`**UTF8`, `**subproc.NATIVE`, or a choice between the two.
+
+    Any other `**kwargs` would hide whether an encoding was named at all.
+    """
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            continue
+        names = {
+            part.id if isinstance(part, ast.Name) else part.attr
+            for part in ast.walk(keyword.value)
+            if isinstance(part, (ast.Name, ast.Attribute))
+        }
+        if names & _DECODINGS:
+            return True
+    return False
 
 
 def _undeclared() -> list[str]:
@@ -19,10 +38,9 @@ def _undeclared() -> list[str]:
             if name not in _CALLS:
                 continue
             named = {k.arg for k in node.keywords if k.arg}
-            spread = any(k.arg is None for k in node.keywords)
             if not named & {"text", "universal_newlines"}:
                 continue
-            if spread or {"encoding", "errors"} <= named:
+            if _spreads_a_decoding(node) or {"encoding", "errors"} <= named:
                 continue
             found.append(f"{path.relative_to(SOURCE.parent)}:{node.lineno}")
     return found

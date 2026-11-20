@@ -319,7 +319,7 @@ def test_a_changed_slot_moves_the_schedule_by_itself(
     monkeypatch.setattr(autopush, "schedule_installed", lambda: True)
     monkeypatch.setattr(autopush, "_scheduled_at", lambda: (4, 0))
     asked = []
-    monkeypatch.setattr(autopush, "install", lambda hour: asked.append(hour))
+    monkeypatch.setattr(autopush, "install", asked.append)
 
     message = autopush.reconcile_slot()
 

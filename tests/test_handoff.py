@@ -698,7 +698,7 @@ def test_two_threads_under_one_name_are_not_guessed_between(named) -> None:
     handoff.write("一", "內容")
     handoff.write("二", "內容")
 
-    with pytest.raises(ValueError, match="一.*二|二.*一"):
+    with pytest.raises(ValueError, match=r"一.*二|二.*一"):
         handoff.claim()
 
 

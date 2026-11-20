@@ -20,3 +20,37 @@ packages = ["ai_config", "ai_config.commands", "ai_config.tools"]
 
 [tool.setuptools.package-data]
 ai_config = ["gui_assets/**/*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# 只有明確列名的 preview 規則才啟用(PLW1514:open/read_text 沒寫 encoding)
+preview = true
+explicit-preview-rules = true
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "C4", "PERF", "PIE", "RUF",
+    "S", "PLE", "PLW", "TID251",
+    "BLE001", "TRY004", "PYI034", "PLW1514",
+]
+ignore = [
+    # assert 在測試裡是本體;subprocess 一律傳 list,不經 shell
+    "S101", "S603", "S607", "S404",
+    # 測試與設定裡大量的 "token"/"password" 字樣是欄位名,不是憑證
+    "S105", "S106",
+    # 中文全形標點是刻意的,不是混淆字元
+    "RUF001", "RUF002", "RUF003",
+    # ProgramFiles、SystemRoot 是 Windows 真正的變數名稱
+    "SIM112",
+    # 模組層快取需要 global
+    "PLW0603",
+    # 三元式換掉 if/else 常常更難讀
+    "SIM108",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 測試用假路徑與雜湊不碰真實檔案或安全邊界
+"tests/**" = ["S108", "S324"]
+# 給 agent 讀的整段說明文字,硬斷行會把句子切碎
+"ai_config/guide.py" = ["E501"]

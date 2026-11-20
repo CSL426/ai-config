@@ -5,6 +5,7 @@ replacement, and completion refresh — reusing it keeps a single source of
 truth for install logic.
 """
 
+import contextlib
 import json
 import os
 import re
@@ -71,7 +72,7 @@ def _latest_tag_from_api(timeout: int) -> object:
             "User-Agent": "ai-config-updater",
         },
     )
-    with urlopen(request, timeout=timeout) as response:
+    with urlopen(request, timeout=timeout) as response:  # noqa: S310 固定的 https 端點
         document = json.load(response)
     return document.get("tag_name") if isinstance(document, dict) else None
 
@@ -82,7 +83,7 @@ def _latest_tag_from_redirect(timeout: int) -> str:
         f"https://github.com/{_repository()}/releases/latest",
         headers={"User-Agent": "ai-config-updater"},
     )
-    with urlopen(request, timeout=timeout) as response:
+    with urlopen(request, timeout=timeout) as response:  # noqa: S310 固定的 https 端點
         return response.geturl().rpartition("/tag/")[2]
 
 
@@ -382,10 +383,8 @@ def remove_replaced_binaries() -> None:
     # 換啟動器時舊的那支被移到 PATH 旁邊;onedir 的主程式則在版本目錄裡
     for executable in {Path(sys.executable), standalone_install_path()}:
         for leftover in executable.parent.glob(f"{executable.name}.old-*"):
-            try:
+            with contextlib.suppress(OSError):
                 leftover.unlink()
-            except OSError:
-                pass
 
 
 def run_update_list() -> int:
@@ -640,10 +639,8 @@ def _spawn_update_check() -> None:
         )
     else:
         kwargs["start_new_session"] = True
-    try:
+    with contextlib.suppress(OSError):
         subprocess.Popen(command, **kwargs)
-    except OSError:
-        pass
 
 
 def _offer_update(latest: str, current: str) -> None:

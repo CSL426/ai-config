@@ -34,7 +34,8 @@ def parent_pid(pid: int) -> "int | None":
     if os.name == "nt":
         return _windows_parent(pid)
     try:
-        stat = Path(f"/proc/{pid}/stat").read_text()
+        # 行程名稱可能含非 UTF-8 位元組;要的欄位在名稱之後,都是 ASCII
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
         return int(stat.rsplit(")", 1)[1].split()[1])
     except (OSError, ValueError, IndexError):
         return None

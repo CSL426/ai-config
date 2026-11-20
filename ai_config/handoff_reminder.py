@@ -237,8 +237,8 @@ def _with_settings(document: dict, enabled: bool, threshold: int) -> dict:
     argv = [str(part).replace("\\", "/") for part in scheduled_command()]
     result["statusLine"] = {
         **(original or {}), "type": "command",
-        "command": _shell_command(argv + [
-            STATUS_COMMAND, _encode(original), str(threshold),
+        "command": _shell_command([
+            *argv, STATUS_COMMAND, _encode(original), str(threshold),
         ]),
     }
     events = result.setdefault("hooks", {})

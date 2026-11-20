@@ -51,10 +51,10 @@ class HostState:
 
 
 def _version_key(name: str) -> tuple:
-    parts = []
-    for piece in name.split("."):
-        parts.append((0, int(piece)) if piece.isdigit() else (1, piece))
-    return tuple(parts)
+    return tuple(
+        (0, int(piece)) if piece.isdigit() else (1, piece)
+        for piece in name.split(".")
+    )
 
 
 def _newest_version_dir(root: Path) -> "Path | None":
@@ -83,9 +83,11 @@ def codex_homes() -> list[Path]:
     a home the user may never actually run in.
     """
     found = [CODEX_HOME] if (CODEX_HOME / "config.toml").is_file() else []
-    for path in sorted(HOME.glob(".codex-*")):
-        if path.is_dir() and (path / "config.toml").is_file():
-            found.append(path)
+    found.extend(
+        path
+        for path in sorted(HOME.glob(".codex-*"))
+        if path.is_dir() and (path / "config.toml").is_file()
+    )
     return found or [CODEX_HOME]
 
 

@@ -5,6 +5,7 @@ Users without a GitHub account sync their data repository through an
 """
 
 import base64
+import contextlib
 import hashlib
 import http.server
 import json
@@ -121,10 +122,8 @@ def save_token(
 def delete_token(environ: "dict[str, str] | None" = None) -> None:
     path = token_file_path(environ)
     if path.exists():
-        try:
+        with contextlib.suppress(OSError):
             path.unlink()
-        except OSError:
-            pass
 
 
 def generate_pkce() -> tuple[str, str]:
@@ -247,7 +246,7 @@ def run_oauth_flow(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 固定的 https 端點
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -305,7 +304,7 @@ def refresh_access_token(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 固定的 https 端點
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         delete_token(environ)

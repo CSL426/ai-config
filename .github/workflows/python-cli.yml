@@ -50,7 +50,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install test dependencies
-        run: python -m pip install pytest PyYAML ruff
+        run: python -m pip install pytest PyYAML ruff==0.16.0
 
       - name: Run tests
         run: python -m pytest tests/

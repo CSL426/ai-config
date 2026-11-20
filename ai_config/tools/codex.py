@@ -116,7 +116,7 @@ def _insert_top_level_statements(text: str, statements: list[str]) -> str:
         tables.pop(0)
     merged = root + statements
     if tables:
-        merged += [""] + tables
+        merged += ["", *tables]
     return "\n".join(merged) + "\n"
 
 

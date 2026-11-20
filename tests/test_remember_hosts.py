@@ -71,7 +71,10 @@ def test_codex_install_adds_marketplace_once_and_says_trust(
     def fake_run(*args):
         calls.append(args)
         if args == ("add", "remember@remember-dev"):
-            _codex_config(homes, '[marketplaces.remember-dev]\nsource = "x"\n[plugins."remember@remember-dev"]\nenabled = true\n')
+            _codex_config(
+                homes,
+                '[marketplaces.remember-dev]\nsource = "x"\n[plugins."remember@remember-dev"]\nenabled = true\n',
+            )
             _codex_cache(homes, "0.33.0")
         elif args[:2] == ("marketplace", "add"):
             _codex_config(homes, '[marketplaces.remember-dev]\nsource = "x"\n')
@@ -90,7 +93,10 @@ def test_codex_remove_drops_plugin_then_marketplace(
     homes: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _codex_cache(homes, "0.33.0")
-    _codex_config(homes, '[marketplaces.remember-dev]\nsource = "x"\n[plugins."remember@remember-dev"]\nenabled = true\n')
+    _codex_config(
+        homes,
+        '[marketplaces.remember-dev]\nsource = "x"\n[plugins."remember@remember-dev"]\nenabled = true\n',
+    )
     calls = []
     monkeypatch.setattr(hosts, "_run_codex", lambda *a: calls.append(a))
     hosts.remove_codex()
@@ -181,10 +187,10 @@ def test_hosts_without_the_cli_are_neither_reported_nor_offered(
 
 
 def test_old_codex_without_plugins_is_explained(homes: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(hosts, "_codex_plugin_commands", lambda: frozenset())
+    monkeypatch.setattr(hosts, "_codex_plugin_commands", frozenset)
     monkeypatch.setattr(hosts, "codex_version", lambda: "codex-cli 0.77.0")
     monkeypatch.setattr(hosts, "_codex_from_npm", lambda: False)
-    with pytest.raises(RuntimeError, match="0.77.0.*升級 Codex"):
+    with pytest.raises(RuntimeError, match=r"0.77.0.*升級 Codex"):
         hosts.install_codex()
 
 
@@ -235,6 +241,6 @@ def test_a_codex_whose_plugin_only_manages_marketplaces_is_stopped_first(
     monkeypatch.setattr(hosts, "_codex_from_npm", lambda: True)
     monkeypatch.setattr(hosts, "_run_codex", lambda *args: calls.append(args))
 
-    with pytest.raises(RuntimeError, match="0.125.0.*升級 Codex.*npm"):
+    with pytest.raises(RuntimeError, match=r"0.125.0.*升級 Codex.*npm"):
         hosts.install_codex()
     assert calls == []

@@ -39,6 +39,18 @@ CLI itself, `--help` (`usage()` in `ai_config/__main__.py`), the agent guide
 `plugin/skills/<subcommand>/` per subcommand, and the `plugin.json` version). Shipping the CLI alone and
 waiting to be asked about the rest is the failure this prevents.
 
+## Rules become checks
+
+A correction that can be stated mechanically is a check, not a sentence in
+this file. Prefer, in order: design the wrong choice away (a helper, a type),
+a ruff rule in `pyproject.toml`, then a contract test that parses the source
+(`tests/test_subprocess_encoding.py`, `tests/test_layer_boundaries.py`,
+`tests/test_release_contract.py`). Prose here is for what needs judgment.
+
+Silence a ruff finding with a per-line `# noqa: CODE` and the reason, not by
+widening `ignore`. CI pins the ruff version; raise it on purpose, in its own
+change.
+
 ## Verification
 
 Run before committing implementation changes:

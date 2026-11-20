@@ -88,8 +88,9 @@ def _logged_in_accounts() -> "tuple[str, list[str]]":
     accounts = re.findall(r"Logged in to \S+ account (\S+)", text)
     active = ""
     # "- Active account: true" 跟在它所屬的帳號後面
+    # 同一個樣式切出的段數必定等於比對到的帳號數
     for name, tail in zip(
-        accounts, re.split(r"Logged in to \S+ account \S+", text)[1:]
+        accounts, re.split(r"Logged in to \S+ account \S+", text)[1:], strict=True
     ):
         if re.search(r"Active account:\s*true", tail):
             active = name
@@ -149,7 +150,7 @@ def start_device_login(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 固定的 https 端點
             data = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise GhAuthError(f"無法向 GitHub 取得登入碼:{exc}") from exc
@@ -190,7 +191,7 @@ def poll_device_login(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 固定的 https 端點
             data = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise GhAuthError(f"無法確認登入狀態:{exc}") from exc

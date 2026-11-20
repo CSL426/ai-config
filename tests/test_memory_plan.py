@@ -104,7 +104,10 @@ def test_release_works_after_plugin_removed(journal_project, monkeypatch):
     assert not safety.is_reparse_point(memory_journal.journal_link(root))
 
 
-@pytest.mark.parametrize("action,project", [("adopt", None), ("release", None), ("enable", Path(".")), ("disable", Path(".")), ("bogus", None)])
+@pytest.mark.parametrize(
+    "action,project",
+    [("adopt", None), ("release", None), ("enable", Path(".")), ("disable", Path(".")), ("bogus", None)],
+)
 def test_invalid_scope_rejected_without_backups(isolated_memory, action, project):  # noqa: F811
     repo, _home = isolated_memory
     before = tree(repo.parent)
@@ -234,7 +237,9 @@ def test_projects_with_a_journal_are_adopted_before_the_nightly_push(journal_pro
     adopted = []
     monkeypatch.setattr(
         memory_lifecycle, "execute",
-        lambda action, project, **kw: adopted.append((action, project, kw)) or memory_lifecycle.MemoryExecutionResult(code=0),
+        lambda action, project, **kw: (
+            adopted.append((action, project, kw)) or memory_lifecycle.MemoryExecutionResult(code=0)
+        ),
     )
 
     lines = memory_lifecycle.adopt_touched(journal_project.parent)

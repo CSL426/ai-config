@@ -351,7 +351,7 @@ def _herdr_latest() -> str:
     # herdr.dev 擋 Python 預設的 User-Agent(403)
     request = Request(_HERDR_LATEST, headers={"User-Agent": "acg-autoupdate"})
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=30) as response:  # noqa: S310 固定的 https 端點
             version = json.loads(response.read().decode("utf-8")).get("version")
     except (OSError, ValueError, AttributeError):
         return ""

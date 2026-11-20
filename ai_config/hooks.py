@@ -204,8 +204,8 @@ def hook_entry(hook: Hook) -> dict:
     argv = scheduled_command()
     entry = {
         "type": "command", "command": argv[0],
-        "args": argv[1:] + [
-            hook.command, *hook.extra_args,
+        "args": [
+            *argv[1:], hook.command, *hook.extra_args,
             *(hook.dynamic_args() if hook.dynamic_args else ()),
         ],
         "statusMessage": hook.marker, "timeout": hook.timeout,

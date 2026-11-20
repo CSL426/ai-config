@@ -227,9 +227,11 @@ def plan(project: Path) -> list[Step]:
         _plan_source(name, src, target / name, record.get(name))
         for name, src in skills.items()
     ]
-    for name in sorted(incomplete & record.keys()):
-        # 名稱還在就不是刪掉了;先讓人看到
-        steps.append(Step(name, CONFLICT, "來源還在但不是可同步的技能,不動副本"))
+    # 名稱還在就不是刪掉了;先讓人看到
+    steps.extend(
+        Step(name, CONFLICT, "來源還在但不是可同步的技能,不動副本")
+        for name in sorted(incomplete & record.keys())
+    )
     # 不分大小寫的檔案系統上,只改大小寫的舊名字跟新名字是同一個目錄,刪舊的就把新的刪了
     current = {name.casefold() for name in skills}
     for name in sorted(record.keys() - skills.keys() - incomplete):
