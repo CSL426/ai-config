@@ -319,7 +319,7 @@ def _try_create_junction(source: Path, destination: Path) -> bool:
         import _winapi
 
         destination.parent.mkdir(parents=True, exist_ok=True)
-        _winapi.CreateJunction(str(source), str(destination))
+        _winapi.CreateJunction(str(source), str(destination))  # pyright: ignore[reportAttributeAccessIssue]  # Windows-only API
         return True
     except (ImportError, OSError):
         log_warn(f"Could not create junction for {destination}; using copy fallback")

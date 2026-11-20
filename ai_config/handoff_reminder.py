@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TypeGuard
 
 from . import memory_paths
 from .locking import apply_lock
@@ -109,6 +110,7 @@ def preserve_settings(source: dict, target: dict) -> dict:
     if wrapped is not None:
         line = copy.deepcopy(target["statusLine"])
         match = _WRAPPER.search(line["command"])
+        assert match is not None  # _wrapper 已經比對成功
         line["command"] = (
             line["command"][:match.start(1)]
             + _encode(result.get("statusLine"))
@@ -280,6 +282,11 @@ def _read_state(path) -> dict:
         return {}
 
 
+def _is_number(value: object) -> TypeGuard[float]:
+    # bool 是 int 的子類別,但 true/false 不是百分比或時間
+    return type(value) in (int, float)
+
+
 def _percentage(payload: dict) -> float | None:
     window = payload.get("context_window")
     if not isinstance(window, dict):
@@ -290,9 +297,9 @@ def _percentage(payload: dict) -> float | None:
     value = window.get("used_percentage")
     if "used_percentage" not in window:
         remaining = window.get("remaining_percentage")
-        if type(remaining) in (int, float):
+        if _is_number(remaining):
             value = 100 - remaining
-    if type(value) not in (int, float) or not math.isfinite(value):
+    if not _is_number(value) or not math.isfinite(value):
         return None
     return float(value) if 0 <= value <= 100 else None
 
@@ -338,13 +345,13 @@ def reminder(payload: dict) -> dict | None:
         if state.get("threshold") != settings["threshold"]:
             return None
         if (
-            type(used) not in (int, float)
+            not _is_number(used)
             or not math.isfinite(used)
             or not settings["threshold"] <= used <= 100
         ):
             return None
         if (
-            type(timestamp) not in (int, float)
+            not _is_number(timestamp)
             or not 0 <= time.time() - timestamp <= MAX_AGE
         ):
             return None

@@ -635,7 +635,7 @@ def _spawn_update_check() -> None:
     }
     if NATIVE_WINDOWS:
         kwargs["creationflags"] = (
-            subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+            subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS  # pyright: ignore[reportAttributeAccessIssue]  # Windows-only API
         )
     else:
         kwargs["start_new_session"] = True

@@ -132,7 +132,7 @@ class GDriveClient:
         return self.space == "hidden"
 
     def _list_files(self, query: str) -> list[dict[str, Any]]:
-        query_params: dict[str, str] = {
+        query_params: dict[str, str | int] = {
             "q": query,
             "fields": "files(id, name, headRevisionId, modifiedTime)",
             "orderBy": "createdTime",

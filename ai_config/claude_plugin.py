@@ -49,7 +49,9 @@ def without_release_ref(document: dict) -> dict:
     if source is None or "ref" not in source:
         return document
     result = copy.deepcopy(document)
-    del _market_source(result)["ref"]
+    copied = _market_source(result)
+    assert copied is not None  # 深拷貝的結構跟 document 一樣
+    del copied["ref"]
     return result
 
 
@@ -64,7 +66,9 @@ def preserve_release_ref(document: dict, target: dict) -> dict:
         return result
     if result is document:
         result = copy.deepcopy(document)
-    _market_source(result)["ref"] = pinned["ref"]
+    target_source = _market_source(result)
+    assert target_source is not None  # 上面已確認 source 存在,深拷貝不會改變結構
+    target_source["ref"] = pinned["ref"]
     return result
 
 

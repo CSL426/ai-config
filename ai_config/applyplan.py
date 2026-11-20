@@ -394,6 +394,7 @@ def _put(path: Path, record: dict, content: Path | None) -> None:
     elif kind in ("symlink", "junction"):
         _link(path, record)
     else:
+        assert content is not None  # 一般檔案一定帶內容
         temporary = path.with_name(f".{path.name}.acg-{uuid.uuid4().hex}")
         replacement_before = review.node(path)
         try:

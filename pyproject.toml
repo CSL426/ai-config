@@ -61,3 +61,8 @@ ignore = [
 "tests/**" = ["S108", "S324"]
 # 給 agent 讀的整段說明文字,硬斷行會把句子切碎
 "ai_config/guide.py" = ["E501"]
+
+[tool.pyright]
+include = ["ai_config"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"

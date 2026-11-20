@@ -196,7 +196,7 @@ def _marketplace_source(source: Path, marketplace: str) -> "str | None":
         return None
     kind = entry.get("source")
     value = {"github": entry.get("repo"), "git": entry.get("url"),
-             "url": entry.get("url"), "directory": entry.get("path")}.get(kind)
+             "url": entry.get("url"), "directory": entry.get("path")}.get(kind) if isinstance(kind, str) else None
     return value if isinstance(value, str) and value else None
 
 

@@ -6,10 +6,13 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from . import memory_index, memory_journal, memory_paths, paths, review
-from .applyplan import StalePreview
+from .applyplan import ApplyPlan, StalePreview
 from .locking import apply_lock
 
 
@@ -112,7 +115,7 @@ def _autoupdate_state() -> dict:
 
 
 def _folder_dialog():
-    import webview
+    import webview  # pyright: ignore[reportMissingImports]  # optional [gui] extra
 
     if not webview.windows:
         raise RuntimeError("沒有可用的原生視窗")
@@ -205,6 +208,17 @@ def failure(exc):
 
 
 class ManagementApi:
+    # GuiApi 建立鎖並提供 _run_captured;這裡只宣告給型別檢查器看
+    _lock: threading.Lock
+
+    if TYPE_CHECKING:
+        def _run_captured(
+            self,
+            argv: "list[str]",
+            answer_prompt: "Callable[[str], str] | None" = None,
+            prompt_reviews: "list[str] | None" = None,
+        ) -> dict: ...
+
     def _init_management(self):
         self._pending = None
         self._project = None
@@ -572,7 +586,7 @@ class ManagementApi:
         finally:
             self._lock.release()
 
-    def _preview(self, kind, tool=None, category=None, action=None, project_token=None):
+    def _preview(self, kind, tool: str = "", category: str = "", action: str = "", project_token=None):
         empty = {"token": "", "needs_confirmation": False, "scope": {}, "changes": [], "warnings": []}
         if not self._lock.acquire(blocking=False):
             return {**empty, **outcome(1, "另一個動作正在執行", "BUSY")}
@@ -607,7 +621,7 @@ class ManagementApi:
                     identity = review.fingerprint(candidate.relevant_paths,
                                                   [candidate.relevant_values, review.git_state(paths.SCRIPT_DIR)])
             if not candidate.changes:
-                if kind == "apply":
+                if isinstance(candidate, ApplyPlan):
                     candidate.close()
                 return {**empty, **outcome(output="已一致"), "scope": scope}
             token = secrets.token_urlsafe(24)

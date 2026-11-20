@@ -1,5 +1,7 @@
 """apply / init commands: deploy repo config to tool homes, or gather it back."""
 
+from typing import Any
+
 from .. import applied_state
 from ..backup import create_backup
 from ..categories import validate_category
@@ -12,7 +14,9 @@ from ..safety import assert_tool_destinations_safe
 from ..staging import staged_projections
 from ..tools import agy, claude, codex
 
-_TOOLS = {"claude": claude, "codex": codex, "agy": agy}
+# 三個工具模組各自實作 ProjectionTool 與 apply_internal/init 等函式;
+# 字典字面值會被推成 ModuleType,對不上 Protocol
+_TOOLS: dict[str, Any] = {"claude": claude, "codex": codex, "agy": agy}
 _HEADERS = {"claude": "Claude", "codex": "Codex", "agy": "Antigravity CLI"}
 
 

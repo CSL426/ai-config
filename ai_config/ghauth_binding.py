@@ -115,6 +115,8 @@ def refresh_binding(repo_dir: "Path | None") -> bool:
     that is about to run git first makes the line current, so git tests
     the same acg the user is running. Returns whether it changed.
     """
+    if repo_dir is None:
+        return False
     current = bound_helper(repo_dir)
     account = bound_account(repo_dir)
     if not account or current == helper_value(account):

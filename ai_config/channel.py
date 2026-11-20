@@ -16,6 +16,7 @@ import socket
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 from .messaging import channel_socket
 from .processes import parent_pid
@@ -54,7 +55,8 @@ class Channel:
         self._out = out or sys.stdout
         self._lock = threading.Lock()
         self.path: Path | None = None
-        self._server = None
+        # POSIX 是 socket,Windows 是 multiprocessing 的 Listener,兩者 accept 回傳的形狀不同
+        self._server: Any = None
 
     def write(self, message: dict) -> None:
         with self._lock:

@@ -18,6 +18,7 @@ import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeGuard
 
 
 def _git(root: Path, *args: str) -> "subprocess.CompletedProcess[bytes] | None":
@@ -31,7 +32,7 @@ def _git(root: Path, *args: str) -> "subprocess.CompletedProcess[bytes] | None":
         return None
 
 
-def _ok(result: "subprocess.CompletedProcess[bytes] | None") -> bool:
+def _ok(result: "subprocess.CompletedProcess[bytes] | None") -> "TypeGuard[subprocess.CompletedProcess[bytes]]":
     return result is not None and result.returncode == 0
 
 
@@ -132,7 +133,7 @@ def _plan(root: Path, upstream: str) -> "list[_Step] | None":
             continue
         action = {("??", "A"): "remove", (" M", "M"): "restore-modified"}.get((code, kind))
         step = _matches(root, path, _incoming_entry(root, upstream, path)) if action else None
-        if step is None:
+        if action is None or step is None:
             # 有一個真的不同,合併照樣會被擋;這時什麼都不碰,工作區維持原樣
             return None
         step.action = action

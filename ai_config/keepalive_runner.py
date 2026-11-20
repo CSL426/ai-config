@@ -283,7 +283,9 @@ def _send_agy_locked(args: list, tool: str) -> int:
     record = _read_agy_conversation()
     known = record.get("groups") if record.get("month") == month else None
     conversations = dict(known) if isinstance(known, dict) else {}
-    resting = record.get("resting") if isinstance(record.get("resting"), dict) else {}
+    resting = record.get("resting")
+    if not isinstance(resting, dict):
+        resting = {}
     now = datetime.now().astimezone()
     listing = _agy_listing()
     picks = agy_models_per_group(listing)
