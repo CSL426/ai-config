@@ -10,8 +10,9 @@ allowed-tools: Bash(acg hooks:*), Bash(ai-config hooks:*), Bash(acg apply:*), Ba
 
 沒有引數就執行 `acg hooks list`,分兩段回報:
 
-- **本機 hook**(commit-style、memory-entry、handoff-reminder):指向這台的執行檔,不同步。
-  開關用 `acg hooks enable|disable <名稱>`。
+- **本機 hook**(commit-style、command-guard、memory-entry、handoff-reminder):指向這台的
+  執行檔,不同步。開關用 `acg hooks enable|disable <名稱>`。command-guard 的規則在資料庫
+  `claude/command-guard.json`,跟著同步;hook 本身每台各自開。
 - **共用 hook**:在 Claude Code 寫一次,`apply` 時也寫進 Codex(每個 CODEX_HOME 的
   `hooks.json`)與 Antigravity(`~/.gemini/config/hooks.json` 的 `acg-<名稱>`)。列表會說
   哪個工具收不到、為什麼。

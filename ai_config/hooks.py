@@ -78,6 +78,18 @@ COMMIT_STYLE = register(Hook(
     summary="git commit 主旨不符 type(scope): description 就擋下並說明",
 ))
 
+COMMAND_GUARD = register(Hook(
+    name="command-guard",
+    marker=f"{PREFIX}指令禁用規則",
+    events=("PreToolUse",),
+    command="__command-guard",
+    matcher="Bash",
+    timeout=10,
+    summary="Bash 指令開頭符合資料庫 claude/command-guard.json 的規則就擋下並說明",
+    # 規則放在資料庫裡跟著同步;hook 只認這台的資料庫路徑
+    dynamic_args=lambda: (str(memory_paths.SCRIPT_DIR),),
+))
+
 
 def _owned_by_any(hook: object) -> bool:
     if not isinstance(hook, dict):

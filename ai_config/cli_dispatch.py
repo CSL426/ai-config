@@ -79,6 +79,10 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
         from .commit_style import run_hook
 
         return run_hook(args[1:])
+    if args and args[0] == "__command-guard":
+        from .command_guard import run_hook
+
+        return run_hook(args[1:])
     if args and args[0] == "__memory-project-entry":
         from .memory_hooks import run
 

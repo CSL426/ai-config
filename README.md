@@ -229,6 +229,7 @@ machine.
 | Send messages to other live sessions | `acg msg setup`, then start Claude with `claude-msg`; or start any agent in [herdr](https://github.com/herdrdev/herdr) | Linux and Windows; macOS Claude cannot receive yet. Antigravity receives only when it runs in herdr |
 | Record Codex and Antigravity sessions in the journal | `acg memory enable codex` / `agy` | Where you use them |
 | Refuse commit messages that are not `type: description` | `acg hooks enable commit-style` | Optional |
+| Refuse shell commands you have ruled out (rules in `claude/command-guard.json`) | `acg hooks enable command-guard` | Optional; every machine that should follow the rules |
 
 `acg memory autopush status`, `acg autoupdate status`, `acg keepalive status`
 and `acg hooks list` show what is on. A nightly run that fails is reported at
