@@ -434,18 +434,23 @@ def own_threads() -> list[Handoff]:
     ] or named_elsewhere(project)
     if not candidates:
         raise ValueError(f"沒有 session「{mine}」留下的工作線,請指定要認領的工作線")
-    return sorted(candidates, key=lambda note: note.updated)
+    # 名稱可能撞名(兩個都叫 wifi 的 session):只有同一個 session 寫的才一起接,
+    # 出自不同 session 的就交回給人選,不要替別人結案
+    if len({note.author for note in candidates}) > 1:
+        names = "、".join(f"{note.thread}({note.project})" for note in candidates)
+        raise ValueError(f"名稱「{mine}」底下有不同 session 留下的線:{names},請指定")
+    return sorted(candidates, key=lambda note: (note.updated, note.created, note.thread))
 
 
-def others_left_by_this_session(thread: str) -> list[Handoff]:
-    """This session's other live threads, besides the one being written."""
-    mine = session_name()
-    if not mine:
-        return []
+def others_left_by_this_session(note: Handoff) -> list[Handoff]:
+    """This session's other live threads in the same project as `note`.
+
+    Only the same project: those are what a pickup here takes together.
+    """
     return [
-        note for note in load_all()
-        if note.state != DONE and note.session_name == mine
-        and _slug(note.thread) != _slug(thread)
+        other for other in load_all(note.project)
+        if other.state != DONE and other.author == note.author
+        and _slug(other.thread) != _slug(note.thread)
     ]
 
 
@@ -485,6 +490,7 @@ def claim_own() -> list[Handoff]:
     someone else is claimed by name instead.
     """
     return [claim(note.thread) for note in own_threads()]
+
 
 
 def done(name: str) -> Handoff:

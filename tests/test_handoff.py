@@ -718,10 +718,36 @@ def test_every_thread_under_one_name_is_picked_up_together(named, monkeypatch: p
 
 def test_writing_a_second_thread_mentions_the_first(named) -> None:
     named("session-one", "acg")
-    handoff.write("一", "內容")
+    first = handoff.write("一", "內容")
+    second = handoff.write("二", "內容")
 
-    assert [n.thread for n in handoff.others_left_by_this_session("二")] == ["一"]
-    assert handoff.others_left_by_this_session("一") == []
+    assert [n.thread for n in handoff.others_left_by_this_session(second)] == ["一"]
+    assert [n.thread for n in handoff.others_left_by_this_session(first)] == ["二"]
+
+
+def test_same_named_sessions_do_not_close_each_others_threads(
+    named, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two sessions both called wifi: neither may close the other's thread."""
+    named("session-one", "wifi")
+    handoff.write("一", "內容")
+    named("session-two", "wifi", pid=200)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-two")
+    handoff.write("二", "內容")
+
+    with pytest.raises(ValueError, match="不同 session"):
+        handoff.claim_own()
+    assert all(n.state != handoff.DONE for n in handoff.load_all())
+
+
+def test_threads_written_in_one_second_keep_a_stable_order(named) -> None:
+    named("session-one", "acg")
+    for name in ("丙", "甲", "乙"):
+        handoff.write(name, "內容")
+
+    first = [n.thread for n in handoff.own_threads()]
+    assert first == [n.thread for n in handoff.own_threads()]
+    assert set(first) == {"甲", "乙", "丙"}
 
 
 def test_claim_without_a_name_works_from_the_command_line(
@@ -744,6 +770,7 @@ def test_claim_prints_every_thread_it_picked_up(
 
     named("session-one", "acg")
     assert command.run_memory(["handoff", "write", "一", "## Next\n- 甲"]) == 0
+    assert "還有沒被接走的線" not in capsys.readouterr().out
     assert command.run_memory(["handoff", "write", "二", "## Next\n- 乙"]) == 0
     assert "還有沒被接走的線:一" in capsys.readouterr().out
 

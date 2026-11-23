@@ -35,7 +35,7 @@ def _handoff(rest: list[str]) -> int:
             note = hand.write(args[0], " ".join(args[1:]), force=forced())
             # 記在哪個專案要講:接手的 session 從別的目錄開就會找不到
             log_success(f"已記下交接:{note.thread}(專案 {note.project})")
-            others = hand.others_left_by_this_session(note.thread)
+            others = hand.others_left_by_this_session(note)
             if others:
                 # 一次收工拆成好幾條也可以,pickup 會全部接走;
                 # 只是同一個主題換了名字再寫,舊的那條就會跟著被接一次
@@ -54,25 +54,29 @@ def _handoff(rest: list[str]) -> int:
             )
             return 0
         if action == "claim" and len(args) <= 1:
-            # 不帶名稱就接這個 session 名稱留下的每一條線。接走就結案:
+            # 不帶名稱就接這個 session 留下的每一條線。接走就結案:
             # 這份筆記的任務是交到下一個人手上,收工時由接手的人再寫一份
-            notes = [hand.claim(args[0])] if args else hand.claim_own()
-            if len(notes) > 1:
+            pending = [args[0]] if args else [note.thread for note in hand.own_threads()]
+            if len(pending) > 1:
                 log_success(
-                    f"已接手這個 session 留下的 {len(notes)} 條線:"
-                    f"{'、'.join(note.thread for note in notes)}(都已結案,收工時再寫新的)"
+                    f"接手這個 session 留下的 {len(pending)} 條線:"
+                    f"{'、'.join(pending)}(都會結案,收工時再寫新的)"
                 )
-            else:
-                log_success(f"已接手:{notes[0].thread}(這則交接已結案,收工時再寫新的)")
-            for author in dict.fromkeys(note.author for note in notes):
-                _retire_author(author)
-            for note in notes:
+            # 結一條就印一條:中途停掉的話，已結案的那幾條至少都已經交到手上
+            authors = []
+            for waiting in pending:
+                note = hand.claim(waiting)
+                if len(pending) == 1:
+                    log_success(f"已接手:{note.thread}(這則交接已結案,收工時再寫新的)")
                 print()
-                if len(notes) > 1:
+                if len(pending) > 1:
                     print(f"════ {note.thread} ════")
                 if note.project != hand.home_project():
                     log_info(f"這條線記在專案 {note.project},不是這個 session 的專案")
-                print(note.body)
+                print(note.body, flush=True)
+                authors.append(note.author)
+            for author in dict.fromkeys(authors):
+                _retire_author(author)
             return 0
         if action == "done" and len(args) == 1:
             note = hand.done(args[0])
