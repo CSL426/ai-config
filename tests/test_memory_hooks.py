@@ -129,16 +129,50 @@ def test_repair_refuses_ambiguous_old_directory(migrated, conflict):
 def test_failed_link_restores_migration_notice(migrated, monkeypatch):
     root, entry, target = migrated
     original = (entry / memory_journal.MIGRATED_NOTE).read_bytes()
+    real = memory_journal._create_journal_link
 
-    def fail(*_args):
-        raise OSError("injected junction failure")
+    def fail_on_the_real_entry(link_target, link):
+        # 暫名試探會過,真正換 .remember 時才失敗:要能整個還原
+        if link.name == ".remember":
+            raise OSError("injected junction failure")
+        return real(link_target, link)
 
-    monkeypatch.setattr(memory_journal, "_create_journal_link", fail)
+    monkeypatch.setattr(memory_journal, "_create_journal_link", fail_on_the_real_entry)
     with pytest.raises(OSError, match="injected"):
         memory_hooks.repair_entry(root)
     assert (entry / memory_journal.MIGRATED_NOTE).read_bytes() == original
     assert (target / "recent.md").read_text() == "original history\n"
     assert not list(root.glob(".remember.acg-*"))
+
+
+def test_a_disk_without_links_is_skipped_quietly(migrated, monkeypatch):
+    """A Google Drive G: has no junctions; every prompt must not report it again."""
+    root, entry, _target = migrated
+    original = (entry / memory_journal.MIGRATED_NOTE).read_bytes()
+
+    def unsupported(*_args, **_kwargs):
+        raise OSError("links are not supported here")
+
+    monkeypatch.setattr(memory_journal.Path, "symlink_to", unsupported)
+    if memory_paths.NATIVE_WINDOWS:
+        import _winapi
+
+        monkeypatch.setattr(_winapi, "CreateJunction", unsupported)
+
+    assert memory_hooks.repair_entry(root) is False
+    assert (entry / memory_journal.MIGRATED_NOTE).read_bytes() == original
+    assert not list(root.glob(".remember.acg-*"))
+
+
+def test_an_empty_remember_folder_becomes_the_entry(migrated):
+    """remember may create an empty .remember before acg links it; nothing is lost."""
+    root, entry, target = migrated
+    for child in entry.iterdir():
+        child.unlink()
+
+    assert memory_hooks.repair_entry(root) is True
+    assert safety.is_reparse_point(entry) or entry.is_symlink()
+    assert (entry / "recent.md").read_text() == (target / "recent.md").read_text()
 
 
 def test_exclude_write_failure_restores_old_directory(migrated, monkeypatch):

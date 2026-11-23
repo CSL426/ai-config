@@ -682,7 +682,13 @@ project's journal to `projects/<owner--repo>/journal/` so it syncs with the
 notebook; `release` undoes it and takes a path too. `adopt all` (or `--scan [dir]`)
 lists every project below a directory (the home directory by default) whose
 journal is still local and adopts the lot on one confirmation, since
-visiting them one at a time is the reason most stay unsynced. The scan
+visiting them one at a time is the reason most stay unsynced. Without a
+directory it also finds projects outside home (another drive, such as a
+Google Drive G:) through the working directory Claude Code's transcripts
+recorded for that journal. On a disk that cannot hold a directory link,
+adopt still moves the journal into the notebook and only skips the
+`<project>/.remember` entry, saying so; the per-session entry repair then
+leaves that project alone instead of reporting it on every prompt. The scan
 leaves the home directory and the data repository out: neither is a
 project, and adopting the repository would nest the notebook in its own
 journal. The nightly memory push (autopush) adopts these projects by itself

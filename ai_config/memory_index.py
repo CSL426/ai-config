@@ -1,5 +1,6 @@
 """The notebook's index, its drift and secret scans, and memory status."""
 
+import json
 import os
 import re
 import subprocess
@@ -291,3 +292,116 @@ def unadopted_below(root: Path, depth: int = 4) -> list:
         project for project in journals_below(root, depth)
         if memory_journal.journal_state(project)[0] in {"local", "legacy"}
     ]
+
+
+_LINE_LIMIT = 64 * 1024
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _first_cwd(transcript: Path) -> "Path | None":
+    with transcript.open(encoding="utf-8", errors="replace") as handle:
+        for _ in range(50):
+            # 一行可能是幾百 MB 的工具輸出:cwd 在每行開頭附近,讀前段就夠,其餘分段跳過
+            line = handle.readline(_LINE_LIMIT)
+            if not line:
+                return None
+            if not line.endswith("\n"):
+                while True:
+                    rest = handle.readline(_LINE_LIMIT)
+                    if not rest or rest.endswith("\n"):
+                        break
+                continue
+            try:
+                record = json.loads(line)
+            except (ValueError, RecursionError):
+                continue
+            cwd = record.get("cwd") if isinstance(record, dict) else None
+            if isinstance(cwd, str) and cwd and "\x00" not in cwd:
+                return Path(cwd)
+    return None
+
+
+def _session_cwd(sessions: Path) -> "Path | None":
+    """The working directory Claude Code recorded for one project's sessions."""
+    try:
+        # 只讀一般檔案:同名的 FIFO 會讓 open 一直卡住
+        transcripts = [path for path in sessions.glob("*.jsonl") if path.is_file()]
+    except OSError:
+        return None
+    for transcript in sorted(transcripts, key=_mtime, reverse=True)[:3]:
+        try:
+            cwd = _first_cwd(transcript)
+        except OSError:
+            continue
+        if cwd is not None:
+            return cwd
+    return None
+
+
+def _fold(name: str) -> str:
+    # 只有 Windows 的路徑不分大小寫;remember 與 Claude Code 對磁碟代號的大小寫不一定相同
+    return name.lower() if os.name == "nt" else name
+
+
+def _usable_project(cwd: Path) -> bool:
+    try:
+        if not cwd.is_dir():
+            return False
+        # 經過連結的路徑 adopt 會拒絕;放進清單只會讓 adopt all 中途失敗
+        if any(part.is_symlink() or is_reparse_point(part) for part in (cwd, *cwd.parents)):
+            return False
+    except (OSError, ValueError):
+        return False
+    # 家目錄與資料庫都不是專案(跟 journals_below 同一條規則)
+    return not (
+        _path_identity(cwd, memory_paths.HOME) or _path_identity(cwd, memory_paths.SCRIPT_DIR)
+    )
+
+
+def journals_from_sessions() -> list:
+    """Projects with an unadopted journal that no directory scan reaches.
+
+    A project on another drive (a Google Drive G:, a D: data disk) is never
+    under home, so the nightly scan missed it: one on G: kept its journal
+    on a single machine from July to November. The journal's own folder name
+    cannot be decoded, but Claude Code's transcripts for the same name
+    record the directory they ran in. Two paths that share one folder name
+    (`a-b` and `a/b`) cannot be told apart here; the transcript decides.
+    """
+    root = memory_paths.journal_root()
+    sessions_root = memory_paths.CLAUDE_HOME / "projects"
+    try:
+        journals = sorted(root.iterdir())
+        sessions = {_fold(entry.name): entry for entry in sessions_root.iterdir()}
+    except OSError:
+        return []
+    found = []
+    for journal in journals:
+        try:
+            if journal.is_symlink() or is_reparse_point(journal) or not journal.is_dir():
+                continue
+        except OSError:
+            continue
+        sessions_dir = sessions.get(_fold(journal.name))
+        cwd = _session_cwd(sessions_dir) if sessions_dir is not None else None
+        if cwd is None or _fold(memory_paths.session_slug(cwd)) != _fold(journal.name):
+            continue
+        if _usable_project(cwd):
+            found.append(cwd)
+    return sorted(set(found))
+
+
+def unadopted(root: "Path | None" = None) -> list:
+    """unadopted_below(root or home), plus projects elsewhere that sessions name."""
+    below = unadopted_below(root or memory_paths.HOME)
+    elsewhere = [
+        project for project in journals_from_sessions()
+        if project not in below and memory_journal.journal_state(project)[0] == "local"
+    ]
+    return sorted({*below, *elsewhere})

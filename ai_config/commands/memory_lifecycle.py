@@ -108,7 +108,7 @@ def _status() -> int:
 def _report_unadopted() -> None:
     """Say how many other projects are waiting, or nobody finds the scan."""
     try:
-        pending = memory_index.unadopted_below(memory_paths.HOME)
+        pending = memory_index.unadopted()
     except OSError:
         return
     here = memory_paths.project_root()
@@ -579,7 +579,7 @@ def adopt_touched(root: "Path | None" = None) -> list:
     ):
         return []
     lines = []
-    for project in memory_index.unadopted_below(root or memory_paths.HOME):
+    for project in memory_index.unadopted(root):
         # 只剩舊時代 .remember 的:設定好之後就不會再變,每晚不搬也不提;要的話手動 adopt
         if memory_journal.journal_state(project)[0] == "legacy":
             continue
@@ -611,7 +611,8 @@ def _adopt_scan(args: list) -> int:
         return 1
 
     log_header("尚未同步的專案")
-    pending = memory_index.unadopted_below(root)
+    # 沒指定目錄就連家目錄以外(例如 G: 上)的專案一起找
+    pending = memory_index.unadopted() if not args else memory_index.unadopted_below(root)
     if not pending:
         log_info(f"{tilde(root)} 底下每個有日誌的專案都同步了")
         return 0
@@ -625,7 +626,13 @@ def _adopt_scan(args: list) -> int:
 
     failed = []
     for project in pending:
-        result = execute("adopt", project)
+        # 一個專案出錯就停，後面的就都沒同步到
+        try:
+            result = execute("adopt", project)
+        except (OSError, RuntimeError, ValueError) as exc:
+            log_warn(f"{tilde(project)}:{exc}")
+            failed.append(project)
+            continue
         if result.code != 0:
             failed.append(project)
     if failed:
