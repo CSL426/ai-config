@@ -239,6 +239,9 @@ _SECRET_KEYS = (
     # 明擺著的佔位值也不是:交接裡的 ARWIN_BRAIN_TOKEN=unused 讓一份壓測交接留在本機兩天。
     # 只認這張清單,不放過「全小寫」:真的密碼也可能全是小寫字。none、null、changeme、
     # xxx、*** 不在清單裡:它們也常是真的預設密碼或被遮住一半的真值
+    # 值是行內程式碼包著的取得指令(token: `gh auth token -u X`)也不是:日誌記的是怎麼拿,
+    # 不是拿到的值。只認這個指令與 shell 替換,`abc123` 這種反引號裡的真值照樣抓
+    rb"(?!\s*`(?:gh\s+auth\s+token\b|\$[({A-Za-z_]))"
     rb"(?!\s*[\"']?(?:\$[({A-Za-z_]|<[^<>\s][^<>\n]{0,39}>|"
     rb"(?:unused|dummy|example|placeholder|redacted)"
     # 佔位詞後面要是值真的結束了(行尾、引號、右括號或中文);空白、逗號後面可能還接著

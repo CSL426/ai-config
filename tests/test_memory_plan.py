@@ -587,7 +587,30 @@ def test_adopt_finishes_on_a_disk_that_cannot_hold_the_entry(journal_project, mo
 
     assert memory_journal.journal_state(journal_project)[0] == "adopted"
     assert entry.is_dir() and not entry.is_symlink()
+    # 2026-11-23 G::空殼被當成舊日誌，寫進搬移通知後專案多了 ?? .remember/
+    assert list(entry.iterdir()) == []
     assert "不支援目錄連結" in capsys.readouterr().out
+
+
+def test_an_unlinkable_entry_is_kept_out_of_git_status(journal_project, monkeypatch):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(journal_project)], check=True)
+    local = memory_journal.journal_link(journal_project)
+    local.mkdir(parents=True)
+    (local / "recent.md").write_text("notes", encoding="utf-8")
+    (journal_project / ".remember").mkdir()
+    monkeypatch.setattr(memory_journal, "links_supported", lambda directory, target: False)
+
+    assert command.run_memory(["adopt", str(journal_project)]) == 0
+    # remember 之後往殼裡寫東西,也不該出現在專案的 git status
+    (journal_project / ".remember" / "now.md").write_text("x", encoding="utf-8")
+
+    status = subprocess.run(
+        ["git", "-C", str(journal_project), "status", "--porcelain", "--untracked-files=all"],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    ).stdout
+    assert ".remember" not in status
 
 
 def test_a_session_path_through_a_link_is_left_out(journal_project, tmp_path):
