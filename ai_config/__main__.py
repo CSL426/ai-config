@@ -72,6 +72,7 @@ def usage() -> None:
     print("  versions        list installed versions; update <ver> switches back")
     print("  hooks <list|enable <name>|disable <name>>")
     print("                  machine-local Claude Code hooks; never synced")
+    print("                  (commit-style, command-guard: rules in claude/command-guard.json)")
     print("  hooks share [<n> --name <name> [--to both|codex|agy]] | unshare <name>")
     print("                  write a Claude Code hook once; apply also puts it into")
     print("                  Codex and Antigravity (Codex asks you to trust it in /hooks)")
