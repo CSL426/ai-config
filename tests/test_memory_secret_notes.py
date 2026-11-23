@@ -116,8 +116,8 @@ def test_a_project_note_is_scanned(notebook: Path) -> None:
     "見記憶ask-peer-session-for-windows",
     # markdown 行內程式碼裡的 key:冒號後面就是收尾的反引號
     "loosen cred rule (`token:` after 中文 desc not cred; line-start `password:` still blocked)",
-    # 行內程式碼包著的取得指令:2026-11-23 openVman 日誌每次 status 都被提一次
-    "固定 ac-Spark 推送 (token: `gh auth token -u ac-Spark`)",
+    # 行內程式碼包著的取得指令:2026-11-23 一份專案日誌每次 status 都被提一次
+    "固定帳號推送 (token: `gh auth token -u some-user`)",
     "token: `$(gh auth token)`",
 ])
 def test_a_shell_reference_is_not_a_credential(line: str) -> None:

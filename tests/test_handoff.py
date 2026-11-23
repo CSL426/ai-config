@@ -696,7 +696,7 @@ def test_without_a_matching_thread_claim_asks_for_a_name(named) -> None:
 def test_every_thread_under_one_name_is_picked_up_together(named, monkeypatch: pytest.MonkeyPatch) -> None:
     """One wind-down wrote two topics; the session after /clear continues both.
 
-    2026-11-23: Vman-main wrote two threads in the same second, and every
+    2026-11-23: one session wrote two threads in the same second, and every
     pickup stopped to ask which one, though the answer was always "both".
     """
     named("session-one", "acg")
