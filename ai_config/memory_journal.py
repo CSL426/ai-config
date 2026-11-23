@@ -296,12 +296,20 @@ def _is_legacy_journal(legacy: "Path | None") -> bool:
     A linked .remember is acg's own entry (or somebody else's link), never
     content to migrate.
     """
-    return (
-        legacy is not None
-        and legacy.is_dir()
-        and not (legacy.is_symlink() or is_reparse_point(legacy))
-        and not (legacy / MIGRATED_NOTE).is_file()
-    )
+    if (
+        legacy is None
+        or not legacy.is_dir()
+        or legacy.is_symlink()
+        or is_reparse_point(legacy)
+        or (legacy / MIGRATED_NOTE).is_file()
+    ):
+        return False
+    # 空的(remember 先建好的殼)沒有東西要搬;寫搬移通知只會讓專案多一個沒追蹤的資料夾
+    try:
+        return any(child.name != ".gitignore" for child in legacy.iterdir())
+    except OSError:
+        # 讀不到就當作有東西:照舊走搬移，讓錯誤講出來，不要默默略過資料
+        return True
 
 
 def project_entry(root: Path) -> "Path | None":
@@ -388,7 +396,18 @@ def point_project_entry(root: Path, target: Path) -> list[str]:
             names = ", ".join(p.name for p in leftovers[:5])
             raise RuntimeError(f".remember 仍有未搬移的內容:{names}")
     if not links_supported(entry.parent, target):
-        return [UNSUPPORTED_LINK]
+        lines = [UNSUPPORTED_LINK]
+        # 入口建不起來，remember 自己建的 .remember 殼還是會出現在 git status
+        try:
+            exclude = project_git_exclude(root)
+            if exclude is not None:
+                exclude[0].parent.mkdir(parents=True, exist_ok=True)
+                memory_paths._write_text_atomic(*exclude)
+                lines.append("已寫入專案的 .git/info/exclude,git status 不會列出 .remember")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            # 收編本身已經完成;排除規則只是讓 git status 乾淨
+            lines.append(f"沒有寫入 .git/info/exclude:{exc}")
+        return lines
     if state == "stale":
         _remove_journal_link(entry, Path(detail))
     elif state == "plain":
