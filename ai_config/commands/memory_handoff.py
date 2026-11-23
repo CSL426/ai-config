@@ -35,6 +35,15 @@ def _handoff(rest: list[str]) -> int:
             note = hand.write(args[0], " ".join(args[1:]), force=forced())
             # 記在哪個專案要講:接手的 session 從別的目錄開就會找不到
             log_success(f"已記下交接:{note.thread}(專案 {note.project})")
+            others = hand.others_left_by_this_session(note.thread)
+            if others:
+                # 一次收工拆成好幾條也可以,pickup 會全部接走;
+                # 只是同一個主題換了名字再寫,舊的那條就會跟著被接一次
+                log_info(
+                    "這個 session 還有沒被接走的線:"
+                    f"{'、'.join(other.thread for other in others)}。"
+                    "pickup 會一起接走;同一個主題要更新就用原本的名稱"
+                )
             # 接手的人用的是 /acg pickup 或一句「接著做」;這行會被 session
             # 照抄給使用者,只給指令會讓人以為得自己打。指令留著給沒有 plugin 的環境,
             # 名稱含空格時要引號,否則照著貼會被拆成多個參數
@@ -45,15 +54,25 @@ def _handoff(rest: list[str]) -> int:
             )
             return 0
         if action == "claim" and len(args) <= 1:
-            # 不帶名稱就接這個 session 名稱留下的那條線。接走就結案:
+            # 不帶名稱就接這個 session 名稱留下的每一條線。接走就結案:
             # 這份筆記的任務是交到下一個人手上,收工時由接手的人再寫一份
-            note = hand.claim(args[0] if args else "")
-            log_success(f"已接手:{note.thread}(這則交接已結案,收工時再寫新的)")
-            if note.project != hand.home_project():
-                log_info(f"這條線記在專案 {note.project},不是這個 session 的專案")
-            _retire_author(note.author)
-            print()
-            print(note.body)
+            notes = [hand.claim(args[0])] if args else hand.claim_own()
+            if len(notes) > 1:
+                log_success(
+                    f"已接手這個 session 留下的 {len(notes)} 條線:"
+                    f"{'、'.join(note.thread for note in notes)}(都已結案,收工時再寫新的)"
+                )
+            else:
+                log_success(f"已接手:{notes[0].thread}(這則交接已結案,收工時再寫新的)")
+            for author in dict.fromkeys(note.author for note in notes):
+                _retire_author(author)
+            for note in notes:
+                print()
+                if len(notes) > 1:
+                    print(f"════ {note.thread} ════")
+                if note.project != hand.home_project():
+                    log_info(f"這條線記在專案 {note.project},不是這個 session 的專案")
+                print(note.body)
             return 0
         if action == "done" and len(args) == 1:
             note = hand.done(args[0])

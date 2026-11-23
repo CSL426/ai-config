@@ -381,9 +381,11 @@ thread get to". A handoff is per-thread: `{entrypoint} memory handoff
 write "<thread>" "<where it got to, what is next>"` before a session
 ends, `handoff list [path]` to see what is waiting (a path reads another
 project's threads), `handoff claim [thread]`
-to take one over (with no name, the one thread this session's name left
-— the name survives `/clear`, so handoff, `/clear`, pickup needs no
-choosing), `handoff done <thread>` to close one nobody will pick up.
+to take one over (with no name, every thread this session's name left,
+oldest first — the name survives `/clear`, so handoff, `/clear`, pickup
+needs no choosing even when one wind-down wrote several topics; `write`
+mentions the session's other open threads so a renamed topic is not left
+behind as a second one), `handoff done <thread>` to close one nobody will pick up.
 Inside a Claude session a thread belongs to the project the session was
 started in (read from Claude Code's session record), not the directory its
 shell has moved to, e.g. a repository cloned inside the workspace; `write`

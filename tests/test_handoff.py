@@ -678,7 +678,7 @@ def test_a_session_picks_up_its_own_thread_without_being_told(
 
     named("session-after-clear", "acg", pid=100)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-after-clear")
-    note = handoff.claim()
+    [note] = handoff.claim_own()
 
     assert note.thread == "排程"
     assert note.claimed_by == "session-after-clear"
@@ -690,16 +690,38 @@ def test_without_a_matching_thread_claim_asks_for_a_name(named) -> None:
     named("session-one", "acg")
 
     with pytest.raises(ValueError, match="指定"):
-        handoff.claim()
+        handoff.claim_own()
 
 
-def test_two_threads_under_one_name_are_not_guessed_between(named) -> None:
+def test_every_thread_under_one_name_is_picked_up_together(named, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One wind-down wrote two topics; the session after /clear continues both.
+
+    2026-11-23: Vman-main wrote two threads in the same second, and every
+    pickup stopped to ask which one, though the answer was always "both".
+    """
+    named("session-one", "acg")
+    handoff.write("一", "內容一")
+    handoff.write("二", "內容二")
+    named("session-x", "別人", pid=200)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-x")
+    handoff.write("別人的", "不是我的")
+
+    named("session-after-clear", "acg", pid=100)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-after-clear")
+    notes = handoff.claim_own()
+
+    assert [note.thread for note in notes] == ["一", "二"]
+    assert all(note.state == handoff.DONE and note.claimed_name == "acg" for note in notes)
+    left = {n.thread for n in handoff.load_all() if n.state != handoff.DONE}
+    assert left == {"別人的"}
+
+
+def test_writing_a_second_thread_mentions_the_first(named) -> None:
     named("session-one", "acg")
     handoff.write("一", "內容")
-    handoff.write("二", "內容")
 
-    with pytest.raises(ValueError, match=r"一.*二|二.*一"):
-        handoff.claim()
+    assert [n.thread for n in handoff.others_left_by_this_session("二")] == ["一"]
+    assert handoff.others_left_by_this_session("一") == []
 
 
 def test_claim_without_a_name_works_from_the_command_line(
@@ -713,6 +735,23 @@ def test_claim_without_a_name_works_from_the_command_line(
     assert command.run_memory(["handoff", "claim"]) == 0
 
     assert "已接手:排程" in capsys.readouterr().out
+
+
+def test_claim_prints_every_thread_it_picked_up(
+    named, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ai_config.commands import memory as command
+
+    named("session-one", "acg")
+    assert command.run_memory(["handoff", "write", "一", "## Next\n- 甲"]) == 0
+    assert command.run_memory(["handoff", "write", "二", "## Next\n- 乙"]) == 0
+    assert "還有沒被接走的線:一" in capsys.readouterr().out
+
+    assert command.run_memory(["handoff", "claim"]) == 0
+
+    out = capsys.readouterr().out
+    assert "2 條線" in out
+    assert out.index("════ 一 ════") < out.index("甲") < out.index("════ 二 ════") < out.index("乙")
 
 
 def test_a_thread_nobody_touched_for_a_month_is_archived_too(notebook: Path) -> None:
@@ -831,16 +870,15 @@ def test_this_projects_thread_wins_over_one_elsewhere(nested) -> None:
     handoff.write("別處的", "內容", cwd=inner)
     handoff.write("這裡的", "內容")
 
-    assert handoff.claim().thread == "這裡的"
+    assert [n.thread for n in handoff.claim_own()] == ["這裡的"]
 
 
-def test_two_threads_elsewhere_are_not_guessed_between(nested, tmp_path: Path) -> None:
+def test_threads_elsewhere_are_picked_up_together(nested, tmp_path: Path) -> None:
     _workspace, inner = nested
     handoff.write("一", "內容", cwd=inner)
     handoff.write("二", "內容", cwd=inner)
 
-    with pytest.raises(ValueError, match="aswg--elabasia"):
-        handoff.claim()
+    assert {n.thread for n in handoff.claim_own()} == {"一", "二"}
 
 
 def test_writing_says_which_project(nested, capsys: pytest.CaptureFixture[str]) -> None:
