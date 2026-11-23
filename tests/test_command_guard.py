@@ -286,3 +286,85 @@ def test_a_broken_rule_is_shown_to_the_person(
     assert _run(monkeypatch, tmp_path, payload) == 0
     message = json.loads(capsys.readouterr().out)["systemMessage"]
     assert "bad" in message
+
+
+DOCKER_BUILD = (
+    r"(docker\s+compose|docker-compose)(\s+compose)?"
+    r"(\s+(-f|--file|-p|--project-name|--profile|--env-file)\s+\S+)*"
+    r"\s+(build\b|up\b.*\s--(build|force-recreate)\b)"
+)
+REAL_PNPM = Rule("pnpm-only", re.compile(r"(npm|yarn)(\.cmd|\.exe)?(\s|$)"), "用 pnpm", when_file="pnpm-lock.yaml")
+REAL_GH = Rule("gh", re.compile(r"gh(\s+(-R|--repo)\s+\S+)*\s+auth\s+switch\b"), "r")
+REAL_BUILD = Rule("one-build", re.compile(DOCKER_BUILD), "r")
+
+
+@pytest.fixture
+def pnpm_project(tmp_path: Path) -> Path:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "pnpm-lock.yaml").write_text("", encoding="utf-8")
+    return tmp_path
+
+
+@pytest.mark.parametrize("command", [
+    "command -v npm",
+    "command -v yarn >/dev/null && echo y",
+    "sudo -l npm",
+    "npm-check-updates -u",
+    "npm-run-all -p a b",
+    "yarn-deduplicate",
+    "pnpm install",
+    "pnpm dlx create-vite",
+])
+def test_everyday_commands_in_a_pnpm_project_pass(pnpm_project: Path, command: str) -> None:
+    assert names(command, pnpm_project, [REAL_PNPM]) == []
+
+
+@pytest.mark.parametrize("command", [
+    "timeout 5 npm i",
+    "timeout -s KILL 5 npm i",
+    "stdbuf -oL npm i",
+    "setsid npm i",
+    "ionice -c3 npm i",
+    "flock /tmp/x npm i",
+    "/usr/bin/npm i",
+    "npm.cmd install",
+    "2>&1 npm i",
+    "npm i 2>&1 | tail",
+    "cd /tmp && cd - && npm i",
+])
+def test_wrapped_or_spelled_out_npm_is_still_npm(pnpm_project: Path, command: str) -> None:
+    assert names(command, pnpm_project, [REAL_PNPM]) == ["pnpm-only"]
+
+
+@pytest.mark.parametrize("command", [
+    "gh -R a/b auth switch",
+    "gh --repo a/b auth switch -u x",
+    "gh \\\nauth switch",
+])
+def test_gh_options_before_the_subcommand(tmp_path: Path, command: str) -> None:
+    assert names(command, tmp_path, [REAL_GH]) == ["gh"]
+
+
+@pytest.mark.parametrize(("command", "blocked"), [
+    ("docker compose build api", True),
+    ("docker compose -f dev.yml build", True),
+    ("docker compose up -d --build", True),
+    ("docker compose up --force-recreate web", True),
+    ("docker-compose build", True),
+    ("docker compose up -d", False),
+    ("docker compose exec api pnpm build", False),
+    ("docker compose run --rm web build", False),
+    ("docker compose logs -f build", False),
+    ("docker compose ps", False),
+])
+def test_only_a_build_counts_as_a_build(tmp_path: Path, command: str, blocked: bool) -> None:
+    assert (names(command, tmp_path, [REAL_BUILD]) == ["one-build"]) is blocked
+
+
+@pytest.mark.parametrize("command", ["cd \x00 && npm i", "cd \ud800 && ls"])
+def test_a_strange_path_never_crashes_the_hook(
+    pnpm_project: Path, monkeypatch: pytest.MonkeyPatch, command: str,
+) -> None:
+    payload = {"tool_name": "Bash", "cwd": str(pnpm_project), "tool_input": {"command": command}}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    assert command_guard.run_hook([str(pnpm_project)]) in (0, 2)

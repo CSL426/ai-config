@@ -40,9 +40,24 @@ _REDIRECTION = re.compile(r"^\d*(?:[<>]|&>)")
 # 只有符號、目標在下一個詞的重導向,例如 `2> log`
 _BARE_REDIRECTION = re.compile(r"^\d*(?:[<>]{1,2}|&>{1,2}|>&)$")
 # 這些只是換個方式執行後面的指令,判斷時要跳過
-_WRAPPERS = {"env", "command", "exec", "time", "nohup", "sudo", "nice", "!"}
+_WRAPPERS = {
+    "env", "command", "exec", "time", "nohup", "sudo", "nice", "!",
+    "timeout", "stdbuf", "setsid", "ionice", "flock",
+}
+# 這些 wrapper 第一個非選項的詞是參數(逾時秒數、鎖檔),不是要跑的指令
+_WRAPPER_OPERAND = {"timeout", "flock"}
+# `command -v npm`、`sudo -l npm` 只是查詢,不會執行後面的指令
+_QUERY_OPTIONS = {"command": {"-v", "-V"}, "sudo": {"-l", "-v", "-k", "-K"}}
 # 會吃掉下一個詞當參數的 wrapper 選項
-_WRAPPER_VALUES = {"sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-U"}, "env": {"-u", "-C", "-S"}, "nice": {"-n"}}
+_WRAPPER_VALUES = {
+    "sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-U"},
+    "env": {"-u", "-C", "-S"},
+    "nice": {"-n"},
+    "ionice": {"-c", "-n", "-p"},
+    "timeout": {"-s", "-k", "--signal", "--kill-after"},
+}
+# `2>&1`、`>&2`、`&>log` 的 & 不是指令分隔
+_AMPERSAND_REDIRECTION = re.compile(r"\d*>&(?:\d+|-)|&>>?")
 _KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "{"}
 # `<<<` 是 here-string,不是 heredoc
 _HEREDOC_START = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
@@ -121,9 +136,9 @@ def _without_heredoc_bodies(command: str) -> str:
 
 def simple_commands(command: str) -> "list[tuple[int, list[str]]] | None":
     """Each simple command's subshell depth and words, or None when unreadable."""
-    lexer = shlex.shlex(
-        _without_heredoc_bodies(command), posix=True, punctuation_chars=_SEPARATORS,
-    )
+    text = _without_heredoc_bodies(command).replace("\\\n", " ")
+    text = _AMPERSAND_REDIRECTION.sub(" ", text)
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=_SEPARATORS)
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     try:
@@ -162,10 +177,17 @@ def _effective(words: list[str]) -> list[str]:
             takes_value = _WRAPPER_VALUES.get(head, set())
             while rest and rest[0].startswith("-"):
                 option = rest.pop(0)
+                if option in _QUERY_OPTIONS.get(head, set()):
+                    return []
                 if option in takes_value and rest:
                     rest.pop(0)
+            if head in _WRAPPER_OPERAND and rest:
+                rest.pop(0)
             continue
         break
+    if rest:
+        # `/usr/bin/npm`、`C:\\...\\npm.cmd` 跑的還是 npm
+        rest[0] = re.split(r"[\\/]", rest[0])[-1]
     return rest
 
 
@@ -245,6 +267,7 @@ def violations(
     found = []
     # 子 shell 裡的 cd 出了括號就不算
     here = {0: cwd}
+    previous: dict[int, Path] = {}
     for depth, words in parsed:
         base = here.get(depth) or here[max(d for d in here if d <= depth)]
         here = {d: p for d, p in here.items() if d <= depth}
@@ -252,10 +275,13 @@ def violations(
         effective = _effective(words)
         if not effective:
             continue
-        if effective[0] == "cd" and len(effective) == 2:
-            target = effective[1]
+        if effective[0] == "cd" and len(effective) <= 2:
+            target = effective[1] if len(effective) == 2 else "~"
+            if target == "-":
+                here[depth], previous[depth] = previous.get(depth, base), base
             # 有變數展開就不知道會到哪,維持原目錄
-            if "$" not in target and "`" not in target:
+            elif "$" not in target and "`" not in target:
+                previous[depth] = base
                 here[depth] = (base / os.path.expanduser(_native(target))).resolve()
             continue
         text = " ".join(effective)
@@ -282,7 +308,18 @@ def _warn(problems: list[str]) -> None:
 
 
 def run_hook(args: list[str]) -> int:
-    """Hook entry point: exit 2 hands the reason back to the model."""
+    """Hook entry point: exit 2 hands the reason back to the model.
+
+    Anything unexpected lets the command through: a guard that crashes
+    shows the person a hook error on every Bash call.
+    """
+    try:
+        return _run_hook(args)
+    except Exception:  # noqa: BLE001 - hook 出錯不能擋住所有指令
+        return 0
+
+
+def _run_hook(args: list[str]) -> int:
     if len(args) != 1:
         return 0
     try:
