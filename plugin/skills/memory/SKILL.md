@@ -28,7 +28,9 @@ allowed-tools: Bash(acg memory status), Bash(ai-config memory status), Bash(acg 
   - 「另外 N 個專案的日誌還沒同步」:現在的 session 正在寫的日誌。有開每晚自動上傳的機器,
     排程會在上傳前自動 adopt 有 git 遠端的專案;沒有遠端的只列在排程日誌裡,要手動 adopt
     (鍵值只是目錄名稱,兩台機器上不相干的同名目錄會混在一起)。告訴使用者今晚會處理,
-    或現在用 `acg memory adopt all`。
+    或現在用 `acg memory adopt all`。家目錄以外(例如 Windows 的 G:、D:)的專案也算在內,
+    是從 Claude 的對話紀錄找到的;放在 Google Drive 這類不能建連結的磁碟上時,日誌照樣同步,
+    只是專案裡不會有 `.remember` 連結,這是正常的。
   - 「另有 M 個專案只剩舊時代的 .remember」:acg 接管日誌之前留在專案裡的資料夾,之後不會
     再變,所以排程不碰。要同步就手動 `acg memory adopt <路徑>`,不要就刪掉,讓使用者決定。
   兩種都不要代跑:adopt 會搬動專案裡的檔案。

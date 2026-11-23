@@ -620,3 +620,35 @@ def test_a_strange_transcript_line_never_breaks_the_scan(journal_project, tmp_pa
     )
 
     assert project in memory_index.journals_from_sessions()
+
+
+def test_odd_transcripts_never_hang_or_break_the_scan(journal_project, tmp_path):
+    import json
+    import os
+
+    project = _elsewhere_project(tmp_path, journal_project)
+    sessions = memory_paths.CLAUDE_HOME / "projects" / memory_paths.session_slug(project)
+    (sessions / "s.jsonl").write_text(
+        json.dumps({"cwd": "bad\x00path"}) + "\n" + json.dumps({"cwd": str(project)}) + "\n",
+        encoding="utf-8",
+    )
+    if hasattr(os, "mkfifo"):
+        # 一個沒有寫入端的 FIFO:打開就會卡住,所以根本不該打開
+        os.mkfifo(sessions / "pipe.jsonl")
+
+    assert project in memory_index.journals_from_sessions()
+
+
+def test_home_and_the_data_repo_are_never_offered_as_projects(journal_project, monkeypatch):
+    import json
+
+    for place in (memory_paths.HOME, memory_paths.SCRIPT_DIR):
+        memory_journal.journal_link(place).mkdir(parents=True, exist_ok=True)
+        sessions = memory_paths.CLAUDE_HOME / "projects" / memory_paths.session_slug(place)
+        sessions.mkdir(parents=True, exist_ok=True)
+        (sessions / "s.jsonl").write_text(json.dumps({"cwd": str(place)}) + "\n", encoding="utf-8")
+
+    found = memory_index.journals_from_sessions()
+
+    assert memory_paths.HOME not in found
+    assert memory_paths.SCRIPT_DIR not in found
