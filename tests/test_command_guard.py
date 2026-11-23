@@ -253,7 +253,9 @@ def test_when_file_must_be_a_file_not_a_directory(tmp_path: Path) -> None:
     assert names("npm install", tmp_path, [PNPM]) == []
 
 
-@pytest.mark.parametrize("when_file", ["/etc/passwd", "../outside.lock", "a/../../b"])
+@pytest.mark.parametrize("when_file", [
+    "/etc/passwd", "../outside.lock", "a/../../b", "C:\\x.lock", "\\\\host\\share\\x", "a\\..\\..\\b",
+])
 def test_when_file_cannot_point_outside(tmp_path: Path, when_file: str) -> None:
     _write_rules(tmp_path, {"rules": [
         {"name": "x", "command": "npm", "reason": "r", "when_file": when_file},

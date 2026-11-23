@@ -27,7 +27,7 @@ import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .subproc import UTF8
 
@@ -170,9 +170,17 @@ def _effective(words: list[str]) -> list[str]:
 
 
 def _contained_name(name: str) -> bool:
-    """when_file names a file beside the command, never a path out of it."""
-    pure = Path(name)
-    return bool(name) and not pure.is_absolute() and ".." not in pure.parts
+    """when_file names a file beside the command, never a path out of it.
+
+    Judged by both path flavours: the same rules file is read on Windows,
+    where `/etc/passwd` has no drive and would otherwise count as relative.
+    """
+    if not name:
+        return False
+    for pure in (PurePosixPath(name), PureWindowsPath(name)):
+        if pure.is_absolute() or pure.anchor or ".." in pure.parts:
+            return False
+    return True
 
 
 def _has_file_upward(start: Path, name: str) -> bool:
