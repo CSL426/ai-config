@@ -4,6 +4,7 @@ Where each project's journal lives, adopting it into the notebook and
 releasing it back, and the <project>/.remember entry that points at it.
 """
 
+import contextlib
 import hashlib
 import json
 import os
@@ -234,6 +235,38 @@ def _create_journal_link(target: Path, link: Path) -> None:
         link.symlink_to(target)
 
 
+UNSUPPORTED_LINK = (
+    "這個磁碟不支援目錄連結(例如 Google Drive 的虛擬磁碟),專案裡不會有 .remember 入口;"
+    "日誌照樣同步,在 ~/.claude/shared-memory/projects/ 底下"
+)
+
+
+def links_supported(directory: Path, target: Path) -> bool:
+    """Whether a journal link can be made inside ``directory`` at all.
+
+    Tried with a throwaway name first, so a disk that cannot hold one
+    (a Google Drive G: drive has no junctions) is found out before the
+    real .remember is moved aside.
+    """
+    import uuid
+
+    probe = directory / f".remember.acg-probe-{uuid.uuid4().hex}"
+    try:
+        # 不走 _create_journal_link:它失敗時會印「改用複製」,在每則訊息的 hook 裡就是雜訊
+        if memory_paths.NATIVE_WINDOWS:
+            import _winapi
+
+            _winapi.CreateJunction(str(target), str(probe))  # pyright: ignore[reportAttributeAccessIssue]  # Windows-only API
+        else:
+            probe.symlink_to(target)
+    except (ImportError, OSError, RuntimeError, NotImplementedError):
+        return False
+    # 拿不掉的暫名連結只是多一個指向日誌的連結，不影響判斷
+    with contextlib.suppress(OSError, RuntimeError):
+        _remove_journal_link(probe, target)
+    return True
+
+
 def _remove_journal_link(link: Path, target: Path) -> None:
     memory_paths.assert_plain_path(link.parent, directory=True)
     if not (link.is_symlink() or is_reparse_point(link)):
@@ -349,13 +382,16 @@ def point_project_entry(root: Path, target: Path) -> list[str]:
         return []
     if state == "foreign":
         return [f"專案的 .remember 指向別處,未更動:{detail}"]
-    if state == "stale":
-        _remove_journal_link(entry, Path(detail))
-    elif state == "plain":
+    if state == "plain":
         leftovers = _entry_leftovers(entry)
         if leftovers:
             names = ", ".join(p.name for p in leftovers[:5])
             raise RuntimeError(f".remember 仍有未搬移的內容:{names}")
+    if not links_supported(entry.parent, target):
+        return [UNSUPPORTED_LINK]
+    if state == "stale":
+        _remove_journal_link(entry, Path(detail))
+    elif state == "plain":
         for name in (".gitignore", MIGRATED_NOTE):
             (entry / name).unlink(missing_ok=True)
         os.rmdir(entry)

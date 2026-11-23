@@ -135,16 +135,21 @@ def repair_entry(root: Path) -> bool:
                 raise RuntimeError(f"專案日誌仍有未搬移內容：{path}")
             metadata[path.name] = path.read_bytes()
         note = metadata.get(memory_journal.MIGRATED_NOTE)
-        if note is None:
+        # 空資料夾(remember 先建的、或搬完只剩殼)沒有東西會丟,不必有搬移通知
+        if note is None and metadata:
             raise RuntimeError(f"專案日誌沒有有效搬移通知：{entry}")
-        lines = note.decode("utf-8").splitlines()
-        if (
+        lines = note.decode("utf-8").splitlines() if note is not None else []
+        if note is not None and (
             len(lines) != 3
             or lines[0] != "Memory data migrated to:"
             or lines[2] != "This directory is now empty; you may delete it."
             or not _notice_points_at(Path(lines[1].strip()), target)
         ):
             raise RuntimeError(f"專案日誌搬移通知不符目的地：{entry}")
+    # Google Drive 的 G: 這類磁碟建不了連結:每則訊息都試一次又失敗,只會一直報錯。
+    # 先用一個暫名試，不行就安靜略過，原本的 .remember 一點都不動
+    if not memory_journal.links_supported(entry.parent, target):
+        return False
     parked = None
     linked = False
     try:

@@ -510,3 +510,113 @@ def test_status_tells_old_era_journals_apart_from_ones_the_nightly_takes(monkeyp
     out = capsys.readouterr().out
     assert "另外 1 個專案的日誌還沒同步" in out and "排程會處理" in out
     assert "另有 1 個專案只剩舊時代的 .remember" in out and "排程不會搬" in out
+
+
+def _elsewhere_project(tmp_path: Path, journal_project: Path) -> Path:
+    """A project on another disk: outside home, its journal only in journal/<slug>."""
+    import json
+
+    project = tmp_path / "other-drive" / "Resume" / "resume"
+    project.mkdir(parents=True)
+    local = memory_journal.journal_link(project)
+    local.mkdir(parents=True)
+    (local / "recent.md").write_text("notes from July", encoding="utf-8")
+    sessions = memory_paths.CLAUDE_HOME / "projects" / memory_paths.session_slug(project)
+    sessions.mkdir(parents=True)
+    (sessions / "s.jsonl").write_text(
+        json.dumps({"type": "summary"}) + "\n" + json.dumps({"cwd": str(project)}) + "\n",
+        encoding="utf-8",
+    )
+    return project
+
+
+def test_a_project_outside_home_is_found_through_its_sessions(journal_project, tmp_path):
+    """2026-11-23: a project on G: kept its journal on one machine since July.
+
+    The nightly scan only walks home, and the journal's folder name cannot
+    be decoded back to a path; the transcripts say where the sessions ran.
+    """
+    project = _elsewhere_project(tmp_path, journal_project)
+    home = journal_project.parent
+
+    assert project not in memory_index.unadopted_below(home)
+    assert project in memory_index.journals_from_sessions()
+    assert project in memory_index.unadopted(home)
+
+
+def test_a_session_that_ran_somewhere_else_is_not_taken_for_the_project(journal_project, tmp_path):
+    import json
+
+    project = _elsewhere_project(tmp_path, journal_project)
+    sessions = memory_paths.CLAUDE_HOME / "projects" / memory_paths.session_slug(project)
+    (sessions / "s.jsonl").write_text(json.dumps({"cwd": str(tmp_path / "unrelated")}) + "\n")
+
+    assert project not in memory_index.journals_from_sessions()
+
+
+def test_the_nightly_adopt_reaches_a_project_outside_home(journal_project, tmp_path, monkeypatch):
+    project = _elsewhere_project(tmp_path, journal_project)
+    _memory_on(monkeypatch)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root: memory_paths.ProjectKey("owner--repo", True, str(root)),
+    )
+    adopted = []
+    monkeypatch.setattr(
+        memory_lifecycle, "execute",
+        lambda action, target, **kw: (
+            adopted.append(target) or memory_lifecycle.MemoryExecutionResult(code=0)
+        ),
+    )
+
+    memory_lifecycle.adopt_touched(journal_project.parent)
+
+    assert project in adopted
+
+
+def test_adopt_finishes_on_a_disk_that_cannot_hold_the_entry(journal_project, monkeypatch, capsys):
+    """Google Drive's G: has no junctions: the journal still syncs, the entry is skipped."""
+    _local_journal_without_entry = memory_journal.journal_link(journal_project)
+    _local_journal_without_entry.mkdir(parents=True)
+    (_local_journal_without_entry / "recent.md").write_text("notes", encoding="utf-8")
+    entry = journal_project / ".remember"
+    entry.mkdir()
+    monkeypatch.setattr(memory_journal, "links_supported", lambda directory, target: False)
+
+    assert command.run_memory(["adopt", str(journal_project)]) == 0
+
+    assert memory_journal.journal_state(journal_project)[0] == "adopted"
+    assert entry.is_dir() and not entry.is_symlink()
+    assert "不支援目錄連結" in capsys.readouterr().out
+
+
+def test_a_session_path_through_a_link_is_left_out(journal_project, tmp_path):
+    """adopt refuses a path through a link; listing it only broke `adopt all` midway."""
+    import json
+
+    real = _elsewhere_project(tmp_path, journal_project)
+    linked = tmp_path / "linked-resume"
+    symlink(linked, real, directory=True)
+    local = memory_journal.journal_link(linked)
+    local.mkdir(parents=True)
+    sessions = memory_paths.CLAUDE_HOME / "projects" / memory_paths.session_slug(linked)
+    sessions.mkdir(parents=True)
+    (sessions / "s.jsonl").write_text(json.dumps({"cwd": str(linked)}) + "\n", encoding="utf-8")
+
+    found = memory_index.journals_from_sessions()
+
+    assert linked not in found
+    assert real in found
+
+
+@pytest.mark.parametrize("line", ["[" * 100_000, "x" * 200_000])
+def test_a_strange_transcript_line_never_breaks_the_scan(journal_project, tmp_path, line):
+    import json
+
+    project = _elsewhere_project(tmp_path, journal_project)
+    sessions = memory_paths.CLAUDE_HOME / "projects" / memory_paths.session_slug(project)
+    (sessions / "s.jsonl").write_text(
+        line + "\n" + json.dumps({"cwd": str(project)}) + "\n", encoding="utf-8",
+    )
+
+    assert project in memory_index.journals_from_sessions()
