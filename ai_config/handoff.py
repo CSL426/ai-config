@@ -413,14 +413,16 @@ def named_elsewhere(project: str) -> list[Handoff]:
     ]
 
 
-def _own_thread() -> Handoff:
-    """The one live thread this session's name left for it.
+def own_threads() -> list[Handoff]:
+    """Every live thread this session's name left for it.
 
     handoff, /clear, pickup: the same name on both ends, so the session
-    need not be told which thread is its own. This project's threads come
-    first; a thread written under another project (by an older acg, or
-    from a shell inside a nested repository) is still this session's.
-    Anything but exactly one match is handed back to the person to choose.
+    need not be told which threads are its own. A session that wound
+    several topics down at once writes several threads, and the one that
+    picks up after /clear is the same session continuing all of them.
+    This project's threads come first; threads written under another
+    project (by an older acg, or from a shell inside a nested repository)
+    are still this session's when there are none here.
     """
     mine = session_name()
     if not mine:
@@ -432,10 +434,24 @@ def _own_thread() -> Handoff:
     ] or named_elsewhere(project)
     if not candidates:
         raise ValueError(f"沒有 session「{mine}」留下的工作線,請指定要認領的工作線")
-    if len(candidates) > 1:
+    # 名稱可能撞名(兩個都叫 wifi 的 session):只有同一個 session 寫的才一起接,
+    # 出自不同 session 的就交回給人選,不要替別人結案
+    if len({note.author for note in candidates}) > 1:
         names = "、".join(f"{note.thread}({note.project})" for note in candidates)
-        raise ValueError(f"session「{mine}」留下不只一條線:{names},請指定")
-    return candidates[0]
+        raise ValueError(f"名稱「{mine}」底下有不同 session 留下的線:{names},請指定")
+    return sorted(candidates, key=lambda note: (note.updated, note.created, note.thread))
+
+
+def others_left_by_this_session(note: Handoff) -> list[Handoff]:
+    """This session's other live threads in the same project as `note`.
+
+    Only the same project: those are what a pickup here takes together.
+    """
+    return [
+        other for other in load_all(note.project)
+        if other.state != DONE and other.author == note.author
+        and _slug(other.thread) != _slug(note.thread)
+    ]
 
 
 def taker(note: "Handoff") -> str:
@@ -445,15 +461,14 @@ def taker(note: "Handoff") -> str:
     return short_id(note.claimed_by) if note.claimed_by else ""
 
 
-def claim(name: str = "") -> Handoff:
+def claim(name: str) -> Handoff:
     """Pick a thread up: deliver its note and close it, recording who took it.
 
     The note has done its job once someone has read it. Keeping it open
     as "held" only left a state to go stale when that session ended
     without writing; the taker writes a fresh handoff when it stops.
     """
-    note = _load_or_fail(name) if name else _own_thread()
-    name = name or note.thread
+    note = _load_or_fail(name)
     if note.state == DONE:
         who = taker(note)
         if who:
@@ -465,6 +480,17 @@ def claim(name: str = "") -> Handoff:
     note.updated = _now()
     _write_text_atomic(note.path, _render(note))
     return note
+
+
+def claim_own() -> list[Handoff]:
+    """Pick up every thread this session's name left, oldest first.
+
+    Asking which one to take only stalled the pickup: whoever runs it
+    after /clear is the session that wrote them all. A thread meant for
+    someone else is claimed by name instead.
+    """
+    return [claim(note.thread) for note in own_threads()]
+
 
 
 def done(name: str) -> Handoff:

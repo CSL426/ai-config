@@ -110,6 +110,7 @@ def usage() -> None:
     print("                  handoff list [專案路徑]|write <線> <內容>|claim [線]|done <線>")
     print("                    write refuses a thread another session claimed; --force overrides")
     print("                    hand one work thread to the session that follows")
+    print("                    claim with no name takes every thread this session left")
     print("                    claim moves the writer's old Claude transcript to")
     print("                    ~/.claude/archived-sessions so /resume stops listing it")
     print("                  handoff remind status|enable [百分比]|disable")

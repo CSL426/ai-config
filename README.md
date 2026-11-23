@@ -449,8 +449,8 @@ Each subcommand is its own entry in the / menu: `/acg:status`, `/acg:sync`,
 `/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:autoupdate`,
 `/acg:msg`, and
 three for session handoff (`/acg:handoff` records where a work thread got to,
-`/acg:handoffs` lists waiting threads, and `/acg:pickup` claims one and reads
-its notes back). Typing `/acg <subcommand>` does the same.
+`/acg:handoffs` lists waiting threads, and `/acg:pickup` claims the threads
+this session left, all of them at once, and reads their notes back). Typing `/acg <subcommand>` does the same.
 The journal answers what happened in a project; handoff answers where one thread
 got to, which matters when several sessions work on the same project at once.
 
