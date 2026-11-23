@@ -280,7 +280,7 @@ def _mutation(
                     backup_paths.extend(p for p in directory.rglob("*") if p.is_file())
         snapshot = _backup(backup_paths)
         if snapshot is not None:
-            state = {"memory_link": link_state}
+            state: dict[str, object] = {"memory_link": link_state}
             if project is not None:
                 root = memory_paths.project_root(project)
                 state["journal"] = {

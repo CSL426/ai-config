@@ -58,6 +58,13 @@ jobs:
       - name: Run static checks
         run: ruff check ai_config tests
 
+      # 型別檢查只看 Linux:Windows 專用 API 已逐行標註,換平台結果相同
+      - name: Type check
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install pyright==1.1.408
+          pyright
+
       - name: Check installer syntax
         if: runner.os == 'Linux'
         run: bash -n install.sh

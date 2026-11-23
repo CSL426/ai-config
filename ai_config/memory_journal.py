@@ -412,7 +412,7 @@ def adopt_journal(root: Path, *, old_journals: bool = True) -> list[str]:
     migrate_legacy = old_journals and _is_legacy_journal(legacy)
     _check_journal_tree(target)
     _check_journal_tree(link)
-    if migrate_legacy:
+    if migrate_legacy and legacy is not None:
         _check_journal_tree(legacy)
     ignore = memory_paths.memory_dir() / ".gitignore"
     memory_paths.assert_plain_path(ignore, directory=False)
@@ -437,7 +437,7 @@ def adopt_journal(root: Path, *, old_journals: bool = True) -> list[str]:
             moved = _move_contents(link, target, include_metadata=True, moves=moves)
             os.rmdir(link)
             lines.append(f"搬入 {moved} 項本機日誌")
-        if migrate_legacy:
+        if migrate_legacy and legacy is not None:
             moved = _move_contents(legacy, target, moves=moves)
             lines.append(f"搬入 {moved} 項 .remember 日誌")
 
@@ -453,7 +453,7 @@ def adopt_journal(root: Path, *, old_journals: bool = True) -> list[str]:
         memory_paths._write_text_atomic(target_ignore, JOURNAL_GITIGNORE)
         remember_file(ignore)
         ensure_journal_ignored()
-        if migrate_legacy:
+        if migrate_legacy and legacy is not None:
             note = legacy / MIGRATED_NOTE
             remember_file(note)
             memory_paths._write_text_atomic(note, migrated_note(target))

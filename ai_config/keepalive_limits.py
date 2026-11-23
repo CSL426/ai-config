@@ -19,6 +19,7 @@ import os
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TypeGuard
 
 from . import keepalive_settings
 
@@ -166,7 +167,7 @@ def _limit_dicts(node):
             yield from _limit_dicts(value)
 
 
-def _number(value: object) -> bool:
+def _number(value: object) -> TypeGuard[float]:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
@@ -212,7 +213,9 @@ def remember(home_name: str, windows: dict, now: "datetime | None" = None) -> No
         # 讀不懂就重寫,會把其他帳號的紀錄一起抹掉;寧可這次不記
         raise OSError(f"{path.name} is unreadable; not overwriting it")
     record = read_json(path)
-    earlier = record.get(home_name) if isinstance(record.get(home_name), dict) else {}
+    earlier = record.get(home_name)
+    if not isinstance(earlier, dict):
+        earlier = {}
     # 這次只回報了一個視窗時,另一個視窗先前記下的重置時間還有用
     record[home_name] = {**earlier, **windows, "recorded_at": int(moment.timestamp())}
     write_json(path, record)
@@ -299,7 +302,9 @@ def account_notes(now: "datetime | None" = None) -> dict:
     for home in sorted(set(limits) | set(wakes)):
         parts = []
         record = limits.get(home)
-        weekly = record.get("weekly") if isinstance(record, dict) else None
+        if not isinstance(record, dict):
+            record = {}
+        weekly = record.get("weekly")
         if isinstance(weekly, dict) and _number(weekly.get("used_percent")):
             reset = _stamp(weekly.get("resets_at"))
             recorded = _stamp(record.get("recorded_at"))

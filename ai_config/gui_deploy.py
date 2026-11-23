@@ -10,6 +10,8 @@ import contextlib
 import io
 import re
 import secrets
+import threading
+from typing import TYPE_CHECKING
 
 from . import paths, project_skills
 from .applyplan import StalePreview
@@ -21,6 +23,14 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 class DeployApi:
+    # GuiApi 建立鎖,ManagementApi 提供另外兩個;這裡只宣告給型別檢查器看
+    _lock: threading.Lock
+
+    if TYPE_CHECKING:
+        def _ensure_configured(self) -> None: ...
+
+        def _discard_previews(self) -> None: ...
+
     def _init_deploy(self):
         self._deploy_project = None
 

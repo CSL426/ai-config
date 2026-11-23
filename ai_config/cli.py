@@ -81,7 +81,7 @@ def _parent_is_ours() -> bool:
     import ctypes
     from ctypes import wintypes
 
-    kernel = ctypes.windll.kernel32
+    kernel = ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue]  # Windows-only API
     kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel.OpenProcess.restype = wintypes.HANDLE
     kernel.QueryFullProcessImageNameW.argtypes = [
@@ -245,8 +245,8 @@ def _windows_console(stream) -> bool:
     import msvcrt
     from ctypes import wintypes
 
-    kernel = ctypes.windll.kernel32
+    kernel = ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue]  # Windows-only API
     kernel.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
     kernel.GetConsoleMode.restype = wintypes.BOOL
     mode = wintypes.DWORD()
-    return bool(kernel.GetConsoleMode(msvcrt.get_osfhandle(stream.fileno()), ctypes.byref(mode)))
+    return bool(kernel.GetConsoleMode(msvcrt.get_osfhandle(stream.fileno()), ctypes.byref(mode)))  # pyright: ignore[reportAttributeAccessIssue]  # Windows-only API

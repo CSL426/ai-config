@@ -175,7 +175,7 @@ class _OAuthRedirectHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body_html.encode("utf-8"))
 
-    def log_message(self, format_str: str, *args: Any) -> None:
+    def log_message(self, format: str, *args: Any) -> None:
         # Silence local loopback server HTTP access logs
         pass
 

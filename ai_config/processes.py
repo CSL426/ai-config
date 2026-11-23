@@ -45,7 +45,7 @@ def _kernel32():
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # pyright: ignore[reportAttributeAccessIssue]  # Windows-only API
     kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
@@ -64,7 +64,7 @@ def _windows_alive(pid: int) -> bool:
     handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
         # 別的使用者或提權的行程打不開,但打不開代表它在
-        return ctypes.get_last_error() == _ERROR_ACCESS_DENIED
+        return ctypes.get_last_error() == _ERROR_ACCESS_DENIED  # pyright: ignore[reportAttributeAccessIssue]  # Windows-only API
     try:
         code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
