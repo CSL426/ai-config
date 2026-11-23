@@ -308,7 +308,8 @@ def _is_legacy_journal(legacy: "Path | None") -> bool:
     try:
         return any(child.name != ".gitignore" for child in legacy.iterdir())
     except OSError:
-        return False
+        # 讀不到就當作有東西:照舊走搬移，讓錯誤講出來，不要默默略過資料
+        return True
 
 
 def project_entry(root: Path) -> "Path | None":
@@ -397,11 +398,15 @@ def point_project_entry(root: Path, target: Path) -> list[str]:
     if not links_supported(entry.parent, target):
         lines = [UNSUPPORTED_LINK]
         # 入口建不起來，remember 自己建的 .remember 殼還是會出現在 git status
-        exclude = project_git_exclude(root)
-        if exclude is not None:
-            exclude[0].parent.mkdir(parents=True, exist_ok=True)
-            memory_paths._write_text_atomic(*exclude)
-            lines.append("已寫入專案的 .git/info/exclude,git status 不會列出 .remember")
+        try:
+            exclude = project_git_exclude(root)
+            if exclude is not None:
+                exclude[0].parent.mkdir(parents=True, exist_ok=True)
+                memory_paths._write_text_atomic(*exclude)
+                lines.append("已寫入專案的 .git/info/exclude,git status 不會列出 .remember")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            # 收編本身已經完成;排除規則只是讓 git status 乾淨
+            lines.append(f"沒有寫入 .git/info/exclude:{exc}")
         return lines
     if state == "stale":
         _remove_journal_link(entry, Path(detail))

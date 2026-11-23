@@ -162,6 +162,8 @@ def test_a_shell_reference_is_not_a_credential(line: str) -> None:
     "GitHub token:`" + "abc123`",
     "token: `gh" + "p_" + "aB3" * 10 + "`",
     "token: `ghauth" + "abc123`",
+    "token: `gh auth token` " + "abc123",
+    "token: `$(cat key)`" + "abc123",
 ])
 def test_a_literal_value_is_still_a_credential(line: str) -> None:
     from ai_config.safety import looks_like_secret
