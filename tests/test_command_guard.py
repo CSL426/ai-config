@@ -212,3 +212,75 @@ def test_the_hook_never_reaches_the_database_and_apply_keeps_it(home: Path) -> N
     assert any(
         h["statusMessage"] == hooks.COMMAND_GUARD.marker for row in rows for h in row["hooks"]
     )
+
+
+@pytest.mark.parametrize("command", [
+    "if gh auth switch; then echo ok; fi",
+    "while true; do gh auth switch; done",
+    "! gh auth switch",
+    "2>/dev/null gh auth switch",
+    "2> log gh auth switch",
+    "sudo -u other gh auth switch",
+    "env -i PATH=/bin gh auth switch",
+    "nice -n 5 gh auth switch",
+    "{ gh auth switch; }",
+])
+def test_shell_syntax_in_front_does_not_hide_the_command(tmp_path: Path, command: str) -> None:
+    assert names(command, tmp_path, [GH]) == ["gh-auth-switch"]
+
+
+def test_a_here_string_is_not_a_heredoc(tmp_path: Path) -> None:
+    command = "cat <<< EOF\ngh auth switch\nEOF"
+    assert names(command, tmp_path, [GH]) == ["gh-auth-switch"]
+
+
+def test_a_cd_inside_a_subshell_ends_with_it(tmp_path: Path) -> None:
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "pnpm-lock.yaml").write_text("", encoding="utf-8")
+
+    assert names("(cd web && npm install)", tmp_path, [PNPM]) == ["pnpm-only"]
+    assert names("(cd web) && npm install", tmp_path, [PNPM]) == []
+
+
+def test_a_cd_through_a_variable_keeps_the_directory(tmp_path: Path) -> None:
+    (tmp_path / "pnpm-lock.yaml").write_text("", encoding="utf-8")
+    assert names("cd $SOMEWHERE && npm install", tmp_path, [PNPM]) == ["pnpm-only"]
+
+
+def test_when_file_must_be_a_file_not_a_directory(tmp_path: Path) -> None:
+    (tmp_path / "pnpm-lock.yaml").mkdir()
+    assert names("npm install", tmp_path, [PNPM]) == []
+
+
+@pytest.mark.parametrize("when_file", ["/etc/passwd", "../outside.lock", "a/../../b"])
+def test_when_file_cannot_point_outside(tmp_path: Path, when_file: str) -> None:
+    _write_rules(tmp_path, {"rules": [
+        {"name": "x", "command": "npm", "reason": "r", "when_file": when_file},
+    ]})
+    rules, problems = load_rules(tmp_path)
+    assert rules == []
+    assert "when_file" in problems[0]
+
+
+def test_git_bash_drive_paths_become_windows_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(command_guard.os, "name", "nt")
+    assert command_guard._native("/c/project") == "c:/project"
+    assert command_guard._native("/c") == "c:/"
+    assert command_guard._native("/cache/x") == "/cache/x"
+
+
+def test_a_non_object_tool_input_is_let_through(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {"tool_name": "Bash", "cwd": str(tmp_path), "tool_input": ["gh auth switch"]}
+    assert _run(monkeypatch, tmp_path, payload) == 0
+
+
+def test_a_broken_rule_is_shown_to_the_person(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write_rules(tmp_path, {"rules": [{"name": "bad", "command": "(", "reason": "x"}]})
+    payload = {"tool_name": "Bash", "cwd": str(tmp_path), "tool_input": {"command": "ls"}}
+
+    assert _run(monkeypatch, tmp_path, payload) == 0
+    message = json.loads(capsys.readouterr().out)["systemMessage"]
+    assert "bad" in message

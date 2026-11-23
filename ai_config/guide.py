@@ -567,9 +567,11 @@ machine. Each rule is `{{"name", "command", "reason"}}` plus optional
 repository root, e.g. `pnpm-lock.yaml`) and `"when_running"` (a regex over
 other processes' command lines; never matches on Windows). `command` is a
 regex matched at the start of each simple command, after `VAR=value`,
-`env`, `sudo` and the like, so a commit message or heredoc that only
-mentions a command is not refused. A rule that fails to parse is skipped,
-never blocking. When the user corrects something a command check could have
+redirections, `!`, `if`/`then`/`do`, and wrappers such as `sudo -u x` or
+`env -i`, so a commit message or heredoc that only mentions a command is not
+refused. It catches mistakes, not evasion: `bash -c`, quoted `$(...)` and
+`eval` pass. A rule that fails to parse is skipped, never blocking, and the
+person sees a warning naming it. When the user corrects something a command check could have
 caught, add a rule there rather than another sentence in CLAUDE.md. `memory-entry` and `handoff-reminder` are installed by their own
 features (`memory enable`, `memory handoff remind enable`) and appear here
 for visibility.
