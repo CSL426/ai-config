@@ -19,6 +19,7 @@ COMMANDS = (
     "hooks",
     "msg",
     "autoupdate",
+    "repos",
     "gui",
     "desktop",
     "skill",

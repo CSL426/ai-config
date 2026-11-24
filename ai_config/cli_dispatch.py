@@ -317,6 +317,11 @@ def main(argv: "list[str] | None", usage: "Callable[[], None]") -> int:
 
         return run_autoupdate(args[1:])
 
+    if cmd == "repos":
+        from .commands.repos import run_repos
+
+        return run_repos(args[1:])
+
     if cmd == "ignore-skills":
         if len(args) > 2:
             log_error(f"Usage: {ENTRYPOINT} ignore-skills [tool]")

@@ -1,8 +1,8 @@
 ---
 name: acg
 description: 用 acg 管理跨機器、跨工具(Claude Code、Codex、Antigravity)的 AI 設定、技能、共用記憶與工作線交接。使用者打 /acg 或 /acg <子指令> 時使用;也在使用者說「交接」「收工」「context 快滿了」「要 clear 了」「接手」「接著做」「上次做到哪」「同步設定」「把設定存起來」「分享技能給 Codex」「傳話給 Codex」「昨晚排程有沒有跑成功」時使用。
-argument-hint: '[status|sync|save|share|skills|hooks|memory|keepalive|autoupdate|msg|handoff|handoffs|pickup]'
-allowed-tools: Read(~/.claude/plugins/cache/acg/**), Bash(acg skill sync:*), Bash(ai-config skill sync:*), Bash(acg status:*), Bash(ai-config status:*), Bash(acg pull:*), Bash(ai-config pull:*), Bash(acg push:*), Bash(ai-config push:*), Bash(acg share:*), Bash(ai-config share:*), Bash(acg unshare:*), Bash(ai-config unshare:*), Bash(acg hooks list), Bash(ai-config hooks list), Bash(acg memory status), Bash(ai-config memory status), Bash(acg memory handoff:*), Bash(ai-config memory handoff:*), Bash(acg keepalive status), Bash(ai-config keepalive status), Bash(acg autoupdate status), Bash(ai-config autoupdate status), Bash(acg memory autopush status), Bash(ai-config memory autopush status), Bash(acg msg list), Bash(ai-config msg list), Bash(acg skill), Bash(ai-config skill)
+argument-hint: '[status|sync|save|share|skills|hooks|memory|keepalive|autoupdate|repos|msg|handoff|handoffs|pickup]'
+allowed-tools: Read(~/.claude/plugins/cache/acg/**), Bash(acg skill sync:*), Bash(ai-config skill sync:*), Bash(acg status:*), Bash(ai-config status:*), Bash(acg pull:*), Bash(ai-config pull:*), Bash(acg push:*), Bash(ai-config push:*), Bash(acg share:*), Bash(ai-config share:*), Bash(acg unshare:*), Bash(ai-config unshare:*), Bash(acg hooks list), Bash(ai-config hooks list), Bash(acg memory status), Bash(ai-config memory status), Bash(acg memory handoff:*), Bash(ai-config memory handoff:*), Bash(acg keepalive status), Bash(ai-config keepalive status), Bash(acg autoupdate status), Bash(ai-config autoupdate status), Bash(acg memory autopush status), Bash(ai-config memory autopush status), Bash(acg repos list), Bash(ai-config repos list), Bash(acg msg list), Bash(ai-config msg list), Bash(acg skill), Bash(ai-config skill)
 ---
 
 # acg
@@ -27,6 +27,7 @@ acg 是跨機器、跨工具的 AI 設定管理 CLI。私人資料庫是設定�
 | `memory` | `../memory/SKILL.md` | 看共用記憶的狀態 |
 | `keepalive` | `../keepalive/SKILL.md` | 查用量視窗錨定設定 |
 | `autoupdate` | `../autoupdate/SKILL.md` | 查每晚排程:自動更新與記憶上傳的設定與昨晚結果 |
+| `repos` | `../repos/SKILL.md` | 這台每晚同步哪些 git repo(例如知識庫)、上次結果、加入或移除 |
 | `msg` | `../msg/SKILL.md` | 傳話給 Codex 等其他正在跑的 session,或列出誰在線上 |
 | `handoff` | `../handoff/SKILL.md` | 把這條工作線交接給下一個 session,或管理 context 提醒 |
 | `handoffs` | `../handoffs/SKILL.md` | 列出這個專案還沒被接手的工作線 |

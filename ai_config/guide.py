@@ -41,6 +41,7 @@ project, status, pull, push, and sync.
 | `list` | managed tools, file counts, backup snapshot count |
 | `keepalive <status\\|enable [HH:MM ...]\\|disable\\|send> [tool]` | anchor this machine's usage window for claude, codex or agy; off by default, settings stay local |
 | `autoupdate <status\\|enable [hour]\\|disable\\|run>` | update acg, Claude Code, Codex, Antigravity and herdr nightly, before the memory push; off by default |
+| `repos <list\\|add <path>\\|remove <path>\\|sync [path]>` | git repos this machine commits, rebases and pushes every night on the nightly schedule; the list is per machine |
 | `package [skill]` | zip a shared skill for Claude Desktop upload |
 | `gui [--shortcut\\|--browser\\|--port <n>]` | open the desktop app: a window on Windows, the same page in the browser on Linux and macOS or without a display; `--port` only prints the URL, for `ssh -L`; `--shortcut` puts acg on the desktop and in the app menu (Windows, Linux; the Windows installer does it on first install) |
 | `setup` | configure the data repo remote and verify push access |
@@ -347,6 +348,42 @@ needs a person, such as a codex installed through npm that cannot update
 itself, is marked ⚠ and reported the same way, without failing the nightly
 run. A run where everything succeeds without a warning clears it.
 
+## Keeping other git repositories in step
+
+`{entrypoint} repos add <path>` puts a git repository (a knowledge base, notes)
+on this machine's list and turns on the repos half of the same nightly
+schedule; `repos remove <path>` takes it off, and removing the last one turns
+that half off. Each machine keeps its own list in local state; nothing about it
+reaches the data repository or the other machines. The repository's current
+branch must track a remote. acg's data repository and the shared-memory
+notebook are refused, because `push` already syncs those with its review.
+
+Each night, after the update and the memory push, every listed repository is
+synced in turn: uncommitted changes (tracked and untracked, honouring
+`.gitignore`) are committed as `chore: acg repos sync (<host>)` with the
+repository's own git identity and its own commit hooks, the branch is rebased
+onto the fetched remote (merges kept, never autostash), and the result is
+pushed back to the branch it tracks; a push
+rejected because another machine pushed in between is retried once. Commits
+already made by hand and not yet pushed go along unscanned: adding a
+repository means agreeing that its branch is pushed. `repos sync [path]` does the same now, for all or one.
+
+A repository stops, untouched, and is reported instead when: the rebase
+conflicts (the rebase is aborted, so the local commit stays and nothing is
+lost; pull and resolve by hand), a file to be committed has an added line
+that looks like a credential, binary and UTF-16 files searched whole (nothing
+is committed and the index is left as it was; commit it yourself after
+checking, or move it out or into `.gitignore`), an untracked clone sits
+inside it and would become a broken submodule, a rebase, merge or cherry-pick
+is in progress or conflicts are unresolved (a `stash pop` leaves no other
+trace), an `index.lock` exists, HEAD is detached or has no
+upstream, the branch pushes somewhere other than the remote it tracks (a fork
+workflow) or tracks a branch of another name, or the push still fails. It
+never forces a push and never resolves
+a conflict. One stopped repository does not stop the others. `repos list`
+shows each one's last outcome, and a new Claude session is told at start
+about any that stopped, until a `repos sync` of it succeeds.
+
 The nightly run's full output is in the systemd journal on Linux
 (`journalctl --user -u acg-autopush.service`) and in `nightly.log` in acg's
 local state directory (`~/.local/state/acg/`) on Windows and macOS. Windows
@@ -364,7 +401,7 @@ acg pins the marketplace to its own release tag (`CSL426/ai-config#v<version>`),
 so /acg changes only when `acg update` does; Claude Code's own marketplace
 refresh cannot move it ahead of the CLI.
 Each subcommand is its own entry in the / menu, `/acg:status`, `/acg:sync`,
-`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:autoupdate`, `/acg:msg`,
+`/acg:save`, `/acg:share`, `/acg:memory`, `/acg:keepalive`, `/acg:autoupdate`, `/acg:repos`, `/acg:msg`,
 `/acg:handoff`, `/acg:handoffs`, `/acg:pickup`; those are user-only, so they
 cost no context until picked. The `acg` skill reads the same files: type
 `/acg <subcommand>`, or just say "交接" or "接著做" and it fires on its own. It wraps the CLI below

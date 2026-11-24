@@ -26,6 +26,7 @@ agent,所以只要有 herdr session 在跑就不更新;這時若真的有新版,
 `herdr update`。用 Homebrew、mise、Nix 裝的 herdr 交給那些套件管理員。每台機器各自設定,只影響這台。
 
 兩個開關互相獨立:開自動更新不會順便開自動上傳,反之亦然;只要有一個開著,排程就在。
+同一個排程最後還會同步 `acg repos add` 登記的 git repo,那部分的結果用 `/acg:repos` 查。
 改時間用 `acg memory autopush enable <時>` 或桌面程式的「每晚排程的時間」,兩者一起移動。
 
 用 npm 全域安裝的 Codex 不會自動更新,因為那個目錄通常要 sudo。status 會列出這種情況,
