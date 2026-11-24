@@ -254,11 +254,27 @@ def _announce_failed_autoupdate(value: dict) -> None:
     )
 
 
+def _announce_failed_repos(value: dict) -> None:
+    """A repo the nightly sync stopped on stays stopped until someone looks."""
+    if value.get("hook_event_name") != "SessionStart":
+        return
+    from .repos import failures
+
+    failed = failures()
+    if not failed:
+        return
+    names = ";".join(f"{repo}:{result.get('note', '')}" for repo, result in failed[:3])
+    print(
+        f"acg:每晚 repo 同步有 {len(failed)} 個停下來了:{names}。"
+        "請告訴使用者;處理後執行 acg repos sync <路徑>,成功就會清掉這筆紀錄。"
+    )
+
+
 def run(args: list[str]) -> int:
     """Hook entry point: no transcript reads or provider updates.
 
-    It prints only to report a failed nightly memory push or tool update
-    at session start.
+    It prints only to report a failed nightly memory push, tool update or
+    repo sync at session start.
     """
     from .locking import apply_lock
 
@@ -274,6 +290,7 @@ def run(args: list[str]) -> int:
         _announce_failed_autopush(value)
         _announce_held_notes(value)
         _announce_failed_autoupdate(value)
+        _announce_failed_repos(value)
         root = Path(value["cwd"])
         if not root.is_absolute() or not root.is_dir():
             return 0

@@ -362,6 +362,7 @@ def test_plugin_skills_are_named_and_do_not_shadow_a_command() -> None:
         (["memory", "autopush", "--help"], "memory autopush [status"),
         (["msg", "--help"], "msg list | setup"),
         (["autoupdate", "--help"], "autoupdate [status"),
+        (["repos", "--help"], "repos [list"),
         (["update", "--help"], "update [version]"),
     ],
 )

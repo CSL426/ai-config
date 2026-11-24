@@ -18,9 +18,10 @@ import subprocess
 
 from . import autopush, paths
 
-FEATURES = ("autopush", "autoupdate")
-_LABELS = {"autopush": "每天自動上傳記憶", "autoupdate": "每天自動更新"}
+FEATURES = ("autopush", "autoupdate", "repos")
+_LABELS = {"autopush": "每天自動上傳記憶", "autoupdate": "每天自動更新", "repos": "每晚同步 git repo"}
 _PUSH_TIMEOUT = 900
+_REPOS_TIMEOUT = 1800
 
 
 def _settings_path():
@@ -89,6 +90,9 @@ def run(stale_hours: float) -> int:
         code = autoupdate.run()
     if enabled("autopush"):
         code = max(code, _push_with_installed_acg(stale_hours))
+    if enabled("repos"):
+        # 放最後:遠端卡住也拖不到記憶上傳
+        code = max(code, _run_installed(["repos", "sync"], _REPOS_TIMEOUT, "repo 同步"))
     return code
 
 
@@ -98,17 +102,23 @@ def _push_with_installed_acg(stale_hours: float) -> int:
     Pushing in this process would use the version that started the night,
     and the point of running after the update is not to.
     """
+    return _run_installed(
+        ["memory", "push", "--if-stale", f"{stale_hours:g}"], _PUSH_TIMEOUT, "記憶上傳",
+    )
+
+
+def _run_installed(args: list, timeout: int, label: str) -> int:
     try:
         done = subprocess.run(
-            [*paths.scheduled_command(), "memory", "push", "--if-stale", f"{stale_hours:g}"],
-            check=False, stdin=subprocess.DEVNULL, timeout=_PUSH_TIMEOUT,
+            [*paths.scheduled_command(), *args],
+            check=False, stdin=subprocess.DEVNULL, timeout=timeout,
             env={**os.environ, "AI_CONFIG_NO_UPDATE_CHECK": "1"},
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
-        print(f"✗ 記憶上傳 {_PUSH_TIMEOUT // 60} 分鐘內沒有結束", flush=True)
+        print(f"✗ {label} {timeout // 60} 分鐘內沒有結束", flush=True)
         return 1
     except OSError as exc:
-        print(f"✗ 無法啟動記憶上傳:{exc}", flush=True)
+        print(f"✗ 無法啟動{label}:{exc}", flush=True)
         return 1
     return done.returncode
