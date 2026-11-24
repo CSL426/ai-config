@@ -63,6 +63,25 @@ _KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "{"}
 _HEREDOC_START = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
+# Claude Code 的子代理工具，舊版叫 Task
+AGENT_TOOLS = ("Agent", "Task")
+
+
+@dataclass(frozen=True)
+class AgentRule:
+    """A subagent whose description matches must run on one of these models.
+
+    A fork inherits the parent's model and takes no `model`, so listed
+    subagent types are let through.
+    """
+
+    name: str
+    description: re.Pattern
+    require_model: tuple[str, ...]
+    reason: str
+    allow_subagent_types: tuple[str, ...] = ("fork",)
+
+
 @dataclass(frozen=True)
 class Rule:
     name: str
@@ -97,6 +116,66 @@ def load_rules(data_dir: Path) -> "tuple[list[Rule], list[str]]":
         except (TypeError, ValueError, re.error) as exc:
             problems.append(f"規則 {label} 略過:{exc}")
     return rules, problems
+
+
+def load_agent_rules(data_dir: Path) -> "tuple[list[AgentRule], list[str]]":
+    """The usable `agent_rules`, and why each unusable one was skipped."""
+    path = data_dir / RULES_FILE
+    try:
+        document = json.loads(path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return [], []
+    except (OSError, ValueError) as exc:
+        return [], [f"{path} 讀不了:{exc}"]
+    entries = document.get("agent_rules", []) if isinstance(document, dict) else []
+    if not isinstance(entries, list):
+        return [], [f"{path} 的 agent_rules 不是陣列"]
+    rules, problems = [], []
+    for index, entry in enumerate(entries):
+        label = entry.get("name") if isinstance(entry, dict) else None
+        label = label if isinstance(label, str) and label else f"#{index + 1}"
+        try:
+            rules.append(_agent_rule(entry, label))
+        except (TypeError, ValueError, re.error) as exc:
+            problems.append(f"規則 {label} 略過:{exc}")
+    return rules, problems
+
+
+def _strings(value: object, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        raise TypeError(f"{field} 要是字串陣列")
+    return tuple(value)
+
+
+def _agent_rule(entry: object, label: str) -> AgentRule:
+    if not isinstance(entry, dict):
+        raise TypeError("不是物件")
+    description, reason = entry.get("description"), entry.get("reason")
+    if not isinstance(description, str) or not description:
+        raise ValueError("缺 description")
+    if not isinstance(reason, str) or not reason:
+        raise ValueError("缺 reason")
+    models = _strings(entry.get("require_model"), "require_model")
+    allowed = _strings(entry.get("allow_subagent_types", ["fork"]), "allow_subagent_types")
+    return AgentRule(
+        name=label, description=re.compile(description, re.IGNORECASE),
+        require_model=models, reason=reason, allow_subagent_types=allowed,
+    )
+
+
+def agent_violations(tool_input: dict, rules: list[AgentRule]) -> list[AgentRule]:
+    """Rules a subagent launch breaks: its description matches but its model does not."""
+    description = tool_input.get("description")
+    if not isinstance(description, str):
+        return []
+    model = tool_input.get("model")
+    subagent_type = tool_input.get("subagent_type")
+    return [
+        rule for rule in rules
+        if rule.description.search(description)
+        and subagent_type not in rule.allow_subagent_types
+        and model not in rule.require_model
+    ]
 
 
 def _rule(entry: object, label: str) -> Rule:
@@ -326,7 +405,11 @@ def _run_hook(args: list[str]) -> int:
         payload = json.loads(sys.stdin.read(MAX_INPUT))
     except (ValueError, OSError):
         return 0
-    if not isinstance(payload, dict) or payload.get("tool_name") != "Bash":
+    if not isinstance(payload, dict):
+        return 0
+    if payload.get("tool_name") in AGENT_TOOLS:
+        return _check_agent(payload, Path(args[0]))
+    if payload.get("tool_name") != "Bash":
         return 0
     tool_input = payload.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
@@ -342,4 +425,25 @@ def _run_hook(args: list[str]) -> int:
         print(f"這個指令被 command-guard 的規則「{rule.name}」擋下:{text}", file=sys.stderr)
         print(f"  {rule.reason}", file=sys.stderr)
     print("\n請改用規則說的做法,不要繞過這個檢查。", file=sys.stderr)
+    return 2
+
+
+def _check_agent(payload: dict, data_dir: Path) -> int:
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return 0
+    rules, problems = load_agent_rules(data_dir)
+    found = agent_violations(tool_input, rules)
+    if not found:
+        _warn(problems)
+        return 0
+    for rule in found:
+        wanted = " 或 ".join(rule.require_model)
+        print(
+            f"這個子代理被 command-guard 的規則「{rule.name}」擋下:"
+            f"{tool_input.get('description')}(model 要指定 {wanted})",
+            file=sys.stderr,
+        )
+        print(f"  {rule.reason}", file=sys.stderr)
+    print("\n請加上 model 參數重新派出，不要改寫描述來繞過這個檢查。", file=sys.stderr)
     return 2

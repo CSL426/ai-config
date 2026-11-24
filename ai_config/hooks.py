@@ -83,9 +83,10 @@ COMMAND_GUARD = register(Hook(
     marker=f"{PREFIX}指令禁用規則",
     events=("PreToolUse",),
     command="__command-guard",
-    matcher="Bash",
+    # Agent(舊版 Task):審查這類子代理要指定的 model 也由同一份規則檔檢查
+    matcher="Bash|Agent|Task",
     timeout=10,
-    summary="Bash 指令開頭符合資料庫 claude/command-guard.json 的規則就擋下並說明",
+    summary="Bash 指令或子代理違反資料庫 claude/command-guard.json 的規則就擋下並說明",
     # 規則放在資料庫裡跟著同步;hook 只認這台的資料庫路徑
     dynamic_args=lambda: (str(memory_paths.SCRIPT_DIR),),
 ))
@@ -322,6 +323,9 @@ def refresh_detail() -> dict[str, set[str]]:
                         part for part in ("command", "args")
                         if entry.get(part) != wanted[part]
                     }
+                    # 新版改了 matcher(例如多檢查一種工具)時，舊的那列要跟著換
+                    if hook.matcher and row.get("matcher") != hook.matcher:
+                        parts.add("matcher")
                     if parts:
                         stale.setdefault(hook.name, set()).update(parts)
     for name in stale:
@@ -334,6 +338,7 @@ _REFRESH_MESSAGES = {
     frozenset({"args"}): "已補回 hook 的參數",
     frozenset({"command", "args"}): "已更新 hook 的執行檔與參數",
 }
+_REFRESH_PARTS = {"command": "執行檔", "args": "參數", "matcher": "適用的工具"}
 
 
 def _refresh_credential_binding() -> None:
@@ -372,7 +377,10 @@ def refresh_all() -> None:
     for name, parts in changed.items():
         grouped.setdefault(frozenset(parts), []).append(name)
     for parts, names in grouped.items():
-        log_info(f"{_REFRESH_MESSAGES[parts]}:{', '.join(names)}")
+        message = _REFRESH_MESSAGES.get(parts) or "已更新 hook 的" + "與".join(
+            _REFRESH_PARTS[part] for part in _REFRESH_PARTS if part in parts
+        )
+        log_info(f"{message}:{', '.join(names)}")
 
 
 def _refresh_shell_block() -> None:
