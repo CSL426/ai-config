@@ -336,7 +336,9 @@ def project_entry_state(root: Path, expected: Path) -> tuple[str, str]:
             return "ok", ""
         # 指向本機日誌或共用日誌的另一邊:是 acg 自己建的,可以改指
         ours = (journal_link(root), project_journal_dir(memory_paths.project_key(root)))
-        if any(_path_identity(current, candidate) for candidate in ours):
+        if any(_path_identity(current, candidate) for candidate in ours) or _other_key_journal(
+            current, expected,
+        ):
             return "stale", str(current)
         return "foreign", str(current)
     if entry.exists():
@@ -425,6 +427,23 @@ def point_project_entry(root: Path, target: Path) -> list[str]:
     return lines
 
 
+def _other_key_journal(current: Path, target: Path) -> bool:
+    """``current`` is another key's journal inside this notebook's projects/.
+
+    A project's key comes from its git remote when it has one, and from its
+    directory name otherwise; adding a remote later changes the key, and
+    the journal acg linked under the old name is then still ours to move.
+    """
+    if _path_identity(current, target):
+        return False
+    # 跟 preflight 同一種比法:Windows 的 junction 目標可能帶 \\?\ 前綴或不同大小寫,
+    # 字串比對 relative_to 會失敗;改比「名稱是 journal、上兩層就是 projects/」
+    projects = memory_paths.memory_dir() / memory_paths.PROJECTS_NAME
+    return current.name.casefold() == memory_paths.JOURNAL_DIR_NAME and _path_identity(
+        current.parent.parent, projects,
+    )
+
+
 def journal_state(root: Path) -> tuple[str, str]:
     """adopted / local / legacy / none / foreign for one project."""
     link = journal_link(root)
@@ -437,6 +456,9 @@ def journal_state(root: Path) -> tuple[str, str]:
             return "foreign", str(exc)
         if _path_identity(current, target):
             return "adopted", str(target)
+        # 鍵值變了(後來才加 git 遠端):連結還指著舊鍵值的日誌,要搬到新的
+        if key.stable and _other_key_journal(current, target):
+            return "rekey", str(current)
         return "foreign", str(current)
     if link.is_dir():
         return "local", str(link)
@@ -459,6 +481,8 @@ def adopt_journal(root: Path, *, old_journals: bool = True) -> list[str]:
     if state == "adopted":
         # 已收編過:只補專案內的 .remember 入口(舊版搬完只留一張通知)
         return point_project_entry(root, target)
+    if state == "rekey":
+        return rekey_journal(root, Path(detail), target)
     if state == "foreign":
         raise RuntimeError(f"日誌連結已指向別處:{detail}")
     link = journal_link(root)
@@ -548,6 +572,50 @@ def adopt_journal(root: Path, *, old_journals: bool = True) -> list[str]:
         memory_paths.WRITE_OBSERVER.reset(observer_token)
     lines.append(f"連結 {link.name} -> {target}")
     # 收編已完成;專案入口是給人看的,建不起來只回報,不撤銷收編
+    try:
+        lines.extend(point_project_entry(root, target))
+    except (OSError, RuntimeError) as exc:
+        lines.append(f"專案的 .remember 入口未建立:{exc}")
+    return lines
+
+
+def rekey_journal(root: Path, old: Path, target: Path) -> list[str]:
+    """Move a journal filed under the project's old key to its current one.
+
+    Another machine may have moved it already and pulled the result, in
+    which case the old journal is gone and only the link is repointed.
+    """
+    link = journal_link(root)
+    _check_journal_tree(target)
+    lines: list[str] = []
+    if old.is_dir():
+        _check_journal_tree(old)
+        moved = _move_contents(old, target)
+        lines.append(f"從舊鍵值 {old.parent.name} 搬入 {moved} 項日誌")
+        leftover = [p for p in old.iterdir() if p.name not in (".gitignore", MIGRATED_NOTE)]
+        if not leftover:
+            for name in (".gitignore", MIGRATED_NOTE):
+                (old / name).unlink(missing_ok=True)
+            old.rmdir()
+        # 專案層的其他筆記(MEMORY.md、topics/)跟著搬;新位置已有同名的就留著讓人合併
+        project_old = old.parent
+        for child in sorted(project_old.iterdir()):
+            memory_paths.assert_plain_path(child)
+            destination = target.parent / child.name
+            if destination.exists() or destination.is_symlink():
+                lines.append(f"舊鍵值還留有 {child.name}(新位置已有同名),請手動合併:{child}")
+                continue
+            shutil.move(str(child), str(destination))
+        with contextlib.suppress(OSError):
+            project_old.rmdir()
+    else:
+        target.mkdir(parents=True, exist_ok=True)
+    target_ignore = target / ".gitignore"
+    if not target_ignore.exists():
+        memory_paths._write_text_atomic(target_ignore, JOURNAL_GITIGNORE)
+    _remove_journal_link(link, old)
+    _create_journal_link(target, link)
+    lines.append(f"連結 {link.name} -> {target}")
     try:
         lines.extend(point_project_entry(root, target))
     except (OSError, RuntimeError) as exc:

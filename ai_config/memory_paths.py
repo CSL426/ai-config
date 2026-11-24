@@ -241,6 +241,10 @@ def preflight_memory() -> None:
                 ):
                     raise RuntimeError(f"Unexpected journal link: {path}")
                 assert_plain_path(target, directory=True)
+                if not target.exists() and not target.is_symlink():
+                    # 指向自己筆記本 projects/ 底下、但已經不在的日誌:別台改了專案鍵值
+                    # 並把日誌搬走,pull 下來就是這樣。adopt 會改指，不該擋住所有記憶操作
+                    continue
                 if not target.is_dir():
                     raise RuntimeError(f"Broken journal link: {path}")
             else:

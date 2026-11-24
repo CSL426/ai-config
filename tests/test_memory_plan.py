@@ -675,3 +675,78 @@ def test_home_and_the_data_repo_are_never_offered_as_projects(journal_project, m
 
     assert memory_paths.HOME not in found
     assert memory_paths.SCRIPT_DIR not in found
+
+
+def _filed_under_old_key(project: Path) -> Path:
+    """The state acg left when the project had no remote: keyed by its folder name."""
+    old = memory_paths.memory_dir() / memory_paths.PROJECTS_NAME / "old-name" / "journal"
+    old.mkdir(parents=True)
+    (old / "recent.md").write_text("July notes", encoding="utf-8")
+    (old / ".gitignore").write_text(memory_journal.JOURNAL_GITIGNORE, encoding="utf-8")
+    (old.parent / "MEMORY.md").write_text("- project note", encoding="utf-8")
+    symlink(memory_journal.journal_link(project), old, directory=True)
+    symlink(project / ".remember", old, directory=True)
+    return old
+
+
+def test_a_journal_under_the_old_key_moves_when_a_remote_appears(journal_project, monkeypatch, capsys):
+    """2026-11-23: mynig kept its journal under its folder name after it got a remote.
+
+    The key follows the remote once there is one; the folder name never had
+    to match the repository, so acg moves the journal instead of reporting
+    the link as pointing elsewhere forever.
+    """
+    old = _filed_under_old_key(journal_project)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root=None: memory_paths.ProjectKey("owner--repo", True, "remote"),
+    )
+    assert memory_journal.journal_state(journal_project)[0] == "rekey"
+
+    assert command.run_memory(["adopt", str(journal_project)]) == 0
+
+    target = memory_journal.project_journal_dir(memory_paths.project_key(journal_project))
+    assert (target / "recent.md").read_text(encoding="utf-8") == "July notes"
+    assert (target.parent / "MEMORY.md").read_text(encoding="utf-8") == "- project note"
+    assert not old.parent.exists()
+    assert memory_journal.journal_state(journal_project)[0] == "adopted"
+    assert memory_journal.project_entry_state(journal_project, target)[0] == "ok"
+    assert "從舊鍵值 old-name" in capsys.readouterr().out
+
+
+def test_another_machine_already_moved_it(journal_project, monkeypatch):
+    """After a pull the old journal is gone; only the link needs repointing."""
+    old = _filed_under_old_key(journal_project)
+    import shutil
+
+    shutil.rmtree(old.parent)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root=None: memory_paths.ProjectKey("owner--repo", True, "remote"),
+    )
+
+    assert command.run_memory(["adopt", str(journal_project)]) == 0
+    assert memory_journal.journal_state(journal_project)[0] == "adopted"
+
+
+def test_without_a_remote_an_old_key_link_is_still_foreign(journal_project, monkeypatch):
+    """A folder-name key is not reliable enough to move someone's journal on."""
+    _filed_under_old_key(journal_project)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root=None: memory_paths.ProjectKey("new-folder-name", False, "toplevel"),
+    )
+
+    assert memory_journal.journal_state(journal_project)[0] == "foreign"
+
+
+def test_a_link_outside_the_notebook_stays_foreign(journal_project, tmp_path, monkeypatch):
+    elsewhere = tmp_path / "someone-else" / "journal"
+    elsewhere.mkdir(parents=True)
+    symlink(memory_journal.journal_link(journal_project), elsewhere, directory=True)
+    monkeypatch.setattr(
+        memory_paths, "project_key",
+        lambda root=None: memory_paths.ProjectKey("owner--repo", True, "remote"),
+    )
+
+    assert memory_journal.journal_state(journal_project)[0] == "foreign"

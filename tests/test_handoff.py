@@ -672,7 +672,7 @@ def test_a_session_picks_up_its_own_thread_without_being_told(
     """
     named("session-one", "acg")
     handoff.write("排程", "我的")
-    named("session-x", "Vman0914", pid=200)
+    named("session-x", "other-session", pid=200)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-x")
     handoff.write("別人的", "不是我的")
 

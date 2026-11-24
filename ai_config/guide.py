@@ -694,7 +694,13 @@ Google Drive G:) through the working directory Claude Code's transcripts
 recorded for that journal. On a disk that cannot hold a directory link,
 adopt still moves the journal into the notebook and only skips the
 `<project>/.remember` entry, saying so; the per-session entry repair then
-leaves that project alone instead of reporting it on every prompt. The scan
+leaves that project alone instead of reporting it on every prompt.
+A project's key comes from its git remote, or its folder name when it has
+none, so adding a remote later changes the key. A journal still filed
+under the old name is moved to the new one (with the project's other
+notes) by `adopt` and the nightly run, and its links repointed; a machine
+that pulls after another already moved it only repoints. Without a remote
+nothing is moved, since a folder name is not reliable enough. The scan
 leaves the home directory and the data repository out: neither is a
 project, and adopting the repository would nest the notebook in its own
 journal. The nightly memory push (autopush) adopts these projects by itself

@@ -139,6 +139,11 @@ def _report_journal(state: str, detail: str) -> None:
         log_info(
             f"這個專案的日誌還在 {tilde(Path(detail))}({ENTRYPOINT} memory adopt 可同步)"
         )
+    elif state == "rekey":
+        log_info(
+            f"這個專案的鍵值變了(加了 git 遠端),日誌還在舊鍵值 {tilde(Path(detail))};"
+            f"{ENTRYPOINT} memory adopt 會搬過去,每晚的排程也會"
+        )
     elif state == "foreign":
         log_warn(f"這個專案的日誌連結指向別處:{detail}")
 
