@@ -436,16 +436,12 @@ def _other_key_journal(current: Path, target: Path) -> bool:
     """
     if _path_identity(current, target):
         return False
+    # 跟 preflight 同一種比法:Windows 的 junction 目標可能帶 \\?\ 前綴或不同大小寫,
+    # 字串比對 relative_to 會失敗;改比「名稱是 journal、上兩層就是 projects/」
     projects = memory_paths.memory_dir() / memory_paths.PROJECTS_NAME
-    candidate = Path(os.path.normpath(current))
-    for base in {Path(os.path.normpath(projects)), Path(os.path.realpath(projects))}:
-        try:
-            parts = candidate.relative_to(base).parts
-        except ValueError:
-            continue
-        if len(parts) == 2 and parts[1] == memory_paths.JOURNAL_DIR_NAME:
-            return True
-    return False
+    return current.name.casefold() == memory_paths.JOURNAL_DIR_NAME and _path_identity(
+        current.parent.parent, projects,
+    )
 
 
 def journal_state(root: Path) -> tuple[str, str]:
