@@ -574,7 +574,13 @@ redirections, `!`, `if`/`then`/`do`, and wrappers such as `sudo -u x` or
 `env -i`, so a commit message or heredoc that only mentions a command is not
 refused. It catches mistakes, not evasion: `bash -c`, quoted `$(...)` and
 `eval` pass. A rule that fails to parse is skipped, never blocking, and the
-person sees a warning naming it. When the user corrects something a command check could have
+person sees a warning naming it. The same file's `"agent_rules"` check
+subagent launches (the Agent tool, `Task` in older versions): each is
+`{{"name", "description", "require_model", "reason"}}`, where
+`description` is a case-insensitive regex over the launch's description
+and `require_model` lists the models it must name, e.g. reviews on `opus`
+when the default subagent model is cheaper. `allow_subagent_types`
+(default `["fork"]`) lets through types that take no model. When the user corrects something a command check could have
 caught, add a rule there rather than another sentence in CLAUDE.md. `memory-entry` and `handoff-reminder` are installed by their own
 features (`memory enable`, `memory handoff remind enable`) and appear here
 for visibility.

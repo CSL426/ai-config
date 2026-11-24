@@ -196,7 +196,7 @@ def test_the_installed_hook_names_this_machines_database(home: Path) -> None:
     document = json.loads((home / "settings.json").read_text(encoding="utf-8"))
     entry = document["hooks"]["PreToolUse"][0]
 
-    assert entry["matcher"] == "Bash"
+    assert entry["matcher"] == "Bash|Agent|Task"
     assert entry["hooks"][0]["args"][-2:] == ["__command-guard", str(memory_paths.SCRIPT_DIR)]
 
 
@@ -368,3 +368,59 @@ def test_a_strange_path_never_crashes_the_hook(
     payload = {"tool_name": "Bash", "cwd": str(pnpm_project), "tool_input": {"command": command}}
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
     assert command_guard.run_hook([str(pnpm_project)]) in (0, 2)
+
+
+REVIEW = {
+    "name": "review-on-opus",
+    "description": "審查|review|audit",
+    "require_model": ["opus"],
+    "reason": "審查要用最強的模型",
+}
+
+
+@pytest.mark.parametrize(("tool_input", "blocked"), [
+    ({"description": "Zero-context review of journal fix", "prompt": "x"}, True),
+    ({"description": "零脈絡審查 command-guard", "model": "sonnet"}, True),
+    ({"description": "Review the diff", "model": "opus"}, False),
+    ({"description": "Review via fork", "subagent_type": "fork"}, False),
+    ({"description": "Fix remaining ruff violations", "prompt": "then review it"}, False),
+    ({"prompt": "review"}, False),
+])
+def test_a_review_subagent_must_name_its_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tool_input: dict, blocked: bool,
+) -> None:
+    """2026-11-23: a review subagent ran on the default Sonnet and deleted real journal links."""
+    _write_rules(tmp_path, {"rules": [], "agent_rules": [REVIEW]})
+    payload = {"tool_name": "Agent", "cwd": str(tmp_path), "tool_input": tool_input}
+
+    assert _run(monkeypatch, tmp_path, payload) == (2 if blocked else 0)
+
+
+def test_the_old_task_tool_name_is_checked_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write_rules(tmp_path, {"rules": [], "agent_rules": [REVIEW]})
+    payload = {"tool_name": "Task", "cwd": str(tmp_path), "tool_input": {"description": "code review"}}
+
+    assert _run(monkeypatch, tmp_path, payload) == 2
+
+
+def test_a_broken_agent_rule_never_blocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    bad = {"name": "bad", "description": "(", "require_model": ["opus"], "reason": "r"}
+    _write_rules(tmp_path, {"agent_rules": [bad]})
+    payload = {"tool_name": "Agent", "cwd": str(tmp_path), "tool_input": {"description": "review"}}
+
+    assert _run(monkeypatch, tmp_path, payload) == 0
+    assert "bad" in json.loads(capsys.readouterr().out)["systemMessage"]
+
+
+def test_an_installed_hook_with_the_old_matcher_is_refreshed(home: Path) -> None:
+    hooks.configure(hooks.COMMAND_GUARD, True)
+    settings = home / "settings.json"
+    document = json.loads(settings.read_text(encoding="utf-8"))
+    document["hooks"]["PreToolUse"][0]["matcher"] = "Bash"
+    settings.write_text(json.dumps(document), encoding="utf-8")
+
+    assert hooks.refresh_detail() == {"command-guard": {"matcher"}}
+    rows = json.loads(settings.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+    assert [row["matcher"] for row in rows] == ["Bash|Agent|Task"]
