@@ -224,6 +224,14 @@ def _journal(result: MemoryPlan) -> None:
         # 已收編:只剩專案內的 .remember 入口可能要補
         _entry_changes(result, root, target)
         return
+    if state == "rekey":
+        old = Path(detail)
+        result.change(
+            "move", target, f"專案鍵值變了:從舊鍵值 {old.parent.name} 搬到新的", source=old,
+        )
+        result.change("link", link, "日誌連結改指向新鍵值", source=target, target=target)
+        _entry_changes(result, root, target)
+        return
     memory_journal._check_journal_tree(link)
     migrate = result.old_journals and memory_journal._is_legacy_journal(legacy)
     if migrate and legacy is not None:

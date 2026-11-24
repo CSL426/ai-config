@@ -131,7 +131,7 @@ def _push_preflight(selected: list[str]) -> "_PushPreflight | None":
             path.startswith(f"{MEMORY_SCOPE}/") for path in outside
         ):
             # 記憶一直在變(remember 外掛、日誌),由 memory push 和排程負責;拿它擋
-            # push claude,agent 就得先推記憶、再被記憶的確認卡住(2026-11-13 CAO4ENQ)
+            # push claude,agent 就得先推記憶、再被記憶的確認卡住(2026-11-13 一台 Windows)
             log_info(f"記憶有 {len(outside)} 個未提交的改動,留給 memory push,這次不動它")
             outside = []
         if outside and selected == [MEMORY_SCOPE]:

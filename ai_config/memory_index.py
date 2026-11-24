@@ -290,7 +290,7 @@ def unadopted_below(root: Path, depth: int = 4) -> list:
     """The projects a scan would still have something to do for."""
     return [
         project for project in journals_below(root, depth)
-        if memory_journal.journal_state(project)[0] in {"local", "legacy"}
+        if memory_journal.journal_state(project)[0] in {"local", "legacy", "rekey"}
     ]
 
 

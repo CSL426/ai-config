@@ -288,7 +288,7 @@ def run(args: list[str]) -> int:
             lock.__enter__()
         except TimeoutError:
             # 別的 acg 正拿著鎖(apply、同一則訊息的交接提醒 hook):這次不修,下則訊息再修。
-            # 只放過拿鎖逾時;修復本身的錯誤照樣要報(2026-11-18 CAO4ENQ)
+            # 只放過拿鎖逾時;修復本身的錯誤照樣要報(2026-11-18 一台 Windows)
             return 0
         try:
             memory_paths.preflight_memory()
