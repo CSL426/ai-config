@@ -54,6 +54,7 @@ claude,不指定時間就用預設的四個。不要替使用者決定時間,那
 多開只是重複點同一個視窗,不會多拿到額度。
 
 如果輸出提到 claude-scheduler 的排程還在,告訴使用者兩個都開著會在同一時間各點一次火,
-要先移除舊的。
+要先移除舊的。`--replace-ccs` 只有 Linux 清得掉(crontab);macOS 與 Windows 加了也不會裝,
+要先執行 `ccs remove` 再重跑。
 
 引數:`$ARGUMENTS`

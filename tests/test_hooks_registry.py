@@ -206,3 +206,18 @@ def test_enabling_memory_installs_what_the_registry_describes(
     memory_hooks.install(enabling=True)
 
     assert hooks.refresh() == [], "兩邊的定義不一致,refresh 就會把對的改掉"
+
+
+def test_hooks_enable_handoff_reminder_installs_the_statusline_wrapper_too(
+    home: Path,
+) -> None:
+    from ai_config import handoff_reminder as remind
+
+    assert run_hooks(["enable", "handoff-reminder"]) == 0
+    state = remind.status()
+    assert state["installed"] and state["threshold"] == remind.DEFAULT_THRESHOLD
+    assert "__handoff-statusline" in json.dumps(_settings(home)["statusLine"])
+
+    assert run_hooks(["disable", "handoff-reminder"]) == 0
+    assert not remind.status()["enabled"]
+    assert "__handoff-statusline" not in json.dumps(_settings(home).get("statusLine", {}))
