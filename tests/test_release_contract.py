@@ -326,7 +326,8 @@ def test_the_database_rules_match_the_source_block() -> None:
     end = stored.index(memory_paths.BLOCK_END) + len(memory_paths.BLOCK_END)
 
     assert stored[begin:end] == memory_paths.RULES_BLOCK.strip(), (
-        "資料庫的規則區塊跟原始碼不一致;改完 RULES_BLOCK 要重跑 acg init claude"
+        "資料庫的規則區塊跟原始碼不一致;發版裝好後跑 acg memory enable 再 acg push claude"
+        "(init 與 push 會保留資料庫裡的舊區塊)"
     )
 
 
