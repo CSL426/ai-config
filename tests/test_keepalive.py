@@ -813,3 +813,103 @@ def test_a_resource_error_that_is_not_quota_is_a_failure() -> None:
 
     assert keepalive_runner._quota_rest(done) is None
     assert not keepalive_runner._USAGE_LIMIT.search(keepalive_runner._outcome(done))
+
+
+def _fake_schtasks(monkeypatch: pytest.MonkeyPatch, names: "list[str] | None") -> list:
+    """Windows with `names` already in Task Scheduler (None: the query fails); returns deleted names."""
+    import subprocess
+
+    deleted = []
+    monkeypatch.setattr(keepalive_scheduler, "platform_name", lambda: "windows")
+
+    def run(argv, **kwargs):
+        if argv[1] == "/Query":
+            if names is None:
+                return subprocess.CompletedProcess(argv, 1, "", "boom")
+            rows = "".join(f'"\\{name}","N/A","Ready"\n' for name in names)
+            return subprocess.CompletedProcess(argv, 0, rows, "")
+        if argv[1] == "/Delete":
+            deleted.append(argv[argv.index("/TN") + 1])
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(keepalive_scheduler.subprocess, "run", run)
+    monkeypatch.setattr(keepalive_scheduler, "existing_ccs", lambda: "")
+    return deleted
+
+
+_OTHER_TASKS = [
+    "acg keepalive codex 0400", "acg keepalive agy 0400", "acg keepalive codex wake abc-12345678",
+]
+
+
+def test_windows_enable_removes_tasks_of_the_old_times(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deleted = _fake_schtasks(
+        monkeypatch, ["acg keepalive 0400", "acg keepalive 0900", "acg keepalive 2200", *_OTHER_TASKS],
+    )
+
+    code, _ = keepalive_scheduler.enable(("09:00",))
+
+    assert code == 0
+    assert sorted(deleted) == ["acg keepalive 0400", "acg keepalive 2200"]
+
+
+def test_windows_enable_for_codex_leaves_claude_tasks_alone(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deleted = _fake_schtasks(
+        monkeypatch, ["acg keepalive 0400", "acg keepalive codex 0400", "acg keepalive codex 0700"],
+    )
+
+    keepalive_scheduler.enable(("07:00",), tool="codex")
+
+    assert deleted == ["acg keepalive codex 0400"]
+
+
+def test_windows_disable_removes_tasks_orphaned_by_earlier_times(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deleted = _fake_schtasks(
+        monkeypatch, ["acg keepalive 0400", "acg keepalive 1300", *_OTHER_TASKS],
+    )
+    settings = keepalive_settings.load("claude")
+    settings.times = ("13:00",)
+    keepalive_settings.save(settings, "claude")
+
+    keepalive_scheduler.disable()
+
+    assert sorted(deleted) == ["acg keepalive 0400", "acg keepalive 1300"]
+
+
+def test_windows_falls_back_to_known_times_when_the_query_fails(
+    state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deleted = _fake_schtasks(monkeypatch, None)
+    settings = keepalive_settings.load("claude")
+    settings.times = ("13:00",)
+    keepalive_settings.save(settings, "claude")
+
+    code, _ = keepalive_scheduler.disable()
+
+    assert code == 0
+    assert deleted == ["acg keepalive 1300"]
+    assert keepalive_scheduler.enable(("09:00",))[0] == 0
+
+
+@pytest.mark.parametrize("platform", ["macos", "windows"])
+def test_replace_ccs_installs_nothing_where_it_cannot_remove(
+    state: Path, monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    monkeypatch.setattr(keepalive_scheduler, "platform_name", lambda: platform)
+    monkeypatch.setattr(keepalive_scheduler, "existing_ccs", lambda: "ClaudeScheduler_*")
+    installed = []
+    monkeypatch.setattr(keepalive_scheduler, "_enable_launchd", lambda *a: installed.append(a) or [])
+    monkeypatch.setattr(keepalive_scheduler, "_enable_schtasks", lambda *a: installed.append(a) or [])
+
+    code, lines = keepalive_scheduler.enable(("07:00",), replace_ccs=True)
+
+    assert code == 1
+    assert any("ccs remove" in line for line in lines)
+    assert installed == []
+    assert not keepalive_settings.config_path().is_file()

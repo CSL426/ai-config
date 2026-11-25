@@ -1,5 +1,6 @@
 """Installing the keepalive with the platform scheduler: systemd, launchd, schtasks."""
 
+import csv
 import os
 import re
 import subprocess
@@ -175,6 +176,45 @@ def _enable_launchd(times, tool: str = keepalive_settings.DEFAULT_TOOL) -> list:
     return [f"寫入 {path}", f"已排定每天 {', '.join(times)}"]
 
 
+def _task_label(tool: str) -> str:
+    return _TASK if tool == keepalive_settings.DEFAULT_TOOL else f"{_TASK} {tool}"
+
+
+def _task_times(tool: str) -> "list[str] | None":
+    """Times of every daily task this tool has in Task Scheduler; None if the query failed.
+
+    claude 的名稱 `acg keepalive 0400` 是 codex 的 `acg keepalive codex 0400` 的前綴,
+    所以要整個名稱比對 `<label> HHMM`,不能用開頭比對。
+    """
+    try:
+        found = subprocess.run(
+            ["schtasks", "/Query", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, **NATIVE, check=False,
+        )
+    except OSError:
+        return None
+    if found.returncode != 0:
+        return None
+    pattern = re.compile(rf"^{re.escape(_task_label(tool))} (\d{{4}})$")
+    times = []
+    for row in csv.reader((found.stdout or "").splitlines()):
+        if not row:
+            continue
+        # 工作名稱帶資料夾前綴:\acg keepalive 0400
+        match = pattern.match(row[0].lstrip("\\"))
+        if match:
+            times.append(match.group(1))
+    return times
+
+
+def _delete_tasks(tool: str, hhmm) -> None:
+    for at in hhmm:
+        subprocess.run(
+            ["schtasks", "/Delete", "/F", "/TN", f"{_task_label(tool)} {at}"],
+            capture_output=True, check=False,
+        )
+
+
 def _enable_schtasks(times, tool: str = keepalive_settings.DEFAULT_TOOL) -> list:
     lines = []
     for argv in schtasks_argv(times, tool):
@@ -182,6 +222,11 @@ def _enable_schtasks(times, tool: str = keepalive_settings.DEFAULT_TOOL) -> list
         if done.returncode != 0:
             lines.append(f"建立排程失敗:{(done.stderr or '').strip()}")
             return lines
+    # 換時間後舊的工作會繼續點火;查得到就清掉不在新時間裡的,查不到就不動
+    existing = _task_times(tool)
+    if existing is not None:
+        keep = {at.replace(":", "") for at in times}
+        _delete_tasks(tool, [at for at in existing if at not in keep])
     lines.append(f"已排定每天 {', '.join(times)}")
     return lines
 
@@ -205,10 +250,20 @@ def enable(times=(), replace_ccs: bool = False, tool: str = keepalive_settings.D
         return 1, [
             f"claude-scheduler 的排程還在:{found}",
             "兩個都開著會在同一時間各點一次火,一天燒兩倍",
-            "先用 ccs remove 移除,或加上 --replace-ccs 讓 acg 自己清掉",
+            (
+                "先用 ccs remove 移除,或加上 --replace-ccs 讓 acg 自己清掉"
+                if platform_name() == "linux"
+                else "先用 ccs remove 移除,再重跑這個指令(這個平台上 acg 清不掉它)"
+            ),
         ]
     lines = []
     if found and replace_ccs:
+        if platform_name() != "linux":
+            # 只有 Linux 清得掉:不然 acg 照裝,兩個排程會在同一時間各點一次
+            return 1, [
+                f"claude-scheduler 的排程在這個平台上 acg 清不掉:{found}",
+                "先執行 ccs remove 移除它,再重跑這個指令",
+            ]
         lines.extend(_remove_ccs())
 
     settings = keepalive_settings.load(tool)
@@ -271,12 +326,9 @@ def disable(tool: str = keepalive_settings.DEFAULT_TOOL) -> tuple:
         )
         _launchd_path(tool).unlink(missing_ok=True)
     else:
-        label = _TASK if tool == keepalive_settings.DEFAULT_TOOL else f"{_TASK} {tool}"
-        for at in keepalive_settings.load(tool).times:
-            subprocess.run(
-                ["schtasks", "/Delete", "/F", "/TN", f"{label} {at.replace(':', '')}"],
-                capture_output=True, check=False,
-            )
+        known = [at.replace(":", "") for at in keepalive_settings.load(tool).times]
+        queried = _task_times(tool)
+        _delete_tasks(tool, sorted(set(known) | set(queried or [])))
     if tool == "codex":
         # 停用後留下的單獨喚醒會在之後某天自己點一次火
         removed = remove_wakes()

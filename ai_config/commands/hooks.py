@@ -27,6 +27,11 @@ def run_hooks(args: list[str]) -> int:
                 log_error(f"沒有這個 hook:{rest[0]}")
                 log_info(f"可用的:{', '.join(hooks.REGISTRY)}")
                 return 1
+            if hook.name == "handoff-reminder":
+                # 除了 hook 還要管 statusLine 包裝,只有這個入口兩邊都寫
+                from .memory_handoff import _handoff_remind
+
+                return _handoff_remind([action])
             log_header(f"{action.capitalize()} {hook.name}")
             on = hooks.configure(hook, action == "enable")
             if on:
