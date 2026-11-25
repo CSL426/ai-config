@@ -595,7 +595,9 @@ and which are on; `hooks enable <name>` / `disable <name>` change one. They
 are per-machine by nature — each names this machine's own executable — so
 gather strips every acg-owned hook out of the database and apply puts the
 local ones back. Installing one by hand into settings.json instead is what
-sends one machine's paths to every other.
+sends one machine's paths to every other. The hook `herdr integration install
+claude` writes (it runs `~/.claude/hooks/herdr-agent-state.sh` by absolute path)
+is treated the same way: it stays on the machine that installed it.
 
 Registered today: `commit-style` refuses a `git commit` subject that is not
 `type(scope): description`, handing the reason back so the model rewrites

@@ -92,11 +92,25 @@ COMMAND_GUARD = register(Hook(
 ))
 
 
+# 別的工具在每台各自裝、指向本機腳本的 hook:跟 acg 自己的一樣不進資料庫,
+# 套用時留在這台。herdr integration install claude 寫的那支是絕對路徑,
+# 同步出去,沒裝 herdr 的機器(Windows 也是)每開一個 session 就報錯一次
+_FOREIGN_LOCAL_SCRIPTS = ("herdr-agent-state.sh",)
+
+
+def _foreign_local(hook: dict) -> bool:
+    parts = [hook.get("command"), *(hook.get("args") or [])]
+    return any(
+        isinstance(part, str) and script in part
+        for part in parts for script in _FOREIGN_LOCAL_SCRIPTS
+    )
+
+
 def _owned_by_any(hook: object) -> bool:
     if not isinstance(hook, dict):
         return False
     message = hook.get("statusMessage")
-    return isinstance(message, str) and message.startswith(PREFIX)
+    return (isinstance(message, str) and message.startswith(PREFIX)) or _foreign_local(hook)
 
 
 def _owned_by(hook: object, marker: str) -> bool:
